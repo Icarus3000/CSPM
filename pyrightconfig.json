@@ -1,0 +1,17 @@
+{
+  "include": [
+    "src/python"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "archive",
+    "backups",
+    "dumps",
+    "dist",
+    "outputs"
+  ],
+  "extraPaths": [
+    "src/python"
+  ],
+  "typeCheckingMode": "basic"
+}

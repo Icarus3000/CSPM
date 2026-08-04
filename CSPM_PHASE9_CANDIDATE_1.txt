@@ -1,0 +1,215 @@
+428 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+429 INFO: Python: 3.14.2
+561 INFO: Platform: Windows-10-10.0.19045-SP0
+562 INFO: Python environment: C:\Projects\__CSPM\.venv_OFFICENEW_Cory
+563 INFO: wrote C:\Projects\__CSPM\CSPM.spec
+572 INFO: Module search paths (PYTHONPATH):
+['C:\\Projects\\__CSPM',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314\\python314.zip',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314\\DLLs',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314\\Lib',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\win32',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\win32\\lib',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\pythonwin',
+ 'C:\\Projects\\__CSPM\\src\\python']
+1948 INFO: Appending 'datas' from .spec
+1972 INFO: checking Analysis
+1972 INFO: Building Analysis because Analysis-00.toc is non existent
+1972 INFO: Looking for Python shared library...
+1972 INFO: Using Python shared library: C:\Users\cschn\AppData\Local\Programs\Python\Python314\python314.dll
+1972 INFO: Running Analysis Analysis-00.toc
+1972 INFO: Target bytecode optimization level: 0
+1973 INFO: Initializing module dependency graph...
+1975 INFO: Initializing module graph hook caches...
+2092 INFO: Analyzing modules for base_library.zip ...
+6721 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+7542 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+7720 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+8382 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+8431 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+18552 INFO: Caching module dependency graph...
+18646 INFO: Analyzing C:\Projects\__CSPM\src\python\main.py
+18901 INFO: Processing standard module hook 'hook-PySide6.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+19313 INFO: Processing standard module hook 'hook-shiboken6.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+20146 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+28914 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+34023 INFO: Processing standard module hook 'hook-openpyxl.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+34247 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+35144 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+35150 INFO: SetuptoolsInfo: initializing cached setuptools info...
+38283 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+38551 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+39482 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+39518 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+41764 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+42898 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+49502 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+50817 INFO: Processing standard module hook 'hook-lxml.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+51580 INFO: Processing standard module hook 'hook-lxml.etree.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+52171 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+53792 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+54066 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+55566 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+63598 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+100191 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+107889 INFO: Processing standard module hook 'hook-PySide6.QtQml.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+161869 INFO: Processing standard module hook 'hook-PySide6.QtQuick.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+171624 INFO: Processing standard module hook 'hook-PySide6.QtOpenGL.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+176344 INFO: Processing standard module hook 'hook-PySide6.QtSvg.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+178015 INFO: Processing standard module hook 'hook-PySide6.QtWebEngineQuick.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+180613 INFO: Processing standard module hook 'hook-PySide6.QtWebEngineCore.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+185780 INFO: Processing standard module hook 'hook-PySide6.QtWebChannel.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+189010 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+192258 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+193993 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+196615 INFO: Processing standard module hook 'hook-reportlab.lib.utils.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+196831 INFO: Processing standard module hook 'hook-reportlab.pdfbase._fontdata.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+203266 INFO: Processing standard module hook 'hook-jinja2.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+204799 INFO: Processing standard module hook 'hook-docx.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+206274 INFO: Processing standard module hook 'hook-babel.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+206966 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+207875 INFO: Processing module hooks (post-graph stage)...
+208755 INFO: Processing standard module hook 'hook-lxml.isoschematron.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+209976 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+210287 INFO: Processing standard module hook 'hook-PySide6.QtPositioning.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+212580 INFO: Processing standard module hook 'hook-PySide6.QtPrintSupport.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+213995 INFO: Processing standard module hook 'hook-lxml.objectify.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+213997 INFO: Processing standard module hook 'hook-tzdata.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+215142 INFO: Performing binary vs. data reclassification (4631 entries)
+223397 INFO: Looking for ctypes DLLs
+223661 INFO: Analyzing run-time hooks ...
+223671 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+223679 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+223692 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+223699 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+223712 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+223730 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+223734 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+223982 INFO: Creating base_library.zip...
+224021 INFO: Looking for dynamic libraries
+227778 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\shiboken6', 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\numpy.libs']
+227778 INFO: Extra DLL search directories (PATH): ['C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PySide6']
+236097 INFO: Warnings written to C:\Projects\__CSPM\build\CSPM\warn-CSPM.txt
+236307 INFO: Graph cross-reference written to C:\Projects\__CSPM\build\CSPM\xref-CSPM.html
+236654 INFO: checking PYZ
+236654 INFO: Building PYZ because PYZ-00.toc is non existent
+236654 INFO: Building PYZ (ZlibArchive) C:\Projects\__CSPM\build\CSPM\PYZ-00.pyz
+237460 INFO: Building PYZ (ZlibArchive) C:\Projects\__CSPM\build\CSPM\PYZ-00.pyz completed successfully.
+237498 INFO: checking PKG
+237499 INFO: Building PKG because PKG-00.toc is non existent
+237499 INFO: Building PKG (CArchive) CSPM.pkg
+237540 INFO: Building PKG (CArchive) CSPM.pkg completed successfully.
+237541 INFO: Bootloader C:\Projects\__CSPM\.venv_OFFICENEW_Cory\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+237541 INFO: checking EXE
+237541 INFO: Building EXE because EXE-00.toc is non existent
+237541 INFO: Building EXE from EXE-00.toc
+237541 INFO: Copying bootloader EXE to C:\Projects\__CSPM\build\CSPM\CSPM.exe
+237747 INFO: Copying icon to EXE
+237816 INFO: Copying 0 resources to EXE
+237816 INFO: Embedding manifest in EXE
+237876 INFO: Appending PKG archive to EXE
+237963 INFO: Fixing EXE headers
+238469 INFO: Building EXE from EXE-00.toc completed successfully.
+238585 INFO: checking COLLECT
+238585 INFO: Building COLLECT because COLLECT-00.toc is non existent
+238586 INFO: Building COLLECT COLLECT-00.toc
+274433 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+274759 INFO: Build complete! The results are available in: C:\Projects\__CSPM\dist_staging_60300
+611 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+612 INFO: Python: 3.14.2
+935 INFO: Platform: Windows-10-10.0.19045-SP0
+935 INFO: Python environment: C:\Projects\__CSPM\.venv_OFFICENEW_Cory
+936 INFO: wrote C:\Projects\__CSPM\CSPM_Recovery.spec
+954 INFO: Module search paths (PYTHONPATH):
+['C:\\Projects\\__CSPM',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314\\python314.zip',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314\\DLLs',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314\\Lib',
+ 'C:\\Users\\cschn\\AppData\\Local\\Programs\\Python\\Python314',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\win32',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\win32\\lib',
+ 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\pythonwin',
+ 'C:\\Projects\\__CSPM\\scripts']
+3200 INFO: checking Analysis
+3200 INFO: Building Analysis because Analysis-00.toc is non existent
+3200 INFO: Looking for Python shared library...
+3200 INFO: Using Python shared library: C:\Users\cschn\AppData\Local\Programs\Python\Python314\python314.dll
+3200 INFO: Running Analysis Analysis-00.toc
+3200 INFO: Target bytecode optimization level: 0
+3201 INFO: Initializing module dependency graph...
+3204 INFO: Initializing module graph hook caches...
+3298 INFO: Analyzing modules for base_library.zip ...
+5691 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+9149 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+13688 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+14808 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+15149 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+24832 INFO: Caching module dependency graph...
+24991 INFO: Analyzing C:\Projects\__CSPM\scripts\cspm_recovery.py
+25426 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+25531 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+25543 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks'
+25581 INFO: Processing module hooks (post-graph stage)...
+25611 INFO: Performing binary vs. data reclassification (1 entries)
+25613 INFO: Looking for ctypes DLLs
+25657 INFO: Analyzing run-time hooks ...
+25659 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Projects\\__CSPM\\.venv_OFFICENEW_Cory\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25673 INFO: Creating base_library.zip...
+25716 INFO: Looking for dynamic libraries
+25996 INFO: Extra DLL search directories (AddDllDirectory): []
+25996 INFO: Extra DLL search directories (PATH): []
+26529 INFO: Warnings written to C:\Projects\__CSPM\build\CSPM_Recovery\warn-CSPM_Recovery.txt
+26641 INFO: Graph cross-reference written to C:\Projects\__CSPM\build\CSPM_Recovery\xref-CSPM_Recovery.html
+26774 INFO: checking PYZ
+26775 INFO: Building PYZ because PYZ-00.toc is non existent
+26775 INFO: Building PYZ (ZlibArchive) C:\Projects\__CSPM\build\CSPM_Recovery\PYZ-00.pyz
+27072 INFO: Building PYZ (ZlibArchive) C:\Projects\__CSPM\build\CSPM_Recovery\PYZ-00.pyz completed successfully.
+27095 INFO: checking PKG
+27096 INFO: Building PKG because PKG-00.toc is non existent
+27096 INFO: Building PKG (CArchive) CSPM_Recovery.pkg
+27148 INFO: Building PKG (CArchive) CSPM_Recovery.pkg completed successfully.
+27150 INFO: Bootloader C:\Projects\__CSPM\.venv_OFFICENEW_Cory\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+27150 INFO: checking EXE
+27150 INFO: Building EXE because EXE-00.toc is non existent
+27150 INFO: Building EXE from EXE-00.toc
+27151 INFO: Copying bootloader EXE to C:\Projects\__CSPM\build\CSPM_Recovery\CSPM_Recovery.exe
+27245 INFO: Copying icon to EXE
+27322 INFO: Copying 0 resources to EXE
+27322 INFO: Embedding manifest in EXE
+27388 INFO: Appending PKG archive to EXE
+27462 INFO: Fixing EXE headers
+27845 INFO: Building EXE from EXE-00.toc completed successfully.
+27847 INFO: checking COLLECT
+27847 INFO: Building COLLECT because COLLECT-00.toc is non existent
+27848 INFO: Building COLLECT COLLECT-00.toc
+28084 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+28086 INFO: Build complete! The results are available in: C:\Projects\__CSPM\dist_staging_60300\CSPM
+==================================================
+  CSPM CANDIDATE VALIDATION BUILD (NON-PRODUCTION)
+==================================================
+Target version: 2.4.0
+Resolved target dist dir: C:\Projects\__CSPM\dist
+Resolved staging dist dir: C:\Projects\__CSPM\dist_staging_60300
+Resolved build dir: C:\Projects\__CSPM\build
+Warning: target dist dir C:\Projects\__CSPM\dist exists, it will be replaced.
+Cleaned build directories.
+Running PyInstaller for Main App...
+Running PyInstaller for Recovery Utility...
+
+[SUCCESS] PyInstaller bundles created in dist/CSPM/
+BUNDLED TEMPLATE: CSPM.xlsm
+  Source: C:\Projects\__CSPM\src\templates\CSPM.xlsm
+  SHA-256: 514EAE59BC706FD4E1CD872E515F95BCDD5D05EB74317C6F099BDC9469FAA6CB
+  Live-hash match: NO (safe)
+BUNDLED TEMPLATE: Dockets.xlsm
+  Source: C:\Projects\__CSPM\src\templates\Dockets.xlsm
+  SHA-256: 47631DD58928B4EFD69DAE2483A3E203DBD45993B36A209BF8F3632BE64B906C
+  Live-hash match: NO (safe)
+PyInstaller build complete.
+Promoted C:\Projects\__CSPM\dist_staging_60300 to C:\Projects\__CSPM\dist
+Build process finished successfully.

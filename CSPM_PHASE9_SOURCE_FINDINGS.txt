@@ -1,0 +1,45 @@
+CSPM PHASE 9 SOURCE FINDINGS
+Generated: 2026-07-30
+
+ID: F001
+Severity: Medium
+Affected Requirement: REQ-REG-002 (Offline Sync Conflict Resolution)
+File: src/python/services/sync_service.py
+Class/Function: SyncService.pull_from_master
+Line Range: 90-100
+Evidence: `ctypes.windll.user32.MessageBoxW(0, msg, "CSPM Sync Conflict", 4 | 48)` does not specify TOPMOST.
+User Impact: During application startup, if an offline sync conflict occurs, the native MessageBox could appear behind the splash screen or other windows. Because it blocks the startup thread, this would appear as a frozen application.
+Reproduction/Trigger: Launch application while `offline_dirty=True` and the master Excel file modification time is newer than `last_push_time`.
+Recommended Correction: Add `MB_TOPMOST` (0x40000) and `MB_SETFOREGROUND` (0x10000) to the flags.
+Required Verification: Manual UI verification (Test MTC-006).
+Blocks Phase 9: Yes (Fixed during this audit).
+
+ID: F002
+Severity: Low
+Affected Requirement: REQ-001 (Handle Leaks Fixed)
+File: src/python/repositories/excel_repo.py
+Class/Function: Multiple (load_workbook calls)
+Line Range: Multiple
+Evidence: Inspection confirms `keep_vba=True` is correctly passed to `openpyxl.load_workbook()` everywhere data is mutated, successfully mitigating the VBA-stripping risk.
+User Impact: Safe.
+Reproduction/Trigger: N/A.
+Recommended Correction: N/A.
+Required Verification: Gate 2A macro fixture approval by Cory.
+Blocks Phase 9: No.
+
+ID: F003
+Severity: Low
+Affected Requirement: REQ-REG-003 (Force Shutdown Saves)
+File: src/python/backend/controllers/tray_controller.py
+Class/Function: force_shutdown_save
+Line Range: 460-480
+Evidence: Checks for empty descriptions and auto-fills them with "Auto-saved on system shutdown" before stopping timers.
+User Impact: Unsaved timers are preserved gracefully upon sudden shutdown.
+Reproduction/Trigger: Close the app via Windows taskbar or shut down Windows with an active timer and no description.
+Recommended Correction: None required. Logic is sound.
+Required Verification: Manual verification.
+Blocks Phase 9: No.
+
+
+### Phase 9 Gate B Update (2026-07-30)
+Phase 9 Engineering Complete - Gate B. Planning documents and evidence preserved.

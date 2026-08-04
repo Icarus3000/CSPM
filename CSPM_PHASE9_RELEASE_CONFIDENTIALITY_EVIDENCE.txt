@@ -1,0 +1,40 @@
+CSPM PHASE 9 RELEASE CONFIDENTIALITY EVIDENCE
+============================================================
+Live CSPM SHA-256:    25CFC7747A11452EDDB54AE7E407C70D1F603FF15DA2BE12A01943D468F72D71
+Live Dockets SHA-256: 14EF7859137A2C4A9B40873AD1907562A89EDD15C1BCE87FB04774776DE9350D
+
+Scanned Directories:
+  - C:\Projects\__CSPM\src\templates
+  - C:\Projects\__CSPM\dist
+  - C:\Projects\__CSPM\build
+  - C:\Projects\__CSPM\dist_staging_69236
+
+Found XLSM Artifacts:
+  File: C:\Projects\__CSPM\src\templates\CSPM.xlsm
+  Hash: 514EAE59BC706FD4E1CD872E515F95BCDD5D05EB74317C6F099BDC9469FAA6CB
+  Safe (no match).
+
+  File: C:\Projects\__CSPM\src\templates\Dockets.xlsm
+  Hash: 47631DD58928B4EFD69DAE2483A3E203DBD45993B36A209BF8F3632BE64B906C
+  Safe (no match).
+
+  File: C:\Projects\__CSPM\dist\CSPM\data\CSPM.xlsm
+  Hash: 514EAE59BC706FD4E1CD872E515F95BCDD5D05EB74317C6F099BDC9469FAA6CB
+  Safe (no match).
+
+  File: C:\Projects\__CSPM\dist\CSPM\data\Dockets.xlsm
+  Hash: 47631DD58928B4EFD69DAE2483A3E203DBD45993B36A209BF8F3632BE64B906C
+  Safe (no match).
+
+  File: C:\Projects\__CSPM\dist\CSPM\_internal\src\templates\CSPM.xlsm
+  Hash: 514EAE59BC706FD4E1CD872E515F95BCDD5D05EB74317C6F099BDC9469FAA6CB
+  Safe (no match).
+
+  File: C:\Projects\__CSPM\dist\CSPM\_internal\src\templates\Dockets.xlsm
+  Hash: 47631DD58928B4EFD69DAE2483A3E203DBD45993B36A209BF8F3632BE64B906C
+  Safe (no match).
+
+SUMMARY:
+- No generated workbook equals either live workbook hash.
+- No live workbook exists in the release tree.
+- No confidential workbook artifact from prior failed releases remains.

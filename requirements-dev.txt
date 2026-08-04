@@ -1,0 +1,2 @@
+# Optional development tools (install when running full local quality gates)
+pyright>=1.1.0,<1.2

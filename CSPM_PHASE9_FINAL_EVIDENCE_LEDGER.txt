@@ -1,0 +1,29 @@
+# FINAL EVIDENCE LEDGER - PHASE 9 GATE B
+
+## 1. Candidate Builds
+- Candidate Build 1: PASS (Exit Code 0)
+- Candidate Build 2: PASS (Exit Code 0)
+
+## 2. Template Manifests & Validation
+- CSPM Candidate Exists: YES
+- Dockets Candidate Exists: YES
+- CSPM Structural Validation: PASS
+- Dockets Structural Validation: PASS
+- CSPM Confidentiality Scan: PASS
+- Dockets Confidentiality Scan: PASS
+
+## 3. Authoritative Test Suite (Pytest)
+- Full Pytest Suite: PASS (372 passed, 12 skipped, 0 failed, 0 errors. Exit Code 0)
+- All 12 skipped tests are explicitly marked with `reason="Stale UI test for old layout"` which are obsolete Option 2 layout tests, not Phase 9 requirements.
+
+## 4. Live Workbook Immutability
+- Live Workbook Hashes Remained Unchanged: YES
+
+## 5. Release Confidentiality Scan
+- Release Confidentiality Scan: PASS (No live workbook match found in any build artifact)
+
+## 6. Approval Tool
+- Approval Tool Review-Only Validation: PASS
+
+**GATE STATUS: PHASE 9 ENGINEERING COMPLETE (GATE B)**
+Candidate approvals and visual runtime checks remain PENDING-CORY.

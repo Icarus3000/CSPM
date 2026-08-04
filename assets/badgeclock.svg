@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="-15 0 130 100"
+     width="100%" height="100%"
+     shape-rendering="geometricPrecision">
+
+  <style>
+    :root {
+      --bckcolor: #000;
+      --forecolor: #fff;
+    }
+  </style>
+
+  <!-- Shield -->
+  <path d="M 50 10
+           Q 70 25, 90 25
+           C 90 60, 75 85, 50 95
+           C 25 85, 10 60, 10 25
+           Q 30 25, 50 10 Z"
+        fill="var(--bckcolor)"/>
+
+  <!-- Clock -->
+  <circle cx="50" cy="52" r="25" fill="var(--forecolor)"/>
+
+  <!-- EXACT 12 DOTS -->
+  <defs>
+    <circle id="tickDot" cx="0" cy="-22" r="1.2" />
+  </defs>
+
+  <g fill="var(--bckcolor)" transform="translate(50 52)">
+    <use href="#tickDot" transform="rotate(0)"/>
+    <use href="#tickDot" transform="rotate(30)"/>
+    <use href="#tickDot" transform="rotate(60)"/>
+    <use href="#tickDot" transform="rotate(90)"/>
+    <use href="#tickDot" transform="rotate(120)"/>
+    <use href="#tickDot" transform="rotate(150)"/>
+    <use href="#tickDot" transform="rotate(180)"/>
+    <use href="#tickDot" transform="rotate(210)"/>
+    <use href="#tickDot" transform="rotate(240)"/>
+    <use href="#tickDot" transform="rotate(270)"/>
+    <use href="#tickDot" transform="rotate(300)"/>
+    <use href="#tickDot" transform="rotate(330)"/>
+  </g>
+
+  <!-- Hands (unchanged) -->
+  <g stroke="var(--bckcolor)" stroke-linecap="round">
+    <line x1="50" y1="52" x2="50" y2="40.0" stroke-width="2.2"/>
+    <line x1="50" y1="52" x2="57.0" y2="59.0" stroke-width="2.2"/>
+  </g>
+
+  <!-- Warning triangle + exclamation (OVERLAY) -->
+  <!-- Move BOTH by editing ONLY this translate(). -->
+  <g transform="translate(-8 -6)">
+
+    <!-- Triangle -->
+    <path d="M 88 64
+             L 104 90
+             L 72 90
+             Z"
+          fill="var(--bckcolor)"
+          stroke="var(--forecolor)"
+          stroke-width="1.6"
+          stroke-linejoin="round"
+          paint-order="stroke fill"/>
+
+    <!-- Exclamation mark (smaller, moved up, visually centered) -->
+    <!-- Tapered shaft: top wider than bottom + rounded caps -->
+    <path d="
+      M 86.7 73.3
+      Q 86.7 72.0 88.0 72.0
+      Q 89.3 72.0 89.3 73.3
+      L 88.9 79.9
+      Q 88.9 81.0 88.0 81.0
+      Q 87.1 81.0 87.1 79.9
+      Z"
+      fill="var(--forecolor)"/>
+
+    <!-- Dot (circle) -->
+    <circle cx="88.0" cy="84.1" r="1.15"
+            fill="var(--forecolor)"/>
+
+  </g>
+
+</svg>

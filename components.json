@@ -1,0 +1,764 @@
+[
+  {
+    "type": "if (String(row.id || \"\") === String(root.activeNodeId || \"\"))",
+    "start": 237,
+    "id": null,
+    "end": 239
+  },
+  {
+    "type": "if (String(list[i].id || \"\") === candidate)",
+    "start": 260,
+    "id": null,
+    "end": 263
+  },
+  {
+    "type": "&& candidate.getDate() === day)",
+    "start": 387,
+    "id": null,
+    "end": 389
+  },
+  {
+    "type": "return",
+    "start": 448,
+    "id": null,
+    "end": 452
+  },
+  {
+    "type": "if (!normalizedPhone.valid)",
+    "start": 503,
+    "id": null,
+    "end": 505
+  },
+  {
+    "type": "if (!_looksLikeEmailAddress(emailValue))",
+    "start": 516,
+    "id": null,
+    "end": 518
+  },
+  {
+    "type": "if (query.length > 0)",
+    "start": 549,
+    "id": null,
+    "end": 561
+  },
+  {
+    "type": "if (appRef && appRef.listClientDirectory)",
+    "start": 594,
+    "id": null,
+    "end": 610
+  },
+  {
+    "type": "} catch (e)",
+    "start": 611,
+    "id": null,
+    "end": 611
+  },
+  {
+    "type": "for (var r = 0; r < clientDirectoryFilteredRows.length; r++)",
+    "start": 625,
+    "id": null,
+    "end": 634
+  },
+  {
+    "type": "if (!matched)",
+    "start": 635,
+    "id": null,
+    "end": 637
+  },
+  {
+    "type": "} else",
+    "start": 638,
+    "id": null,
+    "end": 638
+  },
+  {
+    "type": "if (selectedClientName.length > 0 && activeOnlyMode === true)",
+    "start": 640,
+    "id": null,
+    "end": 642
+  },
+  {
+    "type": "if (query.length > 0)",
+    "start": 664,
+    "id": null,
+    "end": 676
+  },
+  {
+    "type": "if (appRef && appRef.listClientNames)",
+    "start": 709,
+    "id": null,
+    "end": 717
+  },
+  {
+    "type": "} catch (e0)",
+    "start": 718,
+    "id": null,
+    "end": 718
+  },
+  {
+    "type": "for (var j = 0; j < clientDirectoryNameOptions.length; j++)",
+    "start": 721,
+    "id": null,
+    "end": 724
+  },
+  {
+    "type": "if (appRef && appRef.listMatterDirectory)",
+    "start": 741,
+    "id": null,
+    "end": 754
+  },
+  {
+    "type": "} catch (e)",
+    "start": 755,
+    "id": null,
+    "end": 755
+  },
+  {
+    "type": "for (var r = 0; r < matterDirectoryFilteredRows.length; r++)",
+    "start": 769,
+    "id": null,
+    "end": 778
+  },
+  {
+    "type": "if (!matched)",
+    "start": 779,
+    "id": null,
+    "end": 781
+  },
+  {
+    "type": "} else",
+    "start": 782,
+    "id": null,
+    "end": 782
+  },
+  {
+    "type": "if (selectedMatterName.length > 0 && activeOnlyMode === true)",
+    "start": 784,
+    "id": null,
+    "end": 786
+  },
+  {
+    "type": "selectedMatterProfile = (",
+    "start": 802,
+    "id": null,
+    "end": 802
+  },
+  {
+    "type": "selectedMatterProfile = (",
+    "start": 807,
+    "id": null,
+    "end": 807
+  },
+  {
+    "type": "} catch (e)",
+    "start": 815,
+    "id": null,
+    "end": 815
+  },
+  {
+    "type": "result =",
+    "start": 816,
+    "id": null,
+    "end": 816
+  },
+  {
+    "type": "} else",
+    "start": 824,
+    "id": null,
+    "end": 824
+  },
+  {
+    "type": "selectedMatterProfile = (",
+    "start": 825,
+    "id": null,
+    "end": 825
+  },
+  {
+    "type": "if (rowName === nameLower)",
+    "start": 838,
+    "id": null,
+    "end": 840
+  },
+  {
+    "type": "if (!defaultRateLooksAutoManaged)",
+    "start": 854,
+    "id": null,
+    "end": 857
+  },
+  {
+    "type": "if (matterBillingArrangementIsFlatFee())",
+    "start": 858,
+    "id": null,
+    "end": 864
+  },
+  {
+    "type": "if (defaultShareText.length <= 0)",
+    "start": 867,
+    "id": null,
+    "end": 869
+  },
+  {
+    "type": "if (email.length > 0)",
+    "start": 875,
+    "id": null,
+    "end": 877
+  },
+  {
+    "type": "} catch (e0)",
+    "start": 898,
+    "id": null,
+    "end": 898
+  },
+  {
+    "type": "profile = selectedMatterProfile || (",
+    "start": 959,
+    "id": null,
+    "end": 959
+  },
+  {
+    "type": "rows.push(",
+    "start": 1113,
+    "id": null,
+    "end": 1116
+  },
+  {
+    "type": "if (appRef && appRef.saveMatterProfile)",
+    "start": 1161,
+    "id": null,
+    "end": 1168
+  },
+  {
+    "type": "} catch (e)",
+    "start": 1169,
+    "id": null,
+    "end": 1169
+  },
+  {
+    "type": "result =",
+    "start": 1170,
+    "id": null,
+    "end": 1173
+  },
+  {
+    "type": "} else if (lastSaveOk)",
+    "start": 1182,
+    "id": null,
+    "end": 1182
+  },
+  {
+    "type": "} else",
+    "start": 1184,
+    "id": null,
+    "end": 1184
+  },
+  {
+    "type": "if (root.returnFromMatterEdit())",
+    "start": 1191,
+    "id": null,
+    "end": 1193
+  },
+  {
+    "type": "} else",
+    "start": 1195,
+    "id": null,
+    "end": 1195
+  },
+  {
+    "type": "} catch (e)",
+    "start": 1286,
+    "id": null,
+    "end": 1286
+  },
+  {
+    "type": "payload =",
+    "start": 1287,
+    "id": null,
+    "end": 1287
+  },
+  {
+    "type": "} else",
+    "start": 1304,
+    "id": null,
+    "end": 1304
+  },
+  {
+    "type": "} else if (_cleanLowerText(row.entityType) === \"matter\")",
+    "start": 1350,
+    "id": null,
+    "end": 1350
+  },
+  {
+    "type": "selectedClientProfile = (",
+    "start": 1423,
+    "id": null,
+    "end": 1423
+  },
+  {
+    "type": "selectedClientProfile = (",
+    "start": 1428,
+    "id": null,
+    "end": 1428
+  },
+  {
+    "type": "} catch (e)",
+    "start": 1436,
+    "id": null,
+    "end": 1436
+  },
+  {
+    "type": "result =",
+    "start": 1437,
+    "id": null,
+    "end": 1437
+  },
+  {
+    "type": "} else",
+    "start": 1445,
+    "id": null,
+    "end": 1445
+  },
+  {
+    "type": "selectedClientProfile = (",
+    "start": 1446,
+    "id": null,
+    "end": 1446
+  },
+  {
+    "type": "profile = selectedClientProfile || (",
+    "start": 1456,
+    "id": null,
+    "end": 1456
+  },
+  {
+    "type": "rows.push(",
+    "start": 1627,
+    "id": null,
+    "end": 1630
+  },
+  {
+    "type": "} else if (city.length > 0)",
+    "start": 1650,
+    "id": null,
+    "end": 1650
+  },
+  {
+    "type": "} else if (stateProvince.length > 0)",
+    "start": 1652,
+    "id": null,
+    "end": 1652
+  },
+  {
+    "type": "if (appRef && appRef.saveClientProfile)",
+    "start": 1720,
+    "id": null,
+    "end": 1727
+  },
+  {
+    "type": "} catch (e)",
+    "start": 1728,
+    "id": null,
+    "end": 1728
+  },
+  {
+    "type": "result =",
+    "start": 1729,
+    "id": null,
+    "end": 1732
+  },
+  {
+    "type": "} else if (lastSaveOk)",
+    "start": 1741,
+    "id": null,
+    "end": 1741
+  },
+  {
+    "type": "} else",
+    "start": 1743,
+    "id": null,
+    "end": 1743
+  },
+  {
+    "type": "if (root.clientCreateFromMatterMode)",
+    "start": 1750,
+    "id": null,
+    "end": 1754
+  },
+  {
+    "type": "if (root.returnFromClientEdit())",
+    "start": 1755,
+    "id": null,
+    "end": 1757
+  },
+  {
+    "type": "} else",
+    "start": 1759,
+    "id": null,
+    "end": 1759
+  },
+  {
+    "type": "if (issues.length > 0)",
+    "start": 1768,
+    "id": null,
+    "end": 1772
+  },
+  {
+    "type": "if (docketActivityReportPanel && docketActivityReportPanel.runReport)",
+    "start": 1784,
+    "id": null,
+    "end": 1786
+  },
+  {
+    "type": "if (transactionMasterView && transactionMasterView.runPrimaryAction)",
+    "start": 1815,
+    "id": null,
+    "end": 1817
+  },
+  {
+    "type": "if (parents && parents.length > 0)",
+    "start": 1851,
+    "id": null,
+    "end": 1853
+  },
+  {
+    "type": "} catch (e)",
+    "start": 1854,
+    "id": null,
+    "end": 1854
+  },
+  {
+    "type": ": (",
+    "start": 1940,
+    "id": null,
+    "end": 1940
+  },
+  {
+    "type": ": (",
+    "start": 1943,
+    "id": null,
+    "end": 1943
+  },
+  {
+    "type": "if (state.transactionState !== undefined && transactionMasterView.applyState)",
+    "start": 2147,
+    "id": null,
+    "end": 2149
+  },
+  {
+    "type": "if (!root.matterEditMode && String(matterNumberInput.text || \"\").trim().length <= 0)",
+    "start": 2176,
+    "id": null,
+    "end": 2178
+  },
+  {
+    "type": "if (transactionMasterView && transactionMasterView.refreshLookupData)",
+    "start": 2213,
+    "id": null,
+    "end": 2215
+  },
+  {
+    "type": "if (root.activeIsGlobalSearch())",
+    "start": 2216,
+    "id": null,
+    "end": 2218
+  },
+  {
+    "type": "if (root.activeIsDocketActivityReport() && docketActivityReportPanel && docketActivityReportPanel.runReport)",
+    "start": 2219,
+    "id": null,
+    "end": 2221
+  },
+  {
+    "type": "if (root.activeIsClientProfile360())",
+    "start": 2222,
+    "id": null,
+    "end": 2224
+  },
+  {
+    "type": "if (root.activeIsMatterProfile360())",
+    "start": 2225,
+    "id": null,
+    "end": 2227
+  },
+  {
+    "type": "if (root.clientWizardDateTarget === \"dateClientAdded\")",
+    "start": 2253,
+    "id": null,
+    "end": 2265
+  },
+  {
+    "type": "layer.effect: MultiEffect",
+    "start": 2290,
+    "id": null,
+    "end": 2299
+  },
+  {
+    "type": "Rectangle",
+    "start": 2313,
+    "id": "laneSidebar",
+    "end": 2456
+  },
+  {
+    "type": "Rectangle",
+    "start": 2458,
+    "id": "laneCanvas",
+    "end": 2659
+  },
+  {
+    "type": "Rectangle",
+    "start": 2661,
+    "id": null,
+    "end": 2719
+  },
+  {
+    "type": "ListView",
+    "start": 2740,
+    "id": "clientDirectoryList",
+    "end": 2796
+  },
+  {
+    "type": "ColumnLayout",
+    "start": 2818,
+    "id": null,
+    "end": 2877
+  },
+  {
+    "type": "Text",
+    "start": 2879,
+    "id": null,
+    "end": 2885
+  },
+  {
+    "type": "ScrollView",
+    "start": 2887,
+    "id": "clientProfileDetailsScroll",
+    "end": 3013
+  },
+  {
+    "type": "ColumnLayout",
+    "start": 3026,
+    "id": null,
+    "end": 3215
+  },
+  {
+    "type": "DocketActivityReportPanel",
+    "start": 3227,
+    "id": "docketActivityReportPanel",
+    "end": 3240
+  },
+  {
+    "type": "ColumnLayout",
+    "start": 3253,
+    "id": null,
+    "end": 3288
+  },
+  {
+    "type": "PillButton",
+    "start": 3290,
+    "id": null,
+    "end": 3301
+  },
+  {
+    "type": "ListView",
+    "start": 3323,
+    "id": "matterDirectoryList",
+    "end": 3379
+  },
+  {
+    "type": "ColumnLayout",
+    "start": 3401,
+    "id": null,
+    "end": 3460
+  },
+  {
+    "type": "Text",
+    "start": 3462,
+    "id": null,
+    "end": 3468
+  },
+  {
+    "type": "ScrollView",
+    "start": 3470,
+    "id": "matterProfileDetailsScroll",
+    "end": 3596
+  },
+  {
+    "type": "TransactionsMasterView",
+    "start": 3609,
+    "id": "transactionMasterView",
+    "end": 3618
+  },
+  {
+    "type": "if (ok)",
+    "start": 3623,
+    "id": null,
+    "end": 3628
+  },
+  {
+    "type": "ColumnLayout",
+    "start": 3642,
+    "id": null,
+    "end": 3686
+  },
+  {
+    "type": "ModernComboBox",
+    "start": 3688,
+    "id": "entityTypeCombo",
+    "end": 3702
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 3704,
+    "id": null,
+    "end": 3707
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 3734,
+    "id": null,
+    "end": 3741
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 3765,
+    "id": null,
+    "end": 3768
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 3960,
+    "id": null,
+    "end": 3967
+  },
+  {
+    "type": "MouseArea",
+    "start": 4021,
+    "id": null,
+    "end": 4027
+  },
+  {
+    "type": "MouseArea",
+    "start": 4046,
+    "id": null,
+    "end": 4052
+  },
+  {
+    "type": "MouseArea",
+    "start": 4070,
+    "id": null,
+    "end": 4076
+  },
+  {
+    "type": "Text",
+    "start": 4104,
+    "id": null,
+    "end": 4111
+  },
+  {
+    "type": "ColumnLayout",
+    "start": 4125,
+    "id": null,
+    "end": 4169
+  },
+  {
+    "type": "ModernTextField",
+    "start": 4171,
+    "id": "matterNumberInput",
+    "end": 4186
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 4215,
+    "id": null,
+    "end": 4218
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 4264,
+    "id": null,
+    "end": 4267
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 4324,
+    "id": null,
+    "end": 4327
+  },
+  {
+    "type": "MouseArea",
+    "start": 4393,
+    "id": null,
+    "end": 4399
+  },
+  {
+    "type": "if (!root._hydrating)",
+    "start": 4417,
+    "id": null,
+    "end": 4420
+  },
+  {
+    "type": "MouseArea",
+    "start": 4447,
+    "id": null,
+    "end": 4453
+  },
+  {
+    "type": "background: Rectangle",
+    "start": 4511,
+    "id": null,
+    "end": 4518
+  },
+  {
+    "type": "background: Rectangle",
+    "start": 4535,
+    "id": null,
+    "end": 4542
+  },
+  {
+    "type": "background: Rectangle",
+    "start": 4572,
+    "id": null,
+    "end": 4579
+  },
+  {
+    "type": "PillButton",
+    "start": 4589,
+    "id": null,
+    "end": 4614
+  },
+  {
+    "type": "PillButton",
+    "start": 4616,
+    "id": null,
+    "end": 4629
+  },
+  {
+    "type": "background: Rectangle",
+    "start": 4699,
+    "id": null,
+    "end": 4704
+  },
+  {
+    "type": "contentItem: ColumnLayout",
+    "start": 4706,
+    "id": null,
+    "end": 4784
+  },
+  {
+    "type": "if (root.activeIsNewClientWizard())",
+    "start": 4793,
+    "id": null,
+    "end": 4795
+  },
+  {
+    "type": "if (root.activeIsNewMatterWizard())",
+    "start": 4796,
+    "id": null,
+    "end": 4799
+  },
+  {
+    "type": "if (initialState)",
+    "start": 4800,
+    "id": null,
+    "end": 4819
+  }
+]

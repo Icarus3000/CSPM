@@ -1,0 +1,192 @@
+CSPM Dump Exclusions and Warnings
+
+Excluded directory: C:\Projects\__CSPM\.git
+Excluded directory: C:\Projects\__CSPM\.venv_OFFICENEW_Cory
+Excluded directory: C:\Projects\__CSPM\.vscode
+Excluded directory: C:\Projects\__CSPM\archive
+Excluded directory: C:\Projects\__CSPM\backups
+Excluded directory: C:\Projects\__CSPM\build
+Excluded directory: C:\Projects\__CSPM\dist
+Excluded directory: C:\Projects\__CSPM\dumps
+Excluded directory: C:\Projects\__CSPM\logs
+Excluded directory: C:\Projects\__CSPM\outputs
+Excluded directory: C:\Projects\__CSPM\scratch
+Excluded directory: C:\Projects\__CSPM\_COPILOT_FULL_PROJECT_DUMP
+Excluded directory: C:\Projects\__CSPM\_fix_backups
+Excluded directory: C:\Projects\__CSPM\_gpt_agent_shell
+Excluded file extension : .gitignore
+Excluded file extension .spec: CSPM.spec
+Excluded prior audit file: CSPM_CURRENT_STATE_FOR_COPILOT.txt
+Excluded prior audit file: CSPM_PHASE9_A_PLUS_AUDIT.txt
+Excluded prior audit file: CSPM_PHASE9_MANUAL_TEST_CHECKLIST.txt
+Excluded prior audit file: CSPM_PROJECT_TEXT_DUMP_FOR_COPILOT.txt
+Excluded prior audit file: CSPM_PROJECT_TEXT_DUMP_FOR_COPILOT_V2.txt
+Excluded file extension .spec: CSPM_Recovery.spec
+Excluded prior audit file: CSPM_REPOSITORY_INVENTORY.txt
+Excluded due to Unicode decode error: dash_output.json
+Excluded due to Unicode decode error: excel_repo_class.py
+Excluded file extension .docx: next steps.docx
+Excluded due to Unicode decode error: pytest_ui_baseline.txt
+Excluded due to Unicode decode error: qmllint_baseline.txt
+Excluded file extension .pdf: scratch_mock_invoice.pdf
+Excluded file extension .pdf: test.pdf
+Excluded due to Unicode decode error: vba_dump.txt
+Excluded file extension .svg: assets\badgeclock.svg
+Excluded file extension .png: assets\blue main menu with skyline background.png
+Excluded file extension .svg: assets\CS.svg
+Excluded file extension .svg: assets\folder_icon_detail.svg
+Excluded file extension .svg: assets\folder_icon_simplified.svg
+Excluded file extension .zip: assets\folder_icon_svg.zip
+Excluded file extension .png: assets\glyph_black_transparent.png
+Excluded file extension .svg: assets\graph.svg
+Excluded file extension .png: assets\home_skyline_blue.png
+Excluded file extension .jpg: assets\home_skyline_bw.jpg
+Excluded file extension .png: assets\home_skyline_bw.png
+Excluded file extension .svg: assets\Premium flaming CS logo - v2.svg
+Excluded file extension .png: assets\splash_logo.png
+Excluded file extension .svg: assets\splash_logo.svg
+Excluded file extension .m4a: assets\splash_sound.m4a
+Excluded file extension .mp3: assets\splash_sound.mp3
+Excluded file extension .wav: assets\splash_sound.wav
+Excluded file extension .svg: assets\ui_layout_icon_clean.svg
+Excluded file extension .svg: assets\ui_layout_icon_detail.svg
+Excluded file extension .zip: assets\ui_layout_svg.zip
+Excluded file extension .mp3: assets\Voidbrand Impact (1.41x).mp3
+Excluded file extension .wav: assets\audio\sfx_splat_deform.wav
+Excluded file extension .wav: assets\audio\sfx_splat_heavy.wav
+Excluded file extension .wav: assets\audio\sfx_splat_light.wav
+Excluded file extension .wav: assets\audio\sfx_splat_mid.wav
+Excluded directory: C:\Projects\__CSPM\data\exports
+Excluded directory: C:\Projects\__CSPM\data\recovery_backups
+Excluded file extension .xlsm: data\CSPM.before_full_dockets_import_20260615_130310.xlsm
+Excluded file extension .xlsm: data\CSPM.before_full_dockets_import_20260615_130841.xlsm
+Excluded file extension .xlsm: data\CSPM.xlsm
+Excluded file extension .xlsm: data\CSPM_backup_before_dedupe.xlsm
+Excluded file extension .xlsm: data\CSPM_backup_pre_reimport.xlsm
+Excluded file extension .xlsm: data\Dockets.xlsm
+Excluded file extension .bak: data\dockets.xlsm.bak
+Excluded file extension .xlsm: data\Dockets_backup.xlsm
+Excluded file extension .xlsm: data\Dockets_pre_patch_2026.xlsm
+Excluded file extension .xlsm: data\__BACKUP\Dockets_2026-06-14_07-34-50.xlsm
+Excluded file extension .xlsm: data\__BACKUP\Dockets_2026-06-14_07-37-02.xlsm
+Excluded file extension .xlsm: data\__BACKUP\Dockets_2026-06-14_15-57-56.xlsm
+Excluded file extension .xlsm: data\__BACKUP\Dockets_2026-06-16_15-38-49.xlsm
+Excluded file extension .docx: docs\PLANS\Screen_by_Screen_Implementation_Plan (1).docx
+Excluded file extension .docx: docs\PLANS\Screen_by_Screen_Implementation_Plan.docx
+Excluded file extension .docx: docs\PLANS\Workbook_Schema_Specification.docx
+Excluded file extension .csv: docs\spec\ui_control_contract_matrix.csv
+Excluded file extension .csv: docs\spec\ui_control_registry.csv
+Excluded file extension .jsx: expert_client\src\main.jsx
+Excluded file extension : expert_flutter\.gitignore
+Excluded file extension .lock: expert_flutter\pubspec.lock
+Excluded file extension .png: expert_flutter\assets\brand\cs_app_icon.png
+Excluded file extension .dart: expert_flutter\lib\main.dart
+Excluded file extension .dart: expert_flutter\test\widget_test.dart
+Excluded file extension .docx: Precedents\INV 25-0051 - African Bronze Honey Company Limited - 30NOV2025.docx
+Excluded file extension .docx: Precedents\INV 26-0013 - African Bronze Honey Company Limited - 28FEB2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0013 - African Bronze Honey Company Limited - 28FEB2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0051 - A2B Directcare Inc. - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0051 - A2B Directcare Inc. - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0053 - James Bittner - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0053 - James Bittner - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0054 - PLC Group Inc. - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0054 - PLC Group Inc. - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0055 - Leviathan Private Network - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0055 - Leviathan Private Network - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0056 - Leviathan Private Network - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0056 - Leviathan Private Network - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0057 - 965 Canada - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0057 - 965 Canada - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0059 - Leviathan Private Network - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0059 - Leviathan Private Network - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0060 - Next Millennium Farms Inc. (dba Entomo Farms) - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0060 - Next Millennium Farms Inc. (dba Entomo Farms) - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0061 - Cypher Systems Inc. - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0061 - Cypher Systems Inc. - 31MAY2026.pdf
+Excluded file extension .docx: Precedents\INV 26-0062 - Libra Works Corporation - 31MAY2026.docx
+Excluded file extension .pdf: Precedents\INV 26-0062 - Libra Works Corporation - 31MAY2026.pdf
+Excluded file extension .csv: schema\transactions_master.accounts.seed.csv
+Excluded file extension .csv: schema\transactions_master.business_units.seed.csv
+Excluded file extension .csv: schema\transactions_master.categories.seed.csv
+Excluded file extension .csv: schema\transactions_master.columns.csv
+Excluded file extension .csv: schema\transactions_master.payees.seed.csv
+Excluded due to Unicode decode error: scripts\25_fix_style_and_qml_scope.ps1
+Excluded due to Unicode decode error: scripts\60_frameless_round_glow.ps1
+Excluded file extension .iss: scripts\cspm_installer.iss
+Excluded file extension .ico: src\assets\app_icon.ico
+Excluded file extension .png: src\assets\app_icon_preview.png
+Excluded file extension .png: src\assets\cspm_exe_icon_preview.png
+Excluded directory: C:\Projects\__CSPM\src\python\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\backend\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\backend\controllers\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\bootstrap\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\domain\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\platform\__pycache__
+Excluded file extension .sql: src\python\prototypes\sqlite_architecture\schema.sql
+Excluded directory: C:\Projects\__CSPM\src\python\repositories\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\services\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\tray\__pycache__
+Excluded directory: C:\Projects\__CSPM\src\python\utils\__pycache__
+Excluded file extension : src\qml\qmldir
+Excluded file extension .svg: src\qml\assets\badgeclock.svg
+Excluded file extension .svg: src\qml\assets\CS.svg
+Excluded file extension .wav: src\qml\assets\audio\sfx_deform_pop.wav
+Excluded file extension .wav: src\qml\assets\audio\sfx_impact_heavy.wav
+Excluded file extension .wav: src\qml\assets\audio\sfx_impact_light.wav
+Excluded file extension .wav: src\qml\assets\audio\sfx_impact_mid.wav
+Excluded file extension .svg: src\qml\assets\backgrounds\cityscape_crimson.svg
+Excluded file extension .svg: src\qml\assets\backgrounds\cityscape_emerald.svg
+Excluded file extension .svg: src\qml\assets\backgrounds\cityscape_sapphire.svg
+Excluded file extension .svg: src\qml\assets\backgrounds\toronto_skyline_mono.svg
+Excluded file extension .svg: src\qml\assets\icons\clients.svg
+Excluded file extension .svg: src\qml\assets\icons\expenses.svg
+Excluded file extension .svg: src\qml\assets\icons\fee.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_critical_dates_docketing.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_critical_dates_docketing_triangle_frame.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_critical_shield.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_document_folder.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_financial_chart.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_financial_forecaster.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_matter_board.svg
+Excluded file extension .svg: src\qml\assets\icons\hub_matter_kanban.svg
+Excluded file extension .svg: src\qml\assets\icons\invoices.svg
+Excluded file extension .svg: src\qml\assets\icons\payments.svg
+Excluded file extension .svg: src\qml\assets\icons\reports.svg
+Excluded file extension .svg: src\qml\assets\icons\tax.svg
+Excluded file extension .svg: src\qml\assets\icons\ticklers.svg
+Excluded file extension .svg: src\qml\assets\icons\time.svg
+Excluded file extension : src\qml\standards\qmldir
+Excluded file extension : src\qml\tray\qmldir
+Excluded file extension : src\qml\views\placeholder\qmldir
+Excluded file extension .docx: src\templates\invoices\Concept_A.docx
+Excluded file extension .docx: src\templates\invoices\LIHDC_Format.docx
+Excluded file extension .docx: src\templates\invoices\Standard_Elite.docx
+Excluded directory: C:\Projects\__CSPM\src\web\practice_briefing\dist
+Excluded file extension : src\web\practice_briefing\.gitignore
+Excluded file extension .svg: src\web\practice_briefing\public\favicon.svg
+Excluded file extension .svg: src\web\practice_briefing\public\icons.svg
+Excluded file extension .jsx: src\web\practice_briefing\src\App.jsx
+Excluded file extension .jsx: src\web\practice_briefing\src\main.jsx
+Excluded file extension .png: src\web\practice_briefing\src\assets\hero.png
+Excluded file extension .svg: src\web\practice_briefing\src\assets\react.svg
+Excluded file extension .svg: src\web\practice_briefing\src\assets\vite.svg
+Excluded directory: C:\Projects\__CSPM\src\web\productivity_dashboard\dist
+Excluded file extension : src\web\productivity_dashboard\.gitignore
+Excluded file extension .svg: src\web\productivity_dashboard\public\favicon.svg
+Excluded file extension .svg: src\web\productivity_dashboard\public\icons.svg
+Excluded file extension .jsx: src\web\productivity_dashboard\src\App.jsx
+Excluded file extension .jsx: src\web\productivity_dashboard\src\main.jsx
+Excluded file extension .png: src\web\productivity_dashboard\src\assets\hero.png
+Excluded file extension .svg: src\web\productivity_dashboard\src\assets\react.svg
+Excluded file extension .svg: src\web\productivity_dashboard\src\assets\vite.svg
+Excluded file extension .jsx: src\web\productivity_dashboard\src\components\AnnualForecast.jsx
+Excluded file extension .jsx: src\web\productivity_dashboard\src\components\MetricCard.jsx
+Excluded file extension .jsx: src\web\productivity_dashboard\src\components\PipelineChart.jsx
+Excluded file extension .jsx: src\web\productivity_dashboard\src\components\ProductionChart.jsx
+Excluded file extension .jsx: src\web\productivity_dashboard\src\components\TopClients.jsx
+Excluded directory: C:\Projects\__CSPM\tests\__pycache__
+Excluded directory: C:\Projects\__CSPM\tests\repositories\__pycache__
+Excluded directory: C:\Projects\__CSPM\tests\ui\__pycache__
+Excluded directory: C:\Projects\__CSPM\_cspm_workspace\change_backups
+Excluded directory: C:\Projects\__CSPM\_cspm_workspace\dump_packs
+Excluded file extension .xlsm: _cspm_workspace\workbook_backups\CSPM_before_AP_schema_20260717_173451.xlsm

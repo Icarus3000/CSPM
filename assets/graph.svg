@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 512 512"
+     width="100%" height="100%"
+     shape-rendering="geometricPrecision">
+
+  <!-- Two-color system -->
+  <style>
+    :root{
+      --bckcolor:#000;  /* black strokes */
+      --forecolor:#fff; /* white background / circle centers */
+    }
+  </style>
+
+  <!-- Background (optional but makes it explicit) -->
+  <rect x="0" y="0" width="512" height="512" fill="var(--forecolor)"/>
+
+  <!-- =========================================================
+       1) L-SHAPED AXES
+       ========================================================= -->
+  <g stroke="var(--bckcolor)" stroke-linecap="round" fill="none">
+    <!-- Tuned to match the reference proportions -->
+    <line x1="72" y1="440" x2="72" y2="72"  stroke-width="28"/>
+    <line x1="72" y1="440" x2="440" y2="440" stroke-width="28"/>
+  </g>
+
+  <!-- =========================================================
+       (Methodical Step 2: the circles)
+       We define their positions here (and draw them later on top).
+       Points are spaced to match the reference layout.
+       ========================================================= -->
+
+  <!-- =========================================================
+       3) GRAPH LINE (DRAWN UNDER CIRCLES to eliminate gaps)
+       ========================================================= -->
+  <g fill="none"
+     stroke="var(--bckcolor)"
+     stroke-width="19"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <!-- Line runs THROUGH the circle centers.
+         The circles are drawn on top with white fill and black ring,
+         which “punches out” the line inside the dot and prevents gaps. -->
+    <polyline points="
+      143.4,348.2
+      220.2,245.8
+      286.7,281.6
+      358.4,184.3
+    "/>
+  </g>
+
+  <!-- =========================================================
+       2) HOLLOW CIRCLES (DRAWN ON TOP)
+       ========================================================= -->
+  <g fill="var(--forecolor)"
+     stroke="var(--bckcolor)"
+     stroke-width="12"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+    <!-- Dot radius and ring thickness match the reference feel -->
+    <circle cx="143.4" cy="348.2" r="23"/>
+    <circle cx="220.2" cy="245.8" r="23"/>
+    <circle cx="286.7" cy="281.6" r="23"/>
+    <circle cx="358.4" cy="184.3" r="23"/>
+  </g>
+
+</svg>

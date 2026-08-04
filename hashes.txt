@@ -1,0 +1,10 @@
+
+Algorithm       Hash                                                                   Path
+---------       ----                                                                   ----
+SHA256          25CFC7747A11452EDDB54AE7E407C70D1F603FF15DA2BE12A01943D468F72D71       C:\Projects\__CSPM\data\CSPM.xlsm
+
+
+Algorithm       Hash                                                                   Path
+---------       ----                                                                   ----
+SHA256          14EF7859137A2C4A9B40873AD1907562A89EDD15C1BCE87FB04774776DE9350D       C:\Projects\__CSPM\data\Dockets.…
+

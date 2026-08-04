@@ -1,0 +1,310 @@
+[
+  {
+    "module": "home",
+    "nodeId": "H01"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A01"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A02"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A03"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A04"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A06"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A08"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A05"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A15"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A09"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A10"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A11"
+  },
+  {
+    "module": "clients",
+    "nodeId": "A14"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B01"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B02"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B03"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B04"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B05"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B06"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B18"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B07"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B08"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B09"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B10"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B11"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B12"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B13"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B14"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B15"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B16"
+  },
+  {
+    "module": "docketing",
+    "nodeId": "B17"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C01"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C02"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C03"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C04"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C05"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C06"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C07"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C08"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C09"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C10"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C11"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C18"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C12"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C13"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C16"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C17"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C14"
+  },
+  {
+    "module": "billing",
+    "nodeId": "C15"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D01"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D02"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D03"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D04"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D05"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D06"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D07"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D08"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D09"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D10"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D11"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D13"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D14"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D15"
+  },
+  {
+    "module": "finance",
+    "nodeId": "D16"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X01"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X02"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X03"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X04"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X05"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X06"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X07"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X08"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X09"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X10"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X11"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X12"
+  },
+  {
+    "module": "finance",
+    "nodeId": "X13"
+  }
+]

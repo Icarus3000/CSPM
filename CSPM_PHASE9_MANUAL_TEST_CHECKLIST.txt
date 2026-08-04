@@ -1,0 +1,64 @@
+CSPM PHASE 9 MANUAL TEST CHECKLIST
+
+Test ID: MTC-001
+Preconditions: Application is not running.
+Exact Actions: Run `.\launch.ps1` outside the sandbox. Verify Professional splash appears exactly once, followed by the main window.
+Expected Result: No visible overlap or first-frame flash between splash and main window.
+Evidence: User visual confirmation.
+Pass/Fail: [ ]
+Notes: 
+Severity if failed: Medium
+
+Test ID: MTC-002
+Preconditions: Main application open in Professional mode.
+Exact Actions: Open 'Clients & Matters' rail -> 'New Matter'. Open 'Client' dropdown. Select 'new client' option.
+Expected Result: New Client Wizard opens and focuses correctly.
+Evidence: User visual confirmation.
+Pass/Fail: [ ]
+Notes: 
+Severity if failed: High
+
+Test ID: MTC-003
+Preconditions: Application open.
+Exact Actions: Close main window via 'X' button with 'keepTrayAlive' setting enabled.
+Expected Result: Window hides. Tray icon remains.
+Evidence: User visual confirmation.
+Pass/Fail: [ ]
+Notes: 
+Severity if failed: High
+
+Test ID: MTC-004
+Preconditions: Application running in headless tray mode.
+Exact Actions: Launch application again from shortcut (duplicate launch).
+Expected Result: Existing headless process wakes up and brings UI to the front. The new process terminates.
+Evidence: User visual confirmation.
+Pass/Fail: [ ]
+Notes: 
+Severity if failed: High
+
+Test ID: MTC-005
+Preconditions: Application running in headless tray mode.
+Exact Actions: Click system tray icon to open flyout. Click anywhere else to dismiss. Click tray icon again. Hit ESC while open.
+Expected Result: Toggles correctly. Does not immediately reopen upon dismissal via tray click. Closes with ESC.
+Evidence: User visual confirmation.
+Pass/Fail: [ ]
+Notes: (Recently fixed behavior)
+Severity if failed: Medium
+
+Test ID: MTC-006
+Preconditions: Master server unreachable (offline). Application running.
+Exact Actions: Perform an action that writes data. Restart application.
+Expected Result: Native QMessageBox prompts to resolve conflict (Keep Local vs. Use Cloud) before QML loads.
+Evidence: User visual confirmation.
+Pass/Fail: [ ]
+Notes: 
+Severity if failed: Critical
+
+Test ID: MTC-007
+Preconditions: Application open with unsaved dirty tabs.
+Exact Actions: Trigger Windows shutdown or kill process via Task Manager (graceful).
+Expected Result: `force_shutdown_save()` fires, saving running timers automatically.
+Evidence: Check database for auto-saved entries upon reboot.
+Pass/Fail: [ ]
+Notes: 
+Severity if failed: Critical

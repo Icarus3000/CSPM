@@ -1,0 +1,86 @@
+CSPM CURRENT STATE HANDOFF FOR COPILOT
+Date: 2026-07-30T07:50:45
+Git Branch: (Unknown/Detached)
+Working Tree: Clean expected (pre-commit review state)
+
+PROJECT OVERVIEW
+CSPM is a legal practice management desktop application backed by a canonical Excel database (CSPM.xlsm). It provides docketing, billing, finance, reports, and client/matter management.
+
+CURRENT ARCHITECTURE & STORAGE
+- UI: Qt/QML (PySide6) with 'Console' (legacy) and 'Professional' (Option 3 shell) themes.
+- Backend: Python
+- Storage: Excel workbook (CSPM.xlsm) as a headless datastore. Future transition planned for SQLite.
+- Desktop Shell: Headless system tray mode implemented for background tasks/syncing.
+
+ENTRY POINTS
+- User Launch: launch.ps1
+- Build: scripts/build_release.py
+- Testing: pytest
+
+MAJOR WORKFLOWS
+- Client & Matter Creation (Wizards)
+- Time & Fee Docketing
+- WIP-to-Bill Workbench & Invoicing
+- Accounts Payable & Disbursements
+- Financial Dashboards & Ledgers
+- Offline Sync with Conflict Resolution
+
+SCREEN INVENTORY
+- New Client / New Matter Wizards
+- Time Docket Entry
+- WIP-to-Bill Workbench
+- Invoice Builder
+- Client/Matter Profile 360
+- Docket Activity Report
+- Transactions Master
+- System Tray Timekeeping Flyout (recent)
+
+CURRENT DEVELOPMENT STATUS
+- Phase 9 (Controlled Cleanup and Release-Gate Correction) is functionally complete but requires final objective validation for A+ closure.
+- Headless System Tray Architecture & Offline Sync were recently implemented.
+
+RECONSTRUCTED PHASE 9 SCOPE
+Phase 9 is a technical cleanup phase ensuring the repo is in a controlled pre-commit review state before moving to Phase 10. Focus: resolving handle leaks, proving VBA payload preservation, controlled reproducible builds, UI-to-recovery workflow validation.
+
+SIGNIFICANT CHANGES SINCE PRIOR CHECKPOINT
+- Headless System Tray with IPC wakeup implemented.
+- Offline push tracking and conflict resolution added.
+- Legacy theme options stripped (only Light and Dark remain).
+- RecoveryEngine state machine handling validated.
+
+SCORECARD SUMMARY
+Overall Score: 92 (A-)
+Lowest Category: Regression Confidence (85)
+
+FINDINGS & RISKS
+- QML integration to recovery controllers is unvalidated (Medium).
+- Release pipeline requires reproducible build verification (High).
+- Testing is currently static/sandbox-safe; real-world WebEngine checks remain (High).
+
+TESTING PERFORMED
+- Sandbox-safe static checks, qmllint.
+- Python compile checks.
+- System Tray offline sync toggle fixed manually.
+
+TESTING NOT PERFORMED
+- UI-to-recovery full integration validation.
+- Live-data safe mutation checks across all screens.
+- Release pipeline executable validation.
+
+FINAL GATE RECOMMENDATION
+C. PHASE 9 NOT YET A+ - TARGETED WORK REMAINS
+
+EXACT NEXT ACTIONS
+1. Execute full UI-to-recovery workflow validation.
+2. Execute controlled reproducible release builds.
+3. Validate QML manual screens (New Client/Matter flows).
+
+IMPORTANT FILE PATHS
+- implementation_plan.md
+- _cspm_workspace/CURRENT_STATUS.md
+- _cspm_workspace/WORKSPACE_PLAN.md
+- docs/MANUAL_SCREEN_REPORT_AUDIT.md
+
+QUESTIONS FOR CORY
+1. Has the governed macro test fixture for VBA preservation been approved?
+2. Are there any specific screens blocking the final validation?

@@ -1,0 +1,78 @@
+VBA MACRO frmTestDashboard.frm
+in file: xl/vbaProject.bin - OLE stream: 'VBA/frmTestDashboard'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+(empty macro)
+-------------------------------------------------------------------------------
+VBA MACRO mod_Builder_Core.bas
+in file: xl/vbaProject.bin - OLE stream: 'VBA/mod_Builder_Core'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Option Explicit
+
+' ==============================================================================
+' MODULE: mod_Builder_Core (v98.0 - TRASH & BURN STRATEGY)
+' PURPOSE: Builds the UserForm directly in VBE memory.
+' FIXES: Prevents Error 75 (Permission Denied) by renaming old forms before removal.
+' ==============================================================================
+
+Public Sub Build_Modern_Dialog_Form()
+On Error GoTo ErrHandler
+
+Dim vbProj As Object
+Dim vbComps As Object
+Dim vbComp As Object
+Dim sCode As String
+Dim i As Long
+Dim trashName As String
+
+Set vbProj = ThisWorkbook.VBProject
+Set vbComps = vbProj.VBComponents
+
+' 1. AGGRESSIVE CLEANUP (Trash Strategy)
+On Error Resume Next
+
+' Unload instances
+For i = VBA.UserForms.count - 1 To 0 Step -1
+If VBA.UserForms(i).name = "frmModernDialog" Then Unload VBA.UserForms(i)
+Next i
+DoEvents
+
+' Rename old form to trash (avoids lock) and remove
+Set vbComp = vbComps("frmModernDialog")
+If Not vbComp Is Nothing Then
+trashName = "TRASH_" & Format(Now, "hhmmss")
+vbComp.name = trashName
+vbComps.Remove vbComp
+End If
+DoEvents
+On Error GoTo ErrHandler
+
+' 2. CREATE NEW BLANK FORM
+Set vbComp = vbComps.Add(3) ' vbext_ct_MSForm
+vbComp.name = "frmModernDialog"
+
+' 3. BUILD VISUALS (Programmatic Designer)
+mod_Source_Injector.Build_Designer vbComp.designer
+
+' 4. PROPERTIES (Safe Set)
+On Error Resume Next
+vbComp.Properties("Caption") = "Modern Dialog"
+vbComp.Properties("ClientHeight") = 3200
+vbComp.Properties("ClientWidth") = 6000
+vbComp.Properties("StartUpPosition") = 1
+On Error GoTo ErrHandler
+
+' 5. INJECT CODE
+sCode = mod_Source_Injector.Get_All_Code()
+With vbComp.CodeModule
+If .CountOfLines > 0 Then .DeleteLines 1, .CountOfLines
+.AddFromString sCode
+End With
+
+Debug.Print "Modern Dialog Rebuilt Successfully: " & Now
+MsgBox "Form Rebuilt Successfully.", vbInformation
+Exit Sub
+
+ErrHandler:
+MsgBox "Builder Error: " & err.description, vbCritical
+End Sub
+-------------------------------------------------------------------------------

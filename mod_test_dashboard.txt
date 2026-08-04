@@ -1,0 +1,280 @@
+VBA MACRO modTestDashboard.bas
+in file: xl/vbaProject.bin - OLE stream: 'VBA/modTestDashboard'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Option Explicit
+
+' ==============================================================================
+' MODULE: modTestDashboard (v122.0 - DIAGNOSTIC TRACER)
+' PURPOSE: Granular error trapping to identify runtime control creation failures.
+' REF: Engineering Memo 2026-01-29 (v122 Diagnostic Patch)
+' ==============================================================================
+
+Public Const DASHBOARD_SHORTCUT As String = "^+Q"
+Private m_ColHooks As Collection
+
+Public Sub Init_Dashboard_Shortcut()
+On Error Resume Next
+Application.OnKey DASHBOARD_SHORTCUT, "modTestDashboard.Launch_Test_Dashboard"
+On Error GoTo 0
+End Sub
+
+Public Sub Launch_Test_Dashboard()
+On Error GoTo ErrHandler
+
+' 1. CLEANUP
+On Error Resume Next
+Dim oldFrm As Object
+For Each oldFrm In UserForms
+If oldFrm.name = "frmModernDialog" Then Unload oldFrm
+Next oldFrm
+On Error GoTo ErrHandler
+
+' 2. CREATE FRESH INSTANCE
+modUI_Wrappers.MD_ApplyBaselineAnimation
+Dim frm As Object
+Set frm = modUI_Wrappers.MD_CreateSafe()
+If frm Is Nothing Then Exit Sub
+
+' 3. INIT GEOMETRY
+frm.Init "UNIT TEST CONSOLE (TRACER)", False, True
+frm.Width = 635
+
+' *** PRE-SHOW REALIZE (S3) ***
+frm.StartUpPosition = 0
+frm.Top = -5000
+frm.Show 0
+DoEvents
+
+' 4. PREPARE DATA
+Dim arrTests As Variant
+arrTests = GetTestList()
+Dim testCount As Long: testCount = UBound(arrTests) - LBound(arrTests) + 1
+
+' 5. CONFIGURE CONTAINER
+Dim frame As Object
+Set frame = frm.Controls("fraList")
+
+' Log Container State
+Debug.Print "Container: " & frame.name & " | Type: " & TypeName(frame)
+
+Const ROW_H As Single = 30
+Dim listHeight As Single
+If testCount > 10 Then
+listHeight = (10 * ROW_H) + 10
+frame.ScrollBars = 2
+frame.ScrollHeight = (testCount * ROW_H) + 10
+frame.Width = 605
+Else
+listHeight = (testCount * ROW_H) + 10
+frame.ScrollBars = 0
+End If
+frame.Height = listHeight
+
+' 6. POPULATE (TRACER MODE)
+Set m_ColHooks = New Collection
+Dim topPos As Single: topPos = 5
+Dim i As Long
+Dim tName As String
+Dim safeIndex As String
+
+For i = LBound(arrTests) To UBound(arrTests)
+tName = Trim$(CStr(arrTests(i)))
+' Correctness Hardening: LBound-safe index
+safeIndex = Format$((i - LBound(arrTests)) + 1, "000")
+
+' CALL TRACER BUILDER
+topPos = AddTestRow_Direct(frm, frame, safeIndex, tName, GetTestDescription(tName), topPos)
+Next i
+
+' 7. FOOTER
+Dim footerTop As Single
+footerTop = frame.Top + frame.Height + 15
+frm.Controls("txtLog").Top = footerTop
+frm.Controls("fraSaveBorder").Top = footerTop
+frm.Controls("fraThemeBorder").Top = footerTop + 50
+
+' Hooks & Visuals
+Dim saveHook As clsRuntimeClose
+Set saveHook = New clsRuntimeClose
+Set saveHook.btn = frm.Controls("fraSaveBorder").Controls("cmdDashboardSave")
+Set saveHook.ParentForm = frm
+m_ColHooks.Add saveHook
+
+Mod_UI_Styles.ApplyThemeToForm frm, mod_Config.CurrentThemeIndex
+
+' 8. PRESENTATION
+Dim reqH As Single
+reqH = footerTop + 100 + 45
+frm.ManualLayout = True
+frm.Height = reqH
+frm.Left = Application.Left + (Application.Width - frm.Width) / 2
+frm.Top = Application.Top + (Application.Height - frm.Height) / 2
+
+Exit Sub
+
+ErrHandler:
+MsgBox "DIAGNOSTIC FAILURE:" & vbCrLf & _
+"Err.Number: " & err.Number & vbCrLf & _
+"Err.Source: " & err.Source & vbCrLf & _
+"Err.Description: " & err.description, vbCritical
+On Error Resume Next
+Unload frm
+End Sub
+
+' *** V122 TRACER: DETAILED ERROR REPORTING ***
+Private Function AddTestRow_Direct(frm As Object, container As Object, idx As String, realMacroName As String, caption As String, ByVal y As Single) As Single
+Dim sAction As String, sTarget As String
+Dim btnRun As Object, btnPass As Object, btnFail As Object
+Dim hook As clsTestRow
+
+On Error GoTo RowErr
+
+' ACTION 1: ADD RUN BUTTON
+sAction = "Add Run Button"
+sTarget = "run_" & idx
+' Attempt Add (Direct to Container, No Wrapper Frame)
+Set btnRun = container.Controls.Add("Forms.CommandButton.1", sTarget)
+
+' Explicit 'Nothing' Check
+If btnRun Is Nothing Then err.Raise vbObjectError + 1001, "AddTestRow_Direct", "Controls.Add returned Nothing for " & sTarget
+
+sAction = "Configure Run Button"
+With btnRun
+.caption = caption
+.Top = y: .Left = 0: .Width = 450: .Height = 24
+.Tag = realMacroName
+End With
+
+' ACTION 2: ADD PASS BUTTON
+sAction = "Add Pass Button"
+sTarget = "pass_" & idx
+Set btnPass = container.Controls.Add("Forms.CommandButton.1", sTarget)
+
+If btnPass Is Nothing Then err.Raise vbObjectError + 1002, "AddTestRow_Direct", "Controls.Add returned Nothing for " & sTarget
+
+With btnPass
+.caption = "PASS": .Top = y: .Left = 460: .Width = 60: .Height = 26
+End With
+
+' ACTION 3: ADD FAIL BUTTON
+sAction = "Add Fail Button"
+sTarget = "fail_" & idx
+Set btnFail = container.Controls.Add("Forms.CommandButton.1", sTarget)
+
+If btnFail Is Nothing Then err.Raise vbObjectError + 1003, "AddTestRow_Direct", "Controls.Add returned Nothing for " & sTarget
+
+With btnFail
+.caption = "FAIL": .Top = y: .Left = 525: .Width = 60: .Height = 26
+End With
+
+' ACTION 4: HOOK WIRING
+sAction = "Hook Wiring"
+sTarget = "clsTestRow"
+Set hook = New clsTestRow
+Set hook.btnRun = btnRun
+Set hook.btnPass = btnPass
+Set hook.btnFail = btnFail
+hook.TestName = realMacroName
+Set hook.ParentForm = frm
+m_ColHooks.Add hook
+
+AddTestRow_Direct = y + 30
+Exit Function
+
+RowErr:
+' Log and propagate failure without 'End'
+MsgBox "MICRO-TEST FAILURE" & vbCrLf & _
+"Action: " & sAction & vbCrLf & _
+"Target: " & sTarget & vbCrLf & _
+"Err.Number: " & err.Number & vbCrLf & _
+"Err.Source: " & err.Source & vbCrLf & _
+"Err.Description: " & err.description, vbCritical
+
+AddTestRow_Direct = y
+End Function
+
+' --- HELPERS ---
+Private Function GetTestList() As Variant
+Dim s As String
+s = "Test_1_Immovable_Blocked,Test_1a_Hybrid,Test_1_1_No_Footer," & _
+"Test_2_Movable_Blocked,Test_3_Taskbar,Test_4_Independent," & _
+"Test_6_Toast_Notification,Test_7_Simple_Input,Test_11_Client_List"
+GetTestList = Split(s, ",")
+End Function
+
+Private Function GetTestDescription(ByVal tName As String) As String
+Select Case tName
+Case "Test_1_Immovable_Blocked": GetTestDescription = "1. Locked Dialog (Standard)"
+Case "Test_1a_Hybrid": GetTestDescription = "1a. Hybrid Multipage"
+Case "Test_1_1_No_Footer": GetTestDescription = "1.1. No Footer / Message Only"
+Case "Test_2_Movable_Blocked": GetTestDescription = "2. Movable Dialog"
+Case "Test_3_Taskbar": GetTestDescription = "3. Taskbar Mode"
+Case "Test_4_Independent": GetTestDescription = "4. Modeless (Excel Active)"
+Case "Test_6_Toast_Notification": GetTestDescription = "6. Toast Notification"
+Case "Test_7_Simple_Input": GetTestDescription = "7. Simple Input Box"
+Case "Test_11_Client_List": GetTestDescription = "11. Complex Client List"
+Case Else: GetTestDescription = Replace(tName, "Test_", "")
+End Select
+End Function
+
+Public Sub RefreshDashboardVisuals(ByVal frm As Object)
+On Error Resume Next
+Dim hook As clsTestRow
+For Each hook In m_ColHooks
+hook.RecallSavedState
+Next hook
+End Sub
+
+Public Sub ToggleTestStatus(ByVal TestName As String, ByVal ClickedType As String, ByVal btnPass As Object, ByVal btnFail As Object)
+' Stub for visual refresh logic
+Dim CurrentState As String
+CurrentState = GetTestState(TestName)
+Dim NewState As String
+If ClickedType = "PASS" Then
+If CurrentState = "PASS" Then NewState = "NONE" Else NewState = "PASS"
+ElseIf ClickedType = "FAIL" Then
+If CurrentState = "FAIL" Then NewState = "NONE" Else NewState = "FAIL"
+End If
+SaveTestState TestName, NewState
+ApplyVisuals NewState, btnPass, btnFail
+End Sub
+
+Public Sub ApplyVisuals(ByVal State As String, ByVal btnPass As Object, ByVal btnFail As Object)
+On Error Resume Next
+Select Case UCase$(State)
+Case "NONE"
+btnPass.backColor = &H333333: btnPass.foreColor = &HFFFFFF: btnPass.Font.Bold = False
+btnFail.backColor = &H333333: btnFail.foreColor = &HFFFFFF: btnFail.Font.Bold = False
+Case "PASS"
+btnPass.backColor = &H388E3C: btnPass.foreColor = &HFFFFFF: btnPass.Font.Bold = True
+btnFail.backColor = &H333333: btnFail.foreColor = &HFFFFFF: btnFail.Font.Bold = False
+Case "FAIL"
+btnPass.backColor = &H333333: btnPass.foreColor = &HFFFFFF: btnPass.Font.Bold = False
+btnFail.backColor = &HB71C1C: btnFail.foreColor = &HFFFFFF: btnFail.Font.Bold = True
+End Select
+On Error GoTo 0
+End Sub
+
+Public Function GetTestState(ByVal TestName As String) As String
+On Error Resume Next
+Dim ws As Worksheet: Set ws = ThisWorkbook.Sheets("z_TestState")
+If ws Is Nothing Then GetTestState = "NONE": Exit Function
+Dim f As Range: Set f = ws.Columns(1).Find(TestName, LookIn:=xlValues, LookAt:=xlWhole)
+If Not f Is Nothing Then GetTestState = UCase$(Trim$(CStr(f.Offset(0, 1).value))) Else GetTestState = "NONE"
+End Function
+
+Public Sub SaveTestState(ByVal TestName As String, ByVal status As String)
+On Error Resume Next
+Dim ws As Worksheet
+Set ws = ThisWorkbook.Sheets("z_TestState")
+If ws Is Nothing Then Set ws = ThisWorkbook.Sheets.Add: ws.name = "z_TestState": ws.Visible = xlSheetVeryHidden
+Dim f As Range: Set f = ws.Columns(1).Find(TestName, LookIn:=xlValues, LookAt:=xlWhole)
+If f Is Nothing Then Set f = ws.Cells(ws.rows.count, 1).End(xlUp).Offset(1, 0): f.value = TestName
+f.Offset(0, 1).value = UCase$(status)
+End Sub
+
+Public Sub GenerateTestReport()
+MsgBox "Report Generation Stub", vbInformation
+End Sub
+
+-------------------------------------------------------------------------------

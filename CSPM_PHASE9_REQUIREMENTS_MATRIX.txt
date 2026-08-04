@@ -1,0 +1,106 @@
+CSPM PHASE 9 REQUIREMENTS MATRIX
+Generated: 2026-07-30
+
+Original Phase 9 Requirements
+================================================================================
+REQ-001 | Handle Leaks Fixed
+Source: WORKSPACE_PLAN.md
+Purpose: Prevent ctypes handle leaks and invalid pointer comparisons in cspm_recovery.py.
+Affected Code: src/python/backend/cspm_recovery.py
+Automated Tests: test_cspm_recovery_durable.py
+Runtime Tests: Recovery under live application cycle.
+Current Implementation Status: Completed.
+Current Verification Status: Completed.
+Evidence: Current status says "Fixed ctypes handle leaks".
+Blocker Severity: High (if regressed).
+Closure Condition: All handle-related tests pass and code is integrated.
+
+REQ-002 | Recovery State Machine Assertions (Gate 3)
+Source: CURRENT_STATUS.md
+Purpose: Prove correct Error 32 sharing-violation handling on isolated disposable targets (Windows Lock Boundary Test).
+Affected Code: cspm_recovery.py
+Automated Tests: test_cspm_recovery_durable.py
+Runtime Tests: Lock testing on real UI.
+Current Implementation Status: Completed.
+Current Verification Status: Completed.
+Evidence: "Gate 3 (Windows Lock Boundary Test) is complete" in CURRENT_STATUS.md.
+Blocker Severity: High.
+Closure Condition: Lock boundaries are robust.
+
+REQ-003 | VBA Payload Preservation (Gate 2A)
+Source: WORKSPACE_PLAN.md, CURRENT_STATUS.md
+Purpose: Prove that workbook operations do not strip or corrupt the existing VBA payload in CSPM.xlsm.
+Affected Code: excel_repo.py, data/CSPM.xlsm
+Automated Tests: Governed macro test fixture.
+Runtime Tests: Manual validation of macro enablement.
+Current Implementation Status: Completed.
+Current Verification Status: Pending human approval.
+Evidence: "Gate 2A is complete and the provenance manifest is pending human approval."
+Blocker Severity: Critical.
+Closure Condition: Governed test fixture is approved by Cory.
+
+REQ-004 | Controlled Reproducible Release Builds
+Source: WORKSPACE_PLAN.md
+Purpose: Prove the release pipeline can repeatedly generate a valid executable without developer-machine leakage.
+Affected Code: scripts/build_release.py, PyInstaller spec
+Automated Tests: build_release.py validations.
+Runtime Tests: Running CSPM.exe outside sandbox.
+Current Implementation Status: Completed.
+Current Verification Status: Pending verification.
+Evidence: "Execute controlled reproducible release builds" marked as pending next phase.
+Blocker Severity: High.
+Closure Condition: CSPM.exe builds and launches correctly.
+
+REQ-005 | Full UI-to-Recovery Workflow Validation
+Source: WORKSPACE_PLAN.md
+Purpose: Validate QML-to-controller-to-recovery integration.
+Affected Code: TrayRoot.qml, main.py, tray_controller.py
+Automated Tests: UI integration tests (if any).
+Runtime Tests: End-to-end recovery test via GUI.
+Current Implementation Status: Implemented.
+Current Verification Status: Pending.
+Evidence: "User-visible success, failure, and cancellation behaviour must be included in later integration validation".
+Blocker Severity: High.
+Closure Condition: Manual/automated verification of QML prompts during recovery.
+
+Regression Surface (Post-Phase 9 features added that impact Phase 9 closure)
+================================================================================
+REQ-REG-001 | Headless System Tray & IPC Wakeup
+Source: HANDOFF_20260730_SYSTEM_TRAY_OFFLINE_SYNC.md
+Purpose: Allow app to run in background.
+Affected Code: main.py, TrayRoot.qml, TrayTimekeepingFlyout.qml
+Automated Tests: test_tray*.qml
+Runtime Tests: Background operation, toggling, duplicate launch wakeup.
+Current Implementation Status: Completed.
+Current Verification Status: Partially Verified.
+Evidence: Fix implemented today for toggle logic. Wakeup IPC verified.
+Blocker Severity: Medium.
+Closure Condition: Tray toggles correctly and headless mode works without resource leaks.
+
+REQ-REG-002 | Offline Sync Conflict Resolution
+Source: HANDOFF_20260730_SYSTEM_TRAY_OFFLINE_SYNC.md
+Purpose: Handle offline_dirty state across restarts.
+Affected Code: sync_service.py, app_controller.py
+Automated Tests: None known.
+Runtime Tests: Forcing offline, writing, rebooting.
+Current Implementation Status: Completed.
+Current Verification Status: Unverified.
+Evidence: "Checks if Master Excel file's modified time is newer... raises a native QMessageBox".
+Blocker Severity: Critical (UI freeze risk).
+Closure Condition: Startup prompt does not deadlock Qt event loop.
+
+REQ-REG-003 | Force Shutdown Saves
+Source: HANDOFF_20260730_SYSTEM_TRAY_OFFLINE_SYNC.md
+Purpose: Save running timers gracefully on shutdown.
+Affected Code: tray_controller.py, app_controller.py
+Automated Tests: None known.
+Runtime Tests: Graceful OS shutdown with active timer.
+Current Implementation Status: Completed.
+Current Verification Status: Unverified.
+Evidence: Implemented `force_shutdown_save()`.
+Blocker Severity: High.
+Closure Condition: Timers are saved upon SIGTERM/WM_CLOSE.
+
+
+### Phase 9 Gate B Update (2026-07-30)
+Phase 9 Engineering Complete - Gate B. Planning documents and evidence preserved.

@@ -1,0 +1,118 @@
+
+============================================================
+  CSPM PHASE 9 CANDIDATE REVIEW (READ-ONLY)
+============================================================
+
+  Live workbook hashes loaded: 2
+
+============================================================
+  CANDIDATE: CSPM.xlsm Template
+============================================================
+  Path:           C:\Projects\__CSPM\src\templates\CSPM.xlsm
+  Exists:         True
+  Size:           33,917 bytes
+  SHA-256:        514EAE59BC706FD4E1CD872E515F95BCDD5D05EB74317C6F099BDC9469FAA6CB
+  Valid XLSM:     True
+  Macro-enabled:  True
+  Has VBA:        False
+  Worksheets:     20
+    - Parents
+    - Clients
+    - ClientProfiles
+    - Matters
+    - TimeEntries
+    - Trademarks
+    - Transactions
+    - TransactionAccounts
+    - TransactionCategories
+    - TransactionBusinessUnits
+    - TransactionPayees
+    - Disbursements
+    - Ledger
+    - Receivables
+    - InvoiceLog
+    - HSTLog
+    - DraftInvoices
+    - CorpEntities
+    - CorpRelationships
+    - CorpTransactions
+  Tables:         20
+    - tblParents
+    - tblClients
+    - tblClientProfiles
+    - tblMatters
+    - tblTimeEntries
+    - tblTrademarks
+    - tblTransactionsMaster
+    - tblTransactionAccounts
+    - tblTransactionCategories
+    - tblTransactionBusinessUnits
+    - tblTransactionPayees
+    - tblDisbursements
+    - tblLedger
+    - tblReceivables
+    - tblInvoiceLog
+    - tblHSTLog
+    - tblDraftInvoices
+    - tblCorpEntities
+    - tblCorpRelationships
+    - tblCorpTransactions
+  External links: 0
+
+  Confidentiality scan:
+    Matches live:    False
+    Safe:            True
+    - No live-hash match
+    - No external links
+
+============================================================
+  CANDIDATE: Dockets.xlsm Template
+============================================================
+  Path:           C:\Projects\__CSPM\src\templates\Dockets.xlsm
+  Exists:         True
+  Size:           7,782 bytes
+  SHA-256:        47631DD58928B4EFD69DAE2483A3E203DBD45993B36A209BF8F3632BE64B906C
+  Valid XLSM:     True
+  Macro-enabled:  True
+  Has VBA:        False
+  Worksheets:     7
+    - Clients
+    - Matters
+    - Dockets
+    - Disbursements
+    - Ledger
+    - Receivables
+    - Invoice Log
+  Tables:         0
+  External links: 0
+
+  Confidentiality scan:
+    Matches live:    False
+    Safe:            True
+    - No live-hash match
+    - No external links
+
+============================================================
+  CANDIDATE: DummyMacro.xlsm Fixture
+============================================================
+  Path:           C:\Users\cschn\AppData\Local\CSPM\Validation\GovernedFixtures\DummyMacro.xlsm
+  Exists:         True
+  Size:           11,795 bytes
+  SHA-256:        80D2EF54388FD829687F0517224C3070B45083612F62446637C683856046C888
+  Valid XLSM:     True
+  Macro-enabled:  True
+  Has VBA:        True
+  Worksheets:     1
+    - Sheet1
+  Tables:         0
+  External links: 0
+
+  Confidentiality scan:
+    Matches live:    False
+    Safe:            True
+    - No live-hash match
+    - No external links
+
+============================================================
+  REVIEW COMPLETE ù No changes made.
+============================================================

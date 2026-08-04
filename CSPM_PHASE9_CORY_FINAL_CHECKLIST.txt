@@ -1,0 +1,65 @@
+CSPM PHASE 9 FINAL CORY CHECKLIST
+Generated: 2026-07-30
+
+[ ] TEST MTC-001: Development Splash-to-Main Transition
+Exact Command: `& .\.venv_OFFICENEW_Cory\Scripts\python src/python/main.py`
+Preconditions: Normal dev environment.
+Exact Action: Run command.
+Expected Result: App launches. Splash appears, then main window.
+Evidence to capture: Screenshot if failed.
+Pass/Fail/Blocked: [ ]
+A+ Blocking Consequence: Blocks A+ (Release candidate fails to boot)
+
+[ ] TEST MTC-002: Release Splash-to-Main Transition
+Exact Command: `.\dist\CSPM\CSPM.exe`
+Preconditions: Run from a clean non-elevated PowerShell.
+Exact Action: Run command.
+Expected Result: App launches identically to dev mode. Splash appears, then main window.
+Evidence to capture: Screenshot if failed.
+Pass/Fail/Blocked: [ ]
+A+ Blocking Consequence: Blocks A+ (Executable boot failure)
+
+[ ] TEST MTC-003: Offline Conflict Prompt Appears Visibly In Front
+Exact Command: `python scripts/test_offline_conflict_harness.py`
+Preconditions: Run harness script to generate isolated test data. Follow its console instructions to launch CSPM.
+Exact Action: Launch CSPM using the provided env variables.
+Expected Result: A native MessageBox titled "CSPM Sync Conflict" appears TOPMOST. It must not be buried behind the splash screen.
+Evidence to capture: Screenshot of the prompt.
+Pass/Fail/Blocked: [ ]
+A+ Blocking Consequence: Blocks A+ (Freeze risk due to buried prompt)
+
+[ ] TEST MTC-004: Tray Toggling
+Exact Command: Click Tray Icon
+Preconditions: App running in tray.
+Exact Action: Click tray icon. Click outside. Click tray icon again. Press Esc.
+Expected Result: Toggles gracefully. Does not immediately bounce open when dismissed by clicking the icon. Esc closes it.
+Evidence to capture: Visual confirmation.
+Pass/Fail/Blocked: [ ]
+A+ Blocking Consequence: Blocks A+ (UX impairment)
+
+[ ] TEST MTC-005: Duplicate Launch IPC Wakeup
+Exact Command: `.\dist\CSPM\CSPM.exe` (run twice)
+Preconditions: App running. Click "X" to close main window (tray remains).
+Exact Action: Launch CSPM.exe again while it's in the tray.
+Expected Result: Second instance terminates immediately. Tray instance wakes up and restores main window.
+Evidence to capture: Visual confirmation.
+Pass/Fail/Blocked: [ ]
+A+ Blocking Consequence: Blocks A+ (Duplicate process corruption risk)
+
+[ ] TEST MTC-006: New Matter to New Client Handoff
+Exact Command: Open "New Matter" wizard via UI.
+Preconditions: App open in Professional Mode.
+Exact Action: Use the "Client" dropdown to select "Create New Client".
+Expected Result: New Client wizard overlays correctly, focuses, and returns safely upon save or cancel.
+Evidence to capture: Visual confirmation.
+Pass/Fail/Blocked: [ ]
+A+ Blocking Consequence: Blocks A+ (Core workflow blocked)
+
+[ ] TEST MTC-007: DPI Independence (100%, 125%, 150%)
+Exact Command: Adjust Windows Display Scaling
+Preconditions: App open.
+Exact Action: Change Windows Display scaling to 100%, 125%, and 150%.
+Expected Result: No severe clipping or overlapping elements rendering the app unusable.
+Evidence to capture: Screenshot of any clipped UI.
+Pass/Fail/Blocked: [ ]
+A+ Blocking Consequence: Blocks A+ (Accessibility failure)

@@ -1,0 +1,24 @@
+# Phase 9 Candidate Approval Package
+
+To safely review and approve the finalized candidate templates, please execute the following exact commands in your active PowerShell window. 
+
+**Step 1: Review the Candidates (Read-Only)**
+This command will summarize the templates, their hashes, and prove they are safe, without changing any files.
+
+```powershell
+.\.venv_OFFICENEW_Cory\Scripts\python.exe scripts\template_governance\approve_phase9_candidates.py --review-only
+```
+
+**Step 2: Interactive Approval**
+Once you have reviewed the read-only output, run the interactive approval tool. It will prompt you to cryptographically approve the CSPM, Dockets, and DummyMacro candidates.
+
+```powershell
+.\.venv_OFFICENEW_Cory\Scripts\python.exe scripts\template_governance\approve_phase9_candidates.py
+```
+
+**Step 3: Run the Production Build**
+After approving the templates, run the final production release build with candidate validations enforced.
+
+```powershell
+.\.venv_OFFICENEW_Cory\Scripts\python.exe scripts\build_release.py --installer --validate
+```

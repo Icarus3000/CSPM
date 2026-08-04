@@ -1,0 +1,89 @@
+Here is the fully revised, comprehensive Technical Specification Document. It incorporates the new requirements for multi-instance concurrency (two timers at once) and the specific "Bubble Gum / Elastic" animation physics, while retaining all the high-end visual standards we established.
+Technical Specification: Practice Console v3.0
+Project: Custom Legal ERP Interface ("The Schneider Experience")
+Target Framework: Python 3.10+ / PySide6 (Qt)
+Visual Standard: "Electric Bubble Gum" (High-Gloss Neon + Elastic Physics)
+1. Project Overview & Context
+The Goal
+We are building a bespoke, high-performance Legal Practice Management System that defies standard "grey software" conventions. The goal is to create a "Command Console" that feels fun, tactile, and futuristic—blending the utility of a legal ERP with the responsiveness of a high-end video game menu.
+Current State (Where we are)
+A functional prototype exists using Python/PySide6. It currently features a "Single Window" architecture where clicking a tile opens a workflow within that same window.
+Desired End State (Where we are going)
+We are evolving this prototype into a Hybrid Multi-Instance System.
+* Architecture: Users must be able to "Pop Out" (Tear Away) any module into a separate window to multitask (e.g., running two Docket Timers simultaneously), while the Main Console remains the central launcher.
+* Feel: The interface must abandon "stiff" mechanical transitions in favor of "Bubble Gum" physics—animations that are bouncy, elastic, and organic, making the app feel alive.
+2. Architectural Mechanics: The "Multi-Instance" Hybrid
+The application must support concurrent workflows. A user must be able to have a Client File open in the main window while simultaneously having a detached Docket Timer running on a second monitor.
+A. The Launcher Logic (Main Console)
+* Default State: The Main Menu (6-Tile Grid) is the "Home Base."
+* Action: Clicking a tile (e.g., "Docket & Fee Entries") transforms the Main Console window into the Docket Entry Module.
+* The "Back" Button: Every module has a "Home" button that returns the Console to the Grid.
+B. The "Tear-Away" Logic (Multi-Instance Support)
+* The Trigger: Every module has a "Pop Out" icon (top-right).
+* The Event:
+   * The current module (e.g., Timer A) is programmatically removed from the Console and wrapped in a new independent window.
+   * Crucially: The Main Console immediately reverts to the Main Menu (Grid).
+* Concurrency (The "Two Timers" Rule):
+   * Once Timer A is popped out, the "Docket & Fee Entries" tile on the Main Menu remains fully interactive.
+   * The user can click "Docket & Fee Entries" again to spawn Timer B inside the Main Console.
+   * Result: The user now has Timer A (Floating Window) and Timer B (Main Console) running simultaneously.
+C. The "Ghost" Visual
+* If a specific module type is currently open in a floating window, its tile on the Main Grid should have a subtle visual indicator (e.g., a small glowing dot or "Active" badge).
+* Note: This does not disable the tile. It simply informs the user, "You already have one of these open, but you can open another."
+3. Animation Physics: The "Bubble Gum" Standard
+The previous "mechanical slide" animations are rejected. The new standard is Elasticity. The interface should feel like it is made of high-tension rubber or glass bubbles.
+A. The "Squash & Stretch" Click
+When a user clicks a tile:
+* Anticipation (0-100ms): The tile does not just expand. It momentarily shrinks (Scale 0.9) and "squashes" slightly, as if gathering energy.
+* Release (100-400ms): The tile springs outward.
+* Curve: Use QEasingCurve.OutElastic or OutBounce. The movement should overshoot slightly and snap back, giving it that "jelly" or "bubble gum" feel.
+B. The Transition (Menu -> Module)
+Instead of a dry "fade in," the new module should "pop" into existence.
+* Effect: The new screen expands from the center of the clicked tile (Scale 0.1 -> Scale 1.0).
+* Physics: It hits 100% size with a wobble (damped oscillation) before stabilizing. It should feel like a bubble popping and settling into a rectangular shape.
+C. Hover Effects
+* Behavior: When hovering over a tile, it shouldn't just glow. It should "float" up (translate Y -5px) with a soft, buoyant motion, not a linear move.
+4. Visual Design: "Electric Glass"
+The "Theme Engine" (7-Color Dynamic System)
+The app must support 7 distinct themes, swappable instantly. The "Glass" texture remains constant; the "Neon" energy changes.
+* Colors:
+   * Electric Blue (Default - Cyan/Blue)
+   * Crimson Red (Urgent)
+   * Emerald Green (Billing/Money)
+   * Royal Purple (Creative)
+   * Stark White (Light Mode - Grey shadows, no neon)
+   * Slate Gray (Desaturated)
+   * Obsidian Dark (Black-on-Black)
+The Main Window Frame
+* Shape: heavily rounded corners on the main OS window.
+* Glow: A "dissipating glow" (outer shadow) around the window frame that matches the active theme color.
+* Top Bar Layout:
+   * Left: Title "Cory Schneider Law Office Practice Management" (Subtitle: "Practice Console").
+   * Right (Grouped): [Gear Icon] [Minimize (-)] [Close (X)].
+   * Spacing: The Gear icon is placed to the left of the Minimize dash. The Close (X) is inset to avoid the rounded corner.
+5. Layout & Assets
+The 6-Tile Grid
+* Structure: 2 Rows x 3 Columns.
+* Alignment: Vertically and horizontally centered in the console.
+* Tile Design:
+   * Shape: Rectangular but with heavy border-radius (20px+).
+   * Content: Large SVG icon (centered top) + Bold Label (centered bottom).
+   * Borders: Thick (3px) theme-colored borders that glow intensely on hover.
+The Tiles (Specific Icons)
+* Docket & Fee Entries (Icon: Clock/Timer)
+* Matters & Clients (Icon: User Group)
+* Reports (Icon: Bar Chart/Graph)
+* Billing (Icon: Invoice/Document)
+* HST / Tax (Icon: Calculator with Dollar Sign)
+* File Status / Ticklers (Icon: Clipboard/Checklist)
+6. Developer Implementation Checklist
+* Refactor for Concurrency:
+   * Ensure the QStackedWidget (Console) can instantiate new instances of a module class (e.g., new DocketWidget()) rather than reusing a single static instance. This is critical for the "Two Timers" requirement.
+* Implement the "Pop-Out" Handler:
+   * Create a robust method to wrap a widget in a new QMainWindow, show it, and simultaneously reset the Main Console's QStackedWidget to Index 0 (Menu).
+* Animation Engine:
+   * Replace standard animations with QPropertyAnimation using QEasingCurve.OutElastic. Tune the duration (approx 400-600ms) to ensure it feels "snappy" but "bouncy," not "laggy."
+* Theme Manager:
+   * Ensure all icons are SVGs that can be dynamically recolored when the theme changes.
+   * Use QSS variables for the "Glow" effects so they update globally.
+ 

@@ -1,0 +1,7 @@
+==================================================
+  CSPM CANDIDATE VALIDATION BUILD (NON-PRODUCTION)
+==================================================
+Target version: 2.4.0
+WARNING: Template CSPM.xlsm is a CANDIDATE (non-production validation).
+ERROR: Build blocked. Missing required table 'tblParents' in C:\Projects\__CSPM\src\templates\CSPM.xlsm
+Preflight validation failed: missing_table

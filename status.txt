@@ -1,0 +1,42 @@
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   CSPM_Phase9_Final_Report.md
+	modified:   dist/CSPM/CSPM.exe
+	modified:   scratch.py
+	modified:   scripts/build_release.py
+	modified:   scripts/git_backup_to_cloud.ps1
+	modified:   src/python/services/paths.py
+	modified:   src/python/services/sync_service.py
+	modified:   src/qml/tray/TrayRoot.qml
+	modified:   tests/backend/test_app_controller_save_slots.py
+	modified:   tests/backend/test_ar_aging_report.py
+	modified:   tests/backend/test_cspm_recovery_durable.py
+	modified:   tests/ui/test_stability_guards.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	CSPM_CURRENT_STATE_FOR_COPILOT.txt
+	CSPM_DUMP_EXCLUSIONS_AND_WARNINGS.txt
+	CSPM_PHASE9_AUTOMATED_TEST_RESULTS.txt
+	CSPM_PHASE9_A_PLUS_AUDIT.txt
+	CSPM_PHASE9_CHANGE_AND_FIX_LOG.txt
+	CSPM_PHASE9_CORY_FINAL_CHECKLIST.txt
+	CSPM_PHASE9_FINAL_GATE_REPORT.txt
+	CSPM_PHASE9_MANUAL_TEST_CHECKLIST.txt
+	CSPM_PHASE9_REQUIREMENTS_MATRIX.txt
+	CSPM_PHASE9_SOURCE_FINDINGS.txt
+	CSPM_PHASE9_UI_ACCEPTANCE_MATRIX.txt
+	CSPM_PROJECT_TEXT_DUMP_FOR_COPILOT.txt
+	CSPM_PROJECT_TEXT_DUMP_FOR_COPILOT_V2.txt
+	CSPM_REPOSITORY_INVENTORY.txt
+	CSPM_REPOSITORY_INVENTORY_V2.txt
+	branch.txt
+	commit.txt
+	dist_staging_78808/
+	status.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")

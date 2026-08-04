@@ -1,0 +1,51 @@
+CSPM PHASE 9 UI ACCEPTANCE MATRIX
+Generated: 2026-07-30
+
+STARTUP AND SHELL
+[ ] Development launch (ps1) loads splash then main window without overlap
+[ ] Release launch (exe) loads splash then main window
+[ ] Main window closed with tray enabled hides UI but keeps tray icon
+[ ] Repeated launch (duplicate instance) wakes up existing background process
+[ ] Full application exit via tray menu cleans up processes
+[ ] Abnormal shutdown handles timers via force_shutdown_save
+
+NAVIGATION AND SEARCH
+[ ] Major navigation rails (Clients & Matters, Docketing, etc.) switch quickly
+[ ] Global search keyboard activation works and focuses
+[ ] Screen-code internal routing correctly displays target screen
+
+CLIENT AND MATTER
+[ ] New Client wizard validates and opens
+[ ] New Matter wizard focuses correctly
+[ ] New Client handoff from New Matter works without duplicating state
+[ ] Cancel discards state and does not mutate live data
+
+TIMEKEEPING
+[ ] Normal time entry starts and stops
+[ ] Ticking seconds update visibly
+[ ] Tray timer display accurately reflects main timer
+[ ] Tray flyout toggles smoothly with Esc and click without immediate re-open bounce
+
+ACCOUNTS PAYABLE
+[ ] AP screen load succeeds
+[ ] Invoice attachment popups are centered and dismissible via Esc
+[ ] Column resizing and visibility persist
+
+BILLING AND RECEIVABLES
+[ ] WIP-to-Bill workbench handles data loads without freezing
+[ ] Invoice builder correctly displays totals
+
+RECOVERY AND OFFLINE SYNC
+[ ] Cloud unavailable writes correctly track `offline_dirty`
+[ ] Startup with conflict correctly displays `CSPM Sync Conflict` MessageBox
+[ ] MessageBox appears topmost and does not freeze behind splash
+[ ] User selection (Keep Local vs Use Cloud) correctly triggers push or pull
+
+VISUAL AND RESPONSIVE QUALITY
+[ ] No clipping or overlap at 100%, 125%, 150% scaling
+[ ] Light theme tokens map correctly to SemanticTheme
+[ ] No dialogs appear behind main window
+
+KEYBOARD AND ACCESSIBILITY
+[ ] Escape correctly dismisses Tray Flyout, AP Popups, Wizards
+[ ] Tab order logical through timekeeping entry

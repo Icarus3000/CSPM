@@ -1,0 +1,724 @@
+VBA MACRO ModProductivityBuilder.bas
+in file: xl/vbaProject.bin - OLE stream: 'VBA/ModProductivityBuilder'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+' ==========================================================================================
+' MODULE: modProductivityBuilder (V7: PERFECT ALIGNMENT)
+' PURPOSE: Rebuilds UserForm with tight layout and aligned bottoms
+' UPDATES: Btn Bottoms aligned to 208px. Form Height reduced to 245px. All Text Left.
+' ==========================================================================================
+Option Explicit
+
+Sub BuildProductivitySystem()
+Dim vbComp As Object
+Dim ufName As String
+Dim code As String
+
+ufName = "ufProductivityParams"
+
+' 1. Delete existing form
+On Error Resume Next
+Set vbComp = ThisWorkbook.VBProject.VBComponents(ufName)
+If Not vbComp Is Nothing Then
+ThisWorkbook.VBProject.VBComponents.Remove vbComp
+End If
+On Error GoTo 0
+
+' 2. Create New UserForm
+Set vbComp = ThisWorkbook.VBProject.VBComponents.Add(3) ' vbext_ct_MSForm
+vbComp.Properties("Name") = ufName
+vbComp.Properties("Caption") = "Productivity Report Parameters"
+vbComp.Properties("Width") = 460
+vbComp.Properties("Height") = 245 ' REDUCED HEIGHT (Tight Buffer)
+
+' 3. Add Controls
+With vbComp.designer
+' --- LEFT COLUMN (Inputs) ---
+
+' Header
+.Controls.Add "Forms.Label.1", "lblHeader", True
+With .Controls("lblHeader")
+.caption = "REPORT PARAMETERS (KPIs)"
+.Left = 20: .Top = 12: .Width = 180: .Height = 12
+.Font.name = "Segoe UI": .Font.Size = 8: .Font.Bold = True: .foreColor = &H808080
+End With
+
+' Start Date
+.Controls.Add "Forms.Label.1", "lblStart", True
+With .Controls("lblStart")
+.caption = "Start Date (Dbl-Click):": .Left = 20: .Top = 32: .Width = 140: .Height = 12
+.Font.name = "Segoe UI": .Font.Size = 9
+End With
+.Controls.Add "Forms.TextBox.1", "txtStart", True
+With .Controls("txtStart")
+.Left = 20: .Top = 46: .Width = 140: .Height = 18
+.Font.name = "Segoe UI": .Font.Size = 9
+.TextAlign = 1 ' Left
+End With
+
+' End Date
+.Controls.Add "Forms.Label.1", "lblEnd", True
+With .Controls("lblEnd")
+.caption = "End Date (Dbl-Click):": .Left = 20: .Top = 74: .Width = 140: .Height = 12
+.Font.name = "Segoe UI": .Font.Size = 9
+End With
+.Controls.Add "Forms.TextBox.1", "txtEnd", True
+With .Controls("txtEnd")
+.Left = 20: .Top = 88: .Width = 140: .Height = 18
+.Font.name = "Segoe UI": .Font.Size = 9
+.TextAlign = 1 ' Left
+End With
+
+' Target
+.Controls.Add "Forms.Label.1", "lblTarget", True
+With .Controls("lblTarget")
+.caption = "Annual Target ($):": .Left = 20: .Top = 116: .Width = 140: .Height = 12
+.Font.name = "Segoe UI": .Font.Size = 9
+End With
+.Controls.Add "Forms.TextBox.1", "txtTarget", True
+With .Controls("txtTarget")
+.Left = 20: .Top = 130: .Width = 140: .Height = 18
+.Font.name = "Segoe UI": .Font.Size = 9
+.TextAlign = 1 ' Left (GUX Standard)
+End With
+
+' Main Buttons (Moved UP to align bottoms with Right Column)
+' Target Bottom = 208px. Height = 26px. Top = 182px.
+.Controls.Add "Forms.CommandButton.1", "btnGen", True
+With .Controls("btnGen")
+.caption = "GENERATE": .Left = 20: .Top = 182: .Width = 85: .Height = 26
+.Font.name = "Segoe UI": .Font.Size = 8: .Font.Bold = True: .backColor = &H80FF80
+End With
+.Controls.Add "Forms.CommandButton.1", "btnCancel", True
+With .Controls("btnCancel")
+.caption = "Cancel": .Left = 110: .Top = 182: .Width = 50: .Height = 26
+.Font.name = "Segoe UI": .Font.Size = 8
+End With
+
+' --- RIGHT COLUMN (Quick Presets) ---
+
+' Separator Line (Shortened to fit new height)
+.Controls.Add "Forms.Label.1", "lblSep", True
+With .Controls("lblSep")
+.caption = "": .BorderStyle = 1 ' Single Line
+.Left = 200: .Top = 10: .Width = 1: .Height = 200
+.backColor = &HE0E0E0
+End With
+
+' Header
+.Controls.Add "Forms.Label.1", "lblQuick", True
+With .Controls("lblQuick")
+.caption = "QUICK PRESETS"
+.Left = 240: .Top = 12: .Width = 150: .Height = 12
+.Font.name = "Segoe UI": .Font.Size = 8: .Font.Bold = True: .foreColor = &H808080
+End With
+
+' 1. Last 7 Days
+.Controls.Add "Forms.CommandButton.1", "btn7Days", True
+With .Controls("btn7Days")
+.caption = "Last 7 Days": .Left = 240: .Top = 32: .Width = 180: .Height = 20
+.Font.name = "Segoe UI": .Font.Size = 9: .TakeFocusOnClick = False
+End With
+
+' 2. Last Week (Sun-Sat)
+.Controls.Add "Forms.CommandButton.1", "btnLastWeek", True
+With .Controls("btnLastWeek")
+.caption = "Last Week (Sun-Sat)": .Left = 240: .Top = 58: .Width = 180: .Height = 20
+.Font.name = "Segoe UI": .Font.Size = 9: .TakeFocusOnClick = False
+End With
+
+' 3. Rolling 30 Days
+.Controls.Add "Forms.CommandButton.1", "btn30Days", True
+With .Controls("btn30Days")
+.caption = "Rolling 30 Days": .Left = 240: .Top = 84: .Width = 180: .Height = 20
+.Font.name = "Segoe UI": .Font.Size = 9: .TakeFocusOnClick = False
+End With
+
+' 4. Rolling 90 Days
+.Controls.Add "Forms.CommandButton.1", "btn90", True
+With .Controls("btn90")
+.caption = "Rolling 90 Days": .Left = 240: .Top = 110: .Width = 180: .Height = 20
+.Font.name = "Segoe UI": .Font.Size = 9: .TakeFocusOnClick = False
+End With
+
+' 5. Last Month (Full)
+.Controls.Add "Forms.CommandButton.1", "btnLastMonth", True
+With .Controls("btnLastMonth")
+.caption = "Last Month (Full)": .Left = 240: .Top = 136: .Width = 180: .Height = 20
+.Font.name = "Segoe UI": .Font.Size = 9: .TakeFocusOnClick = False
+End With
+
+' 6. YTD (Jan 1)
+.Controls.Add "Forms.CommandButton.1", "btnYTD", True
+With .Controls("btnYTD")
+.caption = "YTD (Jan 1)": .Left = 240: .Top = 162: .Width = 180: .Height = 20
+.Font.name = "Segoe UI": .Font.Size = 9: .TakeFocusOnClick = False
+End With
+
+' 7. Rolling Year
+.Controls.Add "Forms.CommandButton.1", "btnRollingYear", True
+With .Controls("btnRollingYear")
+.caption = "Rolling Year (365 Days)": .Left = 240: .Top = 188: .Width = 180: .Height = 20
+' Top (188) + Height (20) = 208 (Exact match to Left Buttons)
+.Font.name = "Segoe UI": .Font.Size = 9: .TakeFocusOnClick = False
+End With
+
+End With
+
+' 4. Inject Logic
+code = "Option Explicit" & vbCrLf
+
+' Initialize
+code = code & "Private Sub UserForm_Initialize()" & vbCrLf
+code = code & "    ' Default to Rolling 30" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(Date - 30, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(Date, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtTarget.Value = Format(350000, ""$#,##0.00"")" & vbCrLf
+code = code & "    Me.StartUpPosition = 0" & vbCrLf
+code = code & "    Me.Left = Application.Left + (Application.Width - Me.Width) / 2" & vbCrLf
+code = code & "    Me.Top = Application.Top + (Application.Height - Me.Height) / 2" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' SMART FORMATTING LOGIC
+code = code & "Private Sub txtTarget_Enter()" & vbCrLf
+code = code & "    On Error Resume Next" & vbCrLf
+code = code & "    Dim rawVal As String" & vbCrLf
+code = code & "    rawVal = Replace(Replace(Me.txtTarget.Value, ""$"", """"), "","", """")" & vbCrLf
+code = code & "    Me.txtTarget.Value = rawVal" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+code = code & "Private Sub txtTarget_Exit(ByVal Cancel As MSForms.ReturnBoolean)" & vbCrLf
+code = code & "    On Error Resume Next" & vbCrLf
+code = code & "    If IsNumeric(Me.txtTarget.Value) Then" & vbCrLf
+code = code & "        Me.txtTarget.Value = Format(CDbl(Me.txtTarget.Value), ""$#,##0.00"")" & vbCrLf
+code = code & "    End If" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' Double Click Handlers
+code = code & "Private Sub txtStart_DblClick(ByVal Cancel As MSForms.ReturnBoolean)" & vbCrLf
+code = code & "    On Error Resume Next" & vbCrLf
+code = code & "    Dim calDate As Date" & vbCrLf
+code = code & "    calDate = CalendarForm.GetDate(CDate(Me.txtStart.Value))" & vbCrLf
+code = code & "    If calDate <> 0 Then Me.txtStart.Value = Format(calDate, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+code = code & "Private Sub txtEnd_DblClick(ByVal Cancel As MSForms.ReturnBoolean)" & vbCrLf
+code = code & "    On Error Resume Next" & vbCrLf
+code = code & "    Dim calDate As Date" & vbCrLf
+code = code & "    calDate = CalendarForm.GetDate(CDate(Me.txtEnd.Value))" & vbCrLf
+code = code & "    If calDate <> 0 Then Me.txtEnd.Value = Format(calDate, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' --- QUICK PRESET LOGIC ---
+
+' 1. Last 7 Days
+code = code & "Private Sub btn7Days_Click()" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(Date - 6, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(Date, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' 2. Last Week
+code = code & "Private Sub btnLastWeek_Click()" & vbCrLf
+code = code & "    Dim dEnd As Date, dStart As Date" & vbCrLf
+code = code & "    If Weekday(Date) = 7 Then ' Saturday" & vbCrLf
+code = code & "        dEnd = Date" & vbCrLf
+code = code & "    Else" & vbCrLf
+code = code & "        dEnd = Date - Weekday(Date)" & vbCrLf
+code = code & "    End If" & vbCrLf
+code = code & "    dStart = dEnd - 6" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(dStart, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(dEnd, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' 3. Rolling 30
+code = code & "Private Sub btn30Days_Click()" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(Date - 30, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(Date, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' 4. Rolling 90
+code = code & "Private Sub btn90_Click()" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(Date - 90, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(Date, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' 5. Last Month
+code = code & "Private Sub btnLastMonth_Click()" & vbCrLf
+code = code & "    Dim d1 As Date, d2 As Date" & vbCrLf
+code = code & "    d1 = DateSerial(Year(Date), Month(Date) - 1, 1)" & vbCrLf
+code = code & "    d2 = DateSerial(Year(Date), Month(Date), 0)" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(d1, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(d2, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' 6. YTD
+code = code & "Private Sub btnYTD_Click()" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(DateSerial(Year(Date), 1, 1), ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(Date, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' 7. Rolling Year
+code = code & "Private Sub btnRollingYear_Click()" & vbCrLf
+code = code & "    Me.txtStart.Value = Format(Date - 365, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "    Me.txtEnd.Value = Format(Date, ""yyyy-mm-dd"")" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' Generate
+code = code & "Private Sub btnGen_Click()" & vbCrLf
+code = code & "    If Not IsDate(Me.txtStart.Value) Or Not IsDate(Me.txtEnd.Value) Then" & vbCrLf
+code = code & "        MsgBox ""Invalid Dates"", vbCritical" & vbCrLf
+code = code & "        Exit Sub" & vbCrLf
+code = code & "    End If" & vbCrLf
+code = code & "    Dim cleanTarget As Double" & vbCrLf
+code = code & "    On Error Resume Next" & vbCrLf
+code = code & "    cleanTarget = CDbl(Replace(Replace(Me.txtTarget.Value, ""$"", """"), "","", """"))" & vbCrLf
+code = code & "    On Error GoTo 0" & vbCrLf
+code = code & "    Me.Hide" & vbCrLf
+code = code & "    Run ""GenerateProductivityReport"", CDate(Me.txtStart.Value), CDate(Me.txtEnd.Value), cleanTarget" & vbCrLf
+code = code & "    Unload Me" & vbCrLf
+code = code & "End Sub" & vbCrLf & vbCrLf
+
+' Cancel
+code = code & "Private Sub btnCancel_Click()" & vbCrLf
+code = code & "    Unload Me" & vbCrLf
+code = code & "End Sub"
+
+vbComp.CodeModule.AddFromString code
+
+MsgBox "Productivity Form Updated (Aligned Bottoms, Compact Height).", vbInformation
+End Sub
+-------------------------------------------------------------------------------
+VBA MACRO ModProductivity.bas
+in file: xl/vbaProject.bin - OLE stream: 'VBA/ModProductivity'
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+' ==========================================================================================
+' MODULE: modProductivity (V11: FINAL - DECOUPLED CHARTS)
+' Features:
+'   - KPIs/Forecast tied to User Input Range
+'   - Monthly Chart FIXED to 4 Months ending on EndDate
+'   - Daily Chart FIXED to 7 Days ending on EndDate
+'   - Shape Button with Custom Styling
+' ==========================================================================================
+Option Explicit
+
+Sub ShowProductivityForm()
+On Error Resume Next
+ufProductivityParams.Show
+End Sub
+
+Sub GenerateProductivityReport(sDate As Date, eDate As Date, targetAmt As Double)
+Dim wsDockets As Worksheet
+Dim wbNew As Workbook, wsOut As Worksheet
+Dim cell As Range
+Dim dictClients As Object, dictMonths As Object, dictDaily As Object
+
+' --- 1. CONFIGURATION ---
+Const D_COL_DATE = 1
+Const D_COL_CLIENT = 2
+Const D_COL_TIME = 5
+Const D_COL_RATE = 6
+Const D_COL_PCT = 7
+
+' Styles
+Dim colDesk As Long: colDesk = RGB(230, 230, 230)
+Dim colPaper As Long: colPaper = vbWhite
+Dim colHeader As Long: colHeader = RGB(30, 40, 60)
+Dim colTextMain As Long: colTextMain = RGB(40, 40, 40)
+Dim colTextMuted As Long: colTextMuted = RGB(110, 110, 110)
+Dim colBrand As Long: colBrand = RGB(52, 152, 219)
+
+Set wsDockets = ThisWorkbook.Sheets("Dockets")
+Set dictClients = CreateObject("Scripting.Dictionary")
+Set dictMonths = CreateObject("Scripting.Dictionary")
+Set dictDaily = CreateObject("Scripting.Dictionary")
+
+Application.ScreenUpdating = False
+
+' --- 2. DEFINE DATE RANGES ---
+' A. User Range (for KPIs & Forecast) -> sDate to eDate
+
+' B. Monthly Chart Range (Fixed: 4 Months ending at eDate)
+Dim dChartMonthStart As Date
+dChartMonthStart = DateSerial(Year(eDate), Month(eDate) - 3, 1) ' Current month - 3 prior
+
+' C. Daily Chart Range (Fixed: 7 Days ending at eDate)
+Dim dChartDailyStart As Date
+dChartDailyStart = eDate - 6
+
+' D. Data Fetch Start (The earliest of all starts)
+Dim dFetchStart As Date
+dFetchStart = sDate
+If dChartMonthStart < dFetchStart Then dFetchStart = dChartMonthStart
+If dChartDailyStart < dFetchStart Then dFetchStart = dChartDailyStart
+
+' --- 3. PRE-FILL CHART DICTIONARIES ---
+' This ensures zero-value periods appear in the charts
+Dim i As Long, dRunner As Date
+
+' Pre-fill Daily (Last 7 Days)
+For i = 6 To 0 Step -1
+dictDaily(eDate - i) = 0#
+Next i
+
+' Pre-fill Monthly (Last 4 Months)
+For i = 0 To 3
+dRunner = DateSerial(Year(eDate), Month(eDate) - i, 1)
+dictMonths(dRunner) = 0#
+Next i
+
+' --- 4. GATHER DATA ---
+Dim dDate As Date, dClient As String
+Dim dTime As Double, dRate As Double, dPct As Double, dFee As Double
+Dim totalHours As Double, totalFees As Double
+Dim mKey As Date
+
+If wsDockets.Cells(wsDockets.rows.count, 1).End(xlUp).row > 1 Then
+For Each cell In wsDockets.Range(wsDockets.Cells(2, 1), wsDockets.Cells(wsDockets.rows.count, 1).End(xlUp))
+If IsDate(cell.value) Then
+dDate = CDate(cell.value)
+
+' Only process if within the widest possible range we need
+If dDate >= dFetchStart And dDate <= eDate Then
+
+' Read Values
+dClient = Trim(UCase(cell.Offset(0, D_COL_CLIENT - 1).value))
+dTime = val(cell.Offset(0, D_COL_TIME - 1).value)
+dRate = val(cell.Offset(0, D_COL_RATE - 1).value)
+dPct = val(cell.Offset(0, D_COL_PCT - 1).value)
+If cell.Offset(0, D_COL_PCT - 1).value = "" Then dPct = 1
+dFee = dTime * (dRate * dPct)
+
+' A. KPI AGGREGATION (User Range Only)
+If dDate >= sDate Then
+totalHours = totalHours + dTime
+totalFees = totalFees + dFee
+
+' Client List (User Range Only)
+If dictClients.Exists(dClient) Then
+dictClients(dClient) = dictClients(dClient) + dFee
+Else
+dictClients(dClient) = dFee
+End If
+End If
+
+' B. MONTHLY CHART AGGREGATION (Fixed Range)
+If dDate >= dChartMonthStart Then
+mKey = DateSerial(Year(dDate), Month(dDate), 1)
+If dictMonths.Exists(mKey) Then
+dictMonths(mKey) = dictMonths(mKey) + dFee
+End If
+End If
+
+' C. DAILY CHART AGGREGATION (Fixed Range)
+If dDate >= dChartDailyStart Then
+If dictDaily.Exists(dDate) Then
+dictDaily(dDate) = dictDaily(dDate) + dFee
+End If
+End If
+
+End If
+End If
+Next cell
+End If
+
+' --- 5. CREATE SHEET & SETUP ---
+Set wbNew = Workbooks.Add
+Set wsOut = wbNew.Sheets(1)
+wsOut.name = "Productivity"
+wsOut.DisplayPageBreaks = False
+
+With ActiveWindow
+.DisplayGridlines = False
+.DisplayHeadings = False
+.Zoom = 75
+End With
+
+' Backgrounds
+wsOut.Cells.Interior.color = colDesk
+wsOut.Cells.Font.name = "Segoe UI"
+
+' The Paper
+With wsOut.Range("B2:M48")
+.Interior.color = colPaper
+End With
+
+' Store Dates for PDF macro
+wsOut.Cells(1, 26).value = sDate
+wsOut.Cells(2, 26).value = eDate
+
+' Layout Columns
+wsOut.Columns("A").ColumnWidth = 4
+wsOut.Columns("B").ColumnWidth = 2
+wsOut.Columns("C:E").ColumnWidth = 12
+wsOut.Columns("F").ColumnWidth = 2
+wsOut.Columns("G:H").ColumnWidth = 12
+wsOut.Columns("I").ColumnWidth = 2
+wsOut.Columns("J").ColumnWidth = 25
+wsOut.Columns("K:L").ColumnWidth = 10
+wsOut.Columns("M").ColumnWidth = 2
+wsOut.Columns("N").ColumnWidth = 22
+
+' Header Bar
+With wsOut.Range("B2:M5")
+.Interior.color = colHeader
+End With
+
+With wsOut
+.Cells(3, 3).value = "PRODUCTIVITY REPORT"
+.Cells(4, 3).value = "Cory Schneider Law Office"
+.Cells(3, 3).Font.Size = 20: .Cells(3, 3).Font.Bold = True: .Cells(3, 3).Font.color = vbWhite
+.Cells(4, 3).Font.Size = 10: .Cells(4, 3).Font.color = RGB(200, 200, 200)
+
+.Range("J3:L4").Merge
+.Range("J3").value = Format(sDate, "MMM d, yyyy") & " - " & Format(eDate, "MMM d, yyyy")
+.Range("J3").Font.color = vbWhite: .Range("J3").HorizontalAlignment = xlRight
+.Range("J3").VerticalAlignment = xlCenter
+.Range("J3").Font.Size = 11
+End With
+
+' --- 6. KPIs (User Range) ---
+Dim realizedRate As Double
+If totalHours > 0 Then realizedRate = totalFees / totalHours Else realizedRate = 0
+DrawCleanMetric wsOut, wsOut.Range("C7:E9"), "TOTAL PRODUCTION", totalFees, "$#,##0", colTextMain
+DrawCleanMetric wsOut, wsOut.Range("G7:H9"), "BILLABLE HOURS", totalHours, "#,##0.0", colTextMain
+DrawCleanMetric wsOut, wsOut.Range("J7:L9"), "REALIZED RATE", realizedRate, "$#,##0.00", colTextMain
+
+' --- 7. FORECAST (User Range) ---
+Dim daysInPeriod As Long, dailyAvg As Double, projectedAnnual As Double, pacePct As Double
+daysInPeriod = DateDiff("d", sDate, eDate) + 1
+If daysInPeriod < 1 Then daysInPeriod = 1
+dailyAvg = totalFees / daysInPeriod
+projectedAnnual = dailyAvg * 336
+If targetAmt > 0 Then pacePct = (projectedAnnual / targetAmt) - 1 Else pacePct = 0
+
+With wsOut.Cells(12, 3)
+.value = "ANNUAL FORECAST"
+.Font.Size = 11: .Font.Bold = True: .Font.color = colBrand
+End With
+DrawForecastRow wsOut, 14, "Current Pace", Format(dailyAvg, "$#,##0") & " / day"
+DrawForecastRow wsOut, 15, "Basis", "336 Days (48 wks)"
+DrawForecastRow wsOut, 16, "Target", Format(targetAmt, "$#,##0")
+
+With wsOut.Range("C18:H19")
+.Merge: .value = projectedAnnual: .NumberFormat = "$#,##0"
+.Font.name = "Segoe UI Light": .Font.Size = 32: .Font.color = colTextMain
+.HorizontalAlignment = xlLeft: .VerticalAlignment = xlCenter
+End With
+
+Dim statusText As String, statusColor As Long
+If pacePct >= 0 Then
+statusText = "+" & Format(pacePct, "0.0%") & " vs Target"
+statusColor = RGB(39, 174, 96)
+Else
+statusText = Format(pacePct, "0.0%") & " vs Target"
+statusColor = RGB(192, 57, 43)
+End If
+With wsOut.Range("C20:H20")
+.Merge: .value = statusText: .Font.color = statusColor
+.Font.Bold = True: .Font.Size = 10: .HorizontalAlignment = xlLeft
+End With
+
+' --- 8. TOP CLIENTS (User Range) ---
+With wsOut.Cells(12, 10)
+.value = "TOP CLIENTS"
+.Font.Size = 11: .Font.Bold = True: .Font.color = colBrand
+End With
+
+Dim rCli As Long: rCli = 2
+wsOut.Cells(1, 27).value = "C": wsOut.Cells(1, 28).value = "V"
+Dim k As Variant
+For Each k In dictClients.Keys
+wsOut.Cells(rCli, 27).value = k: wsOut.Cells(rCli, 28).value = dictClients(k)
+rCli = rCli + 1
+Next k
+If rCli > 2 Then
+wsOut.Range("AA1:AB" & rCli - 1).Sort Key1:=wsOut.Range("AB1"), Order1:=xlDescending, Header:=xlYes
+End If
+Dim X As Integer
+For X = 0 To 4
+If X + 2 < rCli Then
+wsOut.Cells(14 + X, 10).value = wsOut.Cells(2 + X, 27).value
+wsOut.Cells(14 + X, 10).Font.Size = 9: wsOut.Cells(14 + X, 10).Font.color = colTextMain
+wsOut.Cells(14 + X, 11).value = wsOut.Cells(2 + X, 28).value
+wsOut.Cells(14 + X, 11).NumberFormat = "$#,##0": wsOut.Cells(14 + X, 11).Font.Size = 9
+wsOut.Cells(14 + X, 11).HorizontalAlignment = xlRight
+wsOut.Cells(14 + X, 12).value = wsOut.Cells(2 + X, 28).value
+wsOut.Cells(14 + X, 12).Font.color = colPaper
+End If
+Next X
+With wsOut.Range("L14:L18").FormatConditions.AddDatabar
+.BarColor.color = colBrand: .BarFillType = xlDataBarFillSolid: .ShowValue = False
+End With
+
+' --- 9. CHARTS (Fixed Ranges) ---
+
+' A. Monthly Chart (4 Months ending at eDate)
+Dim rChart As Long: rChart = 2
+wsOut.Cells(1, 31).value = "Month": wsOut.Cells(1, 32).value = "Fees"
+For Each k In dictMonths.Keys
+wsOut.Cells(rChart, 31).value = k: wsOut.Cells(rChart, 32).value = dictMonths(k)
+rChart = rChart + 1
+Next k
+If rChart > 2 Then
+wsOut.Range("AE1:AF" & rChart - 1).Sort Key1:=wsOut.Range("AE1"), Order1:=xlAscending, Header:=xlYes
+CreateModernChart wsOut, wsOut.Range("C22"), wsOut.Range("AE1:AF" & rChart - 1), "Monthly Production Trend (Last 4 Months)", colTextMuted, colHeader, 175
+End If
+
+' B. Daily Chart (7 Days ending at eDate)
+Dim rDaily As Long: rDaily = 2
+wsOut.Cells(1, 34).value = "Date": wsOut.Cells(1, 35).value = "Fees"
+For Each k In dictDaily.Keys
+wsOut.Cells(rDaily, 34).value = k: wsOut.Cells(rDaily, 35).value = dictDaily(k)
+rDaily = rDaily + 1
+Next k
+If rDaily > 2 Then
+wsOut.Range("AH1:AI" & rDaily - 1).Sort Key1:=wsOut.Range("AH1"), Order1:=xlAscending, Header:=xlYes
+CreateModernChart wsOut, wsOut.Range("C35"), wsOut.Range("AH1:AI" & rDaily - 1), "Daily Production (Last 7 Days)", colTextMuted, colBrand, 175
+End If
+
+' --- 10. FINISH ---
+wsOut.Columns("AA:AI").Hidden = True
+
+' Create Shape Button
+Dim btnShape As Shape
+Set btnShape = wsOut.Shapes.AddShape(msoShapeRoundedRectangle, _
+wsOut.Columns("N").Left + 10, _
+50, 140, 45)
+With btnShape
+.name = "btnPDF"
+.OnAction = "'" & ThisWorkbook.name & "'!SaveProductivityToPDF"
+.Fill.foreColor.RGB = RGB(64, 64, 64)
+.line.Visible = msoFalse
+With .TextFrame2.TextRange
+.Text = "EXPORT PDF"
+.Font.Fill.foreColor.RGB = vbWhite
+.Font.name = "Segoe UI"
+.Font.Size = 14
+.Font.Bold = msoTrue
+.ParagraphFormat.Alignment = msoAlignCenter
+End With
+.TextFrame.VerticalAlignment = xlVAlignCenter
+.Shadow.Visible = msoTrue
+.Shadow.Transparency = 0.6
+.Shadow.Blur = 5
+.Shadow.OffsetX = 2
+.Shadow.OffsetY = 2
+End With
+
+' Page Setup
+With wsOut.PageSetup
+.PrintArea = "$B$2:$M$48"
+.Orientation = xlPortrait
+.Zoom = False
+.FitToPagesWide = 1
+.FitToPagesTall = 1
+.LeftMargin = Application.InchesToPoints(0.75)
+.RightMargin = Application.InchesToPoints(0.75)
+.TopMargin = Application.InchesToPoints(0.75)
+.BottomMargin = Application.InchesToPoints(0.75)
+.CenterHorizontally = True
+.CenterVertically = False
+End With
+
+wsOut.Range("A1").Select
+wsOut.DisplayPageBreaks = False
+Application.ScreenUpdating = True
+End Sub
+
+' Reusable Chart Creator
+Sub CreateModernChart(ws As Worksheet, anchor As Range, sourceRng As Range, Title As String, colTitle As Long, colBar As Long, h As Double)
+Dim chtObj As ChartObject
+Set chtObj = ws.ChartObjects.Add(Left:=anchor.Left, Top:=anchor.Top, _
+Width:=ws.Range("C" & anchor.row & ":L" & anchor.row).Width, Height:=h)
+With chtObj.Chart
+.ChartType = xlColumnClustered
+.SetSourceData Source:=sourceRng
+.PlotVisibleOnly = False
+.HasTitle = True
+.ChartTitle.Text = Title
+.ChartTitle.Font.name = "Segoe UI"
+.ChartTitle.Font.Size = 10
+.ChartTitle.Font.color = colTitle
+.Legend.Delete
+With .SeriesCollection(1)
+.Interior.color = colBar
+.ApplyDataLabels
+.DataLabels.position = xlLabelPositionOutsideEnd
+.DataLabels.NumberFormat = "$#,##0"
+.DataLabels.Font.Size = 8
+.DataLabels.Font.name = "Segoe UI"
+End With
+.Axes(xlValue).Delete
+.Axes(xlValue).MajorGridlines.Delete
+With .Axes(xlCategory).TickLabels
+.Font.name = "Segoe UI"
+.Font.Size = 8
+.NumberFormat = "d-mmm"
+End With
+.ChartArea.Format.line.Visible = msoFalse
+.PlotArea.Format.line.Visible = msoFalse
+.ChartArea.Interior.color = vbWhite
+.PlotArea.Interior.color = vbWhite
+End With
+End Sub
+
+Sub DrawCleanMetric(ws As Worksheet, rng As Range, Title As String, val As Double, fmt As String, col As Long)
+With rng.Cells(1, 1)
+.value = Title: .Font.Size = 8: .Font.color = RGB(150, 150, 150): .Font.Bold = True: .HorizontalAlignment = xlLeft
+End With
+Dim valRng As Range
+Set valRng = rng.Offset(1, 0).Resize(rng.rows.count - 1, rng.Columns.count)
+valRng.Merge
+With valRng
+.value = val: .NumberFormat = fmt: .Font.name = "Segoe UI Light": .Font.Size = 22: .Font.color = col
+.HorizontalAlignment = xlLeft: .VerticalAlignment = xlTop
+End With
+End Sub
+
+Sub DrawForecastRow(ws As Worksheet, r As Long, lbl As String, val As String)
+With ws.Cells(r, 3)
+.value = lbl: .Font.color = RGB(120, 120, 120): .Font.Size = 9
+End With
+With ws.Range(ws.Cells(r, 5), ws.Cells(r, 7))
+.Merge: .value = val: .Font.color = RGB(50, 50, 50): .Font.Bold = True: .Font.Size = 9: .HorizontalAlignment = xlRight
+End With
+End Sub
+
+Sub SaveProductivityToPDF()
+Dim ws As Worksheet
+Dim savePath As String, fileName As String, rootPath As String
+Dim sDate As Date, eDate As Date
+Set ws = ActiveSheet
+
+ws.DisplayPageBreaks = False
+
+On Error Resume Next
+sDate = CDate(ws.Cells(1, 26).value)
+eDate = CDate(ws.Cells(2, 26).value)
+On Error GoTo 0
+rootPath = M6_GetUnifiedBaseFolder()
+If Right(rootPath, 1) <> "\" Then rootPath = rootPath & "\"
+savePath = rootPath & "__PRODUCTIVITY\"
+If Dir(savePath, vbDirectory) = "" Then
+On Error Resume Next: MkDir savePath: On Error GoTo 0
+End If
+fileName = "Productivity " & Format(sDate, "yy-mm-dd") & " to " & Format(eDate, "yy-mm-dd") & ".pdf"
+
+Application.ScreenUpdating = False
+
+With ws.PageSetup
+.Zoom = False
+.FitToPagesWide = 1
+.FitToPagesTall = 1
+End With
+
+On Error Resume Next
+ws.ExportAsFixedFormat Type:=xlTypePDF, fileName:=savePath & fileName, _
+Quality:=xlQualityStandard, IncludeDocProperties:=True, IgnorePrintAreas:=False, OpenAfterPublish:=True
+If err.Number <> 0 Then MsgBox "Error saving PDF: " & err.description, vbCritical
+On Error GoTo 0
+
+ws.DisplayPageBreaks = False
+Application.ScreenUpdating = True
+End Sub
+
+-------------------------------------------------------------------------------
