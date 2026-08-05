@@ -1,0 +1,57 @@
+spec_version: 1
+updated_utc: "2026-02-22T00:00:00Z"
+status: "active"
+
+report_families:
+  - name: "Productivity"
+    baseline_views:
+      - "Time by day/week/month"
+      - "Utilization and realization"
+      - "Matter throughput"
+
+  - name: "A/R"
+    baseline_views:
+      - "Aging buckets (current/30/60/90+)"
+      - "Collection velocity"
+      - "At-risk receivables"
+
+  - name: "WIP"
+    baseline_views:
+      - "Unbilled by age"
+      - "Unbilled by client/matter"
+      - "Narrative quality and approval status"
+
+  - name: "Revenue and Billing Quality"
+    baseline_views:
+      - "Billed vs collected trend"
+      - "Write-down and leakage analysis"
+      - "Rate realization by matter type"
+
+  - name: "Trust and Compliance"
+    baseline_views:
+      - "Three-way reconciliation"
+      - "Exception and variance log"
+      - "Trust activity timeline"
+
+ux_requirements:
+  on_screen:
+    - "Clear visual hierarchy with modern, energetic styling."
+    - "Interactive filters and drill-down navigation."
+    - "Readable typography at desktop and laptop resolutions."
+    - "Consistent theme integration with accessible contrast."
+  pdf_export:
+    - "One-click save to polished PDF."
+    - "Controlled pagination and section headers."
+    - "Brand-consistent color, spacing, and chart treatments."
+  print:
+    - "Printer-safe monochrome fallback."
+    - "Margins and scaling optimized for letter-size output."
+    - "No clipped charts or overflowing table columns."
+
+experience_goal:
+  statement: "Reports should feel premium and enjoyable to read, not like raw exports."
+  design_tone:
+    - "Professional"
+    - "Expressive"
+    - "Data-dense but approachable"
+

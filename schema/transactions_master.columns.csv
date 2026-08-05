@@ -1,0 +1,33 @@
+Ordinal,ColumnName,DataType,Required,DefaultValue,RequiredWhen,Notes
+1,TransactionID,text,Yes,auto_uuid,,Primary key
+2,TxnDate,date,Yes,today,,Transaction date
+3,Class,enum,Yes,Family,,Family or Business
+4,BusinessUnit,enum,Conditional,,Class = Business,Business operating unit
+5,Type,enum,Yes,Expense,,Income Expense Debt Repayment Transfer
+6,FromAccount,enum,Yes,,,Source account
+7,ToAccount,enum,Conditional,,Type in Transfer Debt Repayment,Destination account
+8,Payee,text,Conditional,,,Required except internal transfer
+9,Parent,text,Conditional,,,Required for billable client disbursement
+10,Client,text,Conditional,,,Required for billable client disbursement
+11,Matter,text,Conditional,,,Required for billable client disbursement
+12,CategoryCode,text,Yes,,,Stable lookup key
+13,CategoryName,text,Yes,,,Display category
+14,Member,enum,Yes,Joint,,Household member
+15,Amount,number(12,2),Yes,0.00,,Must be greater than zero
+16,TaxAmount,number(12,2),Yes,0.00,,HST or tax in dollars
+17,TaxFlag,enum,Yes,None,,Tax handling classification
+18,HSTExempt,bool-int,Yes,0,,If true default tax amount to zero
+19,GeneralOfficeExpense,bool-int,Yes,0,,Non-client overhead marker
+20,Shadow,bool-int,Yes,0,,Planned provisional marker
+21,InvoiceRef,text,No,,,Invoice reference number
+22,BillClaimPct,number(5,2),Conditional,0.00,Expense and billable context,0 to 100 percent
+23,TotalClaimAmount,number(12,2),Yes,0.00,,Calculated field
+24,ExpenseDetails,text,No,,,Long detail description
+25,Notes,text,No,,,General notes
+26,Status,enum,Yes,Pending,,Pending Cleared Reconciled Void
+27,Currency,enum,Yes,CAD,,Currency code
+28,VoidReason,text,Conditional,,Status = Void,Required when voided
+29,ClearedAt,date,Conditional,,Status in Cleared Reconciled,Date transaction cleared
+30,ReconciledAt,date,Conditional,,Status = Reconciled,Date transaction reconciled
+31,CreatedAt,datetime,Yes,auto_now,,Audit timestamp
+32,UpdatedAt,datetime,Yes,auto_now,,Audit timestamp

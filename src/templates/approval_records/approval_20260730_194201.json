@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-07-30T19:42:01Z",
+  "approvals": [
+    {
+      "file": "CSPM.xlsm",
+      "status": "APPROVED",
+      "approver": "Cory Schneider",
+      "hash": "514EAE59BC706FD4E1CD872E515F95BCDD5D05EB74317C6F099BDC9469FAA6CB"
+    },
+    {
+      "file": "Dockets.xlsm",
+      "status": "APPROVED",
+      "approver": "Cory Schneider",
+      "hash": "47631DD58928B4EFD69DAE2483A3E203DBD45993B36A209BF8F3632BE64B906C"
+    },
+    {
+      "file": "DummyMacro.xlsm",
+      "status": "APPROVED",
+      "approver": "Cory Schneider",
+      "hash": "80D2EF54388FD829687F0517224C3070B45083612F62446637C683856046C888"
+    }
+  ]
+}

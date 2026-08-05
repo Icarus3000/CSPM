@@ -1,0 +1,13 @@
+AccountCode,AccountName,AccountKind,Owner,Active,AliasList
+SIMPLII_CHEQUING,Simplii Chequing,chequing,Joint,1,
+CIBC_CHEQUING,CIBC Chequing,chequing,Joint,1,
+CIBC_LOC,CIBC LOC,loc,Joint,1,
+EQ_ACCOUNT,EQ Account,savings,Joint,1,"EQ Acccount"
+EQ_CARD,EQ Card,debit-card,Joint,1,
+WEALTHSIMPLE,Wealthsimple,investment,Joint,1,
+SIMPLII_VISA,Simplii Visa,credit-card,Joint,1,
+TRIANGLE_MASTERCARD,Triangle Mastercard,credit-card,Joint,1,
+CIBC_MORTGAGE,CIBC Mortgage,mortgage,Joint,1,
+HOME_TRUST_MORTGAGE,Home Trust Mortgage,mortgage,Joint,1,
+CASH_DEBORAH,Cash - Deborah,cash,Deborah,1,
+CASH_CORY,Cash - Cory,cash,Cory,1,

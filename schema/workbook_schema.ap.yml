@@ -1,0 +1,15 @@
+# CSPM governed AP workbook schema
+# CSPM_AP_GOVERNED_SCHEMA_V1
+version: 1
+workbook: data/CSPM.xlsm
+tables:
+  - sheet: APBills
+    table: tblAPBills
+    authority: supplier_obligation
+    row_policy: initially_empty
+    columns: [APBillID, Vendor, VendorInvoiceNumber, InvoiceDate, DueDate, Subtotal, TaxAmount, Total, AmountPaid, Balance, Status, Currency, ExpenseTransactionID, DuplicateKey, Notes, CreatedAt, UpdatedAt, ExpenseTreatment, CategoryCode, CategoryName, SourceAccount]
+  - sheet: APPayments
+    table: tblAPPayments
+    authority: outgoing_payment_application
+    row_policy: initially_empty
+    columns: [APPaymentID, APBillID, PaymentDate, Amount, FromAccount, Method, Reference, Status, ReversalOfPaymentID, ReversalReason, Notes, CreatedAt, UpdatedAt]

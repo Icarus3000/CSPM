@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    html, body, #stage {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    object {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    let logoUrl = params.get("logo") || "";
+
+    function restartSvgDocument(svgObject) {
+      try {
+        const doc = svgObject.contentDocument;
+        const svg = doc && doc.documentElement;
+        if (svg && svg.unpauseAnimations) svg.unpauseAnimations();
+        if (svg && svg.setCurrentTime) svg.setCurrentTime(0);
+      } catch (e) {
+      }
+    }
+
+    function mountLogo() {
+      const stage = document.getElementById("stage");
+      while (stage.firstChild) stage.removeChild(stage.firstChild);
+      if (!logoUrl) return false;
+
+      const svgObject = document.createElement("object");
+      svgObject.type = "image/svg+xml";
+      svgObject.data = logoUrl;
+      svgObject.onload = function() {
+        restartSvgDocument(svgObject);
+      };
+      stage.appendChild(svgObject);
+      return true;
+    }
+
+    window.setSplashLogo = function(url) {
+      if (url) logoUrl = String(url);
+      return mountLogo();
+    };
+
+    window.restartSplash = function() {
+      return mountLogo();
+    };
+
+    document.addEventListener("DOMContentLoaded", mountLogo);
+  </script>
+</body>
+</html>

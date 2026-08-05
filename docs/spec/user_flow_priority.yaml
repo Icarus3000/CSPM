@@ -1,0 +1,64 @@
+spec_version: 1
+updated_utc: "2026-02-22T00:00:00Z"
+owner: "Product + Engineering"
+status: "active"
+
+workflow_priority:
+  - order: 1
+    name: "Context Setup"
+    user_value: "Get to the right client/matter instantly."
+    deliverables:
+      - "Fast context picker with recent items and search."
+      - "Stable context state across docked and detached windows."
+
+  - order: 2
+    name: "Time Capture"
+    user_value: "Capture billable work with near-zero friction."
+    deliverables:
+      - "Reliable timer controls and state transitions."
+      - "Default hourly behavior with optional flat-fee mode."
+      - "Autosave of partial narratives and timer state."
+
+  - order: 3
+    name: "WIP Review"
+    user_value: "Review and correct unbilled work efficiently."
+    deliverables:
+      - "WIP queue by age, matter, and status."
+      - "Inline edit and approval workflow."
+
+  - order: 4
+    name: "Billing and Invoices"
+    user_value: "Convert approved work into clean invoices quickly."
+    deliverables:
+      - "Invoice assembly from WIP."
+      - "Styled invoice PDF and print templates."
+
+  - order: 5
+    name: "A/R and Collections"
+    user_value: "Know exactly who owes what and what to do next."
+    deliverables:
+      - "Aging views and follow-up actions."
+      - "Payment posting and allocation."
+
+  - order: 6
+    name: "Trust and Accounting Safety"
+    user_value: "Prevent compliance errors before they happen."
+    deliverables:
+      - "Trust overdraft hard stops."
+      - "Reconciliation and audit reports."
+
+  - order: 7
+    name: "Reporting and Productivity"
+    user_value: "Understand performance without digging through raw tables."
+    deliverables:
+      - "WIP, A/R, productivity, and revenue reports."
+      - "Interactive dashboards plus printable/PDF variants."
+
+  - order: 8
+    name: "Automation and Integrations"
+    user_value: "Reduce manual work and context switching."
+    deliverables:
+      - "Communication-to-time conversion."
+      - "Document/email integrations."
+      - "IP and trademark workflow extensions."
+

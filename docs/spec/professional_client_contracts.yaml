@@ -1,0 +1,848 @@
+spec_version: 1
+updated_utc: "2026-06-03T00:00:00Z"
+status: "active"
+owner: "Product + Engineering"
+
+objective: "Define framework-neutral shell, workflow, and local-service contracts for the current QML Professional prototype and a future Flutter or React Native Professional client."
+
+scope:
+  current_client: "Qt/QML Professional mode"
+  future_clients:
+    - "Flutter"
+    - "React Native"
+  out_of_scope:
+    - "Choosing Flutter versus React Native."
+    - "Replacing Console mode."
+    - "Changing the workbook/domain schema."
+  principle: "Professional screens consume explicit queries, actions, events, routes, and DTOs instead of relying on scattered QML globals or UI-owned business rules."
+
+source_references:
+  durable_plan: "implementation_plan.md"
+  option3_brief: "docs/CSPM_Option_3_Interface_Rebuild_Brief.md"
+  navigation_model: "src/qml/standards/ModulePathways.js"
+  professional_shell: "src/qml/components/ProfessionalAppShell.qml"
+  workspace_host: "src/qml/views/MainContent.qml"
+  backend_controller: "src/python/backend/app_controller.py"
+  local_service_adapter: "src/python/services/professional_client_service.py"
+  local_http_host: "src/python/services/professional_client_loopback_host.py"
+  http_proof_harness: "scripts/run_professional_client_http_poc.py"
+  domain_contract: "docs/spec/domain_contract.yaml"
+  workbook_schema: "schema/workbook_schema.yml"
+
+contract_maturity:
+  shell: "v1_documented_and_prototyped"
+  clients_matters: "v1_documented_and_partially_implemented"
+  docketing_deadlines: "v1_documented_and_partially_implemented"
+  billing_invoicing: "v1_documented_and_partially_implemented"
+  finance_ledger: "v1_documented_and_partially_implemented"
+  reports_exports: "v1_documented_and_partially_implemented"
+  transport_boundary: "v1_selected_loopback_http_json_plus_websocket_events"
+  local_service_adapter: "v0_dependency_free_dispatcher_and_explicit_start_http_host"
+
+portable_shell_contract:
+  required_state:
+    - "activeModuleId"
+    - "activeFlyoutModuleId"
+    - "openTabs"
+    - "activeTabId"
+    - "dirtyTabIds"
+    - "pinnedTabIds"
+    - "rightDrawer"
+    - "railPinned"
+    - "railExpanded"
+    - "globalSearch"
+  tab_dto:
+    required_fields:
+      - "id"
+      - "title"
+      - "moduleId"
+      - "moduleTitle"
+      - "tileIndex"
+      - "nodeId"
+      - "route"
+      - "tabType"
+      - "singleInstance"
+      - "singleInstanceKey"
+      - "dirty"
+      - "pinned"
+    optional_fields:
+      - "saveCommand"
+      - "entityType"
+      - "entityId"
+      - "entityTitle"
+      - "params"
+  commands:
+    - name: "openWorkspace"
+      payload_fields:
+        - "tileIndex"
+        - "nodeId"
+        - "state"
+      result: "workspaceOpened"
+    - name: "activateTab"
+      payload_fields:
+        - "tabId"
+      result: "tabActivated"
+    - name: "closeTab"
+      payload_fields:
+        - "tabId"
+        - "closeMode"
+      result: "tabClosed or closeBlocked"
+    - name: "saveDirtyTab"
+      payload_fields:
+        - "tabId"
+        - "saveCommand"
+      result: "saveCompleted or saveFailed"
+    - name: "detachTab"
+      payload_fields:
+        - "tabId"
+        - "windowGeometry"
+      result: "tabDetached"
+    - name: "dockTab"
+      payload_fields:
+        - "detachedWindowId"
+        - "tab"
+      result: "tabDocked"
+    - name: "openRightDrawer"
+      payload_fields:
+        - "drawerId"
+        - "context"
+      result: "rightDrawerOpened"
+  events:
+    - "workspaceOpened"
+    - "tabActivated"
+    - "tabDirtyChanged"
+    - "saveRequested"
+    - "saveCompleted"
+    - "saveFailed"
+    - "closeBlocked"
+    - "tabDetached"
+    - "tabDocked"
+    - "rightDrawerOpened"
+    - "rightDrawerClosed"
+    - "uiFailureReported"
+
+backend_boundary:
+  selected_transport:
+    id: "loopback_http_json_plus_websocket_events"
+    status: "selected_for_first_external_professional_client_proof"
+    query_action_channel: "HTTP JSON RPC on 127.0.0.1 only."
+    event_channel: "WebSocket event stream on the same loopback host for shell, workflow, dirty-state, and notification events."
+    process_model: "The Python backend process owns workbook, repositories, validation, reports, and native OS integration; QML, Flutter, and React Native clients act as presentation adapters."
+    api_shape: "POST /v1/query and POST /v1/action using the request/response envelopes below; clients subscribe to /v1/events for ordered event envelopes."
+    bind_policy:
+      host: "127.0.0.1"
+      port: "random high port announced to the launched client process"
+      network_exposure: "no LAN binding, public address binding, or externally reachable listener"
+    auth_policy:
+      session_token: "required per launch and passed only through a protected parent/child launch channel or local secure handoff"
+      cors: "deny by default; allow only the shipped local client origin when a webview/debug client requires it"
+      logging: "log request IDs, action names, durations, warnings, and failures; redact confidential payload values by default"
+    implementation_status:
+      http_query_action_host: "implemented_explicit_start_only"
+      session_token_auth: "implemented_in_memory_bearer_token"
+      cors_policy: "implemented_deny_by_default"
+      websocket_event_stream: "deferred"
+      normal_application_startup: "listener_disabled"
+    rationale:
+      - "Flutter and React Native both have mature HTTP JSON and WebSocket clients across desktop/mobile targets."
+      - "HTTP JSON keeps query/action tests simple and makes service contracts inspectable without QML."
+      - "A WebSocket event stream maps cleanly to Option 3 tab, dirty-state, report, and notification events without polling."
+      - "Keeping workbook access inside the Python process avoids exposing Excel files directly to the future client."
+    rejected_for_now:
+      websocket_only: "Not selected because ordinary query/action request-response flows are simpler to test and diagnose over HTTP JSON."
+      local_ipc: "Not selected first because Windows named pipes or platform channels would increase framework-specific bridge work before the Flutter versus React Native decision."
+      external_remote_api: "Not selected because live confidential workbook data must remain local until the security gate and SQL/API roadmap are mature."
+  transport_candidates:
+    - "local_http_selected_for_queries_and_actions"
+    - "websocket_selected_for_events"
+    - "local_ipc_deferred"
+  selection_rule: "Use the selected loopback HTTP JSON plus WebSocket boundary for the first proof while keeping Flutter versus React Native undecided."
+  request_envelope:
+    required_fields:
+      - "requestId"
+      - "action"
+      - "payload"
+      - "actor"
+      - "timestampUtc"
+  response_envelope:
+    required_fields:
+      - "requestId"
+      - "ok"
+      - "payload"
+      - "errors"
+      - "warnings"
+      - "validation"
+  service_layer_rule: "Future clients should call workflow services through the same DTOs; QML Slots are an adapter surface, not the long-term contract."
+
+first_external_client_proof:
+  workflow_id: "clients_matters.client_directory_profile"
+  status: "http_transport_proof_implemented_websocket_pending"
+  rationale:
+    - "Client Directory/Profile is already backed by real workbook data and explicit Option 3 client identity."
+    - "The proof can exercise shell openWorkspace, tab activation, record identity, and read-only profile loading without touching billing or trust-sensitive write paths first."
+    - "It gives a fast pass/fail signal for the local service boundary before heavier Time Docket, billing, or report replacement work."
+  required_queries:
+    - "listClientDirectory"
+    - "getClientProfile"
+  required_actions:
+    - "openWorkspace"
+    - "openClientProfile"
+  required_events:
+    - "workspaceOpened"
+    - "tabActivated"
+    - "clientDirectoryRefreshed"
+    - "clientProfileOpened"
+    - "uiFailureReported"
+  acceptance:
+    - "A small external Professional client can request the Client Directory through HTTP JSON and render workbook-backed rows."
+    - "Opening a client uses an explicit clientId/clientName payload and creates or activates an Option 3 client profile tab."
+    - "The external client receives shell/workflow events over WebSocket without polling QML state."
+    - "Console QML behavior and the existing Professional QML shell remain available during the proof."
+  implemented_notes:
+    - "A dependency-free Python dispatcher now validates request envelopes, handles Client Directory/Profile query/action names, and publishes ordered event envelopes for the future WebSocket stream."
+    - "An explicit-start stdlib HTTP host now binds only to 127.0.0.1 on a random port, requires an in-memory bearer session token, denies CORS by default, limits JSON body size, does not log request payloads or tokens, and does not expose raw backend exception details."
+    - "The local HTTP proof harness requests the real Excel-backed Client Directory/Profile through the host and verifies Option 3 client-tab identity without printing confidential client payloads."
+    - "No live loopback listener starts at normal application launch; WebSocket event transport remains deferred."
+  deferred_until_after_proof:
+    - "Mutating client profile saves through the external client."
+    - "Time Docket write workflow."
+    - "Docket Activity Report drilldown and export workflow."
+
+shared_dto_conventions:
+  identity_fields:
+    - "entityType"
+    - "entityId"
+    - "entityTitle"
+  stable_entity_id_examples:
+    client: "clientId"
+    matter: "matterId"
+    time_entry: "entryId"
+    deadline: "deadlineId"
+    trademark: "trademarkId"
+    invoice: "invoiceId"
+    payment: "paymentId"
+    transaction: "transactionId"
+    report: "reportId"
+  result_shape:
+    ok: "boolean"
+    message: "short user-safe status"
+    payload: "workflow result data"
+    errors: "blocking failures"
+    warnings: "non-blocking review items"
+    fieldErrors: "field-keyed validation details"
+  formatting_rules:
+    dates: "ISO yyyy-mm-dd for storage and transport."
+    datetimes: "UTC ISO timestamps at service boundaries."
+    money: "decimal strings or integer cents; do not use binary floating point in transport DTOs."
+    booleans: "true/false booleans, not display strings."
+
+workflows:
+  clients_matters:
+    module_id: "clients"
+    screens:
+      - route: "/clients/directory"
+        node_id: "A01"
+        title: "Client Directory"
+      - route: "/clients/new"
+        node_id: "A02"
+        title: "New Client Wizard"
+      - route: "/clients/profile"
+        node_id: "A03"
+        title: "Client Profile 360"
+      - route: "/matters/directory"
+        node_id: "A09"
+        title: "Matter Directory"
+      - route: "/matters/new"
+        node_id: "A10"
+        title: "New Matter Wizard"
+      - route: "/matters/profile"
+        node_id: "A11"
+        title: "Matter Profile 360"
+      - route: "/clients/conflict-check"
+        node_id: "A08"
+        title: "Conflict Check"
+    queries:
+      - name: "listClientDirectory"
+        params:
+          - "activeOnly"
+          - "query"
+        returns: "ClientDirectoryRow[]"
+      - name: "listClientNames"
+        params: []
+        returns: "string[]"
+      - name: "listParentNames"
+        params: []
+        returns: "string[]"
+      - name: "getClientProfile"
+        params:
+          - "clientId or clientName"
+        returns: "ClientProfileDto"
+      - name: "listMatterDirectory"
+        params:
+          - "activeOnly"
+          - "query"
+        returns: "MatterDirectoryRow[]"
+      - name: "listMatterNames"
+        params: []
+        returns: "string[]"
+      - name: "listActiveMatterDirectory"
+        params: []
+        returns: "MatterDirectoryRow[]"
+      - name: "getMatterProfile"
+        params:
+          - "matterId or matterName"
+        returns: "MatterProfileDto"
+      - name: "searchGlobalEntities"
+        params:
+          - "query"
+          - "mode"
+        returns: "GlobalSearchResult[]"
+      - name: "previewMatterNumber"
+        params:
+          - "clientId"
+          - "matterType"
+          - "openedDate"
+          - "sequenceSeed"
+        returns: "string"
+    actions:
+      - name: "openClientProfile"
+        payload_fields:
+          - "clientId"
+          - "clientName"
+        result_event: "workspaceOpened"
+      - name: "saveClientProfile"
+        payload_fields:
+          - "clientProfile"
+        result_event: "clientProfileSaved"
+      - name: "openMatterProfile"
+        payload_fields:
+          - "matterId"
+          - "matterName"
+        result_event: "workspaceOpened"
+      - name: "saveMatterProfile"
+        payload_fields:
+          - "matterProfile"
+        result_event: "matterProfileSaved"
+      - name: "requestNewClientFromMatterWizard"
+        payload_fields:
+          - "returnToMatterDraft"
+        result_event: "matterWizardClientLinked"
+    screen_state:
+      - "selectedClientId"
+      - "selectedClientName"
+      - "selectedMatterId"
+      - "selectedMatterName"
+      - "clientDirectoryQueryText"
+      - "clientDirectoryModeText"
+      - "matterDirectoryQueryText"
+      - "matterDirectoryModeText"
+      - "newClientDraft"
+      - "newMatterDraft"
+      - "validation"
+      - "dirty"
+      - "option3EntityType"
+      - "option3EntityId"
+      - "option3EntityTitle"
+    events:
+      - "clientDirectoryRefreshed"
+      - "clientProfileOpened"
+      - "clientProfileSaved"
+      - "matterDirectoryRefreshed"
+      - "matterProfileOpened"
+      - "matterProfileSaved"
+      - "globalSearchCompleted"
+      - "validationFailed"
+    implemented_notes:
+      - "Directory and global-search openings now pass explicit entity identity into Option 3 record tabs."
+      - "New Matter can open New Client and return with the saved client linked."
+    remaining_gaps:
+      - "Move remaining workflow state out of large QML files into service/view-model adapters."
+      - "Define typed DTO schemas for client and matter profile payloads."
+
+  docketing_deadlines:
+    module_id: "docketing"
+    screens:
+      - route: "/docketing/time-entry"
+        node_id: "B01"
+        title: "Time Docket Entry"
+      - route: "/docketing/timer"
+        node_id: "B03"
+        title: "Timer Console"
+      - route: "/docketing/activity-report"
+        node_id: "B04"
+        title: "Docket Activity Report"
+      - route: "/deadlines/calendar"
+        node_id: "B07"
+        title: "Deadline Master Calendar"
+      - route: "/deadlines/editor"
+        node_id: "B08"
+        title: "Deadline Entry Editor"
+      - route: "/docketing/trademark-filing"
+        node_id: "B16"
+        title: "Trademark Filing"
+      - route: "/docketing/trademark-directory"
+        node_id: "B17"
+        title: "Trademark Directory"
+    queries:
+      - name: "listActiveClientNames"
+        params: []
+        returns: "string[]"
+      - name: "listActiveMatterNames"
+        params: []
+        returns: "string[]"
+      - name: "listActiveMatterDirectory"
+        params: []
+        returns: "MatterDirectoryRow[]"
+      - name: "listDeadlineEntries"
+        params:
+          - "filters"
+        returns: "DeadlineEntryDto[]"
+      - name: "getTimeDocketAggregate"
+        params:
+          - "date"
+          - "clientId"
+          - "matterId"
+        returns: "TimeDocketAggregateDto"
+      - name: "getDocketActivityReport"
+        params:
+          - "filters"
+        returns: "ReportDocumentDto"
+      - name: "listTrademarkDirectory"
+        params:
+          - "query"
+        returns: "TrademarkDirectoryRow[]"
+    actions:
+      - name: "saveTimeEntry"
+        payload_fields:
+          - "timeEntry"
+        result_event: "timeEntrySaved"
+      - name: "startTimer"
+        payload_fields:
+          - "clientId"
+          - "matterId"
+          - "description"
+        result_event: "timerStarted"
+      - name: "stopTimer"
+        payload_fields:
+          - "timerId"
+        result_event: "timerStopped"
+      - name: "saveDeadlineEntry"
+        payload_fields:
+          - "deadlineEntry"
+        result_event: "deadlineEntrySaved"
+      - name: "saveTrademarkFiling"
+        payload_fields:
+          - "trademarkFiling"
+        result_event: "trademarkFilingSaved"
+      - name: "openExternalRegistryUrl"
+        payload_fields:
+          - "url"
+        result_event: "externalUrlOpened"
+      - name: "exportDocketActivityCsv"
+        payload_fields:
+          - "filters"
+        result_event: "reportExported"
+      - name: "exportDocketActivityPdf"
+        payload_fields:
+          - "reportDocument"
+          - "brandingProfileId"
+        result_event: "reportExported"
+    screen_state:
+      - "activeDate"
+      - "selectedClientId"
+      - "selectedMatterId"
+      - "timerState"
+      - "timeEntryDraft"
+      - "deadlineFilters"
+      - "deadlineDraft"
+      - "trademarkDraft"
+      - "reportFilters"
+      - "dirty"
+      - "validation"
+    events:
+      - "lookupListsRefreshed"
+      - "timeEntrySaved"
+      - "timerStarted"
+      - "timerStopped"
+      - "deadlineEntriesLoaded"
+      - "deadlineEntrySaved"
+      - "trademarkFilingSaved"
+      - "trademarkDirectoryRefreshed"
+      - "docketReportLoaded"
+      - "reportExported"
+      - "validationFailed"
+    implemented_notes:
+      - "Time Docket, Deadline Entry, Trademark Filing, and Docket Activity Report already have named save/export routes in QML/backend."
+      - "Client and matter lookup lists are loaded from real workbook data."
+    remaining_gaps:
+      - "Separate timer persistence/event state from TimeDocketView QML."
+      - "Finalize typed DTOs for deadline and trademark payloads."
+
+  billing_invoicing:
+    module_id: "billing"
+    screens:
+      - route: "/billing/wip-to-bill"
+        node_id: "C01"
+        title: "WIP-to-Bill Workbench"
+      - route: "/billing/pre-bill"
+        node_id: "C02"
+        title: "Pre-Bill Editor"
+      - route: "/billing/invoice-builder"
+        node_id: "C03"
+        title: "Invoice Builder"
+      - route: "/billing/reversal-credit"
+        node_id: "C06"
+        title: "Invoice Reversal/Credit Memo"
+      - route: "/billing/payment-entry"
+        node_id: "C07"
+        title: "Payment Entry"
+      - route: "/billing/write-off-adjustment"
+        node_id: "C09"
+        title: "Write-off/Adjustment Entry"
+      - route: "/billing/collections"
+        node_id: "C10"
+        title: "Collections Queue"
+    queries:
+      - name: "listApprovedWip"
+        params:
+          - "clientId"
+          - "matterId"
+          - "dateRange"
+          - "status"
+        returns: "WipRow[]"
+      - name: "getPreBill"
+        params:
+          - "preBillId"
+        returns: "PreBillDto"
+      - name: "getInvoiceDraft"
+        params:
+          - "invoiceId or draftId"
+        returns: "InvoiceDto"
+      - name: "listInvoices"
+        params:
+          - "filters"
+        returns: "InvoiceSummaryRow[]"
+      - name: "listPayments"
+        params:
+          - "invoiceId"
+          - "clientId"
+        returns: "PaymentRow[]"
+      - name: "listCollectionsQueue"
+        params:
+          - "filters"
+        returns: "CollectionsQueueRow[]"
+    actions:
+      - name: "createPreBillFromWip"
+        payload_fields:
+          - "selectedWipIds"
+          - "clientId"
+          - "matterId"
+        result_event: "preBillCreated"
+      - name: "savePreBill"
+        payload_fields:
+          - "preBill"
+        result_event: "preBillSaved"
+      - name: "approvePreBill"
+        payload_fields:
+          - "preBillId"
+        result_event: "preBillApproved"
+      - name: "buildInvoice"
+        payload_fields:
+          - "preBillId"
+          - "invoiceOptions"
+        result_event: "invoiceBuilt"
+      - name: "saveInvoice"
+        payload_fields:
+          - "invoice"
+        result_event: "invoiceSaved"
+      - name: "postPayment"
+        payload_fields:
+          - "payment"
+        result_event: "paymentPosted"
+      - name: "applyWriteOff"
+        payload_fields:
+          - "invoiceId"
+          - "adjustment"
+        result_event: "invoiceAdjusted"
+      - name: "reverseInvoice"
+        payload_fields:
+          - "invoiceId"
+          - "reason"
+        result_event: "invoiceReversed"
+    screen_state:
+      - "selectedWipIds"
+      - "activePreBillId"
+      - "activeInvoiceId"
+      - "invoiceDraft"
+      - "paymentDraft"
+      - "collectionsFilters"
+      - "dirty"
+      - "validation"
+      - "option3EntityType"
+      - "option3EntityId"
+      - "option3EntityTitle"
+    events:
+      - "wipLoaded"
+      - "preBillCreated"
+      - "preBillSaved"
+      - "preBillApproved"
+      - "invoiceBuilt"
+      - "invoiceSaved"
+      - "paymentPosted"
+      - "invoiceAdjusted"
+      - "invoiceReversed"
+      - "collectionsQueueLoaded"
+      - "validationFailed"
+    implemented_notes:
+      - "The Option 3 navigation model reserves billing routes and save-command extension points."
+      - "Workbook schema contains invoice/payment domain entities."
+      - "Payment Entry C07 now has a QML workspace for open-invoice search, invoice history, payment/adjustment drafts, and named Option 3 save dispatch."
+      - "The current QML adapter exposes listOpenPaymentInvoices, listInvoicePaymentHistory, and postPayment through AppController/DocketingController backed by ExcelRepo."
+      - "postPayment updates Receivables and linked TimeEntries, appends ledger evidence, and creates a Transactions Master income row for cash payments."
+    remaining_gaps:
+      - "Expose the Payment Entry query/action DTOs through the future loopback local service boundary before external client proof work."
+      - "Implement concrete invoice creation, reversal/credit, batch allocation, collections, and dedicated write-off workflow services."
+      - "Record-opening actions must pass explicit invoiceId/paymentId identity, mirroring client/matter tabs."
+
+  finance_ledger:
+    module_id: "finance"
+    screens:
+      - route: "/finance/executive-dashboard"
+        node_id: "D01"
+        title: "Executive Dashboard"
+      - route: "/finance/revenue-dashboard"
+        node_id: "D02"
+        title: "Revenue Dashboard"
+      - route: "/finance/expense-dashboard"
+        node_id: "D03"
+        title: "Expense Dashboard"
+      - route: "/finance/net-income-cash"
+        node_id: "D04"
+        title: "Net Income & Cash Increase"
+      - route: "/finance/wip-dashboard"
+        node_id: "D05"
+        title: "WIP Dashboard/Report"
+      - route: "/billing/transactions-master"
+        node_id: "C11"
+        title: "Transactions Master"
+    queries:
+      - name: "listTransactions"
+        params:
+          - "filters"
+        returns: "TransactionRow[]"
+      - name: "listTransactionAccounts"
+        params:
+          - "includeInactive"
+        returns: "TransactionAccountRow[]"
+      - name: "listTransactionCategories"
+        params:
+          - "accountType"
+          - "includeInactive"
+        returns: "TransactionCategoryRow[]"
+      - name: "listTransactionBusinessUnits"
+        params:
+          - "includeInactive"
+        returns: "BusinessUnitRow[]"
+      - name: "listTransactionPayees"
+        params:
+          - "includeInactive"
+        returns: "PayeeRow[]"
+      - name: "homeDashboardSummary"
+        params: []
+        returns: "DashboardSummaryDto"
+      - name: "getFinanceDashboard"
+        params:
+          - "dashboardId"
+          - "filters"
+        returns: "DashboardDocumentDto"
+    actions:
+      - name: "saveTransaction"
+        payload_fields:
+          - "transaction"
+        result_event: "transactionSaved"
+      - name: "voidTransaction"
+        payload_fields:
+          - "transactionId"
+          - "reason"
+        result_event: "transactionVoided"
+      - name: "refreshDashboard"
+        payload_fields:
+          - "dashboardId"
+          - "filters"
+        result_event: "dashboardRefreshed"
+      - name: "exportDashboard"
+        payload_fields:
+          - "dashboardDocument"
+          - "format"
+        result_event: "dashboardExported"
+    screen_state:
+      - "transactionDraft"
+      - "recentTransactionFilters"
+      - "accountOptions"
+      - "categoryOptions"
+      - "businessUnitOptions"
+      - "payeeOptions"
+      - "dashboardFilters"
+      - "dirty"
+      - "validation"
+    events:
+      - "transactionLookupsLoaded"
+      - "transactionsLoaded"
+      - "transactionSaved"
+      - "transactionVoided"
+      - "dashboardSummaryLoaded"
+      - "dashboardRefreshed"
+      - "dashboardExported"
+      - "validationFailed"
+    implemented_notes:
+      - "Transactions Master has real lookup, recent-list, and save behavior behind AppController/repository calls."
+      - "Home/dashboard summary is already served from backend data."
+    remaining_gaps:
+      - "Split dashboard DTOs from QML display layout."
+      - "Define ledger/trust invariants as service validations before external-client proof work."
+
+  reports_exports:
+    module_id: "reports"
+    screens:
+      - route: "/reports/ar-aging"
+        node_id: "D06"
+        title: "A/R Aging & Detail"
+      - route: "/reports/client-ledger"
+        node_id: "D07"
+        title: "Client Ledger Report"
+      - route: "/reports/matter-ledger"
+        node_id: "D08"
+        title: "Matter Ledger Report"
+      - route: "/reports/parent-ledger"
+        node_id: "D09"
+        title: "Parent Ledger Report"
+      - route: "/reports/productivity-utilization"
+        node_id: "D10"
+        title: "Productivity & Utilization Report"
+      - route: "/reports/earnings"
+        node_id: "D11"
+        title: "Earnings Report"
+      - route: "/reports/top-client-concentration"
+        node_id: "D13"
+        title: "Top Client Concentration"
+      - route: "/reports/quarterly-pack"
+        node_id: "D14"
+        title: "Quarterly Performance Pack"
+      - route: "/reports/export-print"
+        node_id: "D16"
+        title: "Export/Print Packager"
+    report_document_dto:
+      required_fields:
+        - "reportId"
+        - "title"
+        - "family"
+        - "filters"
+        - "filterSummary"
+        - "generatedAtUtc"
+        - "sections"
+        - "columns"
+        - "rows"
+        - "totals"
+        - "branding"
+        - "exportCapabilities"
+      optional_fields:
+        - "entityType"
+        - "entityId"
+        - "entityTitle"
+        - "orientation"
+        - "pageSize"
+        - "drilldownActions"
+    queries:
+      - name: "getReportDocument"
+        params:
+          - "reportId"
+          - "filters"
+        returns: "ReportDocumentDto"
+      - name: "listReportPresets"
+        params:
+          - "reportFamily"
+        returns: "ReportPresetRow[]"
+      - name: "listReportBrandingProfiles"
+        params: []
+        returns: "BrandingProfileRow[]"
+      - name: "getDocketActivityReport"
+        params:
+          - "filters"
+        returns: "ReportDocumentDto"
+    actions:
+      - name: "openReportWindow"
+        payload_fields:
+          - "reportDocument"
+        result_event: "reportWindowOpened"
+      - name: "refreshReportWindow"
+        payload_fields:
+          - "reportId"
+          - "filters"
+        result_event: "reportWindowRefreshed"
+      - name: "saveReportPreset"
+        payload_fields:
+          - "preset"
+        result_event: "reportPresetSaved"
+      - name: "exportReportCsv"
+        payload_fields:
+          - "reportDocument"
+        result_event: "reportExported"
+      - name: "exportReportPdf"
+        payload_fields:
+          - "reportDocument"
+          - "brandingProfileId"
+        result_event: "reportExported"
+      - name: "openReportDrilldown"
+        payload_fields:
+          - "reportId"
+          - "row"
+          - "drilldownAction"
+        result_event: "workspaceOpened"
+    screen_state:
+      - "reportId"
+      - "reportFamily"
+      - "filters"
+      - "selectedPresetId"
+      - "selectedBrandingProfileId"
+      - "reportDocument"
+      - "exportStatus"
+      - "validation"
+    events:
+      - "reportLoaded"
+      - "reportWindowOpened"
+      - "reportWindowRefreshed"
+      - "reportPresetSaved"
+      - "reportExported"
+      - "reportDrilldownOpened"
+      - "validationFailed"
+    implemented_notes:
+      - "ReportWindow, ReportWindowManager, and docket report export already use a report-document style payload."
+      - "Reports are represented as a first-class Professional rail module in Option 3."
+    remaining_gaps:
+      - "Give invoice/report opening flows explicit reportId/entity identity before migration proof work."
+      - "Unify all report families on one ReportDocumentDto before external-client replacement."
+
+migration_readiness_gates:
+  before_flutter_react_native_decision:
+    - "At least one real workflow runs through a service/view-model boundary without QML-only globals."
+    - "Option 3 shell state, tab model, routes, dirty-tab behavior, and report window behavior are represented by DTOs."
+    - "Transport choice is evaluated against desktop packaging, local-file access, report/PDF workflows, native windowing, and developer workflow."
+    - "Console QML behavior remains untouched by Professional client migration work."
+  before_external_client_poc:
+    - "Select local HTTP, WebSocket, IPC, or another explicit bridge."
+    - "Freeze a v1 route list from ModulePathways.js."
+    - "Freeze request/response envelopes."
+    - "Pick one narrow proof workflow: Client Directory/Profile, Time Docket Entry, or Docket Activity Report."
+  before_module_replacement:
+    - "Workflow has typed query/action/event contracts."
+    - "Workflow has parity checks against the QML Professional screen."
+    - "Workflow preserves autosave, dirty-close guard, detach/dock, and report/export behavior."
+
+validation_contract:
+  static_checks:
+    - "YAML parses successfully."
+    - "docs/spec/program_manifest.yaml lists this spec as required."
+    - "tests/ui/test_quality_bootstrap_contracts.py guards required workflow coverage."
+  runtime_checks:
+    - "Existing QML Professional shell tests continue to pass."
+    - "A future external-client proof must validate one workflow through the chosen transport boundary."

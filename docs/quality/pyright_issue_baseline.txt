@@ -1,0 +1,2 @@
+error|<WORKSPACE>/src/python/backend/app_controller.py|reportUndefinedVariable|"ctypes" is not defined
+warning|<WORKSPACE>/src/python/repositories/excel_db.py|reportUnsupportedDunderAll|Operation on "__all__" is not supported, so exported symbol list may be incorrect

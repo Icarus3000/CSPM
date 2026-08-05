@@ -1,0 +1,33 @@
+spec_version: 1
+updated_utc: "2026-02-22T00:00:00Z"
+status: "in_progress"
+
+sprint:
+  name: "Sprint 0 - Platform Pivot"
+  outcomes:
+    - "Canonical spec baseline established."
+    - "Backup and restore chain operational."
+    - "Core delivery sequence defined by user-frequency."
+
+work_items:
+  - id: "S0-01"
+    title: "Create machine-readable spec pack"
+    status: "done"
+  - id: "S0-02"
+    title: "Implement project snapshot service with manifest hashing"
+    status: "done"
+  - id: "S0-03"
+    title: "Wire AppController auto backup and restore slots"
+    status: "done"
+  - id: "S0-04"
+    title: "Define canonical workbook schema and migration direction"
+    status: "done"
+  - id: "S0-05"
+    title: "Reconcile Excel service/repository naming mismatches in runtime code"
+    status: "next"
+
+next_sprint_entry_criteria:
+  - "Schema mismatch remediation plan approved."
+  - "Time capture autosave + crash restore technical design approved."
+  - "WIP queue data model and report field requirements approved."
+

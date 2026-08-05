@@ -1,0 +1,28 @@
+spec_version: 1
+updated_utc: "2026-06-03T00:00:00Z"
+program_name: "CSPM"
+status: "active"
+
+source_of_truth:
+  bible: "docs/BIBLE.md"
+  roadmap: "docs/ROADMAP.md"
+  schema: "schema/workbook_schema.yml"
+  production_backup_chain: "docs/PRODUCTION_BACKUP_CHAIN.md"
+
+required_specs:
+  - "docs/spec/user_flow_priority.yaml"
+  - "docs/spec/backup_restore_policy.yaml"
+  - "docs/spec/pre_live_security_gate.yaml"
+  - "docs/spec/reporting_ux.yaml"
+  - "docs/spec/domain_contract.yaml"
+  - "docs/spec/professional_client_contracts.yaml"
+  - "docs/spec/no_placeholder_21_step_execution.yaml"
+
+delivery_principles:
+  - "Implement in the order users perform work."
+  - "Never trade away data safety for speed."
+  - "UX quality applies to forms, dashboards, reports, and print outputs."
+  - "Design for eventual SQL and mobile expansion from day one."
+  - "Keep the Professional client framework-neutral; use the selected local loopback HTTP JSON plus WebSocket event boundary until Flutter versus React Native is intentionally selected."
+  - "Run active workbook integrity checks before release, around Git cloud restore, and in support diagnostics."
+  - "Do not use live confidential workbook data until the pre-live security gate is complete or explicitly excepted."

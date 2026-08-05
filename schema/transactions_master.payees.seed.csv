@@ -1,0 +1,19 @@
+PayeeName,DefaultCategoryCode,Active,Notes
+Metro,EXP_GROCERIES,1,Grocery store example
+Loblaws,EXP_GROCERIES,1,Grocery store example
+Costco,EXP_GROCERIES,1,Grocery and household example
+Hydro One,EXP_ELECTRICITY,1,Utility example
+Enbridge,EXP_NATURAL_GAS,1,Utility example
+Rogers,EXP_INTERNET_HOME,1,Telecom example
+Bell,EXP_MOBILE_PHONE,1,Telecom example
+Uber,EXP_RIDESHARE_TAXI,1,Transport example
+Air Canada,EXP_TRAVEL_AIRFARE,1,Travel example
+Marriott,EXP_TRAVEL_LODGING,1,Travel example
+CRA,EXP_INCOME_TAX_PAID,1,Tax authority
+Law Society,EXP_PROFESSIONAL_DUES,1,Professional dues example
+Microsoft,EXP_SOFTWARE_SUBSCRIPTIONS,1,SaaS example
+QuickBooks,EXP_SOFTWARE_SUBSCRIPTIONS,1,SaaS example
+Client Reimbursement,INC_REIMBURSEMENT_NON_TAXABLE,1,Client reimbursement receipt
+VHA,INC_OT_VHA_BILLINGS,1,Deborah VHA billing source
+Private OT Client,INC_OT_PRIVATE_BILLINGS,1,Deborah private billing source
+Legal Client,INC_LEGAL_FEES,1,Cory legal billing source

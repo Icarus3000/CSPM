@@ -1,0 +1,142 @@
+spec_version: 1
+updated_utc: "2026-03-02T22:10:00Z"
+initiative_id: "NO_PLACEHOLDER_21"
+title: "No Placeholder Activation Plan"
+status: "in_progress"
+total_steps: 21
+current_step_id: "NP-10"
+last_completed_step_id: "NP-09"
+
+goal:
+  statement: "Every window, form, and button is functional, practical, and mapped to a specific business outcome."
+  hard_exit: "Zero placeholder modules and zero no-op controls in production paths."
+
+artifacts:
+  control_registry_csv: "docs/spec/ui_control_registry.csv"
+  control_registry_summary: "docs/spec/ui_control_registry_summary.md"
+
+resume_protocol:
+  read_first:
+    - "docs/BIBLE.md"
+    - "docs/spec/program_manifest.yaml"
+    - "docs/spec/no_placeholder_21_step_execution.yaml"
+    - "docs/spec/ui_control_registry_summary.md"
+  commands:
+    - ".\\scripts\\80_generate_ui_control_registry.ps1"
+    - ".\\scripts\\99_update_context_dump.ps1 -Descriptor no_placeholder_step"
+  agent_instruction: "Continue from current_step_id and update this file after each completed step."
+
+steps:
+  - id: "NP-01"
+    title: "Generate full UI control inventory baseline"
+    status: "done"
+    deliverables:
+      - "docs/spec/ui_control_registry.csv"
+      - "docs/spec/ui_control_registry_summary.md"
+    completion_gate: "All interactive controls are listed with file/line/type/status."
+
+  - id: "NP-02"
+    title: "Create control contract matrix (control -> backend slot -> data effect)"
+    status: "done"
+    deliverables:
+      - "docs/spec/ui_control_contract_matrix.csv"
+      - "docs/spec/ui_control_contract_matrix.md"
+    completion_gate: "Every high-priority control has explicit preconditions, action, and postconditions."
+
+  - id: "NP-03"
+    title: "Normalize navigation/window activation map"
+    status: "done"
+    deliverables:
+      - "docs/spec/navigation_activation_matrix.md"
+    completion_gate: "Each menu/nav action opens the intended module/window with deterministic return paths."
+
+  - id: "NP-04"
+    title: "Activate Clients & Matters: directory/profile actions"
+    status: "done"
+    completion_gate: "All directory row actions and profile actions persist/reload."
+
+  - id: "NP-05"
+    title: "Activate New Client Wizard end-to-end"
+    status: "done"
+    completion_gate: "Create/edit/validate/cancel flows are complete with persistence."
+
+  - id: "NP-06"
+    title: "Activate New Matter Wizard and Matter Profile 360"
+    status: "done"
+    completion_gate: "Matter creation and update controls are fully wired and validated."
+
+  - id: "NP-07"
+    title: "Activate conflict checks and merge/reassignment tools"
+    status: "done"
+    completion_gate: "Conflict workflow and reassignment/merge actions are operational and auditable."
+
+  - id: "NP-08"
+    title: "Activate Time Docket Entry and Timer Console controls"
+    status: "done"
+    completion_gate: "Timer lifecycle and docket submit/edit controls fully function."
+
+  - id: "NP-09"
+    title: "Activate Fee Docket and Docket Review Queue actions"
+    status: "done"
+    completion_gate: "Fee entries and review transitions are fully actionable."
+
+  - id: "NP-10"
+    title: "Activate Deadline calendar/editor core controls"
+    status: "in_progress"
+    completion_gate: "Create/edit/delete/snooze/escalate flows are wired and persisted."
+
+  - id: "NP-11"
+    title: "Activate deadline automation (rules, ticklers, reminders)"
+    status: "pending"
+    completion_gate: "Rules and scheduler controls execute and reflect state changes."
+
+  - id: "NP-12"
+    title: "Activate WIP-to-Bill and Pre-Bill workbench controls"
+    status: "pending"
+    completion_gate: "WIP filtering, edits, approvals, and transitions are complete."
+
+  - id: "NP-13"
+    title: "Activate invoice build/finalize/reverse controls"
+    status: "pending"
+    completion_gate: "Invoice lifecycle buttons and forms are fully functional."
+
+  - id: "NP-14"
+    title: "Activate payment and open-invoice application controls"
+    status: "pending"
+    completion_gate: "Payment posting, linking, and adjustment controls are complete."
+
+  - id: "NP-15"
+    title: "Activate expense/disbursement/rebill flows"
+    status: "pending"
+    completion_gate: "Expense and disbursement controls complete with rebill behavior."
+
+  - id: "NP-16"
+    title: "Activate tax remittance and filing controls"
+    status: "pending"
+    completion_gate: "HST/GST remittance and tax filing actions are deterministic and validated."
+
+  - id: "NP-17"
+    title: "Activate A/R collections and bank matching controls"
+    status: "pending"
+    completion_gate: "Collections and matching actions update balances correctly."
+
+  - id: "NP-18"
+    title: "Activate dashboards/reports/export controls"
+    status: "pending"
+    completion_gate: "All report launch, filter, and export/print actions function."
+
+  - id: "NP-19"
+    title: "Activate cross-cutting modules (search, notifications, tasks, docs)"
+    status: "pending"
+    completion_gate: "Cross-cutting module controls execute real workflows."
+
+  - id: "NP-20"
+    title: "Activate admin controls (roles, audit log, sequences, integrations)"
+    status: "pending"
+    completion_gate: "Admin and governance controls are practical and enforce policy."
+
+  - id: "NP-21"
+    title: "Placeholder purge + regression sign-off"
+    status: "pending"
+    completion_gate: "No placeholders remain; full smoke suite passes; final UX acceptance complete."
+

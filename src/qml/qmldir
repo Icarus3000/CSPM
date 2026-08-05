@@ -1,0 +1,7 @@
+Main 1.0 Main.qml
+BootstrapRoot 1.0 BootstrapRoot.qml
+SplashOverlay 1.0 SplashOverlay.qml
+AnimationOverlay 1.0 AnimationOverlay.qml
+ClosingOverlay 1.0 ClosingOverlay.qml
+MinimizeOverlay 1.0 MinimizeOverlay.qml
+DetachedShellWindow 1.0 DetachedShellWindow.qml

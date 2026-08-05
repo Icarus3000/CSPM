@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice - {{ invoice_number_raw }}</title>
+    <style>
+        :root {
+            --c-text: #0f172a;
+            --c-gray: #64748b;
+            --c-light: #e2e8f0;
+            --font-body: 'Inter', -apple-system, sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        @page { margin: 0 !important; }
+        * { box-sizing: border-box; }
+        body { font-family: var(--font-body); color: var(--c-text); margin: 0; padding: 0; font-size: 12px; line-height: 1.6; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        
+        .master-table { width: 100%; border-collapse: collapse; border: none; }
+        .master-header { height: 123px; border: none; }
+        .master-footer { height: 1.2in; border: none; }
+        .master-content { padding: 0 1in; border: none; vertical-align: top; }
+        
+        .header-grid { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 68px; }
+        .firm-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+        .firm-details { font-size: 11px; color: var(--c-gray); margin-top: 15px; }
+        
+        .inv-right { text-align: right; }
+        .inv-title { font-size: 48px; font-weight: 700; letter-spacing: -0.03em; color: var(--c-light); line-height: 1; margin-bottom: 15px; }
+        .inv-meta { font-size: 13px; font-weight: 500; }
+        
+        .draft-badge { display: inline-block; background: var(--c-text); color: #fff; font-size: 10px; padding: 2px 8px; border-radius: 4px; margin-left: 8px; font-weight: 600; }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 40px; gap: 40px; }
+        .section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--c-gray); margin-bottom: 12px; border-bottom: 1px solid var(--c-light); padding-bottom: 8px; }
+        
+        .matter-label { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+        
+        .table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-variant-numeric: tabular-nums; }
+        .table th { padding: 12px 0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-gray); border-bottom: 2px solid var(--c-light); text-align: left; }
+        .table td { padding: 12px 0; border-bottom: 1px solid var(--c-light); vertical-align: top; }
+        
+        .totals-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid var(--c-text); padding-top: 20px; page-break-inside: avoid; }
+        .totals-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--c-gray); }
+        
+        .totals-table { width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+        .totals-table td { padding: 6px 0; text-align: right; }
+        .totals-table td:first-child { text-align: left; color: var(--c-gray); }
+        .balance-row td { font-size: 24px; font-weight: 700; color: var(--c-text); padding-top: 15px; }
+        
+        .footer { margin-top: 80px; font-size: 10px; color: var(--c-gray); display: flex; justify-content: space-between; border-top: 1px solid var(--c-light); padding-top: 20px; page-break-inside: avoid; }
+    </style>
+</head>
+<body>
+<table class="master-table"><thead><tr><td class="master-header"></td></tr></thead><tbody><tr><td class="master-content">
+
+    <div class="header-grid">
+        <div>
+            <div class="firm-name">CORY SCHNEIDER</div>
+            <div style="font-size: 12px; color: var(--c-gray);">Law Office</div>
+            <div class="firm-details">
+                14 Parsons Court<br>
+                Thornhill, Ontario L4J 6Z4<br><br>
+                416 725 9364<br>
+                cory@coryschneiderlaw.ca<br>
+                coryschneiderlaw.ca
+            </div>
+        </div>
+        <div class="inv-right">
+            <div class="inv-title">INVOICE</div>
+            <div class="inv-meta">
+                #{{ invoice_number_raw }} {% if is_draft %}<span class="draft-badge">DRAFT</span>{% endif %}<br>
+                {{ date }}
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid-2">
+        <div>
+            <div class="section-label">Billed To</div>
+            <div style="font-size: 14px; font-weight: 600;">{{ billing_client_name }}</div>
+            {% if billing_client_principal %}<div style="color: var(--c-gray);">Attn: {{ billing_client_principal }}</div>{% endif %}
+            <div style="color: var(--c-gray); margin-top: 4px;">
+                {% for line in billing_client_address_lines %}{{ line }}<br>{% endfor %}
+            </div>
+        </div>
+        <div>
+            <div class="section-label">Payment</div>
+            <div style="color: var(--c-gray);">
+                <strong style="color: var(--c-text);">Interac e-transfer preferred</strong><br>
+                cory@coryschneiderlaw.ca<br><br>
+                Payable to: Cory Schneider<br>
+                HST No.: 78621 8222 RT0001
+            </div>
+        </div>
+    </div>
+    
+    <div class="matter-label">{{ work_for if work_for else "General Matter" }}</div>
+    
+    {% for matter in matters %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th style="width: 15%;">Date</th>
+                <th style="width: 55%;">Description</th>
+                <th style="width: 10%; text-align: right;">Hrs</th>
+                <th style="width: 20%; text-align: right;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in matter.line_items %}
+            <tr>
+                <td style="color: var(--c-gray);">{{ item.date }}</td>
+                <td style="white-space: pre-wrap;">{{ item.description }}</td>
+                <td style="text-align: right; color: var(--c-gray);">{{ item.hours }}</td>
+                <td style="text-align: right; font-weight: 500;">${{ item.amount }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endfor %}
+    
+    <div class="totals-grid">
+        <div class="totals-label">Summary</div>
+        <div>
+            <table class="totals-table">
+                <tr><td>Fees</td><td>${{ total_fees }}</td></tr>
+                {% if discount_amount != "0.00" %}
+                <tr><td>Courtesy Discount</td><td>-${{ discount_amount }}</td></tr>
+                {% endif %}
+                <tr><td>HST 13%</td><td>${{ total_tax }}</td></tr>
+                <tr class="balance-row"><td>Due</td><td>${{ total_due }}</td></tr>
+            </table>
+            <div style="text-align: right; color: var(--c-gray); font-size: 11px; margin-top: 10px;">Due upon receipt</div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <div>Interest: In accordance with s. 33 of the Solicitors Act (Ontario), interest will be charged at 2.0% per annum on unpaid amounts starting one month after delivery.</div>
+    </div>
+
+</td></tr></tbody><tfoot><tr><td class="master-footer"></td></tr></tfoot></table>
+</body></html>

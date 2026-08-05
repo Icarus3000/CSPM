@@ -1,0 +1,28 @@
+{
+  "themes": {
+    "Light": {
+      "mode": "Light",
+      "bg": "#FFFFFF",
+      "panel": "#F9FAFB",
+      "panel2": "#F1F3F5",
+      "accent": "#0E1116",
+      "hover": "#E1E5EA",
+      "text": "#0B0D10",
+      "muted": "#5A626F",
+      "btn_text": "#FFFFFF",
+      "glow": "#1D2128"
+    },
+    "Dark": {
+      "mode": "Dark",
+      "bg": "#040405",
+      "panel": "#0E0F11",
+      "panel2": "#181A1E",
+      "accent": "#F8FAFC",
+      "hover": "#2A2D33",
+      "text": "#F5F7FA",
+      "muted": "#A4AAB4",
+      "btn_text": "#050506",
+      "glow": "#FFFFFF"
+    }
+  }
+}

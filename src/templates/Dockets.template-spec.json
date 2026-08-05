@@ -1,0 +1,21 @@
+{
+  "filename": "Dockets.xlsm",
+  "type": "macro-enabled-workbook",
+  "status": "draft",
+  "unresolved_items": [
+    "Exact Clients worksheet headers",
+    "Exact Matters worksheet headers",
+    "Exact Dockets worksheet headers"
+  ],
+  "worksheets": [
+    "Clients",
+    "Matters",
+    "Dockets",
+    "Disbursements",
+    "Ledger",
+    "Receivables",
+    "Invoice Log"
+  ],
+  "tables": {},
+  "notes": "Formal tables are not required. Row-one headers are sufficient."
+}

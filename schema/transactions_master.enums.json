@@ -1,0 +1,163 @@
+{
+  "schemaVersion": "2026-02-27.v1-draft",
+  "sheet": "Transactions",
+  "table": "tblTransactionsMaster",
+  "primaryKey": "TransactionID",
+  "enums": {
+    "class": [
+      "Family",
+      "Business"
+    ],
+    "type": [
+      "Income",
+      "Expense",
+      "Debt Repayment",
+      "Transfer"
+    ],
+    "member": [
+      "Joint",
+      "Deborah",
+      "Cory",
+      "Alexa",
+      "Emma",
+      "Maya"
+    ],
+    "taxFlag": [
+      "None",
+      "HST - Biz",
+      "Business Deductible",
+      "Medical",
+      "Deductible"
+    ],
+    "status": [
+      "Pending",
+      "Cleared",
+      "Reconciled",
+      "Void"
+    ],
+    "businessUnit": [
+      "Deborah OT - Private",
+      "Deborah OT - VHA",
+      "Cory Business"
+    ],
+    "currency": [
+      "CAD",
+      "USD"
+    ]
+  },
+  "accounts": [
+    {
+      "accountCode": "SIMPLII_CHEQUING",
+      "accountName": "Simplii Chequing",
+      "accountKind": "chequing",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "CIBC_CHEQUING",
+      "accountName": "CIBC Chequing",
+      "accountKind": "chequing",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "CIBC_LOC",
+      "accountName": "CIBC LOC",
+      "accountKind": "loc",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "EQ_ACCOUNT",
+      "accountName": "EQ Account",
+      "accountKind": "savings",
+      "owner": "Joint",
+      "aliases": [
+        "EQ Acccount"
+      ]
+    },
+    {
+      "accountCode": "EQ_CARD",
+      "accountName": "EQ Card",
+      "accountKind": "debit-card",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "WEALTHSIMPLE",
+      "accountName": "Wealthsimple",
+      "accountKind": "investment",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "SIMPLII_VISA",
+      "accountName": "Simplii Visa",
+      "accountKind": "credit-card",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "TRIANGLE_MASTERCARD",
+      "accountName": "Triangle Mastercard",
+      "accountKind": "credit-card",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "CIBC_MORTGAGE",
+      "accountName": "CIBC Mortgage",
+      "accountKind": "mortgage",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "HOME_TRUST_MORTGAGE",
+      "accountName": "Home Trust Mortgage",
+      "accountKind": "mortgage",
+      "owner": "Joint",
+      "aliases": []
+    },
+    {
+      "accountCode": "CASH_DEBORAH",
+      "accountName": "Cash - Deborah",
+      "accountKind": "cash",
+      "owner": "Deborah",
+      "aliases": []
+    },
+    {
+      "accountCode": "CASH_CORY",
+      "accountName": "Cash - Cory",
+      "accountKind": "cash",
+      "owner": "Cory",
+      "aliases": []
+    }
+  ],
+  "defaults": {
+    "class": "Family",
+    "type": "Expense",
+    "member": "Joint",
+    "taxFlag": "None",
+    "status": "Pending",
+    "currency": "CAD",
+    "taxAmount": 0.0,
+    "billClaimPct": 0.0,
+    "totalClaimAmount": 0.0,
+    "shadow": false,
+    "hstExempt": false,
+    "generalOfficeExpense": false
+  },
+  "dedupeDecisions": {
+    "vendorOrPayeeField": "Payee",
+    "taxDollarField": "TaxAmount",
+    "includeParent": true,
+    "includeSubClient": false,
+    "includeHarvestDocketsAction": false
+  },
+  "seedFiles": {
+    "accounts": "schema/transactions_master.accounts.seed.csv",
+    "categories": "schema/transactions_master.categories.seed.csv",
+    "businessUnits": "schema/transactions_master.business_units.seed.csv",
+    "payees": "schema/transactions_master.payees.seed.csv"
+  }
+}

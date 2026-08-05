@@ -1,0 +1,156 @@
+spec_version: 1
+updated_utc: "2026-06-15T00:00:00Z"
+status: "active"
+
+policy:
+  objective: "No meaningful data loss under normal failure conditions."
+  priority: "critical"
+  security_gate: "docs/spec/pre_live_security_gate.yaml"
+  operator_runbook: "docs/PRODUCTION_BACKUP_CHAIN.md"
+
+backup_chain:
+  auto_snapshot:
+    enabled_by_default: true
+    interval_minutes_default: 15
+    env_override: "CSPM_AUTOBACKUP_MINUTES"
+    notes:
+      - "0 disables scheduled snapshots."
+      - "Values below 5 are clamped to 5 minutes."
+
+  manual_snapshot:
+    trigger: "createProjectSnapshot(reason)"
+    intended_use:
+      - "Before risky operations"
+      - "Before release testing"
+      - "Before restore"
+
+  pre_restore_snapshot:
+    required: true
+    description: "System creates a safety snapshot before applying restore."
+
+  git_cloud_backup:
+    mode: "temporary_full_database_in_git_until_external_location"
+    active_workbook_required: true
+    active_workbook_path: "data/CSPM.xlsm"
+    restore_tool_paths:
+      - "git_backup_to_cloud.ps1"
+      - "git_restore_from_cloud.ps1"
+    database_artifacts_required: true
+    database_artifact_roots:
+      - "data/"
+      - "src/python/data/"
+    database_artifact_exclusions: []
+    notes:
+      - "Git cloud backup scripts must include the active workbook even if workbook globs are ignored."
+      - "For now, Git cloud backup scripts must force-add every file under data/ and src/python/data/ so the full current database tree is captured."
+      - "Git cloud backup scripts must force-add and verify git_backup_to_cloud.ps1 and git_restore_from_cloud.ps1 so a backup contains the restore tooling used to create it."
+      - "Git cloud restore must refuse selected commits that do not contain data/CSPM.xlsm."
+      - "Git cloud restore must refuse selected commits that do not contain the selected commit's full database artifact set."
+      - "Git cloud restore must refuse selected commits that do not contain git_backup_to_cloud.ps1 and git_restore_from_cloud.ps1."
+      - "Git cloud restore must create a local pre-restore workbook safety copy before destructive reset/clean operations."
+      - "Git cloud restore must create a local pre-restore database artifact safety copy before destructive reset/clean operations."
+      - "Git cloud restore must verify the restored workbook hash/blob after reset."
+      - "Git cloud restore must verify the restored full database artifact hashes/blobs after reset."
+      - "Git cloud restore must verify the restored backup/restore script hashes/blobs after reset."
+      - "Workbook commits can contain confidential legal and financial data; remotes must be private and approved."
+      - "Before a Git cloud backup with live workbook data, the pre-live security gate must be complete or explicitly excepted."
+
+  future_external_database_location:
+    intended_state: "planned"
+    storage_target: "User-customizable folder, likely SharePoint or OneDrive."
+    notes:
+      - "After the database path is user-configurable and protected by its own cloud/sync backup policy, Git cloud backups should stop storing live database files."
+      - "At that point Git should retain source code, scripts, specs, and migration tooling, while data backup/restore uses the configured database storage location."
+
+  offsite_retention:
+    operator_runbook: "docs/PRODUCTION_BACKUP_CHAIN.md"
+    minimum_layers:
+      - "Local runtime snapshots for fast local recovery."
+      - "Private cloud/offsite Git backup for disaster recovery."
+    encryption_expectation: "Offsite production backups, safety-copy exports, and support bundles must be encrypted at rest."
+    recommended_retention_until_superseded:
+      daily: "30 days"
+      weekly: "12 weeks"
+      monthly: "12 months"
+      restore_drill_evidence: "12 months"
+
+  restore_testing:
+    operator_runbook: "docs/PRODUCTION_BACKUP_CHAIN.md"
+    cadence:
+      - "Before live deployment."
+      - "After backup, restore, workbook integrity, or database artifact script changes."
+      - "After major workbook schema or data migration changes."
+      - "Monthly during pre-live buildout."
+      - "Quarterly after live deployment unless firm policy requires more frequent drills."
+
+snapshot_scope:
+  required_paths:
+    - "data/CSPM.xlsm"
+    - "data/state/"
+    - "docs/BIBLE.md"
+    - "docs/spec/"
+    - "schema/"
+  optional_paths:
+    - "data/raw/"
+    - "data/imports/"
+    - "imports/"
+    - "session_draft_snapshot.json"
+    - "user_settings.json"
+    - "docs/ROADMAP.md"
+    - "docs/CHANGELOG.md"
+  notes:
+    - "Transaction seed/source files under schema/ (CSV/JSON) are included via schema/ backup."
+
+manifest_requirements:
+  file: "manifest.json"
+  required_fields:
+    - "snapshot_id"
+    - "created_at_utc"
+    - "sources"
+    - "files"
+    - "summary"
+    - "restore_order"
+  integrity:
+    algorithm: "sha256"
+    per_file_hashing: true
+
+data_integrity_check:
+  command: "scripts/check_workbook_integrity.ps1"
+  python_entrypoint: "scripts/check_workbook_integrity.py"
+  active_workbook_path: "data/CSPM.xlsm"
+  wired_commands:
+    pre_release: "scripts/run_quality_gates.ps1"
+    pre_restore: "git_restore_from_cloud.ps1"
+    post_restore: "git_restore_from_cloud.ps1"
+    support_diagnostics: "scripts/run_support_diagnostics.ps1"
+  required_before:
+    - "live release"
+    - "restore drill"
+    - "post-restore acceptance"
+    - "support diagnostics"
+  validations:
+    - "Workbook exists and opens without repair."
+    - "Canonical schema loads from schema/workbook_schema.yml."
+    - "Required sheets, Excel table objects, and columns are present."
+    - "Primary keys are present, stable values, and unique."
+    - "Sequence-like numbers such as MatterNumber do not collide."
+    - "Required fields are populated on non-empty records."
+    - "Date and datetime fields are parseable and in a sane year range."
+    - "Core references between clients, matters, time, transactions, and lookup tables resolve."
+    - "Time-entry financial totals reconcile to the domain money calculation."
+  failure_policy:
+    - "For live release, any error blocks release until fixed or explicitly accepted in a signed exception."
+    - "Warnings must be reviewed before live release or restore acceptance."
+    - "Pre-restore integrity failures are reported and preserved as diagnostics; the restore may continue when the selected Git restore is the recovery operation."
+
+restore_rules:
+  - "Restore must accept snapshot id or direct snapshot path."
+  - "Restore only copies known paths from manifest/snapshot scope."
+  - "Restore should not silently skip failures; errors must be surfaced."
+  - "Git cloud restore must verify data/CSPM.xlsm exists in the selected commit before destructive operations."
+  - "Git cloud restore must verify the selected commit's full database artifact set exists before destructive operations."
+  - "Git cloud restore must verify restored data/CSPM.xlsm hash/blob before reporting success."
+  - "Git cloud restore must verify restored full database artifact hashes/blobs before reporting success."
+  - "Git cloud restore must verify restored backup/restore script hashes/blobs before reporting success."
+  - "Git cloud restore must run the active workbook integrity checker before destructive restore operations and after hash/blob verification."
+  - "Controlled restore drills using confidential workbook data must satisfy the pre-live security gate requirements for safety-copy locations, diagnostics, and external sharing."

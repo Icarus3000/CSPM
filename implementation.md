@@ -488,6 +488,16 @@ Current decisions should preserve repository abstraction, stable IDs, audit and 
 
 Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 
+## Invoice Builder, Reconciliation, And Splash Repair (2026-08-05)
+
+- Added InvoiceBuilderWorkspace.qml, a bounded master-detail surface used by InvoiceBuilderView.qml: draft/line-item management remains on the left while the HTML preview fills the upper-right panel and its settings/actions area is constrained to the bottom.
+- All Invoice Builder dropdowns now define their popup/delegate styling against root.isDark (including popup surface, text, borders, and hover state). Reconciliation is shown only where a custom fee is lower than docketed time.
+- Added updateDraftReconciliationMode(draft_num, mode) and docket-display persistence to billing_controller.py. Legacy reconciliation values are normalized safely. The payload now treats a custom fee as the replacement amount: lower custom fees can expose a courtesy discount; equal, higher, or hidden cases render no discount line.
+- Corrected the visible-discount presentation: when docketed time exceeds the agreed custom fee, Concept_A2 now renders a single Services Rendered line at the full docketed amount and then the Courtesy Discount. This keeps the service row, subtotal, discount, tax, and total mathematically consistent.
+- Refactored CustomSplash to use composited frameless window flags and a guarded start_fade_out(). The 550 ms paint-settling delay is scheduled only after QQmlApplicationEngine.objectCreated reports a non-null root object.
+- Sandbox-safe validation: targeted QML lint completed without errors (non-blocking style warnings remain) and Python compilation passed. A focused payload test passed all four equal/lower-visible/lower-hidden/higher fee cases.
+- Manual WebEngine/splash validation remains pending; run .\launch.ps1 outside the sandbox and verify both themes plus the splash-to-main-window handoff.
+
 
 ### Phase 9 Status Update (2026-07-30)
 - **Settings-Precedence Regression**: RESOLVED (authoritative path C:\Users\cschn\AppData\Local\CSPM\user_settings.json).

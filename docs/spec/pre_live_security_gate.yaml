@@ -1,0 +1,150 @@
+spec_version: 1
+updated_utc: "2026-06-03T00:00:00Z"
+status: "active"
+owner: "Product + Engineering"
+
+purpose: "Define the minimum security and data-protection gate before CSPM is used with live confidential legal or financial data."
+
+scope:
+  protected_data:
+    - "Active workbook: data/CSPM.xlsm"
+    - "Canonical database artifacts under data/ and src/python/data/"
+    - "Runtime state and draft/session files under data/state/"
+    - "Generated reports, exports, PDFs, CSVs, diagnostics, and restore logs that may contain client/matter/financial data"
+    - "Git history containing workbook or database artifact commits"
+  applies_before:
+    - "Live production use"
+    - "First real Git cloud backup containing data/CSPM.xlsm"
+    - "Any restore drill using confidential workbook data"
+    - "Any support bundle shared outside the local machine"
+
+release_gate:
+  required_status: "all required controls complete or accepted by signed exception"
+  block_live_use_when:
+    - "Remote privacy/approval is unknown."
+    - "Secrets are stored in repo files, workbook cells, logs, exports, or diagnostics."
+    - "Backup encryption/retention ownership is not defined."
+    - "Export/report sharing rules are not defined."
+    - "Role/permission expectations for live users are not defined."
+    - "Audit log expectations are not defined for data-changing workflows."
+    - "A workbook integrity error is present."
+    - "Workbook integrity warnings are unreviewed."
+  exception_policy:
+    allowed: true
+    required_fields:
+      - "control_id"
+      - "risk"
+      - "temporary_mitigation"
+      - "approver"
+      - "expires_utc"
+      - "follow_up_task"
+
+controls:
+  - id: "SEC-REMOTE-001"
+    title: "Private approved Git remotes only"
+    required: true
+    description: "Any remote receiving workbook/database commits must be private, approved by the data owner, and limited to named authorized accounts."
+    evidence:
+      - "Remote URL/host recorded without exposing credentials."
+      - "Repository visibility confirmed private."
+      - "Authorized collaborator list reviewed."
+      - "Data owner approval recorded before running git_backup_to_cloud.ps1 with workbook data."
+
+  - id: "SEC-REMOTE-002"
+    title: "No unapproved confidential-data branches or forks"
+    required: true
+    description: "Workbook-containing branches, forks, mirrors, and CI artifacts must not exist outside the approved remote set."
+    evidence:
+      - "List of remotes checked with git remote -v."
+      - "Branch protection or access policy reviewed where the host supports it."
+
+  - id: "SEC-SECRETS-001"
+    title: "Secrets stay outside the repo and workbook"
+    required: true
+    description: "API keys, passwords, tokens, signing keys, service credentials, and personal access tokens must be kept in OS credential storage or ignored local environment files, never in tracked repo files, workbook tables, logs, diagnostics, or generated reports."
+    evidence:
+      - "Repo secret scan completed."
+      - "Ignored local secret location documented."
+      - "Support diagnostics reviewed to avoid credential capture."
+
+  - id: "SEC-EXPORT-001"
+    title: "Export and report sharing rules"
+    required: true
+    description: "CSV/PDF/report exports are treated as confidential client files. User-facing export locations, support bundles, and email/share workflows must warn or constrain users before data leaves the workstation."
+    evidence:
+      - "Allowed export destinations documented."
+      - "Support bundle redaction or review process documented."
+      - "External sharing approval owner identified."
+
+  - id: "SEC-LOCAL-001"
+    title: "Local storage controls"
+    required: true
+    description: "Workstations holding CSPM data must use OS account protection and disk encryption suitable for confidential legal/financial records."
+    evidence:
+      - "Device owner identified."
+      - "Disk encryption expectation recorded."
+      - "Local backup folder locations reviewed."
+      - "Restore safety-copy locations reviewed."
+
+  - id: "SEC-ROLE-001"
+    title: "Role and permission coverage"
+    required: true
+    description: "Before multi-user or assistant/operator use, define who may view, edit, export, restore, backup, and delete client, matter, billing, transaction, and report data."
+    evidence:
+      - "Role matrix drafted for owner/admin/operator/read-only/support."
+      - "High-risk actions assigned to admin/owner only."
+      - "Current single-user assumptions documented if RBAC is not yet implemented."
+
+  - id: "SEC-AUDIT-001"
+    title: "Auditability expectations"
+    required: true
+    description: "Data-changing workflows must have an audit strategy covering who/when/what changed for saves, deletes, restores, imports, exports, and high-risk financial operations."
+    evidence:
+      - "Required audit events listed."
+      - "Current implemented logs/reports identified."
+      - "Known audit gaps have follow-up tasks."
+
+  - id: "SEC-BACKUP-001"
+    title: "Backup encryption and retention"
+    required: true
+    description: "Backups, Git workbook history, restore safety copies, and offsite copies must have defined encryption, retention, and deletion expectations."
+    evidence:
+      - "Retention period documented."
+      - "Encryption expectation documented for local/offsite/cloud backups."
+      - "Deletion/disposal process documented for old safety copies and support bundles."
+
+  - id: "SEC-RESTORE-001"
+    title: "Restore drill security review"
+    required: true
+    description: "Controlled restore drills must verify not only hashes and workbook integrity, but also where pre-restore safety copies and reports are stored and who can access them."
+    evidence:
+      - "Restore drill report includes paths of safety copies and logs."
+      - "Post-drill cleanup decision recorded."
+      - "No restore artifacts uploaded to unapproved locations."
+
+  - id: "SEC-DIAG-001"
+    title: "Support diagnostics data review"
+    required: true
+    description: "Support diagnostics may contain workbook health, Git context, paths, logs, or client identifiers. They must be reviewed or redacted before external sharing."
+    evidence:
+      - "Support diagnostic output location documented."
+      - "Review/redaction checklist documented."
+      - "External recipient approval required."
+
+pre_live_evidence_packet:
+  required_files_or_records:
+    - "Active workbook integrity report with zero errors."
+    - "Reviewed warning disposition for any workbook integrity warnings."
+    - "Remote privacy/approval note."
+    - "Secrets scan/review note."
+    - "Backup retention/encryption note."
+    - "Export/support-sharing rules note."
+    - "Role/permission matrix or single-user exception."
+    - "Audit gap list with follow-up tasks."
+  storage_location: "docs/spec/ or a private release evidence folder that is included in protected backups and not shared publicly."
+
+related_specs:
+  - "docs/spec/backup_restore_policy.yaml"
+  - "schema/workbook_schema.yml"
+  - "docs/BIBLE.md"
+  - "docs/ROADMAP.md"

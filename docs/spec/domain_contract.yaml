@@ -1,0 +1,69 @@
+spec_version: 1
+updated_utc: "2026-02-22T00:00:00Z"
+status: "active"
+
+domain_entities:
+  - name: "Client"
+    key: "ClientID"
+    required_fields:
+      - "ClientName"
+      - "Status"
+      - "Active"
+
+  - name: "Matter"
+    key: "MatterID"
+    required_fields:
+      - "ClientID"
+      - "MatterName"
+      - "Status"
+
+  - name: "TimeEntry"
+    key: "EntryID"
+    required_fields:
+      - "Date"
+      - "ClientID"
+      - "MatterID"
+      - "Description"
+      - "Hours"
+      - "ClientRate"
+      - "Status"
+      - "RawSeconds"
+
+  - name: "Invoice"
+    key: "InvoiceID"
+    required_fields:
+      - "ClientID"
+      - "MatterID"
+      - "InvoiceDate"
+      - "DueDate"
+      - "Status"
+      - "Total"
+
+  - name: "Payment"
+    key: "PaymentID"
+    required_fields:
+      - "InvoiceID"
+      - "ClientID"
+      - "ReceivedDate"
+      - "Amount"
+      - "Method"
+      - "Status"
+
+  - name: "TrustLedgerEntry"
+    key: "TrustEntryID"
+    required_fields:
+      - "ClientID"
+      - "MatterID"
+      - "EntryDate"
+      - "Debit"
+      - "Credit"
+      - "BalanceAfter"
+      - "Type"
+      - "Reference"
+
+architecture_rules:
+  - "UI must call domain/service interfaces, not workbook internals."
+  - "Repository layer must support adapter swap (Excel -> SQL)."
+  - "Business logic operates on in-memory row objects."
+  - "No duplicate schema naming across service and repository layers."
+

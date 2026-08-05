@@ -53,3 +53,12 @@
 - **Empty-Data Safety Barrier**: Implemented strict Phase 4 checks. CSPM.exe will no longer silently seed a blank LocalAppData practice if the configured `localDataDir` is unavailable, or if a valid known project data folder exists (detects frozen/packaged context).
 - **Settings Integrity**: Verified that `localDataDir` overrides are not overwritten by the deferred settings load.
 - **Verification**: Wrote `test_data_routing_guards.py`. All deterministic path-resolution assertions pass.
+
+## Invoice Builder Restoration (2026-08-05)
+
+- [x] Restore the Invoice Builder master-detail layout: line items at left, HTML preview at upper right, and fixed settings/actions controls at lower right.
+- [x] Theme every Invoice Builder dropdown with an explicit popup and delegate that reads the application light/dark state.
+- [x] Add persisted custom-fee reconciliation choices and payload rules for visible discount-line versus hidden adjustment behavior.
+- [x] Correct Discount Line invoice rendering so Legal Services Rendered shows the full docketed service amount before the Courtesy Discount reduces it to the agreed flat fee.
+- [x] Tie the transparent native splash fade-out to successful root-QML construction rather than a blind startup timeout.
+- [ ] Manual foreground verification: launch with .\launch.ps1, confirm the Invoice Builder in both themes, exercise every dropdown popup, and verify the splash handoff with WebEngine enabled.

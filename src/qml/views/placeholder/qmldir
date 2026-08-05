@@ -1,0 +1,7 @@
+module placeholder
+
+ClientDirectoryPanel 1.0 ClientDirectoryPanel.qml
+ClientProfilePanel 1.0 ClientProfilePanel.qml
+GlobalSearchPanel 1.0 GlobalSearchPanel.qml
+MatterDirectoryPanel 1.0 MatterDirectoryPanel.qml
+MatterProfilePanel 1.0 MatterProfilePanel.qml

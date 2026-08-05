@@ -1,0 +1,928 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "../components"
+import "../standards"
+import "../standards/SemanticTheme.js" as SemanticTheme
+
+Item {
+    id: root
+
+    property var t
+    property var metrics
+    property var appRef
+    property var sfxBus
+    property string appStyle: (root.appRef && root.appRef.appStyle)
+        ? String(root.appRef.appStyle)
+        : "Professional"
+    property bool isProMode: root.appStyle === "Professional"
+    property bool dirty: false
+    property bool saveInProgress: false
+    property bool lastSaveOk: true
+    property string saveMessage: ""
+    property string lastSavedPaymentId: ""
+    property string currentNodeId: ""
+    property bool _hydrating: false
+    property var invoiceRows: []
+    property string invoiceSortKey: "client"
+    property bool invoiceSortAscending: true
+    property var invoiceColumns: [
+        { "key": "invoice", "label": "Invoice", "width": 76, "fill": false, "align": "left", "sortKey": "invoice" },
+        { "key": "client", "label": "Client", "width": 0, "fill": true, "align": "left", "sortKey": "client" },
+        { "key": "ageDays", "label": "Age", "width": 78, "fill": false, "align": "right", "sortKey": "ageDays" },
+        { "key": "balance", "label": "Balance", "width": 92, "fill": false, "align": "right", "sortKey": "balance" }
+    ]
+    property var sortedInvoiceRows: root._sortedInvoiceRows()
+    property var historyRows: []
+    property var selectedInvoice: ({})
+    property int selectedInvoiceIndex: -1
+    property var modeOptions: ["Payment", "Write-off / Adjustment"]
+    property var methodOptions: ["e-Transfer", "EFT", "Cheque", "Credit Card", "Cash", "Wire", "Other"]
+
+    signal formDirtyChanged(bool dirty)
+    signal saveFinished(bool ok, string message, string paymentId)
+
+    VisualRules {
+        id: visualRules
+        appStyle: root.appStyle
+    }
+
+    property color _accent: SemanticTheme.accentPrimary(root.t, root.appStyle)
+    property color _text: SemanticTheme.inkPrimary(root.t, root.appStyle)
+    property color _mutedText: SemanticTheme.inkMuted(root.t, root.appStyle)
+    property color _panel: SemanticTheme.surfacePanel(root.t, root.appStyle)
+    property color _raisedPanel: SemanticTheme.surfaceRaised(root.t, root.appStyle)
+    property color _input: SemanticTheme.surfaceInput(root.t, root.appStyle)
+    property color _border: SemanticTheme.borderSubtle(root.t, root.appStyle)
+    property int fieldHeightPx: root.isProMode
+        ? Math.max(42, Math.round(((metrics && metrics.contentH) ? metrics.contentH : height) * 0.052))
+        : Math.max(40, Math.round(((metrics && metrics.contentH) ? metrics.contentH : height) * 0.056))
+    property int panelRadiusPx: root.isProMode ? visualRules.radiusPanel : 12
+
+    onDirtyChanged: formDirtyChanged(dirty)
+
+    function _clean(value) {
+        return String(value === undefined || value === null ? "" : value).trim()
+    }
+
+    function _num(value, fallback) {
+        var n = parseFloat(_clean(value).replace(/[$,]/g, ""))
+        return isFinite(n) ? n : fallback
+    }
+
+    function _todayIso() {
+        return Qt.formatDate(new Date(), "yyyy-MM-dd")
+    }
+
+    function money(value) {
+        var n = Number(value || 0)
+        var sign = n < 0 ? "-" : ""
+        return sign + "$" + Math.abs(n).toFixed(2)
+    }
+
+    function _invoiceSortGlyph(column) {
+        var key = _clean(column && column.sortKey !== undefined ? column.sortKey : (column && column.key))
+        if (key !== _clean(invoiceSortKey)) return ""
+        return invoiceSortAscending ? " ^" : " v"
+    }
+
+    function invoiceHeaderText(column) {
+        return _clean(column && column.label) + _invoiceSortGlyph(column)
+    }
+
+    function invoiceHeaderColor(column) {
+        var key = _clean(column && column.sortKey !== undefined ? column.sortKey : (column && column.key))
+        return key === _clean(invoiceSortKey) ? root._accent : root._mutedText
+    }
+
+    function invoiceColumnAlignment(column) {
+        return _clean(column && column.align).toLowerCase() === "right" ? Text.AlignRight : Text.AlignLeft
+    }
+
+    function invoiceCellText(row, column) {
+        var key = _clean(column && column.key)
+        if (key === "client") return _clean(row && (row.client || row.billingClient))
+        if (key === "ageDays") return _clean(row && row.ageDays) + " days"
+        if (key === "balance") return money(row && row.balance)
+        return _clean(row && row[key])
+    }
+
+    function invoiceCellColor(column) {
+        return _clean(column && column.key) === "balance" ? root._accent : root._text
+    }
+
+    function _invoiceSortValue(row, key) {
+        var sortKey = _clean(key)
+        if (sortKey === "client")
+            return _clean(row && (row.client || row.billingClient)).toLowerCase()
+        if (sortKey === "ageDays" || sortKey === "balance" || sortKey === "invoiceTotal" || sortKey === "paid" || sortKey === "credits")
+            return Number(row && row[sortKey] !== undefined ? row[sortKey] : 0)
+        return _clean(row && row[sortKey]).toLowerCase()
+    }
+
+    function _compareInvoiceRows(a, b, key, ascending) {
+        var valA = _invoiceSortValue(a, key)
+        var valB = _invoiceSortValue(b, key)
+        if (valA < valB) return ascending ? -1 : 1
+        if (valA > valB) return ascending ? 1 : -1
+
+        var clientA = _invoiceSortValue(a, "client")
+        var clientB = _invoiceSortValue(b, "client")
+        if (clientA < clientB) return -1
+        if (clientA > clientB) return 1
+
+        var invoiceA = _invoiceSortValue(a, "invoice")
+        var invoiceB = _invoiceSortValue(b, "invoice")
+        if (invoiceA < invoiceB) return -1
+        if (invoiceA > invoiceB) return 1
+        return 0
+    }
+
+    function _sortedInvoiceRows() {
+        var rows = []
+        var source = invoiceRows || []
+        for (var i = 0; i < source.length; i++) rows.push(source[i])
+        var key = _clean(invoiceSortKey)
+        if (key.length <= 0) return rows
+        var asc = invoiceSortAscending !== false
+        rows.sort(function(a, b) { return root._compareInvoiceRows(a, b, key, asc) })
+        return rows
+    }
+
+    function selectedInvoiceNumber() {
+        return _clean(selectedValue("invoice", ""))
+    }
+
+    function isSelectedInvoice(row) {
+        var current = selectedInvoiceNumber()
+        return current.length > 0 && _clean(row && row.invoice).toLowerCase() === current.toLowerCase()
+    }
+
+    function sortedInvoiceIndex(invoiceNumber) {
+        var needle = _clean(invoiceNumber).toLowerCase()
+        var rows = sortedInvoiceRows || []
+        for (var i = 0; i < rows.length; i++) {
+            if (_clean(rows[i] && rows[i].invoice).toLowerCase() === needle) return i
+        }
+        return -1
+    }
+
+    function toggleInvoiceSort(column) {
+        var key = _clean(column && column.sortKey !== undefined ? column.sortKey : (column && column.key))
+        if (key.length <= 0) return
+        if (invoiceSortKey === key) {
+            invoiceSortAscending = !invoiceSortAscending
+        } else {
+            invoiceSortKey = key
+            invoiceSortAscending = true
+        }
+        selectedInvoiceIndex = sortedInvoiceIndex(selectedInvoiceNumber())
+    }
+
+    function selectedValue(key, fallback) {
+        if (!selectedInvoice) return fallback || ""
+        var value = selectedInvoice[key]
+        return value === undefined || value === null ? (fallback || "") : value
+    }
+
+    function _markDirty() {
+        if (!_hydrating) dirty = true
+    }
+
+    function backendReady() {
+        return !!(root.appRef && root.appRef.backendBooted)
+    }
+
+    function _paymentBackend() {
+        if (typeof docketApp !== "undefined" && docketApp) return docketApp
+        if (root.appRef && root.appRef.docketing) return root.appRef.docketing
+        return null
+    }
+
+    function refreshInvoices() {
+        if (!backendReady() || !root.appRef || !root.appRef.listOpenPaymentInvoices) {
+            invoiceRows = []
+            return
+        }
+        var rows = []
+        try {
+            rows = root.appRef.listOpenPaymentInvoices({ "query": _clean(searchInput.text) })
+        } catch (e) {
+            rows = []
+        }
+        if (!rows || rows.length === undefined) rows = []
+        invoiceRows = rows
+        var selectedNumber = selectedInvoiceNumber()
+        if (selectedNumber.length > 0) {
+            var nextSelectedIndex = sortedInvoiceIndex(selectedNumber)
+            if (nextSelectedIndex >= 0) {
+                selectedInvoiceIndex = nextSelectedIndex
+                var rowsProxy = sortedInvoiceRows || []
+                if (nextSelectedIndex < rowsProxy.length) {
+                    selectedInvoice = rowsProxy[nextSelectedIndex]
+                    amountInput.text = selectedInvoice && selectedInvoice.balance !== undefined
+                        ? Number(selectedInvoice.balance || 0).toFixed(2)
+                        : ""
+                }
+            } else {
+                selectedInvoiceIndex = -1
+                selectedInvoice = ({})
+                historyRows = []
+            }
+        }
+    }
+
+    function refreshHistory() {
+        var invoice = _clean(selectedValue("invoice", ""))
+        if (!invoice || !root.appRef || !root.appRef.listInvoicePaymentHistory) {
+            historyRows = []
+            return
+        }
+        var rows = []
+        try {
+            rows = root.appRef.listInvoicePaymentHistory(invoice)
+        } catch (e) {
+            rows = []
+        }
+        historyRows = rows && rows.length !== undefined ? rows : []
+    }
+
+    function selectInvoice(row, index) {
+        _hydrating = true
+        selectedInvoice = row || ({})
+        selectedInvoiceIndex = index
+        amountInput.text = selectedInvoice && selectedInvoice.balance !== undefined
+            ? Number(selectedInvoice.balance || 0).toFixed(2)
+            : ""
+        dateInput.text = _todayIso()
+        modeCombo.editText = "Payment"
+        methodCombo.editText = "EFT"
+        referenceInput.text = ""
+        notesInput.text = ""
+        adjustmentAmountInput.text = ""
+        adjustmentReasonInput.text = ""
+        saveMessage = ""
+        lastSavedPaymentId = ""
+        _hydrating = false
+        dirty = false
+        
+        if (root.currentNodeId === "C09") {
+            adjustmentAmountInput.forceActiveFocus()
+        } else {
+            amountInput.forceActiveFocus()
+        }
+        
+        refreshHistory()
+    }
+
+    function resetDraft() {
+        _hydrating = true
+        dateInput.text = _todayIso()
+        modeCombo.editText = "Payment"
+        methodCombo.editText = "EFT"
+        amountInput.text = selectedInvoice && selectedInvoice.balance !== undefined
+            ? Number(selectedInvoice.balance || 0).toFixed(2)
+            : ""
+        referenceInput.text = ""
+        notesInput.text = ""
+        adjustmentAmountInput.text = ""
+        adjustmentReasonInput.text = ""
+        saveMessage = ""
+        lastSavedPaymentId = ""
+        _hydrating = false
+        dirty = false
+        
+        if (root.currentNodeId === "C09") {
+            adjustmentAmountInput.forceActiveFocus()
+        } else {
+            amountInput.forceActiveFocus()
+        }
+    }
+
+    function _buildPayload() {
+        return {
+            "invoice": _clean(selectedValue("invoice", "")),
+            "date": _clean(dateInput.text),
+            "mode": _clean(modeCombo.editText),
+            "method": _clean(methodCombo.editText),
+            "reference": _clean(referenceInput.text),
+            "amount": _num(amountInput.text, 0.0),
+            "adjustmentAmount": _num(adjustmentAmountInput.text, 0.0),
+            "adjustmentReason": _clean(adjustmentReasonInput.text),
+            "notes": _clean(notesInput.text)
+        }
+    }
+
+    function _validatePayload(payload) {
+        if (!_clean(payload.invoice)) return "Select an open invoice first."
+        if (!_clean(payload.date).match(/^\d{4}-\d{2}-\d{2}$/)) return "Date must be in YYYY-MM-DD format."
+        var paymentAmt = Number(payload.amount || 0)
+        var adjAmt = Number(payload.adjustmentAmount || 0)
+        if (paymentAmt <= 0 && adjAmt <= 0) return "You must enter a payment or adjustment amount greater than 0."
+        var totalApplied = paymentAmt + adjAmt
+        var balance = Number(selectedValue("balance", 0) || 0)
+        if (totalApplied - balance > 0.01) return "Total amount exceeds the selected invoice balance."
+        if (paymentAmt > 0 && _clean(payload.mode).toLowerCase().indexOf("payment") >= 0 && !_clean(payload.method)) return "Payment method is required."
+        if (adjAmt > 0 && !_clean(payload.adjustmentReason)) return "Adjustment reason is required if an adjustment amount is entered."
+        return ""
+    }
+
+    function runPrimaryAction() {
+        if (saveInProgress) return
+        var payload = _buildPayload()
+        var validation = _validatePayload(payload)
+        if (validation.length > 0) {
+            lastSaveOk = false
+            saveMessage = validation
+            dirty = true
+            saveFinished(false, saveMessage, "")
+            return
+        }
+        var backend = _paymentBackend()
+        if (!backend || !backend.postPayment) {
+            lastSaveOk = false
+            saveMessage = "Payment backend is unavailable."
+            dirty = true
+            saveFinished(false, saveMessage, "")
+            return
+        }
+        saveInProgress = true
+        try {
+            backend.postPayment(payload)
+        } catch (e) {
+            saveInProgress = false
+            lastSaveOk = false
+            saveMessage = String(e)
+            dirty = true
+            saveFinished(false, saveMessage, "")
+        }
+    }
+
+    function snapshotState() {
+        return {
+            "searchText": _clean(searchInput.text),
+            "selectedInvoice": selectedInvoice,
+            "selectedInvoiceIndex": selectedInvoiceIndex,
+            "invoiceSortKey": invoiceSortKey,
+            "invoiceSortAscending": invoiceSortAscending,
+            "payload": _buildPayload(),
+            "saveMessage": saveMessage,
+            "lastSavedPaymentId": lastSavedPaymentId,
+            "dirty": dirty
+        }
+    }
+
+    function applyState(state) {
+        if (!state) return
+        _hydrating = true
+        var searchVal = String(state.invoiceNum || state.searchText || "")
+        searchInput.text = _clean(searchVal)
+        selectedInvoice = state.selectedInvoice || ({})
+        if (state.invoiceNum) {
+            selectedInvoice = { "invoice": String(state.invoiceNum) }
+        }
+        selectedInvoiceIndex = Number(state.selectedInvoiceIndex || -1)
+        invoiceSortKey = _clean(state.invoiceSortKey) || "client"
+        invoiceSortAscending = state.invoiceSortAscending !== undefined ? !!state.invoiceSortAscending : true
+        var payload = state.payload || ({})
+        dateInput.text = _clean(payload.date) || _todayIso()
+        var defaultMode = "Payment"
+        if (state.focusNodeId === "C09") {
+            defaultMode = "Write-Off"
+        }
+        modeCombo.editText = _clean(payload.mode) || defaultMode
+        methodCombo.editText = _clean(payload.method) || "EFT"
+        referenceInput.text = _clean(payload.reference)
+        amountInput.text = payload.amount !== undefined ? String(payload.amount) : ""
+        notesInput.text = _clean(payload.notes)
+        saveMessage = _clean(state.saveMessage)
+        lastSavedPaymentId = _clean(state.lastSavedPaymentId)
+        _hydrating = false
+        dirty = !!state.dirty
+        refreshInvoices()
+        refreshHistory()
+    }
+
+    Connections {
+        target: root._paymentBackend()
+        ignoreUnknownSignals: true
+        function onPaymentSaveFinished(result) {
+            if (!root.saveInProgress) return
+            root.saveInProgress = false
+            root.lastSaveOk = !!(result && result.ok)
+            var paymentId = (result && result.paymentId !== undefined && result.paymentId !== null) ? result.paymentId : ""
+            root.lastSavedPaymentId = root._clean(paymentId)
+            root.saveMessage = root._clean(result && result.message)
+            if (root.saveMessage.length <= 0) {
+                root.saveMessage = root.lastSaveOk ? "Payment posted." : "Payment posting failed."
+            }
+            if (root.lastSaveOk) {
+                if (typeof app !== "undefined" && app && app.recordTelemetry) {
+                    app.recordTelemetry("Action_Save", "Payment Entry saved: " + root.lastSavedPaymentId)
+                }
+                root.dirty = false
+                if (result && result.invoiceRow) {
+                    root.selectedInvoice = result.invoiceRow
+                }
+                amountInput.text = root.selectedInvoice && root.selectedInvoice.balance !== undefined ? Number(root.selectedInvoice.balance || 0).toFixed(2) : ""
+                adjustmentAmountInput.text = ""
+                adjustmentReasonInput.text = ""
+                referenceInput.text = ""
+                notesInput.text = ""
+                
+                root.refreshInvoices()
+                root.refreshHistory()
+            } else {
+                root.dirty = true
+            }
+            root.saveFinished(root.lastSaveOk, root.saveMessage, root.lastSavedPaymentId)
+        }
+    }
+
+    Connections {
+        target: root.appRef
+        ignoreUnknownSignals: true
+        function onBackendBootChanged() {
+            if (root.visible && root.backendReady()) root.refreshInvoices()
+        }
+        function onTransactionDataChanged() {
+            if (root.visible && root.backendReady() && !root.saveInProgress) root.refreshInvoices()
+        }
+    }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: root.isProMode ? 14 : 10
+        spacing: 10
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.fieldHeightPx
+            spacing: 8
+
+            ModernTextField {
+                id: searchInput
+                t: root.t
+                metrics: root.metrics
+                appStyle: root.appStyle
+                label: "Search unpaid invoices"
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.fieldHeightPx
+                onAccepted: root.refreshInvoices()
+                onTextEdited: root.refreshInvoices()
+            }
+
+            PillButton {
+                text: "Find"
+                t: root.t
+                metrics: root.metrics
+                appStyle: root.appStyle
+                primary: true
+                Layout.preferredWidth: 92
+                Layout.preferredHeight: root.fieldHeightPx
+                onClicked: root.refreshInvoices()
+            }
+
+            PillButton {
+                text: "Reset"
+                t: root.t
+                metrics: root.metrics
+                appStyle: root.appStyle
+                Layout.preferredWidth: 92
+                Layout.preferredHeight: root.fieldHeightPx
+                onClicked: {
+                    searchInput.text = ""
+                    root.refreshInvoices()
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 12
+
+            Rectangle {
+                Layout.preferredWidth: Math.max(420, Math.round(root.width * 0.46))
+                Layout.fillHeight: true
+                radius: root.panelRadiusPx
+                color: root._raisedPanel
+                border.width: 1
+                border.color: root._border
+                clip: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 28
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Open invoices"
+                            color: root._text
+                            font.family: "Segoe UI"
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            text: String(root.invoiceRows.length || 0)
+                            color: root._mutedText
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 30
+                        color: root._input
+                        border.width: 1
+                        border.color: root._border
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            spacing: 8
+                            Repeater {
+                                model: root.invoiceColumns
+                                Rectangle {
+                                    required property var modelData
+                                    Layout.fillWidth: modelData.fill === true
+                                    Layout.preferredWidth: modelData.fill === true ? 1 : Number(modelData.width || 80)
+                                    Layout.fillHeight: true
+                                    color: headerHover.containsMouse ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, root.isProMode ? 0.07 : 0.14) : "transparent"
+                                    radius: root.isProMode ? 3 : 7
+
+                                    Text {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 0
+                                        anchors.rightMargin: 0
+                                        verticalAlignment: Text.AlignVCenter
+                                        horizontalAlignment: root.invoiceColumnAlignment(parent.modelData)
+                                        text: root.invoiceHeaderText(parent.modelData)
+                                        color: root.invoiceHeaderColor(parent.modelData)
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+
+                                    MouseArea {
+                                        id: headerHover
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.toggleInvoiceSort(parent.modelData)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ListView {
+                        id: invoiceList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        model: root.sortedInvoiceRows
+                        spacing: 5
+                        delegate: Rectangle {
+                            property var rowData: modelData
+                            width: ListView.view.width
+                            height: 50
+                            radius: root.isProMode ? 4 : 9
+                            color: root.isSelectedInvoice(rowData)
+                                ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, root.isProMode ? 0.13 : 0.22)
+                                : root._input
+                            border.width: 1
+                            border.color: root.isSelectedInvoice(rowData) ? root._accent : root._border
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 8
+                                Repeater {
+                                    model: root.invoiceColumns
+                                    Text {
+                                        required property var modelData
+                                        Layout.fillWidth: modelData.fill === true
+                                        Layout.preferredWidth: modelData.fill === true ? 1 : Number(modelData.width || 80)
+                                        text: root.invoiceCellText(rowData, modelData)
+                                        color: root.invoiceCellColor(modelData)
+                                        font.family: "Segoe UI"
+                                        font.pixelSize: 12
+                                        font.weight: root._clean(modelData.key) === "balance" ? Font.DemiBold : Font.Normal
+                                        horizontalAlignment: root.invoiceColumnAlignment(modelData)
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: root.selectInvoice(parent.rowData, index)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: root.panelRadiusPx
+                color: root._raisedPanel
+                border.width: 1
+                border.color: root._border
+                clip: true
+
+                Flickable {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    contentWidth: width
+                    contentHeight: detailColumn.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    clip: true
+
+                    ColumnLayout {
+                        id: detailColumn
+                        width: parent.width
+                        spacing: 10
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root._clean(root.selectedValue("invoice", "")).length > 0
+                                ? ("Invoice " + root.selectedValue("invoice", ""))
+                                : "Select an open invoice"
+                            color: root._text
+                            font.family: "Segoe UI"
+                            font.pixelSize: 16
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 2
+                            columnSpacing: 8
+                            rowSpacing: 6
+
+                            Repeater {
+                                model: [
+                                    { "label": "Client", "value": root.selectedValue("client", "") },
+                                    { "label": "Billing client", "value": root.selectedValue("billingClient", "") },
+                                    { "label": "Invoice total", "value": root.money(root.selectedValue("invoiceTotal", 0)) },
+                                    { "label": "Paid/Credits", "value": root.money(root.selectedValue("paid", 0)) },
+                                    { "label": "Balance due", "value": root.money(root.selectedValue("balance", 0)) },
+                                    { "label": "Status", "value": root.selectedValue("status", "") }
+                                ]
+                                delegate: Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 42
+                                    radius: root.isProMode ? 4 : 9
+                                    color: root._input
+                                    border.width: 1
+                                    border.color: root._border
+                                    Column {
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        spacing: 1
+                                        Text { width: parent.width; text: modelData.label; color: root._mutedText; font.family: "Segoe UI"; font.pixelSize: 10; elide: Text.ElideRight }
+                                        Text { width: parent.width; text: root._clean(modelData.value); color: root._text; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                                    }
+                                }
+                            }
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: root.width > 980 ? 2 : 1
+                            columnSpacing: 8
+                            rowSpacing: 8
+
+                            ModernTextField {
+                                id: dateInput
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Date"
+                                datePickerEnabled: true
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onTextEdited: root._markDirty()
+                            }
+                            ModernTextField {
+                                id: amountInput
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Payment ($)"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onTextEdited: root._markDirty()
+                            }
+                            ModernTextField {
+                                id: adjustmentAmountInput
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Adjustment ($)"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onTextEdited: root._markDirty()
+                            }
+                            ModernTextField {
+                                id: adjustmentReasonInput
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Adj Reason"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onTextEdited: root._markDirty()
+                            }
+                            ModernComboBox {
+                                id: modeCombo
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Mode"
+                                fullModel: root.modeOptions
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onEditTextChanged: root._markDirty()
+                            }
+                            ModernComboBox {
+                                id: methodCombo
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Method"
+                                fullModel: root.methodOptions
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onEditTextChanged: root._markDirty()
+                            }
+                            ModernTextField {
+                                id: referenceInput
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Reference / Cheque #"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onTextEdited: root._markDirty()
+                            }
+                        }
+
+                        TextArea {
+                            id: notesInput
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 82
+                            color: root._text
+                            placeholderText: "Notes"
+                            placeholderTextColor: root._mutedText
+                            wrapMode: Text.Wrap
+                            font.family: "Segoe UI"
+                            font.pixelSize: 12
+                            onTextChanged: root._markDirty()
+                            background: Rectangle {
+                                color: root._input
+                                radius: root.isProMode ? 4 : 9
+                                border.width: notesInput.activeFocus ? 2 : 1
+                                border.color: notesInput.activeFocus ? root._accent : root._border
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 46
+                            radius: root.isProMode ? 4 : 9
+                            color: SemanticTheme.hoverOverlay(root.t, root.appStyle)
+                            border.width: 1
+                            border.color: SemanticTheme.destructiveHover(root.t, root.appStyle)
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                spacing: 8
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Projected balance after posting"
+                                    color: root._text
+                                    font.family: "Segoe UI"
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: root.money(Math.max(0, Number(root.selectedValue("balance", 0) || 0) - root._num(amountInput.text, 0) - root._num(adjustmentAmountInput.text, 0)))
+                                    color: root._accent
+                                    font.family: "Segoe UI"
+                                    font.pixelSize: 14
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: root.fieldHeightPx
+                            spacing: 8
+                            PillButton {
+                                text: root.saveInProgress ? "Posting..." : "Post Transaction"
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                primary: true
+                                enabled: !root.saveInProgress
+                                    && root._clean(root.selectedValue("invoice", "")).length > 0
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: root.runPrimaryAction()
+                            }
+                            PillButton {
+                                text: "Clear"
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                Layout.preferredWidth: 100
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: root.resetDraft()
+                            }
+                        }
+
+                        Rectangle {
+                            visible: root.saveMessage.length > 0
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: saveMessageText.implicitHeight + 16
+                            color: root.lastSaveOk
+                                ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "success", root.appStyle), 0.12)
+                                : SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.12)
+                            border.color: root.lastSaveOk
+                                ? SemanticTheme.tone(root.t, "success", root.appStyle)
+                                : SemanticTheme.tone(root.t, "error", root.appStyle)
+                            border.width: 1
+                            radius: 4
+                            Text {
+                                id: saveMessageText
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                text: root.saveMessage
+                                color: root.lastSaveOk
+                                    ? SemanticTheme.tone(root.t, "success", root.appStyle)
+                                    : SemanticTheme.tone(root.t, "error", root.appStyle)
+                                font.family: "Segoe UI"
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                                wrapMode: Text.WordWrap
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Recent payment evidence"
+                            color: root._text
+                            font.family: "Segoe UI"
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+
+                        Repeater {
+                            model: root.historyRows
+                            delegate: Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 36
+                                radius: root.isProMode ? 4 : 8
+                                color: root._input
+                                border.width: 1
+                                border.color: root._border
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 8
+                                    Text { Layout.preferredWidth: 82; text: root._clean(modelData.date); color: root._mutedText; font.pixelSize: 11; elide: Text.ElideRight }
+                                    Text { Layout.fillWidth: true; text: root._clean(modelData.type) + " " + root._clean(modelData.reference); color: root._text; font.pixelSize: 11; elide: Text.ElideRight }
+                                    Text { Layout.preferredWidth: 82; horizontalAlignment: Text.AlignRight; text: root.money(modelData.amount); color: root._accent; font.pixelSize: 11; font.weight: Font.DemiBold }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    onVisibleChanged: {
+        if (visible && backendReady()) refreshInvoices()
+    }
+
+    Component.onCompleted: {
+        resetDraft()
+        if (backendReady()) refreshInvoices()
+    }
+}

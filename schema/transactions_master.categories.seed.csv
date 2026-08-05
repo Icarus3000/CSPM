@@ -1,0 +1,131 @@
+CategoryCode,CategoryName,Type,ClassScope,TaxFlagDefault,BillableAllowed,MedicalEligible,DeductibleEligible,BusinessDeductibleEligible,Active,SortOrder,Notes
+INC_SALARY,Salary,Income,Family,None,0,0,0,0,1,100,Employment income
+INC_BONUS,Bonus,Income,Family,None,0,0,0,0,1,101,Employment bonus
+INC_CONTRACT_REVENUE,Contract Revenue,Income,Business,HST - Biz,0,0,0,0,1,102,General contract billing
+INC_OT_PRIVATE_BILLINGS,OT Private Billings,Income,Business,HST - Biz,0,0,0,0,1,103,Deborah private OT revenue
+INC_OT_VHA_BILLINGS,OT VHA Billings,Income,Business,HST - Biz,0,0,0,0,1,104,Deborah VHA revenue
+INC_LEGAL_FEES,Legal Fees Revenue,Income,Business,HST - Biz,0,0,0,0,1,105,Cory legal practice revenue
+INC_RETAINER_RECEIPTS,Retainer Receipts,Income,Business,HST - Biz,0,0,0,0,1,106,Client retainer funds received
+INC_REIMBURSEMENT_NON_TAXABLE,Reimbursement Non-Taxable,Income,Both,None,0,0,0,0,1,107,Repaid out-of-pocket cost
+INC_INTEREST_BANK,Bank Interest,Income,Both,None,0,0,0,0,1,108,Interest income
+INC_INTEREST_INVESTMENT,Investment Interest,Income,Both,None,0,0,0,0,1,109,Investment interest
+INC_DIVIDENDS,Dividends,Income,Both,None,0,0,0,0,1,110,Dividend income
+INC_CAPITAL_GAINS,Capital Gains,Income,Both,None,0,0,0,0,1,111,Capital gain proceeds
+INC_RENTAL_INCOME,Rental Income,Income,Family,None,0,0,0,0,1,112,Rental property income
+INC_CASHBACK_REBATE,Cashback Rebate,Income,Both,None,0,0,0,0,1,113,Credit card or account cashback
+INC_TAX_REFUND,Tax Refund,Income,Both,None,0,0,0,0,1,114,Income tax refund
+INC_GOVERNMENT_BENEFIT,Government Benefit,Income,Family,None,0,0,0,0,1,115,Government support income
+INC_CHILD_BENEFIT,Child Benefit,Income,Family,None,0,0,0,0,1,116,Canada child benefit
+INC_GST_HST_CREDIT,GST HST Credit,Income,Family,None,0,0,0,0,1,117,Tax credit income
+INC_INSURANCE_PROCEEDS,Insurance Proceeds,Income,Both,None,0,0,0,0,1,118,Insurance payout
+INC_GIFT_RECEIVED,Gift Received,Income,Family,None,0,0,0,0,1,119,Gifts received
+INC_LOAN_PROCEEDS,Loan Proceeds,Income,Both,None,0,0,0,0,1,120,Loan drawdown
+INC_OWNER_CONTRIBUTION,Owner Contribution,Income,Business,None,0,0,0,0,1,121,Owner injected capital
+INC_SHAREHOLDER_LOAN_IN,Shareholder Loan In,Income,Business,None,0,0,0,0,1,122,Shareholder loan advance
+INC_ASSET_SALE_PROCEEDS,Asset Sale Proceeds,Income,Both,None,0,0,0,0,1,123,Sale of personal or business asset
+INC_OTHER,Other Income,Income,Both,None,0,0,0,0,1,124,Fallback income category
+EXP_GROCERIES,Groceries,Expense,Family,None,0,0,0,0,1,200,Food and household groceries
+EXP_DINING,Dining Out,Expense,Family,None,0,0,0,0,1,201,Restaurants and takeout
+EXP_COFFEE_SNACKS,Coffee Snacks,Expense,Both,None,0,0,0,0,1,202,Coffee and snacks
+EXP_HOUSEHOLD_SUPPLIES,Household Supplies,Expense,Family,None,0,0,0,0,1,203,Home consumables
+EXP_CLOTHING,Clothing,Expense,Family,None,0,0,0,0,1,204,Clothing and footwear
+EXP_PERSONAL_CARE,Personal Care,Expense,Family,None,0,0,0,0,1,205,Hygiene and grooming
+EXP_CHILDCARE,Childcare,Expense,Family,None,0,0,1,0,1,206,Childcare costs
+EXP_SCHOOL_TUITION,School Tuition,Expense,Family,None,0,0,1,0,1,207,Education tuition
+EXP_SCHOOL_SUPPLIES,School Supplies,Expense,Family,None,0,0,1,0,1,208,Education supplies
+EXP_KIDS_ACTIVITIES,Kids Activities,Expense,Family,None,0,0,0,0,1,209,Sports and extracurricular
+EXP_ALLOWANCE,Allowance,Expense,Family,None,0,0,0,0,1,210,Family allowance
+EXP_GIFTS_GIVEN,Gifts Given,Expense,Family,None,0,0,0,0,1,211,Gifts and occasions
+EXP_DONATIONS,Donations,Expense,Family,Deductible,0,0,1,0,1,212,Charitable donations
+EXP_RENT,Rent,Expense,Family,None,0,0,0,0,1,213,Rent payments
+EXP_MORTGAGE_INTEREST,Mortgage Interest,Expense,Family,None,0,0,0,0,1,214,Mortgage interest portion
+EXP_PROPERTY_TAX,Property Tax,Expense,Family,None,0,0,0,0,1,215,Property taxes
+EXP_CONDO_FEES,Condo Fees,Expense,Family,None,0,0,0,0,1,216,Condo strata fees
+EXP_HOME_INSURANCE,Home Insurance,Expense,Family,None,0,0,0,0,1,217,Home insurance premium
+EXP_RENTERS_INSURANCE,Renters Insurance,Expense,Family,None,0,0,0,0,1,218,Renters insurance premium
+EXP_HOME_REPAIRS,Home Repairs,Expense,Family,None,0,0,0,0,1,219,Home repair costs
+EXP_HOME_MAINTENANCE,Home Maintenance,Expense,Family,None,0,0,0,0,1,220,Ongoing maintenance
+EXP_ELECTRICITY,Electricity,Expense,Family,None,0,0,0,0,1,221,Electric utility bill
+EXP_NATURAL_GAS,Natural Gas,Expense,Family,None,0,0,0,0,1,222,Gas utility bill
+EXP_WATER,Water Sewer,Expense,Family,None,0,0,0,0,1,223,Water and sewer
+EXP_INTERNET_HOME,Internet Home,Expense,Family,None,0,0,0,0,1,224,Home internet
+EXP_MOBILE_PHONE,Mobile Phone,Expense,Both,None,0,0,0,0,1,225,Mobile service
+EXP_STREAMING_SERVICES,Streaming Services,Expense,Family,None,0,0,0,0,1,226,Media subscriptions
+EXP_TRASH_RECYCLING,Trash Recycling,Expense,Family,None,0,0,0,0,1,227,Municipal waste fees
+EXP_FUEL,Fuel,Expense,Both,None,0,0,0,0,1,228,Gasoline and charging
+EXP_PARKING,Parking,Expense,Both,None,0,0,0,0,1,229,Parking fees
+EXP_PUBLIC_TRANSIT,Public Transit,Expense,Both,None,0,0,0,0,1,230,Transit pass and fares
+EXP_RIDESHARE_TAXI,Rideshare Taxi,Expense,Both,None,0,0,0,0,1,231,Taxi and rideshare
+EXP_TOLLS,Tolls,Expense,Both,None,0,0,0,0,1,232,Toll roads
+EXP_AUTO_INSURANCE,Auto Insurance,Expense,Family,None,0,0,0,0,1,233,Vehicle insurance
+EXP_AUTO_REPAIRS,Auto Repairs,Expense,Family,None,0,0,0,0,1,234,Vehicle repair costs
+EXP_AUTO_MAINTENANCE,Auto Maintenance,Expense,Family,None,0,0,0,0,1,235,Vehicle maintenance service
+EXP_AUTO_REGISTRATION,Auto Registration,Expense,Family,None,0,0,0,0,1,236,Vehicle licensing
+EXP_MEDICAL,Medical Expense,Expense,Both,Medical,0,1,1,0,1,237,Medical services
+EXP_DENTAL,Dental Expense,Expense,Both,Medical,0,1,1,0,1,238,Dental services
+EXP_VISION,Vision Expense,Expense,Both,Medical,0,1,1,0,1,239,Vision care
+EXP_PHARMACY,Pharmacy Expense,Expense,Both,Medical,0,1,1,0,1,240,Prescription and OTC meds
+EXP_THERAPY,Therapy Counselling,Expense,Both,Medical,0,1,1,0,1,241,Therapy and counselling
+EXP_FITNESS,Fitness Wellness,Expense,Family,None,0,0,0,0,1,242,Gym and wellness
+EXP_TRAVEL_AIRFARE,Travel Airfare,Expense,Both,None,0,0,0,0,1,243,Flight costs
+EXP_TRAVEL_LODGING,Travel Lodging,Expense,Both,None,0,0,0,0,1,244,Hotels and lodging
+EXP_TRAVEL_MEALS,Travel Meals,Expense,Both,None,0,0,0,0,1,245,Meals while travelling
+EXP_TRAVEL_MISC,Travel Misc,Expense,Both,None,0,0,0,0,1,246,Other travel costs
+EXP_BANK_FEES,Bank Fees,Expense,Both,None,0,0,0,0,1,247,Banking service fees
+EXP_INTEREST_CHARGES,Interest Charges,Expense,Both,None,0,0,0,0,1,248,Interest not principal
+EXP_ACCOUNTING_FEES,Accounting Fees,Expense,Business,Business Deductible,0,0,0,1,1,249,Bookkeeping and accounting
+EXP_LEGAL_FEES,Legal Fees Expense,Expense,Business,Business Deductible,0,0,0,1,1,250,External legal services
+EXP_CONSULTING_FEES,Consulting Fees,Expense,Business,Business Deductible,0,0,0,1,1,251,Professional consulting
+EXP_OFFICE_SUPPLIES,Office Supplies,Expense,Business,Business Deductible,0,0,0,1,1,252,Stationery and office supplies
+EXP_OFFICE_EQUIPMENT,Office Equipment,Expense,Business,Business Deductible,0,0,0,1,1,253,Computers and peripherals
+EXP_SOFTWARE_SUBSCRIPTIONS,Software Subscriptions,Expense,Business,Business Deductible,0,0,0,1,1,254,SaaS and software
+EXP_CLOUD_SERVICES,Cloud Services,Expense,Business,Business Deductible,0,0,0,1,1,255,Cloud infrastructure
+EXP_TELECOM_BUSINESS,Telecom Business,Expense,Business,Business Deductible,0,0,0,1,1,256,Business phone lines
+EXP_INTERNET_BUSINESS,Internet Business,Expense,Business,Business Deductible,0,0,0,1,1,257,Business internet
+EXP_MARKETING_ADS,Marketing Ads,Expense,Business,Business Deductible,0,0,0,1,1,258,Advertising spend
+EXP_WEBSITE_HOSTING,Website Hosting,Expense,Business,Business Deductible,0,0,0,1,1,259,Domain and hosting
+EXP_PROFESSIONAL_DUES,Professional Dues,Expense,Business,Business Deductible,0,0,0,1,1,260,Membership and dues
+EXP_LICENSES_PERMITS,Licenses Permits,Expense,Business,Business Deductible,0,0,0,1,1,261,Regulatory licenses
+EXP_CPD_TRAINING,CPD Training,Expense,Business,Business Deductible,0,0,0,1,1,262,Continuing professional development
+EXP_BUSINESS_INSURANCE,Business Insurance,Expense,Business,Business Deductible,0,0,0,1,1,263,Business insurance premiums
+EXP_PAYROLL,Payroll,Expense,Business,Business Deductible,0,0,0,1,1,264,Employee payroll
+EXP_CONTRACTOR_PAYMENTS,Contractor Payments,Expense,Business,Business Deductible,0,0,0,1,1,265,Independent contractor payments
+EXP_POSTAGE_COURIER,Postage Courier,Expense,Business,Business Deductible,0,0,0,1,1,266,Mail and courier
+EXP_PRINTING_COPYING,Printing Copying,Expense,Business,Business Deductible,0,0,0,1,1,267,Print and copy costs
+EXP_RESEARCH_DATABASES,Research Databases,Expense,Business,Business Deductible,0,0,0,1,1,268,Professional research tools
+EXP_FILING_FEES,Filing Fees,Expense,Business,HST - Biz,1,0,0,1,1,269,Court or regulatory filing disbursement
+EXP_PROCESS_SERVER,Process Server,Expense,Business,HST - Biz,1,0,0,1,1,270,Service disbursement
+EXP_EXPERT_WITNESS,Expert Witness,Expense,Business,HST - Biz,1,0,0,1,1,271,Expert disbursement
+EXP_MEDIATION_ARBITRATION,Mediation Arbitration,Expense,Business,HST - Biz,1,0,0,1,1,272,Mediator or arbitrator cost
+EXP_TRANSCRIPTS_RECORDS,Transcripts Records,Expense,Business,HST - Biz,1,0,0,1,1,273,Transcript and records
+EXP_CLIENT_TRAVEL_DISBURSEMENT,Client Travel Disbursement,Expense,Business,HST - Biz,1,0,0,1,1,274,Recoverable travel expense
+EXP_CLIENT_MEALS_DISBURSEMENT,Client Meals Disbursement,Expense,Business,HST - Biz,1,0,0,1,1,275,Recoverable meals expense
+EXP_COURT_REPORTER,Court Reporter,Expense,Business,HST - Biz,1,0,0,1,1,276,Court reporter disbursement
+EXP_GENERAL_OFFICE_OVERHEAD,General Office Overhead,Expense,Business,Business Deductible,0,0,0,1,1,277,Non-billable overhead
+EXP_INCOME_TAX_PAID,Income Tax Paid,Expense,Both,None,0,0,0,0,1,278,Income tax payment
+EXP_GST_HST_REMITTANCE,GST HST Remittance,Expense,Business,None,0,0,0,0,1,279,Tax remittance
+EXP_PENALTIES_FINES,Penalties Fines,Expense,Both,None,0,0,0,0,1,280,Penalties and fines
+EXP_OTHER,Other Expense,Expense,Both,None,0,0,0,0,1,281,Fallback expense category
+DEBT_MORTGAGE_PRINCIPAL_CIBC,CIBC Mortgage Principal,Debt Repayment,Both,None,0,0,0,0,1,300,Principal-only mortgage repayment
+DEBT_MORTGAGE_PRINCIPAL_HOME_TRUST,Home Trust Mortgage Principal,Debt Repayment,Both,None,0,0,0,0,1,301,Principal-only mortgage repayment
+DEBT_LOC_PRINCIPAL_CIBC,CIBC LOC Principal,Debt Repayment,Both,None,0,0,0,0,1,302,Principal repayment on LOC
+DEBT_CREDIT_CARD_PRINCIPAL_SIMPLII_VISA,Simplii Visa Principal,Debt Repayment,Both,None,0,0,0,0,1,303,Principal repayment on Simplii Visa
+DEBT_CREDIT_CARD_PRINCIPAL_TRIANGLE,Triangle Mastercard Principal,Debt Repayment,Both,None,0,0,0,0,1,304,Principal repayment on Triangle card
+DEBT_PERSONAL_LOAN_PRINCIPAL,Personal Loan Principal,Debt Repayment,Both,None,0,0,0,0,1,305,Principal repayment on personal loan
+DEBT_STUDENT_LOAN_PRINCIPAL,Student Loan Principal,Debt Repayment,Both,None,0,0,0,0,1,306,Principal repayment on student loan
+DEBT_AUTO_LOAN_PRINCIPAL,Auto Loan Principal,Debt Repayment,Both,None,0,0,0,0,1,307,Principal repayment on auto loan
+DEBT_SHAREHOLDER_LOAN_REPAYMENT,Shareholder Loan Repayment,Debt Repayment,Business,None,0,0,0,0,1,308,Repayment of shareholder loan
+DEBT_OTHER_PRINCIPAL,Other Debt Principal,Debt Repayment,Both,None,0,0,0,0,1,309,Fallback debt repayment category
+XFER_INTERNAL_CHEQUING_SAVINGS,Internal Chequing Savings Transfer,Transfer,Both,None,0,0,0,0,1,400,Internal cash movement
+XFER_INTERNAL_CARD_PAYMENT,Internal Card Payment Transfer,Transfer,Both,None,0,0,0,0,1,401,Pay card from bank account
+XFER_INTERNAL_LOC_ADVANCE,Internal LOC Advance Transfer,Transfer,Both,None,0,0,0,0,1,402,LOC advance to account
+XFER_INTERNAL_MORTGAGE_PAYMENT,Internal Mortgage Payment Transfer,Transfer,Both,None,0,0,0,0,1,403,Cash movement for mortgage payment
+XFER_INVESTMENT_CONTRIBUTION,Investment Contribution Transfer,Transfer,Both,None,0,0,0,0,1,404,Transfer to investment account
+XFER_TFSA_CONTRIBUTION,TFSA Contribution Transfer,Transfer,Family,None,0,0,0,0,1,405,Transfer into TFSA
+XFER_RRSP_CONTRIBUTION,RRSP Contribution Transfer,Transfer,Family,None,0,0,0,0,1,406,Transfer into RRSP
+XFER_RESP_CONTRIBUTION,RESP Contribution Transfer,Transfer,Family,None,0,0,0,0,1,407,Transfer into RESP
+XFER_CASH_WITHDRAWAL,Cash Withdrawal,Transfer,Both,None,0,0,0,0,1,408,Withdrawal to cash on hand
+XFER_CASH_DEPOSIT,Cash Deposit,Transfer,Both,None,0,0,0,0,1,409,Deposit cash to account
+XFER_MEMBER_TO_MEMBER,Member to Member Transfer,Transfer,Family,None,0,0,0,0,1,410,Transfer between family members
+XFER_FOREIGN_EXCHANGE,Foreign Exchange Transfer,Transfer,Both,None,0,0,0,0,1,411,Currency conversion movement
+XFER_OTHER_INTERNAL,Other Internal Transfer,Transfer,Both,None,0,0,0,0,1,412,Fallback transfer category
