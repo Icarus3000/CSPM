@@ -22,7 +22,9 @@ Window {
     property alias mainContentRef: mainContent
     property alias sfxBusRef: sfxBus
     property bool detachedMode: false
-    property bool startupSplashEnabled: true
+    // Bootstrap supplies the one native PNG splash. Never create a second QML
+    // splash from the main window, including when the Console style is active.
+    property bool startupSplashEnabled: false
     property bool deferStartupLaunch: false
 
     // --- BRUTE FORCE FOCUS LOCK ---
@@ -118,45 +120,7 @@ Window {
     signal requestDetach(int tileIndex, string titleText, var state, rect originRect)
     signal startupFirstPixelVisible()
 
-    Shortcut {
-        sequence: "X"
-        context: Qt.ApplicationShortcut
-        autoRepeat: false
-        enabled: mainWin.startupSplashPendingCount > 0 || mainWin.startupPhase === "splash-running"
-        onActivated: mainWin.requestStartupSplashSkip("hotkey-x")
-    }
 
-    Shortcut {
-        sequence: "x"
-        context: Qt.ApplicationShortcut
-        autoRepeat: false
-        enabled: mainWin.startupSplashPendingCount > 0 || mainWin.startupPhase === "splash-running"
-        onActivated: mainWin.requestStartupSplashSkip("hotkey-x-lower")
-    }
-
-    Shortcut {
-        sequence: "Space"
-        context: Qt.ApplicationShortcut
-        autoRepeat: false
-        enabled: mainWin.startupSplashPendingCount > 0 || mainWin.startupPhase === "splash-running"
-        onActivated: mainWin.requestStartupSplashSkip("hotkey-space")
-    }
-
-    Shortcut {
-        sequence: "Return"
-        context: Qt.ApplicationShortcut
-        autoRepeat: false
-        enabled: mainWin.startupSplashPendingCount > 0 || mainWin.startupPhase === "splash-running"
-        onActivated: mainWin.requestStartupSplashSkip("hotkey-return")
-    }
-
-    Shortcut {
-        sequence: "Enter"
-        context: Qt.ApplicationShortcut
-        autoRepeat: false
-        enabled: mainWin.startupSplashPendingCount > 0 || mainWin.startupPhase === "splash-running"
-        onActivated: mainWin.requestStartupSplashSkip("hotkey-enter")
-    }
     
     // ============================================================
     // STATE MANAGEMENT
@@ -9503,8 +9467,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.destroyClosingOverlay();
         mainWin.destroyMinimizeOverlay();
         mainWin.clearMinimizeRestoreState();
-        mainWin.forceClose = true;
         if (mainWin.detachedMode) {
+            mainWin.forceClose = true;
             if (!dockCommitted) {
                 var mainShell = mainWin.resolvePrimaryMainShellWindow();
                 if (mainShell) mainWin.focusMainShell(mainShell);
@@ -9513,6 +9477,21 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             mainWin.close();
             return;
         }
+        if (mainWin.appRef && mainWin.appRef.keepTrayAlive) {
+            mainWin.phaseLog("CLOSING", "Close complete; retaining the application in the system tray");
+            mainWin.forceClose = false;
+            mainWin.isClosing = false;
+            mainWin.isMinimizing = false;
+            mainWin.isRestoringFromMinimize = false;
+            mainWin.closeMotionStarted = false;
+            mainWin.animationPhase = "settled";
+            mainWin.isSettled = true;
+            mainWin.opacity = 1.0;
+            if (jelly && jelly.restore) jelly.restore();
+            mainWin.visible = false;
+            return;
+        }
+        mainWin.forceClose = true;
         mainWin.closeAllTopLevelWindows();
         mainWin.close();
         Qt.callLater(function() {

@@ -435,6 +435,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
     function currentDirtyState() {
         if (activeSubwindowId === "B04") return false; // DOCKET REPORT IS NEVER DIRTY
+        if (root.activeIsFeeDocket()) return !!(feeDocketEntryPanel && feeDocketEntryPanel.dirty);
         if (root.activeIsTrademarkEntry()) return !!root.trademarkFormDirty;
         if (root.activeIsTrademarkDirectory()) return !!(root.tf_state && root.tf_state.dirty);
         if (root.activeIsDeadlineEditor()) return !!root.deadlineFormDirty;
@@ -673,6 +674,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             { "id": "B01", "title": "Time Docket Entry" },
             { "id": "B03", "title": "Timer Console" },
             { "id": "B02", "title": "Fee Docket Entry" },
+            { "id": "B05", "title": "Move Dockets Between Matters" },
             { "id": "B04", "title": "Docket Activity Report" },
             { "id": "B16", "title": "Trademark Filing" },
             { "id": "B07", "title": "Deadline Master Calendar" },
@@ -714,12 +716,20 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         return String(activeSubwindowId || "") === "B01"
     }
 
+    function activeIsFeeDocket() {
+        return String(activeSubwindowId || "") === "B02"
+    }
+
     function activeIsTimerConsole() {
         return String(activeSubwindowId || "") === "B03"
     }
 
     function activeIsDocketReport() {
         return String(activeSubwindowId || "") === "B04"
+    }
+
+    function activeIsBulkDocketMove() {
+        return String(activeSubwindowId || "") === "B05"
     }
 
     function activeIsDeadlineCalendar() {
@@ -731,7 +741,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function activeUsesDocketContext() {
-        return activeIsLiveDocket() || activeIsTimerConsole()
+        return activeIsLiveDocket() || activeIsFeeDocket() || activeIsTimerConsole() || activeIsBulkDocketMove()
     }
 
     function normalizedDocketStatus(value) {
@@ -1952,6 +1962,12 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         }
         if (activeIsLiveDocket()) {
             return "Integrated docket capture with live timer and exact-save tracking"
+        }
+        if (activeIsFeeDocket()) {
+            return "Create a matter-linked fee directly in invoiceable WIP"
+        }
+        if (activeIsBulkDocketMove()) {
+            return "Review and move selected unbilled time and fee dockets to another matter"
         }
         if (activeIsTimerConsole()) {
             return "Central timer controls, checkpoint saves, and lock handoff management"
@@ -3577,6 +3593,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             var docketResult = requestSaveToDatabaseIfNeeded("option3-tab-close")
             return !!(docketResult && docketResult.ok && docketResult.verifiedExact)
         }
+        if (saveCommand === "fee-docket") {
+            return !!(feeDocketEntryPanel && feeDocketEntryPanel.saveFeeEntry && feeDocketEntryPanel.saveFeeEntry())
+        }
         if (saveCommand === "deadline-entry") {
             saveEditing()
             return true
@@ -5014,6 +5033,42 @@ Behavior on border.color {
                     }
                 }
 
+                FeeDocketEntryPanel {
+                    id: feeDocketEntryPanel
+                    visible: root.activeIsFeeDocket()
+                    enabled: visible
+                    Layout.fillWidth: true
+                    Layout.fillHeight: visible
+                    Layout.maximumHeight: visible ? 16777215 : 0
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    appRef: root.appRef
+                    sfxBus: root.sfxBus
+                    onSaved: function(result) {
+                        root.dirty = false
+                    }
+                }
+
+                BulkDocketMovePanel {
+                    id: bulkDocketMovePanel
+                    visible: root.activeIsBulkDocketMove()
+                    enabled: visible
+                    Layout.fillWidth: true
+                    Layout.fillHeight: visible
+                    Layout.maximumHeight: visible ? 16777215 : 0
+                    t: root.t
+                    appRef: root.appRef
+                    backend: (typeof docketApp !== "undefined") ? docketApp : ((root.appRef && root.appRef.docketing) ? root.appRef.docketing : null)
+                    surfaceColor: root.isProMode ? root.proSurface : root._panel
+                    canvasColor: root.isProMode ? root.proCanvas : root._bg
+                    inputColor: root.isProMode ? root.proControl : root._panelBase
+                    textColor: root.isProMode ? root.proInk : root._text
+                    mutedColor: root.isProMode ? root.proMutedInk : root._mutedText
+                    borderColor: root.isProMode ? root.proBorder : SemanticTheme.borderSubtle(root.t, root.appStyle)
+                    accentColor: root.isProMode ? root.proActiveFill : root._accent
+                    isDark: !root.lightTheme
+                }
+
                 Component {
                     id: docketActivityReportPanelComponent
                     DocketActivityReportPanel {
@@ -5577,7 +5632,7 @@ Behavior on border.color {
                     Layout.fillWidth: true
                     Layout.fillHeight: visible
                     Layout.maximumHeight: visible ? 16777215 : 0
-                    visible: !root.activeIsLiveDocket() && !root.activeIsTimerConsole() && !root.activeIsDocketReport() && !root.activeIsTrademark()
+                    visible: !root.activeIsLiveDocket() && !root.activeIsFeeDocket() && !root.activeIsBulkDocketMove() && !root.activeIsTimerConsole() && !root.activeIsDocketReport() && !root.activeIsTrademark()
                     enabled: visible
                     radius: root.activeIsDeadlineEditor() ? 0 : root.sectionRadiusPx
                     color: root.activeIsDeadlineEditor()

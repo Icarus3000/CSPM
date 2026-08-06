@@ -3448,8 +3448,8 @@ class ExcelRepo:
             elif "invoice" in desc_lc or status_lc.startswith("invoice"):
                 entity_type = "invoice"
                 route_tile_index = 2
-                route_node_id = "C08"
-                route_node_title = "Open Invoice Selector"
+                route_node_id = "C04"
+                route_node_title = "Invoice Directory"
 
             title = " - ".join(x for x in (date_text, description) if x) or entry_id or "Docket Entry"
             subtitle_bits = [x for x in (client_name, matter_name, status) if x]
@@ -4440,6 +4440,19 @@ class ExcelRepo:
         return math.ceil((raw_seconds / 3600.0) * 10.0 - 1e-9) / 10.0
 
 
+    def _is_fee_entry(self, row: Dict[str, Any]) -> bool:
+        """Return whether a time-table row was created by Fee Docket Entry.
+
+        Fee entries deliberately remain in tblTimeEntries so they flow through
+        WIP, draft creation, invoicing, and ledger history without needing a
+        second billing pipeline.  The marker prevents the time-docket daily
+        aggregation path from merging a fee with timed work for the same
+        matter/date.
+        """
+        marker = _clean_text((row or {}).get(sc.COL_TIME_LOCK_AUDIT)).lower()
+        return "entrytype:fee" in marker
+
+
 
     def add_time_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         self.ensure_schema()
@@ -4503,6 +4516,8 @@ class ExcelRepo:
             matching_rows = [requested_row]
         elif not force_duplicate:
             for row in rows:
+                if self._is_fee_entry(row):
+                    continue
                 if _clean_text(row.get(sc.COL_TIME_DATE)) != normalized["date"]:
                     continue
                 if _clean_text(row.get(sc.COL_TIME_CLIENT_ID)).lower() != client_id.lower():
@@ -4682,6 +4697,297 @@ class ExcelRepo:
             "aggregateHoursRounded": round(float(aggregate_hours), 2),
             "mergedRowCount": len(duplicate_rows),
             "message": "" if verified else "Entry write verification failed.",
+        }
+
+    def add_fee_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one matter-linked, invoiceable fee WIP line.
+
+        A fee is stored in the standard time/WIP table with zero hours and a
+        zero rate.  Its positive gross/net amount is intentional: the invoice
+        renderer treats that shape as a flat-fee service line.  This keeps a
+        matter containing only direct fee entries invoiceable without routing
+        the user through the invoice builder.
+        """
+        self.ensure_schema()
+        raw = dict(payload or {})
+
+        date_text = self._pick_text(raw, ["date", "dateText", sc.COL_TIME_DATE])
+        if not date_text:
+            raise ValueError("Date is required.")
+        if not _is_valid_iso_date(date_text):
+            raise ValueError("Date must be in YYYY-MM-DD format.")
+
+        amount = self._pick_float(raw, ["amount", "feeAmount", "amountText", sc.COL_TIME_GROSS])
+        if amount is None or not math.isfinite(float(amount)) or float(amount) <= 0:
+            raise ValueError("Fee amount must be greater than zero.")
+        amount = round(float(amount), 2)
+
+        requested_matter_id = self._pick_text(
+            raw,
+            ["matterId", "selectedMatterId", sc.COL_TIME_MATTER_ID, sc.COL_MATTER_ID],
+        )
+        requested_matter_text = self._pick_text(
+            raw,
+            ["matterName", "matterText", sc.COL_MATTER_NAME, "Matter"],
+        )
+        if not requested_matter_id and not requested_matter_text:
+            raise ValueError("Matter is required for a fee entry.")
+
+        matter_rows = [self._canonicalize_matter_row(r) for r in self._read_table_rows(TBL_MATTERS)]
+        matter_row: Optional[Dict[str, Any]] = None
+        if requested_matter_id:
+            for candidate in matter_rows:
+                if _clean_text(candidate.get(sc.COL_MATTER_ID)).lower() == requested_matter_id.lower():
+                    matter_row = candidate
+                    break
+
+        if matter_row is None and requested_matter_text:
+            lookup = requested_matter_text.lower()
+            for candidate in matter_rows:
+                matter_id = _clean_text(candidate.get(sc.COL_MATTER_ID)).lower()
+                matter_number = _clean_text(candidate.get(sc.COL_MATTER_NUMBER)).lower()
+                matter_name = _clean_text(candidate.get(sc.COL_MATTER_NAME)).lower()
+                display_name = _clean_text(candidate.get(sc.COL_MATTER_DISPLAY_NAME)).lower()
+                combined = (matter_number + " - " + matter_name).strip(" -")
+                if lookup in (matter_id, matter_number, matter_name, display_name, combined):
+                    matter_row = candidate
+                    break
+
+        if matter_row is None:
+            raise ValueError("Select an existing matter for the fee entry.")
+
+        matter_id = _clean_text(matter_row.get(sc.COL_MATTER_ID))
+        client_id = _clean_text(matter_row.get(sc.COL_MATTER_CLIENT_ID))
+        if not matter_id or not client_id:
+            raise ValueError("The selected matter is missing its client link.")
+
+        parent_id = _clean_text(matter_row.get(sc.COL_MATTER_PARENT_ID))
+        description = self._pick_text(raw, ["description", "descriptionText", sc.COL_TIME_DESC])
+        if not description:
+            description = "Fee Entry"
+        status = self._normalize_time_status(self._pick_text(raw, ["status", sc.COL_TIME_STATUS]))
+        tax = round(amount * 0.13, 2)
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry_id = self._new_id("T")
+        entry_row = {
+            sc.COL_TIME_ENTRY_ID: entry_id,
+            sc.COL_TIME_DATE: date_text,
+            sc.COL_TIME_CLIENT_ID: client_id,
+            sc.COL_TIME_MATTER_ID: matter_id,
+            sc.COL_TIME_PARENT_ID: parent_id,
+            sc.COL_TIME_DESC: description,
+            sc.COL_TIME_HOURS: 0.0,
+            sc.COL_TIME_RATE: 0.0,
+            sc.COL_TIME_SHARE_PCT: 100.0,
+            sc.COL_TIME_GROSS: amount,
+            sc.COL_TIME_NET: amount,
+            sc.COL_TIME_HST: tax,
+            sc.COL_TIME_TOTAL: round(amount + tax, 2),
+            sc.COL_TIME_SECONDS: 0,
+            sc.COL_TIME_STATUS: status,
+            sc.COL_TIME_INVOICE_REF: "",
+            sc.COL_TIME_INVOICE_STATUS: "",
+            sc.COL_TIME_PAYMENT_STATUS: "",
+            sc.COL_TIME_INVOICE_TOTAL: 0.0,
+            sc.COL_TIME_INVOICE_AMOUNT_PAID: 0.0,
+            sc.COL_TIME_INVOICE_BALANCE_DUE: 0.0,
+            sc.COL_TIME_INVOICE_DATE: "",
+            sc.COL_TIME_LOCK_AUDIT: "EntryType:Fee",
+            sc.COL_TIME_CREATED: now_stamp,
+        }
+        self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, entry_row)
+        persisted = self._find_time_entry(entry_id)
+        verified = self._compare_rows_loose(entry_row, persisted)
+        return {
+            "ok": bool(verified),
+            "verifiedExact": bool(verified),
+            "entryId": entry_id,
+            "savedRow": entry_row,
+            "message": "" if verified else "Fee entry write verification failed.",
+        }
+
+    def _bulk_docket_move_context(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        raw = dict(payload or {})
+        source_key = _clean_text(raw.get("sourceMatterId") or raw.get("sourceMatter"))
+        target_key = _clean_text(raw.get("targetMatterId") or raw.get("targetMatter"))
+        start_date = self._parse_date_value(raw.get("fromDate") or raw.get("startDate"))
+        end_date = self._parse_date_value(raw.get("toDate") or raw.get("endDate"))
+
+        if not source_key:
+            raise ValueError("Select the matter that currently owns the dockets.")
+        if start_date is None or end_date is None:
+            raise ValueError("Enter both dates as YYYY-MM-DD.")
+        if start_date > end_date:
+            raise ValueError("The start date cannot be after the end date.")
+
+        source_result = self.get_matter_profile(source_key)
+        if not bool(source_result.get("ok")):
+            raise ValueError(source_result.get("message") or "Source matter was not found.")
+        source = dict(source_result.get("matter") or {})
+
+        target: Dict[str, Any] = {}
+        if target_key:
+            target_result = self.get_matter_profile(target_key)
+            if not bool(target_result.get("ok")):
+                raise ValueError(target_result.get("message") or "Destination matter was not found.")
+            target = dict(target_result.get("matter") or {})
+            source_id = _clean_text(source.get("matterId"))
+            target_id = _clean_text(target.get("matterId"))
+            if source_id.lower() == target_id.lower():
+                raise ValueError("Choose a different destination matter.")
+            if not bool(target.get("active")):
+                raise ValueError("The destination matter must be active.")
+        return {
+            "source": source,
+            "target": target,
+            "fromDate": start_date,
+            "toDate": end_date,
+        }
+
+    def preview_bulk_docket_move(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """List movable dockets for a source matter and inclusive date range.
+
+        Only entries that have not been assigned to an invoice are eligible.  This
+        preserves finalized and draft-invoice history while still permitting a
+        user to correct a whole period of unbilled time or direct fees.
+        """
+        self.ensure_schema()
+        context = self._bulk_docket_move_context(payload)
+        source = context["source"]
+        source_id = _clean_text(source.get("matterId"))
+        start_date = context["fromDate"]
+        end_date = context["toDate"]
+
+        candidates: List[Dict[str, Any]] = []
+        matched_count = 0
+        blocked_count = 0
+        blocked_statuses = {"billed", "merged", "locked", "invoiced", "finalized"}
+
+        for row in self._read_table_rows(TBL_TIME):
+            if _clean_text(row.get(sc.COL_TIME_MATTER_ID)).lower() != source_id.lower():
+                continue
+            row_date = self._parse_date_value(row.get(sc.COL_TIME_DATE))
+            if row_date is None or row_date < start_date or row_date > end_date:
+                continue
+            matched_count += 1
+            invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
+            invoice_status = _clean_text(row.get(sc.COL_TIME_INVOICE_STATUS)).lower()
+            status = _clean_text(row.get(sc.COL_TIME_STATUS)) or "Draft"
+            if invoice_ref or invoice_status in blocked_statuses or status.lower() in blocked_statuses:
+                blocked_count += 1
+                continue
+
+            entry_id = _clean_text(row.get(sc.COL_TIME_ENTRY_ID))
+            if not entry_id:
+                blocked_count += 1
+                continue
+            hours = float(self._parse_float(row.get(sc.COL_TIME_HOURS)) or 0.0)
+            amount = float(
+                self._parse_float(row.get(sc.COL_TIME_GROSS))
+                or self._parse_float(row.get(sc.COL_TIME_NET))
+                or 0.0
+            )
+            is_fee = self._is_fee_entry(row)
+            candidates.append({
+                "entryId": entry_id,
+                "date": row_date.isoformat(),
+                "description": _clean_text(row.get(sc.COL_TIME_DESC)) or ("Fee entry" if is_fee else "Time docket"),
+                "hours": round(hours, 2),
+                "amount": round(amount, 2),
+                "isFee": bool(is_fee),
+                "status": status,
+            })
+
+        candidates.sort(key=lambda item: (item["date"], item["entryId"]))
+        return {
+            "ok": True,
+            "message": "",
+            "sourceMatter": source,
+            "fromDate": start_date.isoformat(),
+            "toDate": end_date.isoformat(),
+            "matchedCount": matched_count,
+            "blockedCount": blocked_count,
+            "candidates": candidates,
+        }
+
+    @with_db_lock
+    def move_dockets_to_matter(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Atomically move selected, still-unbilled time/fee dockets to one matter."""
+        self.ensure_schema()
+        context = self._bulk_docket_move_context(payload)
+        source = context["source"]
+        target = context["target"]
+        if not target:
+            raise ValueError("Select the destination matter.")
+
+        requested_ids = {
+            _clean_text(entry_id)
+            for entry_id in list((payload or {}).get("entryIds") or [])
+            if _clean_text(entry_id)
+        }
+        if not requested_ids:
+            raise ValueError("Select at least one docket to move.")
+
+        preview = self.preview_bulk_docket_move(payload)
+        eligible_ids = {
+            _clean_text(row.get("entryId"))
+            for row in list(preview.get("candidates") or [])
+            if _clean_text(row.get("entryId"))
+        }
+        unavailable_ids = sorted(requested_ids - eligible_ids)
+        if unavailable_ids:
+            raise ValueError(
+                "One or more selected dockets are no longer eligible to move. Refresh the list and try again."
+            )
+
+        source_id = _clean_text(source.get("matterId"))
+        source_name = _clean_text(source.get("displayName")) or _clean_text(source.get("matterName")) or source_id
+        target_id = _clean_text(target.get("matterId"))
+        target_name = _clean_text(target.get("displayName")) or _clean_text(target.get("matterName")) or target_id
+        target_client_id = _clean_text(target.get("clientId"))
+        target_parent_id = _clean_text(target.get("parentId"))
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        audit_note = (
+            f"[Bulk docket move {now_stamp}] {source_name} -> {target_name}; "
+            f"{context['fromDate'].isoformat()} to {context['toDate'].isoformat()}"
+        )
+
+        rows = self._read_table_rows(TBL_TIME)
+        moved_ids: List[str] = []
+        for row in rows:
+            entry_id = _clean_text(row.get(sc.COL_TIME_ENTRY_ID))
+            if entry_id not in requested_ids:
+                continue
+            if _clean_text(row.get(sc.COL_TIME_MATTER_ID)).lower() != source_id.lower():
+                raise ValueError("A selected docket no longer belongs to the source matter. Refresh and try again.")
+            row[sc.COL_TIME_MATTER_ID] = target_id
+            if target_client_id:
+                row[sc.COL_TIME_CLIENT_ID] = target_client_id
+            if target_parent_id:
+                row[sc.COL_TIME_PARENT_ID] = target_parent_id
+            row[sc.COL_TIME_LOCK_AUDIT] = self._append_note_line(row.get(sc.COL_TIME_LOCK_AUDIT), audit_note)
+            moved_ids.append(entry_id)
+
+        if len(moved_ids) != len(requested_ids):
+            raise ValueError("Not every selected docket could be located. No changes were saved.")
+
+        self._replace_table_rows(TBL_TIME, rows)
+        verified_rows = {
+            _clean_text(row.get(sc.COL_TIME_ENTRY_ID)): row
+            for row in self._read_table_rows(TBL_TIME)
+        }
+        verified = all(
+            _clean_text(verified_rows.get(entry_id, {}).get(sc.COL_TIME_MATTER_ID)).lower() == target_id.lower()
+            for entry_id in moved_ids
+        )
+        return {
+            "ok": bool(verified),
+            "verifiedExact": bool(verified),
+            "movedCount": len(moved_ids),
+            "movedEntryIds": moved_ids,
+            "sourceMatter": source,
+            "targetMatter": target,
+            "message": "" if verified else "Docket move verification failed.",
         }
 
     def update_time_entry(self, entry_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
@@ -5132,6 +5438,8 @@ class ExcelRepo:
 
         matches: List[Dict[str, Any]] = []
         for row in time_rows:
+            if self._is_fee_entry(row):
+                continue
             if _clean_text(row.get(sc.COL_TIME_DATE)) != date_text:
                 continue
             if _clean_text(row.get(sc.COL_TIME_CLIENT_ID)).lower() != client_id.lower():

@@ -1,5 +1,42 @@
 # Phase 7: Statements of Account and Ledgers Task List
 
+## Repository Build-Artifact Quarantine (2026-08-06)
+- [x] Move seven confirmed stale PyInstaller distribution/build artifacts into `to_delete/` for review rather than permanent deletion.
+- [x] Update the release builder to quarantine a replaced package and any unpromoted default staging output instead of deleting it or leaving it at the repository root.
+- [ ] Confirm CSPM launches from the current `dist/CSPM/CSPM.exe` without using the quarantined artifacts; then approve permanent deletion of `to_delete/`.
+
+## Direct-Fee Invoice Finalization Integrity Repair (2026-08-06)
+- [x] Diagnose invoice `26-0080` as a direct-fee finalization defect: a valid `$5,000.00` gross fee / `$5,650.00` total had zero net/HST fields, which propagated into Invoice Log, Receivables, and Ledger.
+- [x] Harden draft creation, recalculation, and finalization so direct-fee rows recover net/HST from their positive gross amount and finalization recalculates totals before posting accounting records.
+- [x] Add a targeted accounting repair service for historical finalized invoices and validate both the prevention and repair paths against a disposable in-memory workbook.
+- [x] With CSPM closed, create a reversible active-workbook backup and repair invoice `26-0080`; confirm the live Invoice Log, Receivables, Revenue ledger, and linked fee entry now show Fees `$5,000.00`, HST `$650.00`, and Balance `$5,650.00`.
+- [x] Rebuild and promote the revised `dist/CSPM/CSPM.exe`; the previous release is retained in `to_delete/dist__manual_replaced_release_20260806_103020/`.
+- [ ] Manually confirm Invoice Directory/Reverse Invoice show the repaired totals, the high-DPI compact layout, and the separate Directory-to-Reversal flow.
+- [ ] Manually delete a draft and confirm the only notification is `Draft <number> deleted` (no preview error).
+- [ ] Manually launch `dist/CSPM/CSPM.exe` and confirm that only the native PNG splash appears, the main shell's first visible frame appears beneath it, the PNG begins fading out in that same handoff, and CSPM is foregrounded on its target monitor after the PNG closes.
+
+## Native PNG-Only Splash and Matter Selector Repair (2026-08-06)
+
+- [x] Disable every QML splash creation path; retain only a native PNG centered on the target monitor. The main QML load waits for its visible eased fade-in to finish; at the main window's first painted pixel, the main frame is visible beneath it and the PNG starts its eased fade-out in the same handoff. Restore main-window foreground only after the PNG closes.
+- [x] Replace the raw bulk-docket matter dropdowns with searchable, light/dark themed controls that display `Client | Matter Description | Matter Number`.
+- [x] Rebuild and promote the repaired `dist/CSPM/CSPM.exe`; preserve the immediately replaced package at `to_delete/dist__replaced_release_20260806_105321/`.
+- [ ] Manually verify the PNG-only startup, post-splash foreground focus, selector filtering, and selector appearance in both themes.
+
+## Professional No-Open-Tabs Default (2026-08-06)
+
+- [x] Replace the automatic Professional `Practice Briefing` startup tab with the native Professional no-open-tabs background and its existing quick tiles; preserve explicitly routed starts and already-open workspaces.
+- [x] Keep the console-style `HomeGrid` exclusive to its existing non-Professional shell rather than overlaying the Professional home.
+- [ ] Manually launch CSPM normally and confirm the Professional no-open-tabs background/tiles are the first main-app surface with no Practice Briefing tab opened.
+
+## Tray-Only Relaunch Wake-Up (2026-08-06)
+
+- [x] Have the primary instance listen on `CSPM_IPC_SERVER` and route a duplicate executable launch through the exact same `TrayController.open_cspm()` path as the tray's `Open CSPM` action.
+- [x] Do not construct a native splash for `--tray-only`; a duplicate executable detects the existing instance before QApplication/splash startup and only wakes that instance.
+- [x] Rebuild and promote the updated `dist/CSPM/CSPM.exe`; Windows denied the builder's directory rename, so the verified candidate was copied into the empty `dist/` after the prior package was moved intact to `to_delete/dist__manual_replaced_release_20260806_111120/`. The built candidate remains intact in `to_delete/` as a recovery copy.
+- [x] Rebuild and promote the splash/home revision; the verified `2026-08-06 11:21` candidate was copy-promoted after Windows again denied the builder's final directory rename. The replaced release is retained at `to_delete/dist__manual_replaced_release_20260806_112200/` and the candidate remains intact in `to_delete/dist_staging_20652__unpromoted_build_20260806_112140/`.
+- [x] Rebuild and promote the Professional-home correction; the verified `2026-08-06 11:27` candidate was copy-promoted after the same Windows rename denial. The replaced release is retained at `to_delete/dist__manual_replaced_release_20260806_112840/` and the candidate remains intact in `to_delete/dist_staging_18240__unpromoted_build_20260806_112751/`.
+- [ ] Manually start `dist/CSPM/CSPM.exe --tray-only`, relaunch `dist/CSPM/CSPM.exe`, and confirm the existing app opens without any splash.
+
 ## Backend Canonical Account-Balance Engine
 - `[/]` Implement canonical account-balance engine in `excel_repo.py`
   - `[ ]` Create `_canonical_ar_ledger(filters)` method
@@ -54,6 +91,19 @@
 - **Settings Integrity**: Verified that `localDataDir` overrides are not overwritten by the deferred settings load.
 - **Verification**: Wrote `test_data_routing_guards.py`. All deterministic path-resolution assertions pass.
 
+## Client Directory Backend-Boot Repair (2026-08-05)
+
+- [x] Prevent the deferred settings worker from starving or being dropped before the critical workbook backend boot runs.
+- [x] Rebuild the packaged `dist/CSPM/CSPM.exe` after the repair; only governed blank templates are bundled, and the active LocalAppData workbook remains untouched.
+- [x] Historical check: `leviathan` returned 26 rows; this exposed the now-corrected broad metadata/parent-client search defect.
+
+## Directory Metrics & Profile Navigation Repair (2026-08-05)
+
+- [x] Expose the live dashboard summary as a QML slot and push the live payload into the module header after backend boot.
+- [x] Restrict Client Directory search to client identity and contact fields, excluding shared parent-client metadata and operational notes.
+- [x] Route a Client Directory double-click directly into the populated Edit Client Profile form, with Return/Cancel leading back to the selected Client Profile 360.
+- [ ] Manual foreground verification: launch `dist/CSPM/CSPM.exe`; confirm `Leviathan Private Network` returns exactly one row, the badge reads `Active Matters: 192 (Clients: 113)`, and double-clicking that row opens its populated `Edit Client Profile` form.
+
 ## Invoice Builder Restoration (2026-08-05)
 
 - [x] Restore the Invoice Builder master-detail layout: line items at left, HTML preview at upper right, and fixed settings/actions controls at lower right.
@@ -62,3 +112,55 @@
 - [x] Correct Discount Line invoice rendering so Legal Services Rendered shows the full docketed service amount before the Courtesy Discount reduces it to the agreed flat fee.
 - [x] Tie the transparent native splash fade-out to successful root-QML construction rather than a blind startup timeout.
 - [ ] Manual foreground verification: launch with .\launch.ps1, confirm the Invoice Builder in both themes, exercise every dropdown popup, and verify the splash handoff with WebEngine enabled.
+
+## Direct Fee Docket Entry & Professional Splash (2026-08-05)
+
+- [x] Add `Fee Docket Entry` directly below `Time Docket Entry` in the Docketing & Deadlines flyout and route it to its own B02 workspace tab.
+- [x] Add a matter-linked direct-fee form that saves a positive zero-hour/zero-rate WIP entry, preserving the normal WIP, draft, and invoice pipeline.
+- [x] Keep fee entries separate from the time-docket daily aggregation, and verify in a temporary workbook that a fee-only matter produces a flat-fee invoice payload.
+- [x] Remove the Professional splash one-shot path that hid the logo and completed immediately; keep a native logo fallback visible while the animated renderer warms up.
+- [ ] Manual foreground verification: launch `dist/CSPM/CSPM.exe`, confirm `Fee Docket Entry` appears directly below `Time Docket Entry`, save a fee against a matter, and confirm the Professional splash logo visibly dissolves in and out before the main window opens.
+
+## WIP Empty-Selection Guard & Packaged Splash Assets (2026-08-05)
+
+- [x] Keep `Create Draft Invoice` clickable with no WIP selection and show a clear, non-blocking explanation instead of starting a build operation.
+- [x] Reject empty draft requests in both the billing controller and invoice-draft service, preventing blank invoices from any call path.
+- [x] Bundle the root `assets/` folder in release builds and fail the release build if required CSPM splash assets are absent.
+- [x] Rebuild and promote the normal `dist/CSPM/CSPM.exe` with the required `CS.svg` and `splash_logo.svg` assets present.
+- [ ] Manual foreground verification: click `Create Draft Invoice` with no selected WIP and confirm the warning leaves the builder responsive; then launch `dist/CSPM/CSPM.exe` and confirm the CSPM logo visibly fades in and out before the main window appears.
+
+## Invoice Service Client & Matter Context (2026-08-06)
+
+- [x] Clearly distinguish the invoice `Bill To` recipient from the client receiving legal services.
+- [x] Show the actual billed-entry client and matter number/name in a persistent `Legal Services For` block on every invoice, including direct-fee / flat-fee invoices.
+- [ ] Manual foreground verification: preview an ordinary invoice and a fee-only invoice; confirm `Bill To`, `Client`, and `Matter` are each visible and accurately identify the work.
+
+## Invoice Date & Close-to-Tray Preference (2026-08-06)
+
+- [x] Make the invoice date explicit in the Invoice Builder, supporting typed `YYYY-MM-DD` values and calendar selection.
+- [x] Move the date control into the active `InvoiceBuilderWorkspace` billing-controls panel; the first implementation was in an explicitly hidden legacy fallback layout.
+- [x] Validate and persist the selected draft date, invalidate the cached payload, and regenerate the HTML preview immediately.
+- [x] Add a persisted Settings toggle for `Close to tray`; use it in the main-window close path instead of unconditionally quitting CSPM.
+- [ ] Manual foreground verification: select a draft invoice and verify the blue `Invoice date` panel directly below the preview accepts `YYYY-MM-DD` typing and `Choose date` opens the calendar; set `Close to tray` On, close the main window, and confirm the tray remains usable and restores CSPM; then set it Off and confirm close exits CSPM.
+
+## Invoice Line-Item Field Clarity & Fee Editing (2026-08-06)
+
+- [x] Add light-gray contextual placeholders for blank Date, Description, Hours, and Hourly Rate inputs in the Invoice Builder line-item editor.
+- [x] Identify direct fee entries in the draft-line payload and replace the time-only fields with one `Fee amount ($)` input when editing a fee.
+- [x] Persist a time line's changed hourly rate as well as hours; persist a fee line's amount while preserving its zero-hour/zero-rate shape.
+- [ ] Manual foreground verification: edit one time docket and one direct fee line in an invoice draft; confirm the time line shows Hours/Rate while the fee line shows only Fee amount, then save and confirm the preview total changes.
+
+## Bulk Docket Move Between Matters (2026-08-06)
+
+- [x] Add a Docketing & Deadlines workspace for reviewing and moving multiple time or direct-fee dockets from one matter to another over an inclusive date range.
+- [x] Allow the destination matter to belong to another client; move selected dockets to that matter's client and billing-parent relationship as part of the same update.
+- [x] Protect invoice-linked dockets (draft or finalized) from reassignment; allow selected or all eligible unbilled dockets and write a durable audit note for every move.
+- [x] Replace the raw Qt matter popups with searchable application-themed selectors. Matter choices now display as `Client | Matter Description | Matter Number`.
+- [ ] Manual foreground verification: open `Move Dockets Between Matters` in both light and dark themes, search/select source and destination matters, move a selected subset and then all eligible dockets for a date range including a cross-client destination; confirm the destination matter/client display and that invoice-linked entries are excluded.
+
+## Third-Party Billing Invoice Context (2026-08-06)
+
+- [x] When the bill-to client differs from the service client, omit the internal matter-number code from the invoice service context and matter headings.
+- [x] Identify the actual service client and use the matter's plain-English Description (falling back safely to Matter Name) in its place.
+- [x] Render third-party service context compactly as `Matter: <client name> | <matter description>` on one line; retain the normal two-field context for ordinary invoices.
+- [ ] Manual foreground verification: preview a third-party invoice and confirm the `Legal Services For` block renders `Matter: <service-client name> | <plain-English matter description>` with no coded matter number.

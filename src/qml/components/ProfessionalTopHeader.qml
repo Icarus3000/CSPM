@@ -272,7 +272,9 @@ Rectangle {
                     Layout.leftMargin: 4
                 }
 
-                TextInput {
+                TextField {
+    background: Item {}
+    padding: 0
                     id: headerOmniInput
                     Layout.fillWidth: true
                     Layout.fillHeight: true

@@ -49,6 +49,10 @@ Item {
     // State
     property var draftsList: []
     property string selectedDraftNum: ""
+    // The backend emits draftUpdated synchronously when a draft is deleted.
+    // Retain this marker until selection is cleared so the deleted draft cannot
+    // immediately request a preview and raise a false "not found" warning.
+    property string deletingDraftNum: ""
     property var selectedDraftData: null
     property var draftLineItems: []
     property string previewHtml: ""
@@ -100,6 +104,42 @@ Item {
     property string finalInvoiceNum: ""
 
     property var _activeDateField: null
+
+    function _normalizedInvoiceDate(value) {
+        var text = String(value || "").trim()
+        var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+        if (!match) return ""
+        var year = Number(match[1])
+        var month = Number(match[2])
+        var day = Number(match[3])
+        var parsed = new Date(Date.UTC(year, month - 1, day))
+        if (parsed.getUTCFullYear() !== year
+                || parsed.getUTCMonth() !== month - 1
+                || parsed.getUTCDate() !== day) {
+            return ""
+        }
+        return text
+    }
+
+    function _saveInvoiceDate(value, field) {
+        var iso = root._normalizedInvoiceDate(value)
+        if (!iso) {
+            appToast("Enter the invoice date as YYYY-MM-DD.")
+            if (root.selectedDraftData && root.selectedDraftData.Date) {
+                var targetField = field || root._activeDateField || dateOverrideField
+                if (targetField) {
+                    targetField.text = String(root.selectedDraftData.Date).substring(0, 10)
+                }
+            }
+            return false
+        }
+        if (root.billingBackend && root.selectedDraftNum) {
+            root.billingBackend.updateDraftDate(root.selectedDraftNum, iso)
+            return true
+        }
+        return false
+    }
+
     function _isCustomFeeItem(item) {
         if (!item) return false
         return Number(item.hours || 0) === 0
@@ -141,6 +181,11 @@ Item {
         Qt.callLater(function() {
             var cal = datePickerLoader.item
             if (!cal) return
+            var iso = root._normalizedInvoiceDate(field ? field.text : "")
+            if (iso) {
+                var parts = iso.split("-")
+                cal.selectedDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+            }
             if (typeof cal["openAt"] === "function") cal["openAt"](px, py)
             else if (typeof cal["open"] === "function") cal["open"]()
             else cal.visible = true
@@ -160,9 +205,7 @@ Item {
                     var iso = Qt.formatDate(d, "yyyy-MM-dd")
                     if (root._activeDateField) {
                         root._activeDateField.text = iso
-                        if (root.billingBackend && root.selectedDraftNum) {
-                            root.billingBackend.updateDraftDate(root.selectedDraftNum, iso)
-                        }
+                        root._saveInvoiceDate(iso)
                     }
                     datePickerLoader.active = false
                 }
@@ -211,14 +254,17 @@ Item {
         if (!billingBackend || num.length <= 0) return false
 
         var res = null
+        root.deletingDraftNum = num
         try {
             res = billingBackend.deleteDraft(num)
         } catch (e) {
+            root.deletingDraftNum = ""
             appToast("Failed to delete draft: " + e)
             return false
         }
 
         if (res && res.ok === false) {
+            root.deletingDraftNum = ""
             appToast("Failed to delete draft: " + (res.message ? String(res.message) : "Unknown error"))
             return false
         }
@@ -229,6 +275,7 @@ Item {
             root.draftLineItems = []
             root.previewHtml = ""
         }
+        root.deletingDraftNum = ""
         root._loadDrafts()
         return true
     }
@@ -298,6 +345,7 @@ Item {
             }
         }
         function onDraftUpdated(draft) {
+            if (root.deletingDraftNum.length > 0) return
             if (!root.selectedDraftNum || !root.billingBackend) return
             var updatedDraftNum = draft ? (draft.InvoiceNum || draft.draftNum) : ""
             if (updatedDraftNum && String(updatedDraftNum) !== root.selectedDraftNum) return
@@ -516,26 +564,69 @@ Item {
                                 Item { Layout.fillWidth: true }
                                 
                                 
-                                // Editable Issue Date
-                                Rectangle {
-                                    id: dateOverrideRect
-                                    width: 140
-                                    height: 36
-                                    color: SemanticTheme.surfaceInput(root.t, root.appStyle)
-                                    border.color: borderColor
-                                    radius: 6
-                                    TextInput {
-                                        id: dateOverrideField
-                                        anchors.fill: parent
-                                        anchors.margins: 8
-                                        verticalAlignment: TextInput.AlignVCenter
-                                        color: textColor
-                                        text: (root.selectedDraftData && root.selectedDraftData.Date) ? root.selectedDraftData.Date.substring(0,10) : "2026-06-30"
-                                        font.pixelSize: 13
+                                // Invoice date: type a YYYY-MM-DD date or choose it from the calendar.
+                                ColumnLayout {
+                                    spacing: 4
+
+                                    Text {
+                                        text: "Invoice date"
+                                        color: mutedColor
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
                                     }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        onDoubleClicked: root.openDatePickerFor(dateOverrideField, 0, 0)
+
+                                    RowLayout {
+                                        spacing: 6
+
+                                        Rectangle {
+                                            id: dateOverrideRect
+                                            width: 132
+                                            height: 36
+                                            color: SemanticTheme.surfaceInput(root.t, root.appStyle)
+                                            border.color: borderColor
+                                            radius: 6
+
+                                            TextInput {
+                                                id: dateOverrideField
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                verticalAlignment: TextInput.AlignVCenter
+                                                color: textColor
+                                                text: (root.selectedDraftData && root.selectedDraftData.Date)
+                                                    ? root.selectedDraftData.Date.substring(0, 10)
+                                                    : Qt.formatDate(new Date(), "yyyy-MM-dd")
+                                                font.pixelSize: 13
+                                                selectByMouse: true
+                                                onEditingFinished: root._saveInvoiceDate(text)
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            id: datePickerButton
+                                            width: 36
+                                            height: 36
+                                            radius: 6
+                                            color: datePickerMouse.containsMouse
+                                                ? SemanticTheme.surfaceRaised(root.t, root.appStyle)
+                                                : SemanticTheme.surfaceInput(root.t, root.appStyle)
+                                            border.color: borderColor
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "\u25BE"
+                                                color: textColor
+                                                font.pixelSize: 18
+                                                font.weight: Font.DemiBold
+                                            }
+
+                                            MouseArea {
+                                                id: datePickerMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.openDatePickerFor(dateOverrideField, 0, 0)
+                                            }
+                                        }
                                     }
                                 }
                             }

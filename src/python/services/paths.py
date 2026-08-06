@@ -29,7 +29,7 @@ class AppPaths:
         if env_override:
             return Path(env_override)
         if getattr(sys, 'frozen', False):
-            return Path(sys.executable).resolve().parent
+            return Path(sys._MEIPASS)
         return AppPaths.project_root()
 
     # persistent data root

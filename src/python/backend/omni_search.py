@@ -65,7 +65,7 @@ SUBWINDOW_CATALOG = [
     (2, "C02", "Pre-Bill Editor", ("pre bill", "pre-bill", "proforma", "sample invoice")),
     # C04 (Proforma/Sample Invoice) removed — keywords routed to C02
     (2, "C03", "Invoice Builder", ("invoice builder", "build invoice", "invoice finalization", "invoice numbering")),
-    (2, "C04", "Invoice Explorer", ("invoice explorer", "invoice dashboard", "invoice details", "search invoice")),
+    (2, "C04", "Invoice Directory", ("invoice directory", "invoice explorer", "invoice dashboard", "invoice details", "search invoice")),
     (2, "C08", "Reverse an Invoice", ("reverse invoice", "invoice reversal", "credit memo")),
     (2, "C07", "Payment Entry", ("record payment", "payment entry", "post payment", "open invoice", "invoice selector")),
     # C08 (Open Invoice Selector) removed — keywords routed to C07

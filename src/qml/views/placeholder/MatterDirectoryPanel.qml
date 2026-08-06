@@ -228,9 +228,12 @@ Rectangle {
                         }
                     }
 
-                    TapHandler {
-                        onTapped: root.setMatterDirectorySelection(matterDirectoryRow.modelData)
-                        onDoubleTapped: root.openMatterProfileFromDirectory(matterDirectoryRow.modelData)
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.LeftButton
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.setMatterDirectorySelection(matterDirectoryRow.modelData)
+                        onDoubleClicked: root.openMatterProfileFromDirectory(matterDirectoryRow.modelData)
                     }
                 }
             }

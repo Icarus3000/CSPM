@@ -1403,8 +1403,8 @@ class ClientRepo:
             elif "invoice" in desc_lc or status_lc.startswith("invoice"):
                 entity_type = "invoice"
                 route_tile_index = 2
-                route_node_id = "C08"
-                route_node_title = "Open Invoice Selector"
+                route_node_id = "C04"
+                route_node_title = "Invoice Directory"
 
             title = " - ".join(x for x in (date_text, description) if x) or entry_id or "Docket Entry"
             subtitle_bits = [x for x in (client_name, matter_name, status) if x]

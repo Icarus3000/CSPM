@@ -1667,7 +1667,9 @@ Item {
                     color: root._inputBg
                     border.width: 1
                     border.color: editFeesField.activeFocus ? root._accent : root._borderSubtle
-                    TextInput {
+                    TextField {
+    background: Item {}
+    padding: 0
                         id: editFeesField
                         anchors.fill: parent
                         anchors.margins: 8
@@ -1698,7 +1700,9 @@ Item {
                     color: root._inputBg
                     border.width: 1
                     border.color: editDisbField.activeFocus ? root._accent : root._borderSubtle
-                    TextInput {
+                    TextField {
+    background: Item {}
+    padding: 0
                         id: editDisbField
                         anchors.fill: parent
                         anchors.margins: 8
@@ -1729,7 +1733,9 @@ Item {
                     color: root._inputBg
                     border.width: 1
                     border.color: editTaxField.activeFocus ? root._accent : root._borderSubtle
-                    TextInput {
+                    TextField {
+    background: Item {}
+    padding: 0
                         id: editTaxField
                         anchors.fill: parent
                         anchors.margins: 8

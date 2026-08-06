@@ -22,6 +22,7 @@ tmp*/
 # Build and distribution
 dist/
 build/
+to_delete/
 node_modules/
 .expo/
 .expo-shared/

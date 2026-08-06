@@ -1,5 +1,34 @@
 # Implementation History
 
+## 2026-08-06: Native PNG-Only Startup, Tray Wake-Up, Professional Home, and Filterable Matter Pickers
+
+- **Startup**: disabled both QML `SplashOverlay` launch paths. `BootstrapRoot.qml` now opens the main launch gate directly and `DetachedShellWindow.qml` defaults its legacy QML-splash flag to false, so the only startup visual is `CustomSplash`'s native PNG. The PNG is centered on the captured target monitor and starts fading in immediately. Main-QML construction is now deferred until the 460 ms fade-in has completed, preventing synchronous QML creation from starving the animation and making the PNG effectively invisible. `startupFirstPixelVisible` is then the exact handoff: the main shell's first frame is visible beneath the topmost PNG and its fade-out begins in that same signal. Only after the PNG closes does Python reassert main-window foreground through the QML/Windows focus path. WebEngine pre-initialization is now opt-in rather than delaying the native-PNG startup by default.
+- **Tray-only wake-up**: the primary process now owns `CSPM_IPC_SERVER`. A second `CSPM.exe` detects the existing single-instance mutex, sends `WAKEUP`, and exits before QApplication/native-splash creation. The primary routes that request through `TrayController.open_cspm()`, the same foreground/open path as the tray action. `--tray-only` itself never constructs a splash.
+- **Professional home default**: Professional mode no longer opens `Practice Briefing` automatically. Its default, un-routed main window is the same native Professional no-open-tabs background and quick-tile surface that appears after all workspace tabs are closed. The console-style `HomeGrid` remains exclusive to its existing non-Professional shell.
+- **Move Dockets Between Matters**: replaced the raw `ComboBox` controls with `ModernComboBox`, which uses the application's semantic popup colors in either theme and filters choices as the user types. The data is now normalized as `Client | Matter Description | Matter Number`, while the matter ID remains the value sent to the bulk-move service.
+- **Validation**: `python -m py_compile` passed for `main.py` and `tray_controller.py`. `scripts/qmllint.ps1` passed for `BootstrapRoot.qml`, `DetachedShellWindow.qml`, `MainContent.qml`, and `HomeGrid.qml`, with the repository's existing warning-only diagnostics. PyInstaller completed successfully; Windows denied its final directory rename, so the verified Professional-home candidate was copy-promoted to `dist/CSPM/CSPM.exe` (SHA-256 `18248A4BB6F3634089674FF4957B7F4226C844E08789BA66BD827BBCB0C0F05D`) after the previous package was moved intact to `to_delete/dist__manual_replaced_release_20260806_112840/`. The candidate itself remains in `to_delete/dist_staging_18240__unpromoted_build_20260806_112751/` as a recovery copy. Packaged `MainContent.qml` matches source, and CSPM was left closed. Real Qt/WebEngine validation remains pending outside this sandboxed environment.
+
+## 2026-08-06: Direct-Fee Invoice Finalization Integrity Repair
+
+- **Incident**: finalized invoice `26-0080` (Suffolk) appeared as an unpaid `$0.00` invoice even though its linked direct-fee time row retained `GrossToClient=$5,000.00` and `TotalInclHST=$5,650.00`. The source row's `AmountToYou` and HST fields were zero, and the prior draft/finalization code summed those fields without direct-fee recovery. It consequently wrote zeros into Invoice Log, Receivables, and the Revenue ledger row.
+- **Repair**: `InvoiceDraftService` now recognizes the durable `EntryType:Fee` marker, recovers a missing direct-fee net amount from positive gross, derives missing HST at 13%, and normalizes those fields when drafting/finalizing. Finalization recalculates draft totals immediately before postings and stores the final invoice amount on linked entries. A targeted `repair_finalized_invoice_amounts()` service plus `BillingController.repairFinalizedInvoiceAmounts()` restores historical Invoice Log, Receivables, Revenue ledger, and linked-entry figures while preserving paid/credit amounts.
+- **Live repair**: after CSPM was closed, a byte-for-byte backup was created at `backups/invoice_26-0080_before_repair_20260806_102455/CSPM.xlsm`. The active LocalAppData workbook was then repaired. Read-back verification confirms the linked fee row, Invoice Log, Receivables, and Revenue ledger all now contain Fees `$5,000.00`, HST `$650.00`, Total/Balance `$5,650.00`.
+- **Prevention/validation**: Python compilation and a disposable in-memory harness passed for both a malformed direct-fee finalization and repair of an already-finalized zero-value invoice; `git diff --check` passes for the touched files. The revised package was built and promoted to `dist/CSPM/CSPM.exe`; packaged QML hashes match the changed source files. It has not yet been manually exercised through the real Qt/WebEngine runtime.
+
+## 2026-08-06: Invoice Workspace and Startup Handoff Repair
+
+- **Invoice Builder delete**: deleting a draft emitted `draftUpdated({})` synchronously while the QML selection still referenced that draft. The view then asked for a preview of the deleted number and incorrectly showed a failure. The view now suppresses refresh/preview work while the deletion is in progress; the backend's existing success toast remains the user-facing confirmation.
+- **Invoice directory and high-DPI layout**: normal lookup/posting is now a separate `Invoice Directory` (`C04`) while `Reverse an Invoice` (`C08`) remains the destructive workflow. The former reverse view now uses a compact logical-canvas layout below 1320 px: smaller list/detail margins and cards, no full-height action spacer, and action buttons directly below the detail cards. The directory's `Reverse…` action opens the dedicated reversal tab.
+- **Startup**: both the native and QML splash handoffs are now tied to `startupFirstPixelVisible`, not QML-root construction or main-window creation. The shell begins rendering behind the splash; only after its first pixel does the splash release. Once all splash overlays are gone, the main shell is foregrounded again on its resolved launch monitor. A timeout now holds the splash instead of fading it ahead of an unpainted main window.
+- **Packaging**: the first promotion attempt was blocked by a Windows directory access denial after PyInstaller completed. The release script restored the old package and quarantined the unpromoted build. With no CSPM/Python process present, the verified candidate was then safely promoted manually; the old package is retained in `to_delete/dist__manual_replaced_release_20260806_103020/`.
+- **Validation**: `python -m py_compile` passed for all touched Python files, `git diff --check` passed, and `scripts/qmllint.ps1 -Targets` completed successfully with the repository's existing warning-only QML diagnostics. Packaged QML files match the modified source hashes. Real Qt/WebEngine launch validation remains pending outside this sandboxed environment.
+
+## 2026-08-06: Release Artifact Quarantine
+
+- **Problem**: repeated PyInstaller builds had left four substantial stale `dist_staging_*` / replacement package directories, an obsolete build cache, and two empty staging remnants at the repository root, accounting for roughly 2.47 GiB of the 4.25 GiB workspace.
+- **Solution**: moved the seven confirmed stale, untracked artifacts into root-level `to_delete/` for manual review. The current `dist/`, virtual environment, Git history, and live workbook were intentionally left untouched. `scripts/build_release.py` now preserves a replaced default `dist/` package by moving it into `to_delete/`, never deletes a pre-existing staging directory, and quarantines an unpromoted default staging package on process exit. This makes failed Windows promotion paths recoverable and prevents future root-level accumulation.
+- **Validation**: relocation verified all seven expected directories under `to_delete/`; no CSPM process was running. Pending foreground check: launch the current `dist/CSPM/CSPM.exe` without accessing the quarantine. Permanently deleting `to_delete/` requires explicit approval after that check.
+
 ## 2026-07-26: Isolate SQLite Prototype and Restore Excel-Only Production Wiring
 - **Incident**: Production SQLite reachability had been prematurely added, resulting in the creation of an unauthorized database in LOCALAPPDATA.
 - **Rollback Summary**: Production SQLite reachability has been removed, and Excel remains authoritative.
@@ -488,6 +517,28 @@ Current decisions should preserve repository abstraction, stable IDs, audit and 
 
 Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 
+## Client Directory Backend-Boot Repair (2026-08-05)
+
+- Diagnosed the empty Client Directory as a startup-worker failure, not a missing workbook: the active `%LOCALAPPDATA%\CSPM\data\CSPM.xlsm` contains 113 client rows, including 26 rows matched by `leviathan`.
+- `AppController` now retains queued background workers until their `finished` signal and runs up to two startup workers. This keeps the critical backend boot from being silently lost or permanently queued behind the deferred settings read in the packaged build.
+- Sandbox-safe validation: forced-GC `QCoreApplication` startup harness completed backend boot in 0.116 seconds and the directory query returned 113 rows; `py_compile` passed for `app_controller.py`.
+- Rebuilt `dist/CSPM/CSPM.exe` at 2026-08-05 22:22. Real packaged GUI/WebEngine validation remains pending: open Client Directory and search `leviathan` after startup settles; expected count is 26.
+
+## Directory Metrics & Profile Navigation Repair (2026-08-05)
+
+- The Client Directory badge had retained the zero-valued startup cache while the directory correctly loaded the workbook later. `getHomeDashboardSummary()` now returns that cache only before `backendBooted`; afterward it reads the live workbook and publishes the refreshed summary. The Home grid also refreshes when boot completes and after client data changes.
+- The active workbook summary is 113 active clients and 192 active matters, so the module badge should read `Active Matters: 192 (Clients: 113)` after startup settles.
+- Client and Matter Directory delegates now use an explicit `MouseArea` double-click route to the selected record's Client Profile 360 (A03) or Matter Profile 360 (A11), respectively. The existing workspace state handoff preserves the selected record ID for editing.
+- Sandbox-safe validation: Python compilation passed; a focused cache/live transition harness passed; and `scripts/qmllint.ps1` completed successfully for HomeGrid and both directory panels (existing QML style warnings only). Real packaged GUI/WebEngine verification remains pending.
+- Rebuilt and promoted the repaired package directly to `dist/CSPM/CSPM.exe` at 2026-08-05 22:36 (SHA-256 `CE83CB53EEC72C2FF681AA625B93EBF9352520F008DB615269268E89CB3F953A`).
+
+## Client Directory Search, Edit, And Header Repair (2026-08-05)
+
+- The previous 26-result `Leviathan Private Network` search was wrong: the directory searched `searchText`, which includes a shared billing-parent name and operational profile metadata. Client Directory search now uses only the row's client ID, names, legal/individual name parts, primary email, and primary phone. Against the active workbook, the full `Leviathan Private Network` query returns exactly the `LEVI` client row.
+- `getHomeDashboardSummary()` is now a Qt `@Slot(result=dict)`, allowing QML to call it. MainContent listens for the published live summary and explicitly refreshes it after `backendBootChanged`; this updates the module header to the active workbook's 113 clients and 192 matters.
+- A client-row double-click now performs a direct edit workflow: it loads the selected client by stable ID, opens the populated `Edit Client Profile` form, and returns to that client's Client Profile 360 after Save/Cancel. This replaces the prior read-only-profile-first route.
+- Sandbox-safe validation: Python compilation passed; Qt meta-object inspection confirms the dashboard slot is callable from QML; focused active-workbook filtering returns only `LEVI`; and `scripts/qmllint.ps1` completed for MainContent, PlaceholderSubmenuView, and ClientDirectoryPanel with existing warning-only noise. Rebuilt and promoted `dist/CSPM/CSPM.exe` at 2026-08-05 22:55 (SHA-256 `1F3132FEF0A7644E509C1DF041F7833975A4B111D0E570C74016B547EEA972BB`). Real packaged GUI/WebEngine verification remains pending.
+
 ## Invoice Builder, Reconciliation, And Splash Repair (2026-08-05)
 
 - Added InvoiceBuilderWorkspace.qml, a bounded master-detail surface used by InvoiceBuilderView.qml: draft/line-item management remains on the left while the HTML preview fills the upper-right panel and its settings/actions area is constrained to the bottom.
@@ -497,6 +548,66 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 - Refactored CustomSplash to use composited frameless window flags and a guarded start_fade_out(). The 550 ms paint-settling delay is scheduled only after QQmlApplicationEngine.objectCreated reports a non-null root object.
 - Sandbox-safe validation: targeted QML lint completed without errors (non-blocking style warnings remain) and Python compilation passed. A focused payload test passed all four equal/lower-visible/lower-hidden/higher fee cases.
 - Manual WebEngine/splash validation remains pending; run .\launch.ps1 outside the sandbox and verify both themes plus the splash-to-main-window handoff.
+
+## Direct Fee Docket Entry & Professional Splash Repair (2026-08-05)
+
+- Added `B02 Fee Docket Entry` to the canonical Docketing & Deadlines flyout, directly below `B01 Time Docket Entry`, with its own `fee-docket` close/save command and workspace tab.
+- Added `FeeDocketEntryPanel.qml`: it selects an existing matter, derives its client, accepts date/amount/description/status, and persists a direct invoiceable fee without opening the Invoice Builder.
+- Added `ExcelRepo.add_fee_entry()` and the `app.saveFeeDocketEntry()` QML slot. The record stays in `tblTimeEntries` as a positive, zero-hour/zero-rate WIP line with an `EntryType:Fee` audit marker. The standard invoice renderer consequently recognizes fee-only work as a flat-fee invoice line.
+- The time-docket aggregation deliberately skips those marked fee rows, so time saved on the same client/matter/date cannot merge into or overwrite a direct fee.
+- The Professional splash had a deliberate one-shot bypass: it hid `logoWrap`, set the logo opacity to zero, and immediately dispatched `professional-ready`. That bypass is removed. Professional now runs the same full in/out logo timeline, waits for its safe fade window before handoff, and uses the native logo as a visible fallback until the animated WebEngine logo has rendered.
+- Sandbox-safe validation: `py_compile` passed; targeted QML lint completed with no errors (existing warning-only noise in MainContent/TimeDocketView remains); the Qt meta-object exposes `saveFeeDocketEntry(QVariantMap)`; and a disposable-workbook test saved a $123.45 fee, returned it as WIP, and built a flat-fee invoice payload with $123.45 total fees. Real WebEngine/foreground validation remains manual.
+
+## WIP Empty-Selection Guard & Packaged Splash Asset Repair (2026-08-05)
+
+- `WIPBillingWizardView.qml` now keeps `Create Draft Invoice` available unless a draft is actively building. Clicking it with no selected rows opens a modal that requires at least one time docket or fee entry, without setting the busy state. A stale selection after a refresh follows the same safe path.
+- `BillingController.createDraft*` and `InvoiceDraftService.create_draft()` independently reject empty entry lists, so a direct/legacy caller cannot create a zero-line invoice.
+- Packaged-launch diagnosis: `dist/logs/cspm.log` recorded `_openLaunchGate begin reason=logo-missing`. The release recipe copied `src/assets` but omitted the root `assets/` directory that `main.py` uses for `CS.svg` and `splash_logo.svg`; this skipped the QML splash entirely. `scripts/build_release.py` and `CSPM.spec` now bundle that folder, and the release builder verifies those two assets exist in `_internal/assets` before it promotes `dist`.
+- Sandbox-safe validation: Python compilation passed, the service guard raised the expected `ValueError` for empty lists, and targeted QML lint completed without errors (existing warning-only style notices remain). Packaged WebEngine/foreground verification remains manual after the rebuilt `dist/CSPM/CSPM.exe` is launched.
+- Rebuilt and promoted the normal `dist/CSPM/CSPM.exe` at 2026-08-05 23:42 with SHA-256 `C8E0DFC61695CD3075FF192328D8D74D5BAA5A5DB5155236EB641D023AD75DFB`; the bundled `_internal/assets/CS.svg` and `_internal/assets/splash_logo.svg` were both verified present. The build script's automatic rename was denied by Windows, so the verified completed staging directory was safely promoted to the empty `dist` target directly.
+
+## Invoice Service Client & Matter Context (2026-08-06)
+
+- The invoice header previously exposed only `Prepared For`, which is the billing recipient and can be a parent or third party. This left flat-fee invoices especially ambiguous because they do not render matter section headings.
+- `BillingController._build_invoice_payload()` now derives the actual service client(s) and matter(s) from the attached time/fee entries, with cached profile resolution and a draft-client fallback for legacy data.
+- `Concept_A2.html` now calls the addressee `Bill To` and renders a clearly labeled `Legal Services For` block with `Client`/`Clients` and `Matter`/`Matters`, including the matter number when available. The first-page reservation was increased to keep the added context clear of the services section.
+- Sandbox-safe validation: `billing_controller.py` compiles; an HTML render test passed; and a read-only active-workbook payload test confirmed a draft resolves its service client and matters into the rendered template. Manual WebEngine preview verification remains pending.
+- Rebuilt and promoted the normal `dist/CSPM/CSPM.exe` at 2026-08-06 00:20 (SHA-256 `854DB61B3949EA2CA9F7A446774123C56601CD3947E82EF600CA9C9517663288`). The packaged invoice template was checked for the new context block; no CSPM process was left running.
+
+## Invoice Date & Close-to-Tray Preference (2026-08-06)
+
+- The invoice date field was present but unlabeled, only opened the calendar on a double-click, and did not reliably refresh the cached preview after an update. The Invoice Builder now labels `Invoice date`, permits direct `YYYY-MM-DD` entry, provides a calendar button, validates impossible dates, and refreshes the rendered draft as soon as the date is saved.
+- `AppController.keepTrayAlive` was already persistent with a default of `True`, but the live `DetachedShellWindow` close sequence ignored it and always called `Qt.quit()`. Settings now exposes `Close to tray` as an Off/On control. With On, close completes its visual handoff then hides only the main window, leaving the tray process alive; with Off, it follows the full application-exit path.
+- Sandbox-safe validation: Python compilation passed; a controller harness confirmed a valid date persists and refreshes the preview while an invalid date is rejected without writing; targeted QML lint passed with only pre-existing warnings. Manual native-tray/foreground verification remains required.
+- Rebuilt and promoted the normal `dist/CSPM/CSPM.exe` at 2026-08-06 06:34 (SHA-256 `86324B5C50956937A4022269B7AA0E78A844B64B96D8B52BDC4C71EA39FA6E53`). No CSPM process was left running before or after the build.
+- Follow-up correction: the initial visible-looking date control had been placed in `InvoiceBuilderView.qml`'s explicitly hidden legacy fallback, rather than the live `InvoiceBuilderWorkspace.qml`. The active workspace now contains a prominent blue-bordered `Invoice date` section in the fixed controls panel, with a direct date field and `Choose date` calendar button.
+- Rebuilt and promoted the single normal `dist/CSPM/CSPM.exe` after that live-workspace correction at 2026-08-06 06:46 (SHA-256 `8054330C2018D255B29566550E33A4A361F6EBA0BD2C75E112964FB5EBAB7DC3`). The packaged workspace was checked for the `Invoice date` field, its explanatory label, and the `Choose date` action; no CSPM process was running.
+
+## Invoice Line-Item Field Clarity & Fee Editing (2026-08-06)
+
+- Blank Invoice Builder fields now use light-gray in-field guidance: `Date`, `Description of work performed`, `Hours`, and `Rate ($)`.
+- Direct fee rows are identified from their durable `EntryType:Fee` marker. Their editor now replaces the time-specific Hours/Rate inputs with a single `Fee amount ($)` input, which is the only financial value the user should enter for a fee.
+- `InvoiceDraftService.update_line_item()` now persists both changed hours and hourly rate for time entries. For fee entries it keeps hours/rate at zero and updates the fee amount, gross/net, HST, total, and invoice-preview totals together; negative values are rejected.
+- Sandbox-safe validation: Python compilation and focused fake-repository tests passed for time-rate persistence, fee amount persistence, negative-fee rejection, and draft payload fee identification. Targeted QML lint completed without errors (existing warning-only notices remain). Manual foreground verification remains pending.
+- Rebuilt and promoted the single normal `dist/CSPM/CSPM.exe` at 2026-08-06 07:15 (SHA-256 `F5AEDD2D2B17E0CC0F688B65376663A3A9B31C409974597BCCA8C7A2CE32C2A5`). The packaged Invoice Builder QML was verified to include the fee-aware editor markers; no CSPM process was running.
+
+## Bulk Docket Move Between Matters (2026-08-06)
+
+- Added `B05 Move Dockets Between Matters` to the canonical Docketing & Deadlines flyout. Its dedicated workspace selects a source matter, inclusive date range, and destination matter; it displays individual time/fee dockets with select-all and subset controls before a final confirmation.
+- `ExcelRepo.preview_bulk_docket_move()` returns only eligible unbilled entries. `move_dockets_to_matter()` performs the selected reassignment in one table write, updates the destination matter/client/billing-parent links (including cross-client moves), preserves the `EntryType:Fee` marker, and appends an audit note.
+- Dockets already linked to a draft or finalized invoice are excluded and rejected again at save time, preserving invoice history. The QML-facing DocketingController runs both preview and move operations on workers so larger date ranges do not block the interface.
+- Sandbox-safe validation: Python compilation, QML parsing, Qt slot inspection, and a fake-repository workflow passed. That workflow moved both a time docket and direct fee across clients, retained the fee marker, and refused an invoice-linked entry. Manual foreground verification remains pending.
+- Rebuilt and promoted the single normal `dist/CSPM/CSPM.exe` at 2026-08-06 07:32 (SHA-256 `E9AE01CD4888788A9F5B4C2731896876DD430E392D77EB48EACB52FEFDD0C935`). Windows denied the build script's automatic staging rename, so the verified completed staging folder was safely promoted directly into the empty canonical `dist` target. The packaged bulk-move workspace markers were verified; no CSPM process was running.
+
+## Third-Party Billing Invoice Context (2026-08-06)
+
+- A third-party invoice formerly reused the display matter label, which can contain the internal coded matter number. The invoice now recognizes each billed entry's actual client separately from its bill-to client.
+- If they differ, `Legal Services For` calls the field `Matter description`, shows the actual service-client name, and takes the matter's plain-English Description (then Matter Name) without the internal matter-number code. Matter-group headers follow the same rule and read `RE: <client> - <description>`.
+- Sandbox-safe validation: `billing_controller.py` compiled, and a focused fake-repository payload test confirmed that a third-party invoice contains `Actual Service Client`, `Network restructuring`, and no `MAT-2026-001` code. Packaged foreground/WebEngine verification remains manual.
+- Rebuilt and promoted the one canonical `dist/CSPM/CSPM.exe` at 2026-08-06 07:51 (SHA-256 `C05D78FBD8FD019EDE5948578FBCE9821D856E7B5110E6512A24A2FF35A31F76`). The release builder's staging rename was denied by Windows; after verifying the target `dist` folder did not exist, the completed `dist_staging_40696` folder was promoted directly. No CSPM process was running.
+- Follow-up layout correction: third-party billing now uses the more compact one-line `Matter: <service client> | <plain-English description>` presentation. Ordinary invoices retain the two-field Client/Matter layout, which uses fixed table-style columns rather than flex sizing.
+- Sandbox-safe validation: a focused controller-and-template render test produced `Matter: Suffolk | Legal Services`, without a separate Client line or the `MAT-2026-001` code; Python compilation passed. The local browser preview surface was unavailable, so foreground/WebEngine presentation remains a manual check.
+- Rebuilt and promoted the single canonical `dist/CSPM/CSPM.exe` at 2026-08-06 08:06 (SHA-256 `31BAF82B9AE4237E2520C79B739750B230D4EE65F3393D7D46F5FA975199FC01`). The release builder promoted the verified `dist_staging_41492` automatically; `dist` contains only `CSPM`, and no CSPM process is running.
 
 
 ### Phase 9 Status Update (2026-07-30)

@@ -101,17 +101,20 @@ class CustomSplash(QSplashScreen):
         self.setAttribute(Qt.WA_TranslucentBackground)
         
         self.setWindowOpacity(0.0)
-        
+
+        # A short, eased opacity-only sequence feels deliberate.  Main-window
+        # construction is deferred until this initial reveal completes, so
+        # synchronous QML startup work cannot cause the PNG to be missed.
         self.anim_in = QPropertyAnimation(self, b"windowOpacity")
-        self.anim_in.setDuration(1200)
+        self.anim_in.setDuration(460)
         self.anim_in.setStartValue(0.0)
         self.anim_in.setEndValue(1.0)
-        self.anim_in.setEasingCurve(QEasingCurve.InOutQuad)
-        
+        self.anim_in.setEasingCurve(QEasingCurve.InOutCubic)
+
         self.anim_out = QPropertyAnimation(self, b"windowOpacity", self)
-        self.anim_out.setDuration(550)
+        self.anim_out.setDuration(520)
         self.anim_out.setEndValue(0.0)
-        self.anim_out.setEasingCurve(QEasingCurve.InOutQuad)
+        self.anim_out.setEasingCurve(QEasingCurve.InOutCubic)
         self.anim_out.finished.connect(self._close_after_fade)
         self._is_fading_out = False
 
@@ -121,15 +124,22 @@ class CustomSplash(QSplashScreen):
         self.anim_in.start()
 
     def start_fade_out(self):
-        """Fade only after the QML root exists and has had a paint turn."""
+        """Fade at the exact moment the main window first becomes visible."""
+        if self._is_fading_out:
+            return
+        self._begin_fade_out()
+
+    def _begin_fade_out(self):
         if self._is_fading_out:
             return
         self._is_fading_out = True
         self.anim_in.stop()
         self.anim_out.stop()
         self.anim_out.setStartValue(self.windowOpacity())
-        self.anim_out.start()
+        # Keep the native PNG above the newly visible app and all other normal
+        # windows until the fade-out completes and the splash closes.
         self.raise_()
+        self.anim_out.start()
 
     def _close_after_fade(self):
         self.close()
@@ -1019,7 +1029,10 @@ def main() -> None:
     _configure_qt_multimedia_runtime()
     _install_qt_message_filter()
     splash_force_webengine = _env_flag("CSPM_SPLASH_FORCE_WEBENGINE", True)
-    splash_preinit_webengine = _env_flag("CSPM_PREINIT_WEBENGINE", True)
+    # The startup experience is a native PNG splash, not a WebEngine/QML
+    # overlay. Avoid adding renderer startup work before the main window unless
+    # a diagnostic environment explicitly asks for it.
+    splash_preinit_webengine = _env_flag("CSPM_PREINIT_WEBENGINE", False)
     splash_preinit_webview = _env_flag("CSPM_PREINIT_WEBVIEW", False)
     _configure_qt_webengine_runtime()
 
@@ -1035,13 +1048,6 @@ def main() -> None:
     is_tray_only = args.tray_only
     
     app = QApplication(sys.argv)
-    
-    splash_png_path = str(PROJECT_ROOT / "src" / "assets" / "app_icon_preview.png")
-    custom_splash = CustomSplash(splash_png_path)
-    custom_splash.show()
-    custom_splash.start_fade_in()
-    
-    # Expose to QML Engine
 
     _boot_log("QApplication.created")
     startup_launch_context = _capture_startup_launch_context()
@@ -1054,6 +1060,28 @@ def main() -> None:
         + str(startup_launch_context.get("cursorY", 0))
         + ")"
     )
+
+    custom_splash: Optional[CustomSplash] = None
+    if not is_tray_only:
+        splash_png_path = str(PROJECT_ROOT / "src" / "assets" / "app_icon_preview.png")
+        custom_splash = CustomSplash(splash_png_path)
+        try:
+            screens = list(QApplication.screens() or [])
+            screen_index = int(startup_launch_context.get("screenIndex", 0))
+            if screens:
+                screen_index = max(0, min(screen_index, len(screens) - 1))
+                target_geometry = screens[screen_index].geometry()
+                custom_splash.move(
+                    target_geometry.x() + max(0, (target_geometry.width() - custom_splash.width()) // 2),
+                    target_geometry.y() + max(0, (target_geometry.height() - custom_splash.height()) // 2),
+                )
+        except Exception as exc:
+            _report_nonfatal_startup_failure("nativeSplash.positionTargetScreen", exc)
+        custom_splash.show()
+        custom_splash.start_fade_in()
+
+    # Expose to QML Engine
+
     # Keep app alive during splash -> main shell handoff. Re-enabled once main window exists.
     app.setQuitOnLastWindowClosed(False)
     # Optional pre-initialization can reduce first-use renderer spikes but may
@@ -1077,17 +1105,102 @@ def main() -> None:
     engine = QQmlApplicationEngine()
     _boot_log("QQmlApplicationEngine.created")
 
-    splash_fade_scheduled = False
-    main_window_paint_settle_ms = 550
+    native_splash_fade_scheduled = False
+    native_splash_signal_bound = False
+    native_splash_main_window = None
+
+    def _restore_main_foreground_after_native_splash() -> None:
+        """Put the painted shell above normal windows after the PNG is gone."""
+        main_window = native_splash_main_window
+        if main_window is None:
+            return
+        try:
+            force_launch_focus = getattr(main_window, "forceLaunchFocus", None)
+            if callable(force_launch_focus):
+                force_launch_focus()
+                return
+        except Exception as exc:
+            _report_nonfatal_startup_failure("nativeSplash.restoreQmlFocus", exc)
+
+        # QML's focus helper is preferred because it uses the app controller's
+        # Windows foreground path.  This direct fallback protects the handoff
+        # if that helper is not available while startup is still settling.
+        try:
+            show_fn = getattr(main_window, "show", None)
+            if callable(show_fn):
+                show_fn()
+            raise_fn = getattr(main_window, "raise_", None)
+            if callable(raise_fn):
+                raise_fn()
+            activate_fn = getattr(main_window, "requestActivate", None)
+            if callable(activate_fn):
+                activate_fn()
+            if sys.platform.startswith("win"):
+                hwnd = int(main_window.winId())
+                if hwnd > 0:
+                    user32 = ctypes.windll.user32
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    flags = 0x0001 | 0x0002 | 0x0040  # NOSIZE | NOMOVE | SHOWWINDOW
+                    user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)  # HWND_TOPMOST
+                    user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)  # HWND_NOTOPMOST
+                    user32.BringWindowToTop(hwnd)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.SetActiveWindow(hwnd)
+                    user32.SetFocus(hwnd)
+        except Exception as exc:
+            _report_nonfatal_startup_failure("nativeSplash.restoreNativeFocus", exc)
+
+    def _on_native_splash_fade_finished() -> None:
+        # The custom splash's own close callback runs first. Reassert a few
+        # times only during this handoff so the app opens in front, without
+        # making it permanently always-on-top.
+        for delay_ms in (0, 110, 260):
+            QTimer.singleShot(delay_ms, _restore_main_foreground_after_native_splash)
+
+    if custom_splash is not None:
+        custom_splash.anim_out.finished.connect(_on_native_splash_fade_finished)
+
+    def _release_native_splash_after_main_pixel() -> None:
+        """Never fade the native splash until the visible main window signals first paint."""
+        nonlocal native_splash_fade_scheduled
+        if native_splash_fade_scheduled:
+            return
+        native_splash_fade_scheduled = True
+        if custom_splash is not None:
+            # This signal is emitted only after the main shell has its first
+            # visible pixel.  Start the PNG fade in this same handoff rather
+            # than posting another event-loop turn, so the two transitions
+            # visibly overlap exactly as intended.
+            custom_splash.start_fade_out()
+
+    def _bind_native_splash_to_main_window(main_window) -> None:
+        nonlocal native_splash_main_window
+        if main_window is None:
+            return
+        native_splash_main_window = main_window
+        try:
+            first_pixel_signal = getattr(main_window, "startupFirstPixelVisible", None)
+            if first_pixel_signal is not None:
+                first_pixel_signal.connect(_release_native_splash_after_main_pixel)
+        except Exception as exc:
+            _report_nonfatal_startup_failure("nativeSplash.bindMainFirstPixel", exc)
 
     def on_object_created(obj, obj_url):
-        nonlocal splash_fade_scheduled
-        if obj is None or splash_fade_scheduled:
+        nonlocal native_splash_signal_bound
+        if obj is None or native_splash_signal_bound:
             return
-        # This is a paint-settling delay, not a blind splash lifetime.  It runs
-        # only after the QML root has been instantiated successfully.
-        splash_fade_scheduled = True
-        QTimer.singleShot(main_window_paint_settle_ms, custom_splash.start_fade_out)
+        # BootstrapRoot emits mainWindowReady before its main shell begins the
+        # launch animation.  Bind the native splash to the shell's *first
+        # pixel*, rather than fading merely because the QML bootstrap object
+        # exists.
+        try:
+            main_window_ready = getattr(obj, "mainWindowReady", None)
+            if main_window_ready is None:
+                return
+            main_window_ready.connect(_bind_native_splash_to_main_window)
+            native_splash_signal_bound = True
+        except Exception as exc:
+            _report_nonfatal_startup_failure("nativeSplash.bindBootstrap", exc)
 
     engine.objectCreated.connect(on_object_created)
 
@@ -1100,7 +1213,10 @@ def main() -> None:
     _boot_log("BEGIN: resolving splash asset paths")
     splash_logo_url = _first_existing_file_url(_splash_logo_paths(), "logo")
     splash_static_logo_url = _first_existing_file_url(
-        [SPLASH_LOGO_CLEAN_PATH, SPLASH_LOGO_STATIC_PATH, SPLASH_LOGO_ANIMATED_PATH],
+        # splash_logo.png is intentionally transparent in the current asset
+        # set.  Never select it as the native splash fallback, or the splash
+        # can be visible while the actual logo is not.
+        [SPLASH_LOGO_CLEAN_PATH, SPLASH_LOGO_ANIMATED_PATH],
         "static-logo",
     )
     splash_audio_url = _first_existing_file_url(SPLASH_AUDIO_PATHS, "audio")
@@ -1480,7 +1596,8 @@ def main() -> None:
     engine.addImportPath(str(qml_dir))
 
     _boot_log("BEGIN: loading Main.qml")
-    
+
+    tray_controller = None
     try:
         from backend.controllers.tray_controller import TrayController
         _boot_log("BEGIN: init TrayController")
@@ -1493,24 +1610,78 @@ def main() -> None:
 
     qml_url = QUrl.fromLocalFile(str(PROJECT_ROOT / "src" / "qml" / "Main.qml"))
     
+    main_window_load_requested = False
+
     def load_main_window():
+        nonlocal main_window_load_requested
+        if main_window_load_requested:
+            return
+        main_window_load_requested = True
+        root_count_before_load = len(engine.rootObjects())
         _boot_log("BEGIN: loading Main.qml dynamically")
         engine.load(qml_url)
-        if not engine.rootObjects():
+        if len(engine.rootObjects()) <= root_count_before_load:
+            main_window_load_requested = False
             logging.getLogger("startup").error("Main QML component failed to load: %s", qml_url.toString())
             _report_terminal_failure("Startup failed: main QML component did not load. See logs/cspm.log.")
             sys.exit(1)
-            
-    controller.requestMainWindowLoad.connect(load_main_window)
-    
-    if not is_tray_only:
-        _boot_log("BEGIN: loading Main.qml")
-        engine.load(qml_url)
 
-        if not engine.rootObjects():
-            logging.getLogger("startup").error("Main QML component failed to load: %s", qml_url.toString())
-            _report_terminal_failure("Startup failed: main QML component did not load. See logs/cspm.log.")
-            sys.exit(1)
+    controller.requestMainWindowLoad.connect(load_main_window)
+
+    def _handle_existing_instance_wakeup(socket) -> None:
+        try:
+            payload = bytes(socket.readAll()).decode("utf-8", errors="ignore")
+            if "WAKEUP" not in payload:
+                return
+            logging.getLogger("startup").info(
+                "Existing CSPM instance received WAKEUP; opening the current tray-only/main instance without splash."
+            )
+            if tray_controller is not None:
+                QTimer.singleShot(0, tray_controller.open_cspm)
+            else:
+                QTimer.singleShot(0, load_main_window)
+        finally:
+            try:
+                socket.disconnectFromServer()
+            except Exception:
+                pass
+
+    def _accept_existing_instance_wakeup() -> None:
+        while ipc_server.hasPendingConnections():
+            socket = ipc_server.nextPendingConnection()
+            if socket is None:
+                continue
+            socket.readyRead.connect(lambda sock=socket: _handle_existing_instance_wakeup(sock))
+            if socket.bytesAvailable() > 0:
+                _handle_existing_instance_wakeup(socket)
+
+    ipc_server = QLocalServer(app)
+    try:
+        # The mutex above proves no live CSPM instance owns this endpoint, so
+        # removing a stale endpoint after a crash is safe.
+        QLocalServer.removeServer("CSPM_IPC_SERVER")
+        if not ipc_server.listen("CSPM_IPC_SERVER"):
+            logging.getLogger("startup").warning(
+                "Unable to listen for duplicate-launch wakeups: %s",
+                ipc_server.errorString(),
+            )
+        else:
+            ipc_server.newConnection.connect(_accept_existing_instance_wakeup)
+            app._cspm_ipc_server = ipc_server  # type: ignore[attr-defined]
+    except Exception as exc:
+        _report_nonfatal_startup_failure("singleInstance.listen", exc)
+
+    if not is_tray_only:
+        if custom_splash is not None:
+            # Let the native PNG have one fully uninterrupted, visible reveal
+            # before QML begins its synchronous main-window construction.  The
+            # main shell then appears underneath it, and its first painted
+            # pixel starts the PNG's fade-out immediately.
+            custom_splash.anim_in.finished.connect(
+                lambda: QTimer.singleShot(0, load_main_window)
+            )
+        else:
+            load_main_window()
 
     try:
         tray_url = QUrl.fromLocalFile(str(PROJECT_ROOT / "src" / "qml" / "tray" / "TrayRoot.qml"))
@@ -1538,6 +1709,14 @@ def main() -> None:
         root = None
 
     if root is not None:
+        if not native_splash_signal_bound:
+            try:
+                main_window_ready = getattr(root, "mainWindowReady", None)
+                if main_window_ready is not None:
+                    main_window_ready.connect(_bind_native_splash_to_main_window)
+                    native_splash_signal_bound = True
+            except Exception as exc:
+                _report_nonfatal_startup_failure("nativeSplash.bindBootstrapFallback", exc)
         from PySide6.QtGui import QKeyEvent
         class GlobalSplashSkipFilter(QObject):
             def eventFilter(self, watched: QObject, event: Any) -> bool:

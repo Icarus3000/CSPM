@@ -319,10 +319,18 @@ class AppController(QObject):
         self._startup_metadata_warm_scheduled = False
         self._settings_load_started = False
         self._settings_load_complete = False
+        # Keep bootstrap work independent from the deferred settings read.  The
+        # previous one-thread pool could leave the data backend queued forever
+        # if the settings worker stalled, which made workbook-backed screens
+        # appear empty even though the workbook contained data.
         self._background_pool = QThreadPool(self)
-        self._background_pool.setMaxThreadCount(1)
+        self._background_pool.setMaxThreadCount(2)
         self._background_pool.setExpiryTimeout(60000)
         self._background_low_priority = -2
+        # QThreadPool owns the native QRunnable after start(), but keeping a
+        # Python reference until its finished signal prevents wrapper lifetime
+        # differences (notably in frozen builds) from dropping a queued task.
+        self._background_workers: Dict[int, Worker] = {}
         self._legacy_import_state_lock = threading.Lock()
         self._legacy_import_active = False
         self._legacy_import_cancellation = None
@@ -345,7 +353,8 @@ class AppController(QObject):
         startup_logger.info("%s AppController creating billing controller", _elapsed())
         from services.invoice_draft_service import InvoiceDraftService
         from services.invoice_document_service import InvoiceDocumentService
-        _templates_dir = str(Path(__file__).resolve().parents[2] / "templates" / "invoices")
+        from services.paths import AppPaths
+        _templates_dir = str(AppPaths.executable_root() / "src" / "templates" / "invoices")
         self._invoice_draft_svc = InvoiceDraftService(self._excel_repo)
         self._invoice_doc_svc = InvoiceDocumentService(_templates_dir)
         self._billing_controller = BillingController(
@@ -542,6 +551,13 @@ class AppController(QObject):
         priority: Optional[int] = None,
     ) -> None:
         worker = Worker(fn, name=name)
+        worker_key = id(worker)
+        self._background_workers[worker_key] = worker
+
+        def release_worker() -> None:
+            self._background_workers.pop(worker_key, None)
+
+        worker.signals.finished.connect(release_worker)
         if callable(on_result):
             def dispatch_result(res):
                 QTimer.singleShot(0, lambda r=res: on_result(r))
@@ -551,7 +567,11 @@ class AppController(QObject):
                 QTimer.singleShot(0, lambda e=err: on_error(e))
             worker.signals.error.connect(dispatch_error)
         prio = self._background_low_priority if priority is None else int(priority)
-        self._background_pool.start(worker, prio)
+        try:
+            self._background_pool.start(worker, prio)
+        except Exception:
+            self._background_workers.pop(worker_key, None)
+            raise
 
     def _schedule_startup_metadata_warm(self) -> None:
         if not self._is_booted:
@@ -916,16 +936,20 @@ class AppController(QObject):
         except Exception as e:
             return json.dumps({"ok": False, "message": str(e)})
 
+    @Slot(result=dict)
     def getHomeDashboardSummary(self) -> Dict[str, Any]:
         """Provides summary metrics (active clients/matters, queue, etc.) for the dashboard."""
-        if not getattr(self, "_dashboard_cache_returned", False):
-            self._dashboard_cache_returned = True
+        # The launch shell can ask for this before the workbook repositories are
+        # ready.  A cache keeps that first paint inexpensive, but it must never
+        # win over live data once the backend boot is complete.
+        if not self._is_booted:
             return self._load_home_dashboard_summary_cache()
 
         try:
             payload = self._excel_repo.home_dashboard_summary()
             if payload and payload.get("ok"):
                 self._persist_home_dashboard_summary_cache(payload)
+                self.homeDashboardSummaryUpdated.emit(payload)
                 return payload
         except Exception as exc:
             self._report_failure("Failed to refresh dashboard summary", context="dashboard.summary", exc=exc, emit_signal=False)
@@ -3317,6 +3341,23 @@ class AppController(QObject):
             return result
         except Exception as exc:
             self._report_failure("Could not save time entry", context="repo.time.save_entry", exc=exc)
+            return {"ok": False, "entryId": "", "message": str(exc)}
+
+    @Slot("QVariantMap", result=dict)
+    def saveFeeDocketEntry(self, payload):
+        """Save a direct, matter-linked fee line into invoiceable WIP."""
+        try:
+            result = dict(self._excel_repo.add_fee_entry(dict(payload or {})) or {})
+            if result.get("ok"):
+                self.toast.emit(f"Fee entry saved: {result.get('entryId', '')}")
+                self.clientDataChanged.emit()
+            else:
+                message = str(result.get("message", "Fee entry verification failed.") or "").strip()
+                if message:
+                    self.error.emit(message)
+            return result
+        except Exception as exc:
+            self._report_failure("Could not save fee entry", context="repo.time.save_fee_entry", exc=exc)
             return {"ok": False, "entryId": "", "message": str(exc)}
 
     @Slot(str, "QVariantMap", result=dict)

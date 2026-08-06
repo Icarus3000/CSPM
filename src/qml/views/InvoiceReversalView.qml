@@ -35,6 +35,13 @@ Item {
     property var selectedInvoiceSummary: null
     property var _calInstance: null
     property bool _isEditingFinancials: false
+    // Normal lookup/posting lives in the invoice directory; reversal stays a
+    // separate, intentionally destructive workflow.
+    property bool directoryMode: false
+    property bool compactLayout: width < 1320
+    property int outerMargin: root.compactLayout ? 12 : 16
+    property int detailMargin: root.compactLayout ? 18 : 28
+    property int actionWidth: root.compactLayout ? 132 : 150
 
     Component.onCompleted: {
         _loadInvoices()
@@ -146,12 +153,12 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        spacing: 16
+        anchors.margins: root.outerMargin
+        spacing: root.compactLayout ? 12 : 16
 
         // Left Pane: Invoice List
         Rectangle {
-            Layout.preferredWidth: 350
+            Layout.preferredWidth: root.compactLayout ? 280 : 340
             Layout.fillHeight: true
             color: root._bg
             border.color: root._border
@@ -164,7 +171,7 @@ Item {
                 spacing: 8
 
                 Text {
-                    text: "Finalized Invoices"
+                    text: root.directoryMode ? "Invoice Directory" : "Finalized Invoices"
                     color: root._text
                     font.pixelSize: 16
                     font.bold: true
@@ -260,8 +267,8 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 32
-                spacing: 24
+                anchors.margins: root.detailMargin
+                spacing: root.compactLayout ? 16 : 22
                 visible: !!root.selectedInvoiceData
 
                 // Header Area
@@ -272,7 +279,7 @@ Item {
                         spacing: 4
                         Text {
                             text: "Invoice " + (root.selectedInvoiceData ? root.selectedInvoiceData.InvoiceNum : "")
-                            font.pixelSize: 28
+                            font.pixelSize: root.compactLayout ? 24 : 28
                             font.weight: Font.Bold
                             color: root._text
                         }
@@ -353,12 +360,12 @@ Item {
                 // 3 Cards Layout
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 24
+                    spacing: root.compactLayout ? 14 : 22
 
                     // Card 1: Client & Matters
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 180
+                        Layout.preferredHeight: root.compactLayout ? 156 : 172
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
                         radius: visualRules.isPro ? visualRules.radiusPanel : 8
                         border.color: root._border
@@ -366,7 +373,7 @@ Item {
                         
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 16
+                            anchors.margins: root.compactLayout ? 12 : 16
                             spacing: 8
                             Text { text: "Client Details"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
                             Text {
@@ -399,7 +406,7 @@ Item {
                     // Card 2: Financial Breakdown
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 180
+                        Layout.preferredHeight: root.compactLayout ? 156 : 172
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
                         radius: visualRules.isPro ? visualRules.radiusPanel : 8
                         border.color: root._border
@@ -407,12 +414,13 @@ Item {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 16
+                            anchors.margins: root.compactLayout ? 12 : 16
                             spacing: 8
                             RowLayout {
                                 Layout.fillWidth: true
                                 Text { text: "Financial Breakdown"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle); Layout.fillWidth: true }
                                 Text {
+                                    visible: !root.directoryMode
                                     text: root._isEditingFinancials ? "Cancel" : "Edit"
                                     font.pixelSize: 12
                                     font.weight: Font.Medium
@@ -544,7 +552,7 @@ Item {
                     // Card 3: Ledger Status
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 180
+                        Layout.preferredHeight: root.compactLayout ? 156 : 172
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
                         radius: visualRules.isPro ? visualRules.radiusPanel : 8
                         border.color: root._border
@@ -552,7 +560,7 @@ Item {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 16
+                            anchors.margins: root.compactLayout ? 12 : 16
                             spacing: 8
                             Text { text: "Ledger Status"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
                             GridLayout {
@@ -616,15 +624,15 @@ Item {
                     }
                 }
 
-                Item { Layout.fillHeight: true } // push buttons to bottom
-
-                // Bottom Action Buttons
+                // Keep actions directly below the details on short/high-DPI
+                // logical canvases instead of pushing them to the pane bottom.
                 RowLayout {
-                    Layout.alignment: Qt.AlignRight
-                    spacing: 16
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignLeft
+                    spacing: root.compactLayout ? 10 : 14
 
                     Rectangle {
-                        width: 150
+                        width: root.actionWidth
                         height: 44
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
@@ -653,7 +661,7 @@ Item {
                     }
 
                     Rectangle {
-                        width: 180
+                        width: root.compactLayout ? 154 : 176
                         height: 44
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
@@ -683,7 +691,7 @@ Item {
 
 
                     Rectangle {
-                        width: 150
+                        width: root.actionWidth
                         height: 44
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
@@ -708,13 +716,13 @@ Item {
                     }
 
                     Rectangle {
-                        width: 150
+                        width: root.actionWidth
                         height: 44
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
                         color: root._danger
                         Text {
                             anchors.centerIn: parent
-                            text: "Reverse Invoice"
+                            text: root.directoryMode ? "Reverse..." : "Reverse Invoice"
                             color: root.isProMode ? SemanticTheme.readableInk(root._danger) : SemanticTheme.surfacePanel(root.t, root.appStyle)
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
@@ -723,7 +731,14 @@ Item {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                reverseDialog.visible = true
+                                if (root.directoryMode) {
+                                    root.workspaceOpenRequested(2, "C08", {
+                                        "focusNodeId": "C08",
+                                        "selectedInvoiceNum": root.selectedInvoiceData.InvoiceNum
+                                    })
+                                } else {
+                                    reverseDialog.visible = true
+                                }
                             }
                         }
                     }
@@ -742,7 +757,9 @@ Item {
                     Layout.alignment: Qt.AlignHCenter
                 }
                 Text {
-                    text: "Select a finalized invoice from the left to view details and reverse it."
+                    text: root.directoryMode
+                        ? "Select a finalized invoice from the left to view its details."
+                        : "Select a finalized invoice from the left to view details and reverse it."
                     font.pixelSize: 14
                     color: root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
                     Layout.alignment: Qt.AlignHCenter

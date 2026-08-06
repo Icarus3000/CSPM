@@ -398,6 +398,11 @@ class BillingController(QObject):
     def createDraft(self, client_id, client_name, time_entry_ids):
         """Create a draft invoice from the selected WIP entry IDs."""
         py_time_ids = [str(x) for x in time_entry_ids]
+        if not py_time_ids:
+            message = "Select at least one time docket, fee entry, or disbursement before creating a draft invoice."
+            self.toast.emit(message)
+            self.draftCreated.emit({"ok": False, "message": message})
+            return
         worker = Worker(
             self._draft_svc.create_draft,
             str(client_id),
@@ -419,6 +424,11 @@ class BillingController(QObject):
     def createDraftWithGrouping(self, client_id, client_name, time_entry_ids, grouping_pref):
         """Create a draft invoice from the selected WIP entry IDs with a specific grouping preference."""
         py_all_ids = [str(x) for x in time_entry_ids]
+        if not py_all_ids:
+            message = "Select at least one time docket, fee entry, or disbursement before creating a draft invoice."
+            self.toast.emit(message)
+            self.draftCreated.emit({"ok": False, "message": message})
+            return
         
         from domain import schema_constants as sc
         disb_rows = self._excel_repo._read_table_rows(sc.TBL_DISBURSEMENTS)
@@ -553,6 +563,8 @@ class BillingController(QObject):
 
                         "amount": round(net, 2),
 
+                        "isFee": "entrytype:fee" in str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower(),
+
                         "matterId": str(row.get(sc.COL_TIME_MATTER_ID) or ""),
 
                     })
@@ -648,6 +660,15 @@ class BillingController(QObject):
 
         try:
 
+            from datetime import date
+
+            normalized_date = str(new_date_str or "").strip()
+            if not normalized_date:
+                raise ValueError("Invoice date is required.")
+            parsed_date = date.fromisoformat(normalized_date)
+            if parsed_date.isoformat() != normalized_date:
+                raise ValueError("Use YYYY-MM-DD for the invoice date.")
+
             drafts = self._excel_repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
 
             updated = False
@@ -656,7 +677,7 @@ class BillingController(QObject):
 
                 if str(d.get(sc.COL_DRAFT_INVOICE_NUM) or "") == str(draft_num):
 
-                    d[sc.COL_DRAFT_DATE] = new_date_str + "T00:00:00"
+                    d[sc.COL_DRAFT_DATE] = normalized_date + "T00:00:00"
 
                     updated = True
 
@@ -666,14 +687,25 @@ class BillingController(QObject):
 
                 self._excel_repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
 
+                self._payload_cache.clear()
+
                 draft = self._draft_svc.get_draft(str(draft_num))
 
-                self.toast.emit(f"Draft date updated to {new_date_str}")
+                self.toast.emit(f"Draft date updated to {normalized_date}")
 
                 self.draftUpdated.emit(dict(draft) if draft else {})
 
-        except Exception as e:
-            self.toast.emit(f"Failed to update date: {str(e)}")
+                self.previewInvoiceHtml(str(draft_num), "Concept_A2")
+
+            else:
+
+                self.error.emit(f"Draft {draft_num} was not found.")
+
+        except (TypeError, ValueError) as exc:
+            self.error.emit(f"Could not update invoice date: {exc}")
+        except Exception as exc:
+            logger.exception("Could not update invoice date for draft %s", draft_num)
+            self.error.emit(f"Could not update invoice date: {exc}")
 
     @Slot(str, str)
     def updateDraftGrouping(self, draft_num, grouping_pref):
@@ -1145,6 +1177,76 @@ class BillingController(QObject):
         rows = self._excel_repo._read_table_rows(TBL_TIME)
 
         matters_map = {}
+        service_client_names = []
+        service_matter_names = []
+        service_client_cache = {}
+        service_matter_cache = {}
+        has_third_party_service_matter = False
+
+        def append_unique(values, value):
+            value = str(value or "").strip()
+            if value and value.casefold() not in {item.casefold() for item in values}:
+                values.append(value)
+
+        def service_client_name(client_key):
+            """Resolve the client receiving the services, not merely the bill-to client."""
+            lookup = str(client_key or "").strip()
+            if not lookup:
+                return ""
+
+            cache_key = lookup.casefold()
+            if cache_key not in service_client_cache:
+                if cache_key == client_id.casefold():
+                    profile = client_profile
+                elif cache_key == str(billing_client_id or "").casefold():
+                    profile = billing_profile
+                else:
+                    result = self._excel_repo.get_client_profile(lookup)
+                    profile = result.get("client", {}) if result.get("ok") else {}
+                service_client_cache[cache_key] = (
+                    profile.get("displayName") or profile.get("clientName") or lookup
+                )
+            return service_client_cache[cache_key]
+
+        def service_matter_name(matter_key, service_client_id=""):
+            """Resolve a human-readable matter label for the invoice service context."""
+            nonlocal has_third_party_service_matter
+            lookup = str(matter_key or "").strip()
+            if not lookup:
+                return ""
+
+            cache_key = lookup.casefold()
+            if cache_key not in service_matter_cache:
+                result = self._excel_repo.get_matter_profile(lookup)
+                matter = result.get("matter", {}) if result.get("ok") else {}
+                matter_number = str(matter.get("matterNumber") or "").strip()
+                matter_name = str(
+                    matter.get("displayName") or matter.get("matterName") or matter.get("description") or lookup
+                ).strip()
+                matter_client_id = str(matter.get("clientId") or service_client_id or "").strip()
+                is_third_party_billing = bool(
+                    matter_client_id
+                    and str(billing_client_id or "").strip()
+                    and matter_client_id.casefold() != str(billing_client_id).strip().casefold()
+                )
+                if is_third_party_billing:
+                    has_third_party_service_matter = True
+                    plain_description = str(
+                        matter.get("description") or matter.get("matterName") or matter_name or lookup
+                    ).strip()
+                    # A display name is occasionally the matter number plus its
+                    # description.  Do not leak that internal code onto a
+                    # third-party invoice when it is the only available fallback.
+                    if matter_number and plain_description.casefold().startswith(matter_number.casefold()):
+                        plain_description = plain_description[len(matter_number):].lstrip(" \t-—–:")
+                    service_matter_cache[cache_key] = plain_description or "Matter description not provided"
+                else:
+                    service_matter_cache[cache_key] = (
+                        f"{matter_number} — {matter_name}"
+                        if matter_number and matter_name and matter_number.casefold() != matter_name.casefold()
+                        else matter_name or matter_number or lookup
+                    )
+            return service_matter_cache[cache_key]
 
         total_fees = 0.0
 
@@ -1240,6 +1342,21 @@ class BillingController(QObject):
 
                 continue
 
+            # The billing profile can be a parent or other third party.  Preserve
+            # the actual client and matter attached to the billed work so the
+            # rendered invoice is unambiguous, including flat-fee-only invoices.
+            append_unique(
+                service_client_names,
+                service_client_name(row.get(sc.COL_TIME_CLIENT_ID)),
+            )
+            append_unique(
+                service_matter_names,
+                service_matter_name(
+                    row.get(sc.COL_TIME_MATTER_ID),
+                    row.get(sc.COL_TIME_CLIENT_ID),
+                ),
+            )
+
                 
 
             if grouping_pref == "client":
@@ -1261,7 +1378,8 @@ class BillingController(QObject):
                 
                 # Check if third-party billing
                 c_id_for_matter = str(row.get(sc.COL_TIME_CLIENT_ID) or "")
-                if billing_client_id != c_id_for_matter:
+                if str(billing_client_id or "").casefold() != c_id_for_matter.casefold():
+                    mname = service_matter_name(group_id, c_id_for_matter)
                     # Fetch client name to append
                     c_res = self._excel_repo.get_client_profile(c_id_for_matter)
                     c_data = c_res.get("client", {}) if c_res.get("ok") else {}
@@ -1521,6 +1639,21 @@ class BillingController(QObject):
                             new_line_items.append(item) # default behavior if missing
                 m["line_items"] = new_line_items
 
+        # A draft can be created from a legacy row with no attached work items.
+        # Still identify the selected client rather than leaving the recipient
+        # guessing whether "Bill To" is also the service client.
+        if not service_client_names:
+            append_unique(
+                service_client_names,
+                client_profile.get("displayName")
+                or client_profile.get("clientName")
+                or str(draft.get(sc.COL_DRAFT_CLIENT_NAME) or "")
+                or billing_client_name,
+            )
+
+        service_client_display = ", ".join(service_client_names)
+        service_matter_display = ", ".join(service_matter_names)
+
         payload = {
             "is_draft": is_draft,
             "invoice_number_raw": final_invoice_num if final_invoice_num else self.nextInvoiceNumber(),
@@ -1530,6 +1663,13 @@ class BillingController(QObject):
             "agency_short_name": agency_short_name,
             "billing_client_principal": billing_profile.get("principalName") or "",
             "billing_client_address_lines": addr_lines,
+            "service_client_label": "Client" if len(service_client_names) == 1 else "Clients",
+            "service_client_name": service_client_display,
+            "service_matter_label": "Matter" if has_third_party_service_matter else (
+                "Matter" if len(service_matter_names) == 1 else "Matters"
+            ),
+            "service_matter_name": service_matter_display,
+            "is_third_party_service_context": has_third_party_service_matter,
             "work_for": work_for,
             "grouping_pref": grouping_pref,
             "date": date_formatted,
@@ -1869,6 +2009,19 @@ class BillingController(QObject):
         except Exception as exc:
             self.error.emit(f"Could not get invoice summary: {exc}")
             return {}
+
+    @Slot(str, result='QVariantMap')
+    def repairFinalizedInvoiceAmounts(self, invoice_num):
+        """Repair one finalized invoice from its linked billed WIP entries."""
+        try:
+            result = self._draft_svc.repair_finalized_invoice_amounts(str(invoice_num))
+            self.toast.emit(
+                f"Invoice {result['invoiceNum']} financials repaired: ${result['total']:,.2f} billed."
+            )
+            return {"ok": True, **result}
+        except Exception as exc:
+            self.error.emit(f"Could not repair invoice financials: {exc}")
+            return {"ok": False, "message": str(exc)}
 
     # ── Next Invoice Number ──────────────────────────────────────────────────
 

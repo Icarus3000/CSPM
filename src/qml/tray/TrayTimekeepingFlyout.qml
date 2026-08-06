@@ -55,6 +55,13 @@ Rectangle {
                     text: "Open CSPM ⍈"
                     font.pixelSize: 13
                     font.bold: true
+                    contentItem: Text {
+                        text: parent.text
+                        font: parent.font
+                        color: theme.textPrimary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     background: Rectangle {
                         color: "transparent"
                         border.color: theme.border

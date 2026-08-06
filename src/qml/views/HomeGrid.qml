@@ -221,6 +221,16 @@ Item {
                 root.dashboardSummary = payload
             }
         }
+        function onBackendBootChanged() {
+            if (root.appRef && root.appRef.backendBooted) {
+                root.refreshDashboardSummary()
+            }
+        }
+        function onClientDataChanged() {
+            if (root.appRef && root.appRef.backendBooted) {
+                root.refreshDashboardSummary()
+            }
+        }
     }
 
     function themeBucket() {

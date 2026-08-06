@@ -4,9 +4,56 @@ import json
 import shutil
 import subprocess
 import argparse
+import atexit
+from datetime import datetime
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+
+def quarantine_release_artifact(source_dir: Path, reason: str) -> Path:
+    """Move a replaceable root-level release artifact into the review bin.
+
+    Release artifacts are intentionally quarantined rather than deleted.  This
+    keeps a failed or replaced package available for manual review while
+    preventing multi-hundred-megabyte PyInstaller directories from piling up at
+    the repository root.
+    """
+    source_dir = source_dir.resolve()
+    project_root = ROOT_DIR.resolve()
+    if not source_dir.is_dir():
+        raise ValueError(f"Quarantine source is not a directory: {source_dir}")
+    if source_dir.parent != project_root:
+        raise ValueError(f"Refusing to quarantine a directory outside the project root: {source_dir}")
+
+    quarantine_root = project_root / "to_delete"
+    quarantine_root.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    destination = quarantine_root / f"{source_dir.name}__{reason}_{timestamp}"
+    suffix = 1
+    while destination.exists():
+        destination = quarantine_root / f"{source_dir.name}__{reason}_{timestamp}_{suffix}"
+        suffix += 1
+
+    shutil.move(str(source_dir), str(destination))
+    print(f"Quarantined release artifact: {source_dir} -> {destination}")
+    return destination
+
+
+def register_unpromoted_staging_quarantine(staging_dir: Path) -> None:
+    """Keep failed/interrupted default builds out of the repository root."""
+    def quarantine_if_left_behind() -> None:
+        if not staging_dir.exists():
+            return
+        if staging_dir.resolve().parent != ROOT_DIR.resolve():
+            print(f"Unpromoted staging output remains outside the project root: {staging_dir}")
+            return
+        try:
+            quarantine_release_artifact(staging_dir, "unpromoted_build")
+        except Exception as exc:
+            print(f"WARNING: Could not quarantine unpromoted staging output {staging_dir}: {exc}")
+
+    atexit.register(quarantine_if_left_behind)
 
 def validate_templates(template_dir: Path, manifest_path: Path, allow_candidate: bool = False):
     import zipfile
@@ -252,14 +299,17 @@ def main():
     print(f"Resolved build dir: {build_dir}")
 
     if target_dist_dir.exists():
-        print(f"Warning: target dist dir {target_dist_dir} exists, it will be replaced.")
+        print(f"Warning: target dist dir {target_dist_dir} exists; the prior package will be quarantined after this build succeeds.")
     if staging_dist_dir.exists():
-        shutil.rmtree(staging_dist_dir, ignore_errors=True)
+        print(f"ERROR: Refusing to overwrite an existing staging directory: {staging_dist_dir}")
+        print("Review or move it first; release artifacts are never deleted automatically.")
+        sys.exit(1)
     if build_dir.exists():
         shutil.rmtree(build_dir, ignore_errors=True)
         
     print("Cleaned build directories.")
     dist_dir = staging_dist_dir
+    register_unpromoted_staging_quarantine(staging_dist_dir)
     
     # 3. Build Main Application (CSPM.exe)
     main_script = ROOT_DIR / "src" / "python" / "main.py"
@@ -268,6 +318,10 @@ def main():
         ("src/qml", "src/qml"),
         ("src/templates", "src/templates"),
         ("src/assets", "src/assets"),
+        # Runtime startup branding, QML backgrounds, and sound assets live at
+        # the repository root.  main.py resolves them relative to PROJECT_ROOT,
+        # so the release bundle must preserve that same assets/ location.
+        ("assets", "assets"),
         ("schema", "schema"),
         ("docs", "docs"),
         ("version.json", ".")
@@ -323,6 +377,19 @@ def main():
     dist_cspm = dist_dir / "CSPM"
     dist_data = dist_cspm / "data"
     dist_data.mkdir(exist_ok=True)
+
+    # main.py resolves startup branding from PROJECT_ROOT / "assets".  Verify
+    # the bundle preserves those files before a release can be promoted.
+    required_runtime_assets = [
+        dist_cspm / "_internal" / "assets" / "CS.svg",
+        dist_cspm / "_internal" / "assets" / "splash_logo.svg",
+    ]
+    missing_runtime_assets = [str(path) for path in required_runtime_assets if not path.is_file()]
+    if missing_runtime_assets:
+        print("ERROR: Build blocked. Required splash assets were not bundled:")
+        for asset_path in missing_runtime_assets:
+            print(f"  - {asset_path}")
+        sys.exit(1)
     
     import hashlib as _hl
     template_dir = ROOT_DIR / "src" / "templates"
@@ -404,15 +471,31 @@ def main():
                 print(f"ERROR: Expected installer {installer_name} not found in dist/")
                 sys.exit(1)
     
-    # Finally, promote staging to target dist_dir
+    # Finally, promote staging to target dist_dir.  Do not delete the previous
+    # runnable package: quarantine it first so a failed Windows rename can be
+    # restored without data loss.
+    quarantined_previous_dist = None
     if target_dist_dir.exists():
-        shutil.rmtree(target_dist_dir, ignore_errors=True)
+        try:
+            quarantined_previous_dist = quarantine_release_artifact(
+                target_dist_dir, "replaced_release"
+            )
+        except Exception as exc:
+            print(f"ERROR: Could not quarantine current release {target_dist_dir}: {exc}")
+            print("The current release remains in place; the new build will be quarantined on exit.")
+            sys.exit(1)
     try:
         os.rename(staging_dist_dir, target_dist_dir)
         print(f"Promoted {staging_dist_dir} to {target_dist_dir}")
     except OSError as e:
         print(f"Failed to promote staging dir to {target_dist_dir}: {e}")
-        print(f"Build artifacts are available in {staging_dist_dir}")
+        if quarantined_previous_dist is not None and not target_dist_dir.exists():
+            try:
+                os.rename(quarantined_previous_dist, target_dist_dir)
+                print(f"Restored prior release from {quarantined_previous_dist}")
+            except OSError as restore_error:
+                print(f"CRITICAL: Could not restore prior release: {restore_error}")
+        print("The unpromoted build will be moved to to_delete on exit for review.")
         sys.exit(1)
     
     print("Build process finished successfully.")

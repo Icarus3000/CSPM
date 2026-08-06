@@ -214,9 +214,12 @@ Rectangle {
                         }
                     }
 
-                    TapHandler {
-                        onTapped: root.setDirectorySelection(directoryRow.modelData)
-                        onDoubleTapped: root.openClientProfileFromDirectory(directoryRow.modelData)
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.LeftButton
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.setDirectorySelection(directoryRow.modelData)
+                        onDoubleClicked: root.editClientFromDirectory(directoryRow.modelData)
                     }
                 }
             }
@@ -224,7 +227,7 @@ Rectangle {
 
         Text {
             Layout.fillWidth: true
-            text: "Tip: double-click a client to open Client Profile 360."
+            text: "Tip: double-click a client to open its editable Client Profile."
             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
             font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
             elide: Text.ElideRight

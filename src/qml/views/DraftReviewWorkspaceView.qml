@@ -137,7 +137,9 @@ Item {
                                     color: SemanticTheme.surfaceInput(root.t, root.appStyle)
                                     border.color: borderColor
                                     radius: 6
-                                    TextInput {
+                                    TextField {
+    background: Item {}
+    padding: 0
                                         anchors.fill: parent
                                         anchors.margins: 12
                                         verticalAlignment: TextInput.AlignVCenter
@@ -159,7 +161,9 @@ Item {
                                     color: SemanticTheme.surfaceInput(root.t, root.appStyle)
                                     border.color: borderColor
                                     radius: 6
-                                    TextInput {
+                                    TextField {
+    background: Item {}
+    padding: 0
                                         anchors.fill: parent
                                         anchors.margins: 12
                                         verticalAlignment: TextInput.AlignVCenter
@@ -192,7 +196,9 @@ Item {
                                         color: SemanticTheme.surfaceInput(root.t, root.appStyle)
                                         border.color: borderColor
                                         radius: 6
-                                        TextInput {
+                                        TextField {
+    background: Item {}
+    padding: 0
                                             anchors.fill: parent
                                             anchors.margins: 12
                                             verticalAlignment: TextInput.AlignVCenter

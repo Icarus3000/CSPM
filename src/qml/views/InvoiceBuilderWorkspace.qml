@@ -229,6 +229,7 @@ Item {
                                 width: lineItems.width
                                 height: editing ? 93 : 54
                                 property bool editing: false
+                                property bool isFee: Boolean(modelData.isFee)
                                 color: editing ? (host.isDark ? "#303844" : "#f4f8fc") : "transparent"
                                 border.color: host.borderColor
                                 border.width: 1
@@ -260,10 +261,67 @@ Item {
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 5
-                                        TextField { id: lineDate; Layout.preferredWidth: 90; Layout.preferredHeight: 31; text: modelData.date || ""; color: host.textColor; font.pixelSize: 12; background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 } }
-                                        TextField { id: lineDescription; Layout.fillWidth: true; Layout.preferredHeight: 31; text: modelData.description || ""; color: host.textColor; font.pixelSize: 12; background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 } }
-                                        TextField { id: lineHours; Layout.preferredWidth: 48; Layout.preferredHeight: 31; text: String(modelData.hours || 0); color: host.textColor; font.pixelSize: 12; inputMethodHints: Qt.ImhFormattedNumbersOnly; background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 } }
-                                        TextField { id: lineRate; Layout.preferredWidth: 62; Layout.preferredHeight: 31; text: String(modelData.rate || 0); color: host.textColor; font.pixelSize: 12; inputMethodHints: Qt.ImhFormattedNumbersOnly; background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 } }
+                                        TextField {
+                                            id: lineDate
+                                            Layout.preferredWidth: 90
+                                            Layout.preferredHeight: 31
+                                            text: modelData.date || ""
+                                            placeholderText: "Date"
+                                            placeholderTextColor: host.isDark ? "#8d99a7" : "#8a96a5"
+                                            color: host.textColor
+                                            font.pixelSize: 12
+                                            background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                        }
+                                        TextField {
+                                            id: lineDescription
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 31
+                                            text: modelData.description || ""
+                                            placeholderText: "Description of work performed"
+                                            placeholderTextColor: host.isDark ? "#8d99a7" : "#8a96a5"
+                                            color: host.textColor
+                                            font.pixelSize: 12
+                                            background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                        }
+                                        TextField {
+                                            id: lineHours
+                                            visible: !lineDelegate.isFee
+                                            Layout.preferredWidth: 48
+                                            Layout.preferredHeight: 31
+                                            text: Number(modelData.hours || 0) > 0 ? String(modelData.hours) : ""
+                                            placeholderText: "Hours"
+                                            placeholderTextColor: host.isDark ? "#8d99a7" : "#8a96a5"
+                                            color: host.textColor
+                                            font.pixelSize: 12
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                            background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                        }
+                                        TextField {
+                                            id: lineRate
+                                            visible: !lineDelegate.isFee
+                                            Layout.preferredWidth: 62
+                                            Layout.preferredHeight: 31
+                                            text: Number(modelData.rate || 0) > 0 ? String(modelData.rate) : ""
+                                            placeholderText: "Rate ($)"
+                                            placeholderTextColor: host.isDark ? "#8d99a7" : "#8a96a5"
+                                            color: host.textColor
+                                            font.pixelSize: 12
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                            background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                        }
+                                        TextField {
+                                            id: lineFeeAmount
+                                            visible: lineDelegate.isFee
+                                            Layout.preferredWidth: 116
+                                            Layout.preferredHeight: 31
+                                            text: Number(modelData.amount || 0) > 0 ? String(modelData.amount) : ""
+                                            placeholderText: "Fee amount ($)"
+                                            placeholderTextColor: host.isDark ? "#8d99a7" : "#8a96a5"
+                                            color: host.textColor
+                                            font.pixelSize: 12
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                            background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                        }
                                     }
                                     RowLayout {
                                         Layout.fillWidth: true
@@ -277,12 +335,17 @@ Item {
                                             Layout.preferredWidth: 58
                                             Layout.preferredHeight: 28
                                             onClicked: {
-                                                host.billingBackend.updateDraftLineItem(host.selectedDraftNum, modelData.entryId, {
+                                                var changes = {
                                                     "date": lineDate.text,
-                                                    "description": lineDescription.text,
-                                                    "hours": parseFloat(lineHours.text) || 0,
-                                                    "rate": parseFloat(lineRate.text) || 0
-                                                })
+                                                    "description": lineDescription.text
+                                                }
+                                                if (lineDelegate.isFee)
+                                                    changes.amount = parseFloat(lineFeeAmount.text) || 0
+                                                else {
+                                                    changes.hours = parseFloat(lineHours.text) || 0
+                                                    changes.rate = parseFloat(lineRate.text) || 0
+                                                }
+                                                host.billingBackend.updateDraftLineItem(host.selectedDraftNum, modelData.entryId, changes)
                                                 lineDelegate.editing = false
                                             }
                                         }
@@ -391,6 +454,74 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 11
                             spacing: 10
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 58
+                                color: host.isDark ? "#2c3643" : "#edf5ff"
+                                border.color: host.accentColor
+                                border.width: 1
+                                radius: 6
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 9
+                                    spacing: 10
+
+                                    ColumnLayout {
+                                        Layout.preferredWidth: 180
+                                        spacing: 1
+
+                                        Text {
+                                            text: "Invoice date"
+                                            color: host.textColor
+                                            font.pixelSize: 13
+                                            font.weight: Font.DemiBold
+                                        }
+                                        Text {
+                                            text: "Date shown on the invoice"
+                                            color: host.mutedColor
+                                            font.pixelSize: 11
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    TextField {
+                                        id: invoiceDateField
+                                        Layout.preferredWidth: 128
+                                        Layout.preferredHeight: 32
+                                        text: (host.selectedDraftData && host.selectedDraftData.Date)
+                                            ? String(host.selectedDraftData.Date).substring(0, 10)
+                                            : Qt.formatDate(new Date(), "yyyy-MM-dd")
+                                        color: host.textColor
+                                        font.pixelSize: 12
+                                        selectByMouse: true
+                                        onEditingFinished: host._saveInvoiceDate(text, invoiceDateField)
+                                        background: Rectangle {
+                                            color: host.comboSurface
+                                            border.color: host.comboBorderColor
+                                            border.width: 1
+                                            radius: 4
+                                        }
+                                    }
+
+                                    PillButton {
+                                        t: host.t
+                                        text: "Choose date"
+                                        primary: true
+                                        Layout.preferredWidth: 108
+                                        Layout.preferredHeight: 32
+                                        onClicked: {
+                                            var point = invoiceDateField.mapToGlobal(
+                                                invoiceDateField.width / 2,
+                                                invoiceDateField.height / 2
+                                            )
+                                            host.openDatePickerFor(invoiceDateField, point.x, point.y)
+                                        }
+                                    }
+                                }
+                            }
 
                             // Settings row
                             RowLayout {

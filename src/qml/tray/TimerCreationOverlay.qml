@@ -73,7 +73,9 @@ Rectangle {
                         border.width: clientInput.activeFocus ? 2 : 1
                         radius: theme.radiusSmall
 
-                        TextInput {
+                        TextField {
+    background: Item {}
+    padding: 0
                             id: clientInput
                             anchors.fill: parent
                             anchors.leftMargin: 12; anchors.rightMargin: 32
@@ -223,7 +225,9 @@ Rectangle {
                         border.width: matterInput.activeFocus ? 2 : 1
                         radius: theme.radiusSmall
 
-                        TextInput {
+                        TextField {
+    background: Item {}
+    padding: 0
                             id: matterInput
                             anchors.fill: parent
                             anchors.leftMargin: 12; anchors.rightMargin: 32

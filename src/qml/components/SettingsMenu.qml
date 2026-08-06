@@ -14,6 +14,7 @@ Popup {
     property var appRef: null
     property var sfxBus: null
     property bool soundEnabled: true
+    property bool keepTrayAlive: true
     property string appStyle: (root.appRef && root.appRef.appStyle) ? String(root.appRef.appStyle) : "Professional"
     readonly property bool isProMode: visualRules.isPro
 
@@ -83,6 +84,26 @@ Popup {
         return saved
     }
 
+    function syncTrayPreferenceFromApp() {
+        try {
+            root.keepTrayAlive = !(root.appRef && root.appRef.keepTrayAlive === false)
+        } catch (e) {
+            root.keepTrayAlive = true
+        }
+    }
+
+    function setKeepTrayAlive(nextEnabled) {
+        var enabled = !!nextEnabled
+        try {
+            if (root.appRef) root.appRef.keepTrayAlive = enabled
+        } catch (e) {
+            console.log("[SETTINGS] keepTrayAlive update failed err=" + e)
+            return false
+        }
+        root.keepTrayAlive = enabled
+        return true
+    }
+
     function openExpertPreview() {
         var opened = false
         try {
@@ -110,13 +131,16 @@ Popup {
     }
 
     width: 320
-    height: 680
+    height: 732
 
     modal: true
     focus: true
     dim: false
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    onOpened: syncSoundFromApp()
+    onOpened: {
+        syncSoundFromApp()
+        syncTrayPreferenceFromApp()
+    }
 
     background: SemanticPanel {
         t: root.t
@@ -242,6 +266,97 @@ Popup {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root.setSoundEnabled(true)
+                        }
+                    }
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 36
+            spacing: 12
+
+            Text {
+                text: "Close to tray"
+                color: root.menuInk
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                Layout.preferredWidth: 116
+                Layout.fillHeight: true
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+
+            Rectangle {
+                id: traySwitch
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: root.radiusFor(height)
+                color: root.inactiveFill
+                border.width: 1
+                border.color: SemanticTheme.alpha(root.menuInk, 0.22)
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    spacing: 2
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: root.radiusFor(height)
+                        color: !root.keepTrayAlive
+                            ? root.activeFill
+                            : (trayOffMouse.containsMouse ? root.hoverFill : "transparent")
+
+                        Text {
+                            anchors.centerIn: parent
+                            width: parent.width - 8
+                            text: "Off"
+                            color: !root.keepTrayAlive ? root.activeInk : root.menuInk
+                            font.pixelSize: 13
+                            font.weight: Font.Bold
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            id: trayOffMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.setKeepTrayAlive(false)
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: root.radiusFor(height)
+                        color: root.keepTrayAlive
+                            ? root.activeFill
+                            : (trayOnMouse.containsMouse ? root.hoverFill : "transparent")
+
+                        Text {
+                            anchors.centerIn: parent
+                            width: parent.width - 8
+                            text: "On"
+                            color: root.keepTrayAlive ? root.activeInk : root.menuInk
+                            font.pixelSize: 13
+                            font.weight: Font.Bold
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            id: trayOnMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.setKeepTrayAlive(true)
                         }
                     }
                 }

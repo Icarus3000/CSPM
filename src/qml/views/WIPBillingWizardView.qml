@@ -198,6 +198,71 @@ Item {
         }
     }
 
+    Popup {
+        id: emptyWipSelectionDialog
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        width: 460
+        height: 210
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+
+        background: Rectangle {
+            color: root.panelColor
+            border.color: root.borderColor
+            border.width: 1
+            radius: 8
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 16
+
+            Text {
+                text: "No entries selected"
+                color: root.textColor
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+            }
+
+            Text {
+                text: "Select at least one time docket or fee entry before creating a draft invoice."
+                color: root.textColor
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
+            Item { Layout.fillHeight: true }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Rectangle {
+                    Layout.preferredWidth: 100
+                    Layout.preferredHeight: 36
+                    radius: 4
+                    color: root.accentColor
+                    Text {
+                        anchors.centerIn: parent
+                        text: "OK"
+                        color: SemanticTheme.textOnAccent(root.t, root.appStyle)
+                        font.weight: Font.Medium
+                        font.pixelSize: 14
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: emptyWipSelectionDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
     // State
     property var wipItems: []
     property var selectedIds: ({})
@@ -421,7 +486,15 @@ Item {
     }
 
     function _createDraft() {
-        if (selectedCount === 0 || !billingBackend) return
+        if (isBuildingInvoice) return
+        if (!billingBackend) {
+            appToast("Billing is not ready yet. Please try again in a moment.")
+            return
+        }
+        if (selectedCount === 0) {
+            emptyWipSelectionDialog.open()
+            return
+        }
         var ids = []
         var uniqueParents = {}
         var uniqueClients = {}
@@ -461,6 +534,15 @@ Item {
                     matterCount++
                 }
             }
+        }
+
+        // The WIP list may have refreshed after a row was selected.  Treat a
+        // stale selection exactly like an empty selection, without starting a
+        // draft request or showing the blocking progress overlay.
+        if (ids.length === 0) {
+            root._clearSelection()
+            emptyWipSelectionDialog.open()
+            return
         }
         
         if (parentCount > 1) {
@@ -511,7 +593,7 @@ Item {
             // Clean up selection
             var validIds = {}
             for (var i = 0; i < root.wipItems.length; i++) {
-                validIds[root.wipItems[i].entryId] = true
+                validIds[String(root.wipItems[i].entryId)] = true
             }
             var newSelectedIds = {}
             var count = 0
@@ -1334,20 +1416,20 @@ Item {
                         width: 200
                         height: 40
                         radius: 8
-                        color: (root.selectedCount > 0 && !root.isBuildingInvoice) ? SemanticTheme.buttonPrimary(root.t, root.appStyle) : SemanticTheme.borderSubtle(root.t, root.appStyle)
+                        color: !root.isBuildingInvoice ? SemanticTheme.buttonPrimary(root.t, root.appStyle) : SemanticTheme.borderSubtle(root.t, root.appStyle)
                         Text {
                             anchors.centerIn: parent
                             text: root.isBuildingInvoice ? "Building..." : "Create Draft Invoice"
-                            color: (root.selectedCount > 0 && !root.isBuildingInvoice) ? SemanticTheme.textOnPrimary(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                            color: !root.isBuildingInvoice ? SemanticTheme.textOnPrimary(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
                             font.family: "Inter"
                         }
                         MouseArea {
                             anchors.fill: parent
-                            cursorShape: (root.selectedCount > 0 && !root.isBuildingInvoice) ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            cursorShape: !root.isBuildingInvoice ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
-                                if (root.selectedCount > 0 && !root.isBuildingInvoice) {
+                                if (!root.isBuildingInvoice) {
                                     root._createDraft()
                                 }
                             }

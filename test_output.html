@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="invoice-meta" data-client="{{ billing_client_name }}" data-invoice="{{ invoice_number_raw }}" data-date="{{ date }}">
-    <title>Invoice - {{ invoice_number_raw }}</title>
+    <meta name="invoice-meta" data-client="Leviathan Private Network" data-invoice="26-0076" data-date="July 31, 2026">
+    <title>Invoice - 26-0076</title>
     <style>
         :root {
             --c-navy: #192332;
@@ -49,7 +49,7 @@
         .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
         
         /* To ensure the matter section on Page 1 doesn't overlap the absolute header, we add a spacer */
-        .page-1-spacer { height: 305px; }
+        .page-1-spacer { height: 243px; } 
         
         /* Left Column: Brand & Client */
         .header-left { width: 55%; }
@@ -65,11 +65,6 @@
         .client-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-silver); margin-bottom: 10px; font-weight: 600; }
         .billed-to-name { font-weight: 600; font-size: 14.5px; margin-bottom: 2px; color: var(--c-navy); }
         .billed-to-address { font-size: 12.5px; line-height: 1.5; color: #475569; }
-        .service-context { margin-top: 16px; padding-top: 11px; border-top: 0.5pt solid var(--c-silver-light); }
-        .service-context-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--c-silver); margin-bottom: 7px; font-weight: 600; }
-        .service-context-row { display: table; width: 100%; table-layout: fixed; margin-top: 3px; font-size: 11.5px; line-height: 1.35; color: #334155; }
-        .service-context-label { display: table-cell; width: 72px; padding-right: 10px; vertical-align: top; white-space: nowrap; color: #64748B; font-weight: 600; }
-        .service-context-value { display: table-cell; vertical-align: top; color: var(--c-navy); font-weight: 600; }
         
         /* Right Column: Statement Panel */
         .header-right { 
@@ -222,54 +217,34 @@
             </div>
             
             <div class="client-group">
-                <div class="client-label">Bill To</div>
-                <div class="billed-to-name">{{ billing_client_name }}</div>
+                <div class="client-label">Prepared For</div>
+                <div class="billed-to-name">Leviathan Private Network</div>
                 <div class="billed-to-address">
-                    {% if billing_client_principal %}Attn: {{ billing_client_principal }}<br>{% endif %}
-                    {% for line in billing_client_address_lines %}{{ line }}<br>{% endfor %}
+                    Attn: James Hutchinson<br>
+                    7 St. Thomas Street, Suite 307<br>Toronto, Ontario M5S 2B7<br>
                 </div>
-            </div>
-            <div class="service-context">
-                <div class="service-context-title">Legal Services For</div>
-                {% if is_third_party_service_context %}
-                <div class="service-context-row">
-                    <span class="service-context-label">Matter:</span>
-                    <span class="service-context-value">{{ service_client_name }}{% if service_matter_name %} <span class="service-context-separator">|</span> {{ service_matter_name }}{% endif %}</span>
-                </div>
-                {% else %}
-                <div class="service-context-row">
-                    <span class="service-context-label">{{ service_client_label }}:</span>
-                    <span class="service-context-value">{{ service_client_name }}</span>
-                </div>
-                {% if service_matter_name %}
-                <div class="service-context-row">
-                    <span class="service-context-label">{{ service_matter_label }}:</span>
-                    <span class="service-context-value">{{ service_matter_name }}</span>
-                </div>
-                {% endif %}
-                {% endif %}
             </div>
         </div>
         
         <div class="header-right">
             <div class="statement-title">
                 <span>Statement of Account</span>
-                {% if is_draft %}<span class="draft-badge">Draft</span>{% endif %}
+                <span class="draft-badge">Draft</span>
             </div>
             
             <div class="summary-grid">
                 <div class="summary-row">
                     <span class="summary-lbl">Invoice No.</span> 
-                    <span class="summary-val">{{ invoice_number_raw }}</span>
+                    <span class="summary-val">26-0076</span>
                 </div>
                 <div class="summary-row">
                     <span class="summary-lbl">Date</span>
-                    <span class="summary-val">{{ date }}</span>
+                    <span class="summary-val">July 31, 2026</span>
                 </div>
                 
                 <div class="summary-row-hero">
-                    <span class="summary-lbl-hero">{% if is_draft %}Amount Due{% else %}Balance Due{% endif %}</span>
-                    <span class="summary-val-hero">${{ "{:,.2f}".format(total_due) }}</span>
+                    <span class="summary-lbl-hero">Amount Due</span>
+                    <span class="summary-val-hero">$5,689.55</span>
                 </div>
             </div>
         </div>
@@ -293,47 +268,14 @@
             
             <div class="page-1-spacer"></div>
 
-            {% if is_flat_fee %}
+            
+            
             <div class="matter-section">
                 <div class="matter-header">
-                    <span>Professional Services</span>
-                    <span class="matter-header-label">{{ flat_fee_section_label }}</span>
-                </div>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th class="col-date" style="width: 15%;">Date</th>
-                            <th class="col-desc" style="width: 70%;">Description</th>
-                            <th class="col-fee" style="width: 15%;">Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    {% if flat_fee_display_lines %}
-                        {% for fee in flat_fee_display_lines %}
-                        <tr>
-                            <td class="col-date" style="width: 15%;">{{ fee.date }}</td>
-                            <td class="col-desc" style="width: 70%;">{{ fee.description }}</td>
-                            <td class="col-fee" style="width: 15%;">${{ "{:,.2f}".format(fee.amount) }}</td>
-                        </tr>
-                        {% endfor %}
-                    {% else %}
-                        <tr>
-                            <td class="col-date" style="width: 15%;"></td>
-                            <td class="col-desc" style="width: 70%;">{{ flat_fee_desc }}</td>
-                            <td class="col-fee" style="width: 15%;">${{ "{:,.2f}".format(flat_fee_amount) }}</td>
-                        </tr>
-                    {% endif %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            {% for matter in matters %}
-            <div class="matter-section">
-                <div class="matter-header">
-                    <span>{{ matter.display_name }}</span>
-                    {% if matters|length == 1 %}
+                    <span>RE: Borkowsky, Jay And Cindy</span>
+                    
                     <span class="matter-header-label">Matter Detail</span>
-                    {% endif %}
+                    
                 </div>
                 
                 <table class="table">
@@ -346,69 +288,95 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for item in matter.line_items %}
+                        
                         <tr>
-                            <td class="col-date">{{ item.date }}</td>
-                            <td class="col-desc">{{ item.description }}</td>
-                            <td class="col-hours">{{ "{:,.1f}".format(item.hours) }}</td>
-                            <td class="col-fee">${{ "{:,.2f}".format(item.amount) }}</td>
+                            <td class="col-date">2026-03-10</td>
+                            <td class="col-desc">Review existing wills and POAs.</td>
+                            <td class="col-hours">1.4</td>
+                            <td class="col-fee">$665.00</td>
                         </tr>
-                        {% endfor %}
+                        
+                        <tr>
+                            <td class="col-date">2026-03-13</td>
+                            <td class="col-desc">Continue reviewing existing wills and poas; draft summary notes; meeting with Jay and Cindy and James; post-meeting notes to file.</td>
+                            <td class="col-hours">3.0</td>
+                            <td class="col-fee">$1,425.00</td>
+                        </tr>
+                        
+                        <tr>
+                            <td class="col-date">2026-05-31</td>
+                            <td class="col-desc">[nc] correspondence with Jay and Cindy.</td>
+                            <td class="col-hours">0.1</td>
+                            <td class="col-fee">$47.50</td>
+                        </tr>
+                        
+                        <tr>
+                            <td class="col-date">2026-06-02</td>
+                            <td class="col-desc">Review existing wills; email corespondence with Jopseph Morcos.</td>
+                            <td class="col-hours">0.6</td>
+                            <td class="col-fee">$285.00</td>
+                        </tr>
+                        
+                        <tr>
+                            <td class="col-date">2026-06-29</td>
+                            <td class="col-desc">Review notes from Joseph; email correspondence with Sylvanna and with Jay.</td>
+                            <td class="col-hours">0.4</td>
+                            <td class="col-fee">$190.00</td>
+                        </tr>
+                        
+                        <tr>
+                            <td class="col-date">2026-07-02</td>
+                            <td class="col-desc">MS Teams call with Joseph and Sylvanna; post call notes to file; MS Teams call with Joseph and Sylvanna; post call notes to file; correspondence with Jay.</td>
+                            <td class="col-hours">0.7</td>
+                            <td class="col-fee">$332.50</td>
+                        </tr>
+                        
+                        <tr>
+                            <td class="col-date">2026-03-10</td>
+                            <td class="col-desc">Review existing wills and POAs.</td>
+                            <td class="col-hours">1.4</td>
+                            <td class="col-fee">$665.00</td>
+                        </tr>
+                        
+                        <tr>
+                            <td class="col-date">2026-03-13</td>
+                            <td class="col-desc">Continue reviewing existing wills and poas; draft summary notes; meeting with Jay and Cyndy and James; post-meeting notes to file.</td>
+                            <td class="col-hours">3.0</td>
+                            <td class="col-fee">$1,425.00</td>
+                        </tr>
+                        
                     </tbody>
                 </table>
                 
-                {% if matters|length > 1 %}
-                <div class="subtotal-container">
-                    <div class="subtotal-wrapper">
-                        <div class="subtotal-row" style="width: 50%;">
-                            Sub-total ({{ matter.display_name }}): &nbsp; {{ "{:,.1f}".format(matter.total_hours) }} hrs &nbsp;&nbsp;&middot;&nbsp;&nbsp; ${{ "{:,.2f}".format(matter.total_fees) }}
-                        </div>
-                    </div>
-                </div>
-                {% endif %}
+                
             </div>
-            {% endfor %}
-            {% endif %}
+            
+            
             
             <div class="final-invoice-conclusion" style="page-break-inside: avoid; break-inside: avoid;">
                 <div class="totals-container">
                     <div class="totals-wrapper">
                         <div class="totals-block">
-                            {% if show_total_hours and not is_flat_fee %}
+                            
                             <div class="totals-row">
                                 <span>Total Professional Time</span>
-                                <span class="totals-val">{{ "{:,.1f}".format(total_hours) }} hours</span>
+                                <span class="totals-val">10.6 hours</span>
                             </div>
-                            {% endif %}
+                            
                             <div class="totals-row">
                                 <span>Total Professional Fees</span>
-                                <span class="totals-val">${{ "{:,.2f}".format(total_fees) }}</span>
+                                <span class="totals-val">$5,035.00</span>
                             </div>
-                            {% if discount_amount > 0 %}
-                            <div class="totals-row sub-row">
-                                <span>Courtesy Discount</span>
-                                <span class="totals-val">-${{ "{:,.2f}".format(discount_amount) }}</span>
-                            </div>
-                            {% endif %}
-                            {% if agency_split_amount > 0 %}
-                            <div class="totals-row sub-row">
-                                <span>Sub-total charge to {{ billing_client_name }} with {{ "{:,.1f}".format(agency_split_percent) }}% deduction:</span>
-                                <span class="totals-val">-${{ "{:,.2f}".format(agency_split_amount) }}</span>
-                            </div>
-                            {% endif %}
-                            {% if discount_amount > 0 or agency_split_amount > 0 %}
-                            <div class="totals-row">
-                                <span>Net Fees After Discount</span>
-                                <span class="totals-val">${{ "{:,.2f}".format(total_fees - discount_amount - agency_split_amount) }}</span>
-                            </div>
-                            {% endif %}
+                            
+                            
+                            
                             <div class="totals-row sub-row">
                                 <span>HST (13%)</span>
-                                <span class="totals-val">${{ "{:,.2f}".format(total_tax) }}</span>
+                                <span class="totals-val">$654.55</span>
                             </div>
                             <div class="totals-row final">
                                 <span>Total Due</span>
-                                <span class="totals-val">${{ "{:,.2f}".format(total_due) }}</span>
+                                <span class="totals-val">$5,689.55</span>
                             </div>
                         </div>
                     </div>
@@ -448,7 +416,7 @@
 
     <!-- Fixed Footers for PDF 2-pass Generation -->
     <div class="footer-intermediate" style="position: fixed; bottom: 0.45in; left: 0.8in; right: 0.8in; z-index: 5; display: flex; justify-content: space-between; font-size: 8pt; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em; border-top: 1px solid var(--border-color); padding-top: 0.15in;">
-        <span><strong>Cory Schneider Law Office</strong> &nbsp;&nbsp;&middot;&nbsp;&nbsp; Invoice {{ invoice_number_raw }}</span>
+        <span><strong>Cory Schneider Law Office</strong> &nbsp;&nbsp;&middot;&nbsp;&nbsp; Invoice 26-0076</span>
         <!-- Page number drawn natively by PyMuPDF during PDF generation -->
     </div>
     

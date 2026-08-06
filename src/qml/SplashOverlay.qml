@@ -521,13 +521,11 @@ ApplicationWindow {
         );
         if (!hasStaticAsset) return false;
         if (!webRendererEnabled) return true;
-        if (logoWebReady) return false;
-        if (forceWebEngine) return false;
-
-        var webEngineUsable = webRendererUsingWebEngine && !webEngineLoadFailed;
-        var webViewUsable = webRendererUsingWebView && !webViewLoadFailed;
-        if (webEngineUsable || webViewUsable) return false;
-        return true;
+        // Always keep the native logo visible until the animated WebEngine
+        // document has rendered.  This prevents a blank Professional splash
+        // during WebEngine warm-up or fallback and lets the in/out dissolve
+        // remain visible on every launch path.
+        return !logoWebReady;
     }
 
     function startSplashTimeline(reasonTag) {
@@ -573,31 +571,7 @@ ApplicationWindow {
         phaseLog("Logo source=" + splashWin.logoSource);
 
         if (splashWin.isPro) {
-            splashWin.phaseLog("Professional splash one-shot handoff");
-            splashWin.sequenceRunning = true;
-            splashWin.opacity = 1.0;
-            splashWin.bgOpacity = 1.0;
-            splashWin.logoOpacity = 0.0;
-            splashWin.logoRenderGateOpen = false;
-            splashWin.isSvgAnimationComplete = true;
-            splashWin.holdForLaunchHandoff = true;
-            splashWin.visible = true;
-            splashWin.raise();
-            if (splashWin.inputCaptureEnabled) {
-                try {
-                    splashWin.requestActivate();
-                    if (keyCapture && keyCapture.forceActiveFocus) {
-                        keyCapture.forceActiveFocus();
-                    } else if (splashWin.contentItem && splashWin.contentItem.forceActiveFocus) {
-                        splashWin.contentItem.forceActiveFocus();
-                    }
-                } catch (ePro) {
-                }
-            }
-            focusReassertRemaining = 0;
-            splashFocusReassertTimer.stop();
-            finishSequence("professional-ready");
-            return;
+            splashWin.phaseLog("Professional splash uses the full logo dissolve timeline");
         }
 
         splashWin.visible = true;
@@ -686,15 +660,13 @@ ApplicationWindow {
         splashWin.holdForLaunchHandoff = false;
         splashWin.handoffReleaseReason = reason ? String(reason) : "launch-ready";
         
-        if (!splashWin.isPro) {
-            if (!splashWin.isSvgAnimationComplete) {
-                splashWin.phaseLog("App is ready, but delaying handoff until SVG completes... (" + splashWin.handoffReleaseReason + ")");
-                return;
-            }
-            if (!splashWin.fadeOutWindowReady()) {
-                splashWin.phaseLog("App is ready, but delaying handoff until fade window opens... (" + splashWin.handoffReleaseReason + ")");
-                return;
-            }
+        if (!splashWin.isSvgAnimationComplete) {
+            splashWin.phaseLog("App is ready, but delaying handoff until SVG completes... (" + splashWin.handoffReleaseReason + ")");
+            return;
+        }
+        if (!splashWin.fadeOutWindowReady()) {
+            splashWin.phaseLog("App is ready, but delaying handoff until fade window opens... (" + splashWin.handoffReleaseReason + ")");
+            return;
         }
 
         splashWin.forceFadeOut();
@@ -770,7 +742,7 @@ ApplicationWindow {
         border.color: splashWin.isPro ? "#e2e8f0" : "transparent"
 
         Text {
-            visible: splashWin.isPro
+            visible: splashWin.isPro && !splashWin.logoRenderGateOpen
             anchors.centerIn: parent
             text: "CSPM"
             font.family: "Segoe UI"
@@ -799,7 +771,7 @@ ApplicationWindow {
         y: Math.round((parent.height - height) * 0.5)
         width: Math.max(1, Math.round(Math.min(splashWin.width, splashWin.height) * splashWin.logoCanvasPct))
         height: Math.max(1, Math.round(Math.min(splashWin.width, splashWin.height) * splashWin.logoCanvasPct))
-        visible: splashWin.isPro ? false : splashWin.logoRenderGateOpen
+        visible: splashWin.logoRenderGateOpen
         clip: false
         opacity: splashWin.logoOpacity
         layer.enabled: splashWin.logoLayerEnabled

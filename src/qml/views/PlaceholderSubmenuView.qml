@@ -21,6 +21,7 @@ Item {
     property alias paymentEntryView: paymentEntryLoader.item
     property alias wipBillingView: wipBillingLoader.item
     property alias invoiceBuilderView: invoiceBuilderLoader.item
+    property alias invoiceDirectoryView: invoiceDirectoryLoader.item
     property alias invoiceReversalView: invoiceReversalLoader.item
     property alias legacyDocketsImportView: legacyDocketsImportLoader.item
     property var sfxBus: (root.windowRef && root.windowRef.sfxBusRef) ? root.windowRef.sfxBusRef : null
@@ -456,8 +457,11 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function activeIsInvoiceReversal() {
-        var nid = String(currentNode().id || "")
-        return nid === "C08" || nid === "C04"
+        return String(currentNode().id || "") === "C08"
+    }
+
+    function activeIsInvoiceDirectory() {
+        return String(currentNode().id || "") === "C04"
     }
 
     function activeIsAccountsPayable() {
@@ -480,7 +484,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function initialInvoiceNumber() {
-        if (!root.activeIsInvoiceReversal()) return ""
+        if (!root.activeIsInvoiceReversal() && !root.activeIsInvoiceDirectory()) return ""
         var state = root.initialState
         if (!state || typeof state !== "object") return ""
         var keys = ["selectedInvoiceNum", "invoiceNum", "entityId", "invoiceId"]
@@ -583,6 +587,26 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         for (var key in row) {
             if (!row.hasOwnProperty(key)) continue
             var value = row[key]
+            if (value === undefined || value === null) continue
+            var text = String(value).trim()
+            if (text.length > 0) chunks.push(text.toLowerCase())
+        }
+        return chunks.join(" ")
+    }
+
+    function _clientDirectorySearchText(row) {
+        if (!row || typeof row !== "object") return ""
+        // Directory search is intentionally restricted to the client's own
+        // identity/contact fields.  `searchText` includes operational notes and
+        // the billing parent, which made a parent-name search return every
+        // client attached to that parent instead of the named client.
+        var fields = [
+            "clientId", "clientName", "displayName", "legalName",
+            "firstName", "middleName", "lastName", "primaryEmail", "primaryPhone"
+        ]
+        var chunks = []
+        for (var i = 0; i < fields.length; i++) {
+            var value = row[fields[i]]
             if (value === undefined || value === null) continue
             var text = String(value).trim()
             if (text.length > 0) chunks.push(text.toLowerCase())
@@ -855,7 +879,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             if (!row) continue
             if (activeOnly && !clientRowIsActive(row)) continue
             if (query.length > 0) {
-                var haystack = _rowValueJoinedLower(row)
+                var haystack = _clientDirectorySearchText(row)
                 var matched = true
                 if (terms.length > 0) {
                     for (var tIdx = 0; tIdx < terms.length; tIdx++) {
@@ -2278,6 +2302,29 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         loadSelectedClientProfile(state.clientProfileAutoLoadKey)
     }
 
+    function editClientFromDirectory(row) {
+        if (!row) return
+        setDirectorySelection(row)
+        var state = clientProfileStateForDirectoryRow(row)
+        var clientKey = String(state.clientProfileAutoLoadKey || "").trim()
+
+        loadSelectedClientProfile(clientKey)
+        editSelectedClientInWizard()
+        if (!root.clientEditMode) return
+
+        // A directory double-click is an edit action.  The editor returns to
+        // the selected client's Profile 360 when the user cancels or saves.
+        root.editReturnNodeId = "A03"
+        state.focusNodeId = "A02"
+        state.focusNodeTitle = "Edit Client Profile"
+        state.editClientFromDirectory = true
+
+        if (root.externalNavigationShell && !root.detachedWindow) {
+            root.workspaceOpenRequested(0, "A02", state)
+            return
+        }
+    }
+
     function _resolveClientProfileKey(rawKey) {
         var key = String(rawKey || "").trim()
         if (key.length <= 0) return ""
@@ -3521,6 +3568,7 @@ Behavior on border.color {
                         && !root.activeIsLegacyDocketsImport()
                         && !root.activeIsWipToBill()
                         && !root.activeIsInvoiceBuilder()
+                        && !root.activeIsInvoiceDirectory()
                         && !root.activeIsInvoiceReversal()
                         && !root.activeIsAccountsPayable()
                     Layout.fillWidth: true
@@ -4013,6 +4061,40 @@ Behavior on border.color {
                 }
 
                 Rectangle {
+                    visible: root.activeIsInvoiceDirectory()
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: root.sectionRadiusPx
+                    color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
+                    border.width: 1
+                    border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+
+                    Loader {
+                        id: invoiceDirectoryLoader
+                        anchors.fill: parent
+                        active: parent.visible
+                        onLoaded: {
+                            if (item && item.applyJumpState && root._pendingStateForLoader) {
+                                item.applyJumpState(root._pendingStateForLoader)
+                            }
+                        }
+                        sourceComponent: Component {
+                            InvoiceReversalView {
+                                id: invoiceDirectoryView
+                                anchors.fill: parent
+                                directoryMode: true
+                                t: root.t
+                                appRef: root.appRef
+                                appController: root.appRef
+                                windowRef: root.windowRef
+                                selectedInvoiceNum: root.initialInvoiceNumber()
+                                onWorkspaceOpenRequested: function(tileIndex, nodeId, state) { root.workspaceOpenRequested(tileIndex, nodeId, state) }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
                     visible: root.activeIsInvoiceReversal()
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -4034,6 +4116,8 @@ Behavior on border.color {
                             InvoiceReversalView {
                                 id: invoiceReversalView
                                 anchors.fill: parent
+                                t: root.t
+                                appRef: root.appRef
                                 appController: root.appRef
                                 windowRef: root.windowRef
                                 selectedInvoiceNum: root.initialInvoiceNumber()
@@ -4992,6 +5076,7 @@ Behavior on border.color {
                         && !root.activeIsPaymentEntry()
                         && !root.activeIsWipToBill()
                         && !root.activeIsInvoiceBuilder()
+                        && !root.activeIsInvoiceDirectory()
                         && !root.activeIsInvoiceReversal()
                         && !root.activeIsAccountsPayable()
                         && !root.activeIsLegacyDocketsImport()
@@ -5040,6 +5125,7 @@ Behavior on border.color {
 
                     PillButton {
                         visible: !root.activeIsInvoiceBuilder()
+                            && !root.activeIsInvoiceDirectory()
                             && !root.activeIsInvoiceReversal()
                             && !root.activeIsAccountsPayable()
                         t: root.t

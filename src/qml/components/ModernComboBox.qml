@@ -270,7 +270,9 @@ ComboBox {
 
         property alias text: comboInput.text
 
-        TextInput {
+        TextField {
+    background: Item {}
+    padding: 0
             id: comboInput
             visible: control.editable && control.activeFocus
             text: control.editText

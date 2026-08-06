@@ -393,7 +393,13 @@ class TrayController(QObject):
             for win in app.topLevelWindows():
                 if win.objectName() == "CSPMMainWindow":
                     win.showNormal()
-                    win.requestActivate()
+                    try:
+                        if hasattr(self._app_controller, "forceWindowForeground"):
+                            self._app_controller.forceWindowForeground(win)
+                        else:
+                            win.requestActivate()
+                    except Exception:
+                        win.requestActivate()
                     found = True
                     break
             

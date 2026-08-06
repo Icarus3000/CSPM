@@ -24,6 +24,7 @@ Item {
     property bool _disableSplashPrewarm: startupMainObjectPrewarmEnabled !== true
     property bool _splashHandoffActive: false
     property bool _firstPixelHandoffSeen: false
+    property bool _splashReleasedAfterMainVisible: false
     property bool _launchAfterSplashGonePending: false
     property string _launchAfterSplashGoneReason: ""
     property var _splashGonePendingRefs: []
@@ -386,6 +387,19 @@ Item {
         _splashGonePendingRefs = []
         _splashHandoffActive = false
         splashGoneLaunchTimer.stop()
+        if (_coreLaunchDispatched) {
+            _lagLog("all splash windows gone after first main pixel; restoring main-window focus reason=" + launchReason)
+            Qt.callLater(function() {
+                if (!bootstrap.mainWindowRef) return
+                try {
+                    if (bootstrap.mainWindowRef.forceLaunchFocus) {
+                        bootstrap.mainWindowRef.forceLaunchFocus()
+                    }
+                } catch (e0) {
+                }
+            })
+            return
+        }
         _setStartupState("splash-gone", launchReason)
         _lagLog("all splash windows gone; dispatching main launch reason=" + launchReason)
         Qt.callLater(function() {
@@ -462,7 +476,17 @@ Item {
                 windowRef.startupFirstPixelVisible.connect(function() {
                     if (_firstPixelHandoffSeen) return
                     _firstPixelHandoffSeen = true
-                    _lagLog("startupFirstPixelVisible received after splash-gone launch")
+                    _lagLog("startupFirstPixelVisible received; releasing splash only now")
+                    try {
+                        if (windowRef.forceLaunchFocus) {
+                            windowRef.forceLaunchFocus()
+                        }
+                    } catch (e0) {
+                    }
+                    if (_splashHandoffActive && !_splashReleasedAfterMainVisible) {
+                        _splashReleasedAfterMainVisible = true
+                        _releaseSplashAndLaunchAfterGone("main-first-pixel")
+                    }
                 })
             }
         } catch (e) {
@@ -585,7 +609,7 @@ Item {
             + " createElapsedMs=" + createElapsedMs)
         mainWindowReady(created)
         if (_launchGateOpen) {
-            _releaseSplashAndLaunchAfterGone("main-created:" + reason)
+            _beginCoreLaunchOnce("main-created:" + reason)
         }
         return true
     }
@@ -733,6 +757,7 @@ Item {
         if (hasSplash) {
             _splashHandoffActive = true
             _firstPixelHandoffSeen = false
+            _splashReleasedAfterMainVisible = false
             splashHandoffTimeoutTimer.stop()
             splashHandoffTimeoutTimer.interval = _splashHandoffTimeoutMs
             splashHandoffTimeoutTimer.start()
@@ -744,7 +769,7 @@ Item {
         if (mainWindowRef) {
             _setStartupState("main-created", "open-launch-gate:" + reason)
             _bindMainWindowStartupSignals(mainWindowRef)
-            _releaseSplashAndLaunchAfterGone("open-launch-gate:" + reason)
+            _beginCoreLaunchOnce("open-launch-gate:" + reason)
         }
         _lagLog("_openLaunchGate end reason=" + reason + " hasMainWindow=" + !!mainWindowRef)
     }
@@ -913,10 +938,23 @@ Item {
                     splashHandoffTimeoutTimer.start()
                     return
                 }
-                bootstrap._lagLog("splash handoff timeout retries exhausted; forcing release")
+                bootstrap._lagLog("splash handoff retries exhausted; retaining splash until the main window can paint")
+                return
             }
-            bootstrap._lagLog("splash handoff timeout reached; forcing release")
-            bootstrap._releaseSplashAndLaunchAfterGone("handoff-timeout")
+            if (!bootstrap._coreLaunchDispatched) {
+                bootstrap._lagLog("splash handoff timeout: dispatching main launch while splash remains visible")
+                bootstrap._beginCoreLaunchOnce("handoff-timeout-main-create")
+            }
+            if (!bootstrap._firstPixelHandoffSeen) {
+                bootstrap._handoffTimeoutRetryCount += 1
+                if (bootstrap._handoffTimeoutRetryCount < bootstrap._handoffTimeoutRetryMax) {
+                    bootstrap._lagLog("splash handoff timeout: waiting for main first pixel retry="
+                        + bootstrap._handoffTimeoutRetryCount + "/" + bootstrap._handoffTimeoutRetryMax)
+                    splashHandoffTimeoutTimer.start()
+                } else {
+                    bootstrap._lagLog("main first pixel was not observed; retaining splash rather than fading before the app is visible")
+                }
+            }
         }
     }
 
@@ -929,57 +967,12 @@ Item {
         }
     }
 
-    Shortcut {
-        sequence: "X"
-        context: Qt.ApplicationShortcut
-        enabled: ((bootstrap.splashRefs && bootstrap.splashRefs.length > 0) || !!bootstrap.splashRef)
-            && !bootstrap._splashFinishedHandled
-        onActivated: {
-            bootstrap.requestGlobalSplashSkip("user-skipped-global-hotkey-upper")
-        }
-    }
 
-    Shortcut {
-        sequence: "x"
-        context: Qt.ApplicationShortcut
-        enabled: ((bootstrap.splashRefs && bootstrap.splashRefs.length > 0) || !!bootstrap.splashRef)
-            && !bootstrap._splashFinishedHandled
-        onActivated: {
-            bootstrap.requestGlobalSplashSkip("user-skipped-global-hotkey-lower")
-        }
-    }
-
-    Shortcut {
-        sequence: "Space"
-        context: Qt.ApplicationShortcut
-        enabled: ((bootstrap.splashRefs && bootstrap.splashRefs.length > 0) || !!bootstrap.splashRef)
-            && !bootstrap._splashFinishedHandled
-        onActivated: {
-            bootstrap.requestGlobalSplashSkip("user-skipped-global-hotkey-space")
-        }
-    }
-
-    Shortcut {
-        sequence: "Return"
-        context: Qt.ApplicationShortcut
-        enabled: ((bootstrap.splashRefs && bootstrap.splashRefs.length > 0) || !!bootstrap.splashRef)
-            && !bootstrap._splashFinishedHandled
-        onActivated: {
-            bootstrap.requestGlobalSplashSkip("user-skipped-global-hotkey-return")
-        }
-    }
-
-    Shortcut {
-        sequence: "Enter"
-        context: Qt.ApplicationShortcut
-        enabled: ((bootstrap.splashRefs && bootstrap.splashRefs.length > 0) || !!bootstrap.splashRef)
-            && !bootstrap._splashFinishedHandled
-        onActivated: {
-            bootstrap.requestGlobalSplashSkip("user-skipped-global-hotkey-enter")
-        }
-    }
 
     Component.onCompleted: {
-        _startSplash()
+        // Do not instantiate SplashOverlay.qml here. Startup uses only the
+        // native PNG splash created in main.py; the main shell opens behind it
+        // and the PNG fades only after the shell reports its first pixel.
+        _openLaunchGate("native-png-splash-only")
     }
 }

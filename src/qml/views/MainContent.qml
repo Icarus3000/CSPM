@@ -497,11 +497,15 @@ Item {
         return option3OpenScreenByModuleNode("home", "H01")
     }
 
-    function ensureStartupPracticeBriefing() {
-        if (!option3ShellEnabled) return
-        Qt.callLater(function() {
-            option3OpenHomeBriefing()
-        })
+    function ensureStartupProfessionalHome() {
+        // The first Professional-window surface is its native no-open-tabs
+        // home, not a pre-opened Practice Briefing tab. Preserve explicit
+        // routed starts and existing workspaces.
+        if (!option3ShellEnabled || !stack) return
+        if (Math.round(initialTileIndex) >= 0) return
+        if (stack.currentIndex !== 0 || option3HasCurrentWorkspace()) return
+        activeTileIndex = -1
+        transitionTitle = "Home"
     }
 
     function option3ActiveModuleId() {
@@ -1515,6 +1519,7 @@ Item {
 
         var nodeId = String(tab && tab.nodeId ? tab.nodeId : "").trim()
         if (nodeId === "B01" || nodeId === "B03") return "time-docket"
+        if (nodeId === "B02") return "fee-docket"
         if (nodeId === "B08") return "deadline-entry"
         if (nodeId === "B16") return "trademark-filing"
         if (nodeId === "A02" || nodeId === "A03") return "client-profile"
@@ -4229,6 +4234,8 @@ Item {
                         Rectangle {
                             id: proEmptyWorkspace
                             anchors.fill: parent
+                            // This is the native Professional background and
+                            // quick-tile home shown whenever all tabs close.
                             visible: root.option3ShellEnabled && !root.option3HasCurrentWorkspace()
                             color: root.proBackground
                             property var quickTiles: [
@@ -4845,11 +4852,21 @@ Item {
 
     Connections {
         target: root.appRef
+        ignoreUnknownSignals: true
+        function onHomeDashboardSummaryUpdated(payload) {
+            if (payload && typeof payload === "object" && payload.ok !== undefined) {
+                root.dashboardSummary = payload
+            }
+        }
         function onClientDataChanged() {
             root.refreshDashboardSummary()
         }
         function onBackendBootChanged() {
-            root.refreshDashboardSummary()
+            if (root.appRef && root.appRef.backendBooted) {
+                Qt.callLater(function() {
+                    root.refreshDashboardSummaryNow()
+                })
+            }
         }
     }
 
@@ -4903,7 +4920,7 @@ Item {
     Component.onCompleted: {
         refreshDashboardSummary()
         applyInitialSelection()
-        ensureStartupPracticeBriefing()
+        ensureStartupProfessionalHome()
         option3EnsureTabForCurrentWorkspace("Component.onCompleted")
         scheduleStartupStackPrewarm("Component.onCompleted")
     }
@@ -4915,7 +4932,7 @@ Item {
 
     onOption3ShellEnabledChanged: {
         if (option3ShellEnabled) {
-            ensureStartupPracticeBriefing()
+            ensureStartupProfessionalHome()
             option3EnsureTabForCurrentWorkspace("option3ShellEnabled")
         } else {
             option3FlyoutModuleId = ""

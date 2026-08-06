@@ -15,6 +15,8 @@ class DocketingController(QObject):
     docketActivityReportFinished = Signal(dict)
     clientLedgerReportFinished = Signal(dict)
     timeDocketAggregateFinished = Signal(dict)
+    bulkDocketMovePreviewFinished = Signal(dict)
+    bulkDocketMoveFinished = Signal(dict)
     invoiceLogEntryUpdated = Signal(dict)
     error = Signal(str)
     toast = Signal(str)
@@ -379,6 +381,64 @@ class DocketingController(QObject):
                 "ok": False,
                 "message": str(value)
             })
+        finally:
+            self._release_worker(worker)
+
+    @Slot("QVariantMap")
+    def previewBulkDocketMove(self, payload):
+        worker = Worker(
+            self._excel_repo.preview_bulk_docket_move,
+            dict(payload or {}),
+            name="previewBulkDocketMove",
+        )
+        worker.signals.result.connect(partial(self._on_bulk_docket_move_previewed, worker))
+        worker.signals.error.connect(partial(self._on_bulk_docket_move_preview_error, worker))
+        self._start_worker(worker)
+
+    def _on_bulk_docket_move_previewed(self, worker, result):
+        try:
+            self.bulkDocketMovePreviewFinished.emit(dict(result or {}))
+        finally:
+            self._release_worker(worker)
+
+    def _on_bulk_docket_move_preview_error(self, worker, err_tuple):
+        try:
+            exctype, value, tb_str = err_tuple
+            message = str(value)
+            self.error.emit(f"Could not find movable dockets: {message}")
+            self.bulkDocketMovePreviewFinished.emit({"ok": False, "message": message})
+        finally:
+            self._release_worker(worker)
+
+    @Slot("QVariantMap")
+    def moveDocketsToMatter(self, payload):
+        worker = Worker(
+            self._excel_repo.move_dockets_to_matter,
+            dict(payload or {}),
+            name="moveDocketsToMatter",
+        )
+        worker.signals.result.connect(partial(self._on_dockets_moved, worker))
+        worker.signals.error.connect(partial(self._on_dockets_move_error, worker))
+        self._start_worker(worker)
+
+    def _on_dockets_moved(self, worker, result):
+        try:
+            res_dict = dict(result or {})
+            if res_dict.get("ok"):
+                count = int(res_dict.get("movedCount") or 0)
+                self.toast.emit(f"Moved {count} docket{'s' if count != 1 else ''} to the destination matter.")
+            else:
+                self.error.emit(res_dict.get("message", "Docket move verification failed."))
+            self.bulkDocketMoveFinished.emit(res_dict)
+        finally:
+            self._release_worker(worker)
+
+    def _on_dockets_move_error(self, worker, err_tuple):
+        try:
+            exctype, value, tb_str = err_tuple
+            message = str(value)
+            self.error.emit(f"Could not move dockets: {message}")
+            self.bulkDocketMoveFinished.emit({"ok": False, "message": message})
         finally:
             self._release_worker(worker)
 
