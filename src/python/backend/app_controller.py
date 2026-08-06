@@ -2765,7 +2765,8 @@ class AppController(QObject):
             dialog.accept()
             
             # Restart
-            subprocess.Popen([sys.executable] + sys.argv[1:])
+            # Use DETACHED_PROCESS (0x00000008) so the new instance survives the current one closing.
+            subprocess.Popen([sys.executable] + sys.argv[1:], creationflags=0x00000008)
             from PySide6.QtCore import QCoreApplication
             QCoreApplication.instance().quit()
 
