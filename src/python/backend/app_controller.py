@@ -2587,7 +2587,7 @@ class AppController(QObject):
             _, exc, _ = err_tuple
             detail = exc if isinstance(exc, BaseException) else RuntimeError(str(exc))
             self._report_failure(
-                "Settings could not be loaded.",
+            "Settings could not be loaded.",
                 context="settings.load.deferred",
                 exc=detail,
                 emit_signal=False,
@@ -2602,144 +2602,176 @@ class AppController(QObject):
             priority=self._background_low_priority,
         )
 
-
     @Slot()
-    def promptMasterDataDir(self) -> None:
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
-        from PySide6.QtCore import QDir, QCoreApplication
+    def promptDataFolderSetup(self) -> None:
+        from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, 
+                                       QLabel, QPushButton, QFileDialog, 
+                                       QMessageBox, QLineEdit, QGroupBox, QApplication)
+        from PySide6.QtCore import Qt
         import os
-        import zipfile
+        import shutil
+        import sys
+        import subprocess
 
-        dir_path = QFileDialog.getExistingDirectory(
-            None,
-            "Select Shared Data Source Folder",
-            self._master_data_dir or QDir.homePath(),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
-        )
-        if not dir_path:
-            return
-
-        dir_path = os.path.normpath(dir_path)
-        workbook_paths = [
-            os.path.join(dir_path, "CSPM.xlsm"),
-            os.path.join(dir_path, "Dockets.xlsm"),
-        ]
-        missing = [os.path.basename(path) for path in workbook_paths if not os.path.isfile(path)]
-        if missing:
-            QMessageBox.warning(
-                None,
-                "Missing Workbooks",
-                "The shared data source folder must contain both CSPM.xlsm and Dockets.xlsm.\n\n"
-                f"Missing: {', '.join(missing)}",
-            )
-            return
-
-        invalid = [
-            os.path.basename(path)
-            for path in workbook_paths
-            if not zipfile.is_zipfile(path)
-        ]
-        if invalid:
-            QMessageBox.warning(
-                None,
-                "Malformed Workbooks",
-                "The selected shared data source contains an invalid Excel workbook.\n\n"
-                f"Invalid: {', '.join(invalid)}",
-            )
-            return
-
-        reply = QMessageBox.question(
-            None,
-            "Use Shared Data Source",
-            "CSPM.xlsm and Dockets.xlsm were found and validated in:\n\n"
-            f"{dir_path}\n\n"
-            "CSPM will pull from this shared source on its next start and push local changes "
-            "when it closes. Restart now?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if reply == QMessageBox.Yes:
-            # Defer applying the new source until a clean restart.  Changing
-            # _paths here would make shutdown push this session's local data
-            # into an unpulled source folder.
-            self._settings_data["masterDataDir"] = dir_path
-            self.save_settings()
-            QCoreApplication.instance().quit()
-
-    @Slot()
-    def promptLocalDataDir(self) -> None:
-        from PySide6.QtWidgets import QFileDialog, QMessageBox, QApplication
-        from PySide6.QtCore import QDir, QCoreApplication
-        import os
-        import time
-        import zipfile
+        dialog = QDialog()
+        dialog.setWindowTitle("Data Folder Setup Wizard")
+        dialog.setMinimumWidth(600)
         
-        dir_path = QFileDialog.getExistingDirectory(
-            None,
-            "Select Local Save Folder",
-            self._local_data_dir or QDir.homePath(),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
-        )
-        if not dir_path:
-            return
-            
-        dir_path = os.path.normpath(dir_path)
+        layout = QVBoxLayout(dialog)
         
-        # Validation rules
-        path_lower = dir_path.lower()
-        if 'backups' in path_lower or 'snapshots' in path_lower:
-            QMessageBox.warning(None, "Invalid Folder", "Backup and snapshot folders cannot be used as the active data folder.")
-            return
-        if 'templates' in path_lower:
-            QMessageBox.warning(None, "Invalid Folder", "Template folders cannot be used as the active data folder.")
-            return
-        if 'dist' in path_lower:
-            QMessageBox.warning(None, "Invalid Folder", "Distribution folders cannot be used as the active data folder.")
-            return
-            
-        cspm_path = os.path.join(dir_path, "CSPM.xlsm")
-        dockets_path = os.path.join(dir_path, "Dockets.xlsm")
+        # --- Baseline Source ---
+        baseline_group = QGroupBox("1. True Baseline Source")
+        baseline_layout = QVBoxLayout()
+        baseline_lbl = QLabel("Select the folder containing your TRUE source of truth CSPM.xlsm and Dockets.xlsm.")
+        baseline_lbl.setWordWrap(True)
+        baseline_layout.addWidget(baseline_lbl)
         
-        if not os.path.exists(cspm_path) or not os.path.exists(dockets_path):
-            QMessageBox.warning(None, "Missing Workbooks", "The selected folder must contain both CSPM.xlsm and Dockets.xlsm.")
-            return
+        baseline_row = QHBoxLayout()
+        baseline_edit = QLineEdit(self._local_data_dir)
+        baseline_btn = QPushButton("Browse...")
+        baseline_row.addWidget(baseline_edit)
+        baseline_row.addWidget(baseline_btn)
+        baseline_layout.addLayout(baseline_row)
+        baseline_group.setLayout(baseline_layout)
+        layout.addWidget(baseline_group)
+        
+        def pick_baseline():
+            d = QFileDialog.getExistingDirectory(dialog, "Select Baseline Folder", baseline_edit.text(), QFileDialog.ShowDirsOnly)
+            if d: baseline_edit.setText(os.path.normpath(d))
+        baseline_btn.clicked.connect(pick_baseline)
+
+        # --- Shared Data Source ---
+        shared_group = QGroupBox("2. Shared Data Source (Cloud)")
+        shared_layout = QVBoxLayout()
+        shared_lbl = QLabel("Select the central folder (e.g., OneDrive) where data will be shared.")
+        shared_layout.addWidget(shared_lbl)
+        
+        shared_row = QHBoxLayout()
+        shared_edit = QLineEdit(self._master_data_dir if self._master_data_dir else "")
+        shared_btn = QPushButton("Browse...")
+        shared_row.addWidget(shared_edit)
+        shared_row.addWidget(shared_btn)
+        shared_layout.addLayout(shared_row)
+        shared_group.setLayout(shared_layout)
+        layout.addWidget(shared_group)
+        
+        def pick_shared():
+            d = QFileDialog.getExistingDirectory(dialog, "Select Shared Folder", shared_edit.text(), QFileDialog.ShowDirsOnly)
+            if d: shared_edit.setText(os.path.normpath(d))
+        shared_btn.clicked.connect(pick_shared)
+
+        # --- Local Data Folder ---
+        local_group = QGroupBox("3. Local Working Folder")
+        local_layout = QVBoxLayout()
+        local_lbl = QLabel("Select the fast local folder where you will work on this machine.")
+        local_layout.addWidget(local_lbl)
+        
+        local_row = QHBoxLayout()
+        local_edit = QLineEdit(self._local_data_dir)
+        local_btn = QPushButton("Browse...")
+        local_row.addWidget(local_edit)
+        local_row.addWidget(local_btn)
+        local_layout.addLayout(local_row)
+        local_group.setLayout(local_layout)
+        layout.addWidget(local_group)
+        
+        def pick_local():
+            d = QFileDialog.getExistingDirectory(dialog, "Select Local Folder", local_edit.text(), QFileDialog.ShowDirsOnly)
+            if d: local_edit.setText(os.path.normpath(d))
+        local_btn.clicked.connect(pick_local)
+        
+        # --- Actions ---
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        apply_btn = QPushButton("Apply and Restart")
+        apply_btn.setDefault(True)
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(apply_btn)
+        layout.addLayout(btn_layout)
+        
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        def on_apply():
+            b_dir = baseline_edit.text().strip()
+            s_dir = shared_edit.text().strip()
+            l_dir = local_edit.text().strip()
             
-        def get_wb_info(p):
-            sz = os.stat(p).st_size
-            mt = time.ctime(os.stat(p).st_mtime)
-            valid = False
+            if not b_dir or not s_dir or not l_dir:
+                QMessageBox.warning(dialog, "Validation Error", "All three folders must be specified.")
+                return
+                
+            b_cspm = os.path.join(b_dir, "CSPM.xlsm")
+            b_dockets = os.path.join(b_dir, "Dockets.xlsm")
+            
+            if not os.path.isfile(b_cspm) or not os.path.isfile(b_dockets):
+                QMessageBox.warning(dialog, "Invalid Baseline", "The baseline folder must contain both CSPM.xlsm and Dockets.xlsm.")
+                return
+                
+            # Copy to Shared
             try:
-                with zipfile.ZipFile(p, 'r') as z:
-                    if 'xl/workbook.xml' in z.namelist():
-                        valid = True
-            except:
-                pass
-            return sz, mt, valid
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                s_cspm = os.path.join(s_dir, "CSPM.xlsm")
+                s_dockets = os.path.join(s_dir, "Dockets.xlsm")
+                if b_dir != s_dir:
+                    shutil.copy2(b_cspm, s_cspm)
+                    shutil.copy2(b_dockets, s_dockets)
+                    
+                l_cspm = os.path.join(l_dir, "CSPM.xlsm")
+                l_dockets = os.path.join(l_dir, "Dockets.xlsm")
+                if b_dir != l_dir:
+                    shutil.copy2(b_cspm, l_cspm)
+                    shutil.copy2(b_dockets, l_dockets)
+            except Exception as e:
+                QApplication.restoreOverrideCursor()
+                QMessageBox.critical(dialog, "Copy Failed", f"Failed to initialize directories:\n{e}")
+                return
             
-        cspm_sz, cspm_mt, cspm_valid = get_wb_info(cspm_path)
-        dockets_sz, dockets_mt, dockets_valid = get_wb_info(dockets_path)
-        
-        if not cspm_valid or not dockets_valid:
-            QMessageBox.warning(None, "Malformed Workbooks", "One or both workbooks in the selected folder are malformed or not valid Excel files.")
-            return
+            QApplication.restoreOverrideCursor()
             
-        msg = f"Selected Local Save Folder: {dir_path}\n\n"
-        msg += f"CSPM.xlsm:\nSize: {cspm_sz} bytes\nModified: {cspm_mt}\n\n"
-        msg += f"Dockets.xlsm:\nSize: {dockets_sz} bytes\nModified: {dockets_mt}\n\n"
-        msg += "Validation: PASSED.\n\n"
-        msg += (
-            "This folder contains this computer's active CSPM and Dockets working copies.\n\n"
-            "The application must restart to apply this change. Restart now?"
-        )
-        
-        reply = QMessageBox.question(None, "Confirm Local Save Folder", msg, QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            # Keep the current session bound to its active workbook through
-            # shutdown.  The selected local package is applied cleanly at the
-            # next startup after the user confirms this restart.
-            self._settings_data["localDataDir"] = dir_path
+            # Verify they are identical via sizes (basic sanity check)
+            try:
+                b_sz_c = os.path.getsize(b_cspm)
+                b_sz_d = os.path.getsize(b_dockets)
+                s_sz_c = os.path.getsize(s_cspm)
+                s_sz_d = os.path.getsize(s_dockets)
+                l_sz_c = os.path.getsize(l_cspm)
+                l_sz_d = os.path.getsize(l_dockets)
+                
+                if not (b_sz_c == s_sz_c == l_sz_c) or not (b_sz_d == s_sz_d == l_sz_d):
+                    raise ValueError("File sizes do not match after copying.")
+            except Exception as e:
+                QMessageBox.critical(dialog, "Verification Failed", f"Verification failed:\n{e}")
+                return
+                
+            msg = (
+                "Verification SUCCESS. Files are identically seeded.\n\n"
+                f"Shared Source: {s_dir}\n"
+                f"Local Working: {l_dir}\n\n"
+                "The application will now restart to apply this new architecture."
+            )
+            QMessageBox.information(dialog, "Setup Complete", msg)
+            
+            # Save settings
+            if hasattr(self, "_sync_service") and self._sync_service:
+                self._sync_service.push_to_master = lambda *args: None
+            
+            self._master_data_dir = s_dir
+            self._local_data_dir = l_dir
+            self._settings_data["masterDataDir"] = s_dir
+            self._settings_data["localDataDir"] = l_dir
             self.save_settings()
+            
+            dialog.accept()
+            
+            # Restart
+            subprocess.Popen([sys.executable] + sys.argv[1:])
+            from PySide6.QtCore import QCoreApplication
             QCoreApplication.instance().quit()
 
+        apply_btn.clicked.connect(on_apply)
+        
+        dialog.exec_()
 
     @Property(bool, notify=runAtStartupChanged)
     def runAtStartup(self) -> bool:

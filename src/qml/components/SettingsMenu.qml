@@ -466,9 +466,9 @@ Popup {
             Layout.fillWidth: true
             Layout.preferredHeight: 52
             radius: root.radiusFor(height)
-            color: masterDirMouse.containsMouse ? root.hoverFill : root.inactiveFill
+            color: dataFolderSetupMouse.containsMouse ? root.hoverFill : root.inactiveFill
             border.width: 1
-            border.color: masterDirMouse.containsMouse ? root.menuBorder : SemanticTheme.alpha(root.menuInk, 0.18)
+            border.color: dataFolderSetupMouse.containsMouse ? root.menuBorder : SemanticTheme.alpha(root.menuInk, 0.18)
 
             RowLayout {
                 anchors.fill: parent
@@ -480,7 +480,7 @@ Popup {
                     Layout.fillWidth: true
                     spacing: 2
                     Text {
-                        text: "Shared Data Source Folder"
+                        text: "Data Folder Setup"
                         color: root.menuInk
                         font.pixelSize: 14
                         font.weight: Font.DemiBold
@@ -488,7 +488,7 @@ Popup {
                         elide: Text.ElideRight
                     }
                     Text {
-                        text: (root.appRef && root.appRef.masterDataDir) ? root.appRef.masterDataDir : "Not selected - default CSPM data package"
+                        text: "Configure Shared and Local working folders"
                         color: SemanticTheme.alpha(root.menuInk, 0.6)
                         font.pixelSize: 11
                         Layout.fillWidth: true
@@ -497,82 +497,24 @@ Popup {
                 }
 
                 Text {
-                    text: "Choose"
+                    text: "Configure"
                     color: root.menuInk
                     font.pixelSize: 12
                     font.weight: Font.Bold
-                    Layout.preferredWidth: 48
+                    Layout.preferredWidth: 60
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
                 }
             }
 
             MouseArea {
-                id: masterDirMouse
+                id: dataFolderSetupMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
                     if (root.appRef) {
-                        root.appRef.promptMasterDataDir()
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 52
-            radius: root.radiusFor(height)
-            color: localDirMouse.containsMouse ? root.hoverFill : root.inactiveFill
-            border.width: 1
-            border.color: localDirMouse.containsMouse ? root.menuBorder : SemanticTheme.alpha(root.menuInk, 0.18)
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-                spacing: 8
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    Text {
-                        text: "Local Save Folder"
-                        color: root.menuInk
-                        font.pixelSize: 14
-                        font.weight: Font.DemiBold
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
-                    }
-                    Text {
-                        text: (root.appRef && root.appRef.localDataDir) ? root.appRef.localDataDir : "Not selected - default CSPM data location"
-                        color: SemanticTheme.alpha(root.menuInk, 0.6)
-                        font.pixelSize: 11
-                        Layout.fillWidth: true
-                        elide: Text.ElideMiddle
-                    }
-                }
-
-                Text {
-                    text: "Choose"
-                    color: root.menuInk
-                    font.pixelSize: 12
-                    font.weight: Font.Bold
-                    Layout.preferredWidth: 48
-                    horizontalAlignment: Text.AlignRight
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-
-            MouseArea {
-                id: localDirMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (root.appRef) {
-                        root.appRef.promptLocalDataDir()
+                        root.appRef.promptDataFolderSetup()
                     }
                 }
             }
