@@ -1,11 +1,16 @@
 # Implementation History
 
+## 2026-08-06: Approved Quarantine Removal
+
+- **Permanent cleanup**: with CSPM closed and the target explicitly verified as `C:\Projects\__CSPM\to_delete`, the user approved removal of all 18 quarantined artifact folders. The folder contained 9,997,406,110 bytes (about 9.3 GiB) of stale build/release artifacts. It was permanently removed; `dist/CSPM`, the active LocalAppData workbooks, the tracked `data/` snapshot, and all source files were left untouched.
+- **Repository effect**: `to_delete/` is intentionally ignored, so its removal does not add binary artifacts to Git. This record is committed to preserve the cleanup audit trail.
+
 ## 2026-08-06: Portable Current Data Snapshot and Explicit Data Locations
 
 - **Current data included in source clone**: the tracked `data/CSPM.xlsm` has been replaced from the active LocalAppData workbook and hash-verified (`F0C8588A20C64BCE191C6C70D8AF85FE28F6DB02BB0F47AA70E3828492B56334`). It contains the current records, including the repaired invoice `26-0080`. `data/Dockets.xlsm` was also copied and confirmed byte-identical to its active LocalAppData counterpart. A pull of the source repository therefore includes the data state current as of this update.
 - **Settings UX/safety**: Settings now calls the two locations **Shared Data Source Folder** and **Local Save Folder**. A shared source must be a folder containing valid `CSPM.xlsm` and `Dockets.xlsm` workbooks. Each chooser persists the selected complete package only after the user confirms a restart; it deliberately leaves the active paths unchanged until startup so closing the current session cannot push its data into an unpulled source or newly selected local package.
 - **Cross-computer use**: choose a local, synced shared folder (for example, a OneDrive/SharePoint-synced folder) as the Shared Data Source Folder and a complete local copy as the Local Save Folder. CSPM pulls the source at startup and pushes local changes on a clean close. Do not point two running CSPM instances at the same local-save files.
-- **Release**: CSPM was closed before the release build. PyInstaller completed, but Windows again denied the builder's final directory rename. The verified candidate was copy-promoted to `dist/CSPM/CSPM.exe` (SHA-256 `B25035B44D47A557EA529A87778D460CDF4F4F4A6D04F93A8CB0B46365A3E772`); its packaged `SettingsMenu.qml` hash matches source. The prior release is retained at `to_delete/dist__manual_replaced_release_20260806_120230/`, and the candidate remains at `to_delete/dist_staging_7772__unpromoted_build_20260806_120131/`.
+- **Release**: CSPM was closed before the release build. PyInstaller completed, but Windows again denied the builder's final directory rename. The verified candidate was copy-promoted to `dist/CSPM/CSPM.exe` (SHA-256 `B25035B44D47A557EA529A87778D460CDF4F4F4A6D04F93A8CB0B46365A3E772`); its packaged `SettingsMenu.qml` hash matches source. The prior release and candidate were retained in `to_delete/` during verification, then permanently removed after the user's explicit approval.
 - **Validation**: both tracked Excel packages passed ZIP/Excel-package validation; `app_controller.py` compiled and `SettingsMenu.qml` passed the repository QML-lint wrapper. Real Qt/WebEngine picker validation remains pending outside the sandboxed environment.
 
 ## 2026-08-06: Native PNG-Only Startup, Tray Wake-Up, Professional Home, and Filterable Matter Pickers
