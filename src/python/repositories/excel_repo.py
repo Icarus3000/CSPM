@@ -1908,6 +1908,48 @@ class ExcelRepo:
             "message": message,
         }
 
+    def save_ap_expense(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Save the expense linked to an unpaid A/P bill.
+
+        A supplier bill is not a cash payment.  Until it is settled, its linked
+        transaction remains pending against the A/P clearing account.  A later
+        set-off (or ordinary A/P payment) supplies the actual settlement path.
+        """
+        data = dict(payload or {})
+        self.ensure_schema()
+        if not _clean_text(data.get("fromAccount") or data.get("sourceAccount")):
+            data["fromAccount"] = "AP_PAYABLE"
+        if not _clean_text(data.get("businessUnit") or data.get("bu")):
+            active_units = self.list_transaction_business_units()
+            preferred = next(
+                (
+                    _clean_text(row.get("businessUnit"))
+                    for row in active_units
+                    if _clean_text(row.get("businessUnit")).casefold() == "cory business"
+                ),
+                "",
+            )
+            if not preferred and len(active_units) == 1:
+                preferred = _clean_text(active_units[0].get("businessUnit"))
+            if not preferred:
+                raise ValueError(
+                    "A/P business expense needs a BusinessUnit. Configure an active 'Cory Business' unit "
+                    "or provide BusinessUnit explicitly."
+                )
+            data["businessUnit"] = preferred
+        if not _clean_text(data.get("taxFlag") or data.get("taxCategory")):
+            category_code = _clean_text(data.get("categoryCode") or data.get("catCode"))
+            matching_category = next(
+                (
+                    row for row in self.list_transaction_categories("Expense", "", False)
+                    if _clean_text(row.get("categoryCode")).casefold() == category_code.casefold()
+                ),
+                None,
+            )
+            data["taxFlag"] = _clean_text((matching_category or {}).get("taxFlagDefault")) or "None"
+        data.setdefault("status", "Pending")
+        return self.save_transaction(data)
+
     def save_receivable(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Save a Receivables master record directly (used for data generation during legacy import)."""
         self.ensure_schema()
@@ -11059,7 +11101,14 @@ class ExcelRepo:
                 bucket["expenses"] += amt
                 bucket["hstPaid"] += tax
             elif typ == "Transfer":
-                banked_total += amt
+                # A/R set-offs clear a receivable and A/P together without
+                # cash entering a bank account.  They remain fully visible in
+                # the ledger and A/R audit trail but must not inflate the
+                # Executive Dashboard's cash/banked card.
+                from_account = _clean_text(row.get(sc.COL_TXN_FROM_ACCOUNT)).upper()
+                to_account = _clean_text(row.get(sc.COL_TXN_TO_ACCOUNT)).upper()
+                if from_account != "AR_SET_OFF" and to_account != "AR_SET_OFF":
+                    banked_total += amt
             elif typ == "Adjustment":
                 ledger_billings -= amt
                 bucket["revenue"] -= amt

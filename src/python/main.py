@@ -68,7 +68,6 @@ class CustomSplash(QSplashScreen):
         splash_flags = (
             Qt.Window
             | Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
             | Qt.Tool
         )
         super().__init__(QPixmap(), splash_flags)
@@ -1110,21 +1109,25 @@ def main() -> None:
     native_splash_main_window = None
 
     def _restore_main_foreground_after_native_splash() -> None:
-        """Put the painted shell above normal windows after the PNG is gone."""
+        """Politely request activation after the native splash has closed.
+
+        Startup must not claim the foreground with Win32 calls: CSPM should
+        open focused, but it must remain an ordinary peer of the user's other
+        applications immediately afterwards.
+        """
         main_window = native_splash_main_window
         if main_window is None:
             return
         try:
-            force_launch_focus = getattr(main_window, "forceLaunchFocus", None)
+            force_launch_focus = getattr(main_window, "forceLaunchFocusLight", None)
             if callable(force_launch_focus):
                 force_launch_focus()
                 return
         except Exception as exc:
             _report_nonfatal_startup_failure("nativeSplash.restoreQmlFocus", exc)
 
-        # QML's focus helper is preferred because it uses the app controller's
-        # Windows foreground path.  This direct fallback protects the handoff
-        # if that helper is not available while startup is still settling.
+        # This fallback deliberately uses only Qt's regular activation request.
+        # It must never alter the topmost state or take Windows focus directly.
         try:
             show_fn = getattr(main_window, "show", None)
             if callable(show_fn):
@@ -1135,27 +1138,13 @@ def main() -> None:
             activate_fn = getattr(main_window, "requestActivate", None)
             if callable(activate_fn):
                 activate_fn()
-            if sys.platform.startswith("win"):
-                hwnd = int(main_window.winId())
-                if hwnd > 0:
-                    user32 = ctypes.windll.user32
-                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-                    flags = 0x0001 | 0x0002 | 0x0040  # NOSIZE | NOMOVE | SHOWWINDOW
-                    user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)  # HWND_TOPMOST
-                    user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)  # HWND_NOTOPMOST
-                    user32.BringWindowToTop(hwnd)
-                    user32.SetForegroundWindow(hwnd)
-                    user32.SetActiveWindow(hwnd)
-                    user32.SetFocus(hwnd)
         except Exception as exc:
             _report_nonfatal_startup_failure("nativeSplash.restoreNativeFocus", exc)
 
     def _on_native_splash_fade_finished() -> None:
-        # The custom splash's own close callback runs first. Reassert a few
-        # times only during this handoff so the app opens in front, without
-        # making it permanently always-on-top.
-        for delay_ms in (0, 110, 260):
-            QTimer.singleShot(delay_ms, _restore_main_foreground_after_native_splash)
+        # Ask once. Repeated activation requests can pull focus back after the
+        # user has already clicked another application.
+        QTimer.singleShot(0, _restore_main_foreground_after_native_splash)
 
     if custom_splash is not None:
         custom_splash.anim_out.finished.connect(_on_native_splash_fade_finished)
@@ -1854,41 +1843,12 @@ def main() -> None:
     startup_focus_timer.timeout.connect(_reassert_startup_visibility)
     startup_focus_timer.start(90)
 
-    def _drop_startup_focus_lock() -> None:
-        try:
-            import shiboken6
-        except ImportError:
-            shiboken6 = None
+    def _finish_startup_visibility_period() -> None:
+        """End the visual-splash period without changing foreground focus."""
         startup_focus_timer.stop()
-        for win in app.topLevelWindows():
-            try:
-                if shiboken6 is not None and not shiboken6.isValid(win):
-                    continue
-                obj_name = str(win.objectName() or "")
-            except Exception:
-                obj_name = ""
-            if obj_name not in ("CSPMMainWindow", "CSPMFloatingDocketWindow"):
-                continue
-            try:
-                if shiboken6 is not None and not shiboken6.isValid(win):
-                    continue
-                win.raise_()
-                try:
-                    flags = win.flags()
-                    no_focus = bool(flags & Qt.WindowType.WindowDoesNotAcceptFocus)
-                    is_tool = bool(flags & Qt.WindowType.Tool)
-                    is_popup = bool(flags & Qt.WindowType.Popup)
-                    is_tooltip = bool(flags & Qt.WindowType.ToolTip)
-                    if not (no_focus or is_tool or is_popup or is_tooltip):
-                        win.requestActivate()
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            break
 
-    # Keep splash windows in front for the same startup interval as before.
-    QTimer.singleShot(3500, _drop_startup_focus_lock)
+    # The startup splash interval has ended; do not reclaim the foreground.
+    QTimer.singleShot(3500, _finish_startup_visibility_period)
     pass # Removed hardcoded splash timer
 
     code = startup_logger.info(f'[{time.perf_counter()-t0:.3f}s] Handing off to Qt Engine Event Loop')

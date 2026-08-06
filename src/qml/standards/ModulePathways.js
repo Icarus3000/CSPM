@@ -242,6 +242,7 @@ var MODULE_CONFIGS = [
                 "title": "Dashboards & Ledgers",
                 "items": [
                     { "id": "D01", "label": "Executive Dashboard", "route": "/finance/executive-dashboard", "tabType": "dashboard", "singleInstanceKey": "dashboard:D01" },
+                    { "id": "D10", "label": "Productivity & Utilization", "route": "/reports/productivity", "tabType": "report", "singleInstanceKey": "report:D10" },
                     { "id": "D07", "label": "Client Ledger Report", "route": "/reports/client-ledger", "tabType": "report" },
                     { "id": "D17", "label": "Statement of Account", "route": "/reports/statement", "tabType": "report" },
                     { "id": "D06", "label": "A/R Aging & Detail", "route": "/reports/ar-aging", "tabType": "report" }

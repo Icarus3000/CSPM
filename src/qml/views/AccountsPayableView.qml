@@ -14,6 +14,7 @@ Item {
     readonly property real apTaxRate: 0.13
     property bool apTaxExempt: false
     property bool apTaxSyncing: false
+    property string apAmountEntryMode: "subtotal"
     property var t
     property var metrics
     property var appRef
@@ -80,6 +81,13 @@ Item {
     property string selectedMatterClientName: ""
     property string selectedMatterName: ""
     property var dateTargetField: null
+    property var setoffReceivableRows: []
+    property var setoffAllocationRows: []
+    property bool setoffReceivablesLoading: false
+    property string setoffReceivableSearch: ""
+    property var filteredSetoffReceivableRows: root.filterSetoffReceivableRows()
+    readonly property real setoffAllocationTotal: root.totalSetoffAllocationAmount()
+    readonly property real setoffAllocationDifference: root.apNumber(paymentAmountField.text) - root.setoffAllocationTotal
 
 
     Timer {
@@ -318,8 +326,8 @@ Item {
             root.statusMessage = "Enter the supplier invoice number."
             return false
         }
-        if (root.apNumber(subtotalField.text) <= 0) {
-            root.statusMessage = "Enter a positive subtotal."
+        if (root.apNumber(subtotalField.text) <= 0 && root.apNumber(totalField.text) <= 0) {
+            root.statusMessage = "Enter a positive subtotal or total."
             return false
         }
         if (!root.selectedCategoryId) {
@@ -348,6 +356,7 @@ Item {
         if (root.apTaxSyncing)
             return
         root.apTaxSyncing = true
+        root.apAmountEntryMode = "subtotal"
         var subtotal = root.apNumber(subtotalField.text)
         var tax = root.apTaxExempt ? 0 : subtotal * root.apTaxRate
         taxField.text = root.apMoney(tax)
@@ -359,6 +368,7 @@ Item {
         if (root.apTaxSyncing)
             return
         root.apTaxSyncing = true
+        root.apAmountEntryMode = "subtotal"
         var subtotal = root.apNumber(subtotalField.text)
         var tax = root.apTaxExempt ? 0 : root.apNumber(taxField.text)
         taxField.text = root.apMoney(tax)
@@ -370,6 +380,7 @@ Item {
         if (root.apTaxSyncing)
             return
         root.apTaxSyncing = true
+        root.apAmountEntryMode = "total"
         var total = root.apNumber(totalField.text)
         var subtotal = root.apTaxExempt ? total : total / (1 + root.apTaxRate)
         var tax = root.apTaxExempt ? 0 : total - subtotal
@@ -380,12 +391,11 @@ Item {
     }
 
     function applyTaxExempt() {
-        root.apTaxSyncing = true
-        var subtotal = root.apNumber(subtotalField.text)
-        var tax = root.apTaxExempt ? 0 : subtotal * root.apTaxRate
-        taxField.text = root.apMoney(tax)
-        totalField.text = root.apMoney(subtotal + tax)
-        root.apTaxSyncing = false
+        if (root.apAmountEntryMode === "total") {
+            root.syncAPFromTotal()
+        } else {
+            root.syncAPFromSubtotal()
+        }
     }
 
     function billPayload() {
@@ -399,6 +409,7 @@ Item {
             "TaxAmount": root.apNumber(taxField.text),
             "Total": root.apNumber(totalField.text),
             "TaxExempt": root.apTaxExempt,
+            "AmountEntryMode": root.apAmountEntryMode,
             "Currency": currencyField.currentText,
             "SourceAccount": root.selectedPaymentAccountId,
             "CategoryCode": root.selectedCategoryId,
@@ -441,6 +452,32 @@ Item {
             root.statusMessage = "Enter a positive payment amount."
             return
         }
+        if (root.isSetoffMethod()) {
+            var allocationValidation = root.validateSetoffAllocations()
+            if (!allocationValidation.ok) {
+                root.errorState = true
+                root.statusMessage = allocationValidation.message
+                return
+            }
+            if (!paymentReferenceField.text.trim()) {
+                root.errorState = true
+                root.statusMessage = "Enter the settlement or set-off reference."
+                return
+            }
+            root.errorState = false
+            root.beginBusy("record_setoff")
+            root.statusMessage = "Recording linked A/P and A/R set-off..."
+            root.apController.recordAPSetoff({
+                "APPaymentID": root.generatedId("APP"),
+                "APBillID": String(root.selectedBill.APBillID || ""),
+                "PaymentDate": paymentDateField.text.trim(),
+                "Amount": Number(paymentAmountField.text || 0),
+                "Reference": paymentReferenceField.text.trim(),
+                "Notes": paymentNotesField.text.trim(),
+                "Allocations": allocationValidation.allocations
+            })
+            return
+        }
         if (!root.selectedPaymentAccountId) {
             root.errorState = true
             root.statusMessage = "Select the payment account."
@@ -461,9 +498,155 @@ Item {
         })
     }
 
+    function isSetoffMethod() {
+        return String(paymentMethodField.currentText || "").trim().toLowerCase() === "set-off"
+    }
+
+    function loadSetoffReceivables() {
+        root.setoffReceivablesLoading = true
+        var rows = []
+        try {
+            if (root.appRef && root.appRef.listOpenPaymentInvoices)
+                rows = root.appRef.listOpenPaymentInvoices({})
+        } catch (error) {
+            console.warn("[AP] set-off receivable lookup failed", error)
+            rows = []
+        }
+        var usable = []
+        for (var index = 0; index < (rows || []).length; index++) {
+            var row = rows[index] || {}
+            var invoice = String(row.invoice || row.invoiceNumber || "").trim()
+            var balance = Number(row.balance || 0)
+            if (invoice && isFinite(balance) && balance > 0) {
+                usable.push({
+                    "invoice": invoice,
+                    "client": String(row.client || row.billingClient || "").trim(),
+                    "date": String(row.date || "").trim(),
+                    "balance": balance,
+                    "status": String(row.status || "Open").trim()
+                })
+            }
+        }
+        usable.sort(function(a, b) {
+            return String(a.invoice).localeCompare(String(b.invoice))
+        })
+        root.setoffReceivableRows = usable
+        root.setoffReceivablesLoading = false
+    }
+
+    function openSetoffAllocationWorkflow() {
+        root.setoffReceivableSearch = ""
+        root.loadSetoffReceivables()
+        setoffAllocationDialog.open()
+    }
+
+    function filterSetoffReceivableRows() {
+        var term = String(root.setoffReceivableSearch || "").trim().toLowerCase()
+        var filtered = []
+        for (var index = 0; index < root.setoffReceivableRows.length; index++) {
+            var row = root.setoffReceivableRows[index] || {}
+            var haystack = (String(row.invoice || "") + " " + String(row.client || "")).toLowerCase()
+            if (!term || haystack.indexOf(term) >= 0)
+                filtered.push(row)
+        }
+        return filtered
+    }
+
+    function setoffAllocationIndex(invoice) {
+        var target = String(invoice || "").trim().toLowerCase()
+        for (var index = 0; index < root.setoffAllocationRows.length; index++) {
+            if (String(root.setoffAllocationRows[index].invoice || "").trim().toLowerCase() === target)
+                return index
+        }
+        return -1
+    }
+
+    function setoffAllocationFor(invoice) {
+        var index = root.setoffAllocationIndex(invoice)
+        return index >= 0 ? root.setoffAllocationRows[index] : null
+    }
+
+    function updateSetoffAllocation(row, amount) {
+        var invoice = String(row && row.invoice || "").trim()
+        if (!invoice)
+            return
+        var rows = root.setoffAllocationRows.slice(0)
+        var index = root.setoffAllocationIndex(invoice)
+        var normalized = Number(amount)
+        if (!isFinite(normalized) || normalized < 0)
+            normalized = 0
+        var allocation = {
+            "invoice": invoice,
+            "client": String(row.client || ""),
+            "balance": Number(row.balance || 0),
+            "amount": normalized
+        }
+        if (index >= 0)
+            rows[index] = allocation
+        else
+            rows.push(allocation)
+        root.setoffAllocationRows = rows
+    }
+
+    function toggleSetoffAllocation(row, selected) {
+        var invoice = String(row && row.invoice || "").trim()
+        var index = root.setoffAllocationIndex(invoice)
+        var rows = root.setoffAllocationRows.slice(0)
+        if (!selected) {
+            if (index >= 0) {
+                rows.splice(index, 1)
+                root.setoffAllocationRows = rows
+            }
+            return
+        }
+        if (index >= 0)
+            return
+        var remaining = Math.max(0, root.apNumber(paymentAmountField.text) - root.totalSetoffAllocationAmount())
+        root.updateSetoffAllocation(row, Math.min(Number(row.balance || 0), remaining))
+    }
+
+    function totalSetoffAllocationAmount() {
+        var total = 0
+        for (var index = 0; index < root.setoffAllocationRows.length; index++)
+            total += Math.max(0, Number(root.setoffAllocationRows[index].amount || 0))
+        return total
+    }
+
+    function validateSetoffAllocations() {
+        var allocations = []
+        for (var index = 0; index < root.setoffAllocationRows.length; index++) {
+            var row = root.setoffAllocationRows[index] || {}
+            var invoice = String(row.invoice || "").trim()
+            var amount = Number(row.amount || 0)
+            var balance = Number(row.balance || 0)
+            if (!invoice || !isFinite(amount) || amount <= 0)
+                continue
+            if (amount - balance > 0.005) {
+                return {
+                    "ok": false,
+                    "message": "The allocation for " + invoice + " exceeds its open balance of " + root.moneyText(balance) + ".",
+                    "allocations": []
+                }
+            }
+            allocations.push({ "InvoiceID": invoice, "Amount": amount })
+        }
+        if (allocations.length === 0) {
+            return { "ok": false, "message": "Choose at least one receivable and enter a positive set-off amount.", "allocations": [] }
+        }
+        if (Math.abs(root.totalSetoffAllocationAmount() - root.apNumber(paymentAmountField.text)) > 0.005) {
+            return { "ok": false, "message": "Selected set-offs must equal the A/P payment amount exactly.", "allocations": [] }
+        }
+        return { "ok": true, "message": "", "allocations": allocations }
+    }
+
+    function clearSetoffAllocations() {
+        root.setoffAllocationRows = []
+    }
+
     function selectBill(row) {
         root.selectedBill = row
         paymentAmountField.text = Number(row.Balance || 0).toFixed(2)
+        root.clearSetoffAllocations()
         root.statusMessage = ""
         root.errorState = false
     }
@@ -472,6 +655,7 @@ Item {
         root.editingBillId = ""
         root.editingBillDetails = null
         root.apTaxExempt = false
+        root.apAmountEntryMode = "subtotal"
         vendorField.text = ""
         invoiceNumberField.text = ""
         invoiceDateField.text = root.todayText()
@@ -488,6 +672,7 @@ Item {
         root.selectedPaymentAccountId = ""
         accountField.clearSelection()
         paymentAccountField.clearSelection()
+        root.clearSetoffAllocations()
         root.clearMatterSelection()
         notesField.text = ""
     }
@@ -586,12 +771,21 @@ Item {
         }
         root.errorState = false
         root.beginBusy("reverse_payment")
-        root.statusMessage = "Reversing payment..."
-        root.apController.reverseAPPayment(
-            String(root.selectedReversalPayment.APPaymentID || ""),
-            root.generatedId("APP-REV"),
-            reversalReasonField.text.trim()
-        )
+        if (String(root.selectedReversalPayment.Method || "").trim().toLowerCase() === "set-off") {
+            root.statusMessage = "Reversing linked A/P and A/R set-off..."
+            root.apController.reverseAPSetoff(
+                String(root.selectedReversalPayment.APPaymentID || ""),
+                root.generatedId("APP-REV"),
+                reversalReasonField.text.trim()
+            )
+        } else {
+            root.statusMessage = "Reversing payment..."
+            root.apController.reverseAPPayment(
+                String(root.selectedReversalPayment.APPaymentID || ""),
+                root.generatedId("APP-REV"),
+                reversalReasonField.text.trim()
+            )
+        }
     }
 
     Component.onCompleted: {
@@ -1260,6 +1454,253 @@ Item {
     }
 
     Dialog {
+        id: setoffAllocationDialog
+        modal: true
+        focus: true
+        title: "Choose receivables for set-off"
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(900, Math.max(620, root.width * 0.78))
+        height: Math.min(680, Math.max(440, root.height * 0.78))
+
+        background: Rectangle {
+            color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : "#FFFFFF"
+            radius: visualRules.isPro ? visualRules.radiusPopup : 8
+            border.width: 1
+            border.color: root.isProMode ? SemanticTheme.borderSubtle(root.t, root.appStyle) : "#B9C9DB"
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                text: "Select each client invoice being applied against this supplier bill, then enter the amount to set off. A partial amount is allowed; no amount may exceed the invoice's open balance."
+                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#42566D"
+                wrapMode: Text.Wrap
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 64
+                color: root.isProMode
+                    ? SemanticTheme.alpha(SemanticTheme.accentPrimary(root.t, root.appStyle), 0.08)
+                    : "#EEF5FC"
+                radius: visualRules.isPro ? visualRules.radiusControl : 6
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 12
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        FormLabel { text: "A/P payment" }
+                        Label {
+                            text: root.moneyText(root.apNumber(paymentAmountField.text))
+                            color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
+                            font.pixelSize: 17
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        FormLabel { text: "Selected set-offs" }
+                        Label {
+                            text: root.moneyText(root.setoffAllocationTotal)
+                            color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
+                            font.pixelSize: 17
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        FormLabel { text: root.setoffAllocationDifference >= 0 ? "Still to allocate" : "Over-allocated" }
+                        Label {
+                            text: root.moneyText(Math.abs(root.setoffAllocationDifference))
+                            color: Math.abs(root.setoffAllocationDifference) <= 0.005
+                                ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : "#285C37")
+                                : (root.setoffAllocationDifference < 0
+                                    ? (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : "#8B2D2D")
+                                    : (root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"))
+                            font.pixelSize: 17
+                            font.weight: Font.DemiBold
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                FormField {
+                    id: setoffReceivableSearchField
+                    Layout.fillWidth: true
+                    placeholderText: "Search invoice number or client"
+                    text: root.setoffReceivableSearch
+                    onTextEdited: root.setoffReceivableSearch = text
+                }
+
+                Button {
+                    text: "Refresh"
+                    enabled: !root.setoffReceivablesLoading
+                    onClicked: root.loadSetoffReceivables()
+                }
+
+                Button {
+                    text: "Clear selected"
+                    enabled: root.setoffAllocationRows.length > 0
+                    onClicked: root.clearSetoffAllocations()
+                }
+            }
+
+            Label {
+                visible: root.setoffReceivablesLoading
+                Layout.fillWidth: true
+                text: "Loading open receivables..."
+                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#607287"
+            }
+
+            Label {
+                visible: !root.setoffReceivablesLoading && root.filteredSetoffReceivableRows.length === 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                text: root.setoffReceivableRows.length === 0
+                    ? "No open receivables are available. Refresh after the A/R data is loaded."
+                    : "No open receivables match that search."
+                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#607287"
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.Wrap
+            }
+
+            ListView {
+                id: setoffReceivableList
+                visible: !root.setoffReceivablesLoading && root.filteredSetoffReceivableRows.length > 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 5
+                model: root.filteredSetoffReceivableRows
+
+                delegate: Rectangle {
+                    id: receivableRow
+                    required property var modelData
+                    width: setoffReceivableList.width
+                    implicitHeight: 68
+                    property var allocation: root.setoffAllocationFor(modelData.invoice)
+                    property bool selectedForSetoff: allocation !== null
+                    color: selectedForSetoff
+                        ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.accentPrimary(root.t, root.appStyle), 0.10) : "#EEF5FC")
+                        : (root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : "#FFFFFF")
+                    radius: visualRules.isPro ? visualRules.radiusControl : 6
+                    border.width: 1
+                    border.color: selectedForSetoff
+                        ? (root.isProMode ? SemanticTheme.accentPrimary(root.t, root.appStyle) : "#5C8FC1")
+                        : (root.isProMode ? SemanticTheme.borderSubtle(root.t, root.appStyle) : "#C7D3DF")
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 9
+
+                        CheckBox {
+                            id: receivableCheck
+                            checked: receivableRow.selectedForSetoff
+                            onToggled: root.toggleSetoffAllocation(receivableRow.modelData, checked)
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Label {
+                                Layout.fillWidth: true
+                                text: String(receivableRow.modelData.invoice || "")
+                                color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: String(receivableRow.modelData.client || "Client not specified")
+                                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#607287"
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.preferredWidth: 105
+                            spacing: 2
+                            FormLabel { text: "Open balance" }
+                            Label {
+                                text: root.moneyText(receivableRow.modelData.balance)
+                                color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
+                                horizontalAlignment: Text.AlignRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.preferredWidth: 130
+                            spacing: 2
+                            FormLabel { text: "Set-off amount" }
+                            FormField {
+                                id: setoffAmountField
+                                Layout.fillWidth: true
+                                enabled: receivableRow.selectedForSetoff
+                                placeholderText: "0.00"
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                text: receivableRow.allocation
+                                    ? Number(receivableRow.allocation.amount || 0).toFixed(2)
+                                    : ""
+                                onTextEdited: root.updateSetoffAllocation(
+                                    receivableRow.modelData,
+                                    root.apNumber(text)
+                                )
+                            }
+                        }
+
+                        Button {
+                            text: "Full"
+                            enabled: receivableRow.selectedForSetoff
+                            onClicked: root.updateSetoffAllocation(
+                                receivableRow.modelData,
+                                Number(receivableRow.modelData.balance || 0)
+                            )
+                        }
+                    }
+                }
+
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Label {
+                    Layout.fillWidth: true
+                    text: Math.abs(root.setoffAllocationDifference) <= 0.005 && root.setoffAllocationRows.length > 0
+                        ? "The selected receivables equal this A/P payment."
+                        : "The selected receivables must equal this A/P payment before it can be recorded."
+                    color: Math.abs(root.setoffAllocationDifference) <= 0.005 && root.setoffAllocationRows.length > 0
+                        ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : "#285C37")
+                        : (root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#607287")
+                    wrapMode: Text.Wrap
+                }
+                Button { text: "Cancel"; onClicked: setoffAllocationDialog.close() }
+                Button { text: "Use selected receivables"; onClicked: setoffAllocationDialog.close() }
+            }
+        }
+    }
+
+    Dialog {
         id: reversalDialog
         modal: true
         focus: true
@@ -1523,10 +1964,10 @@ Item {
                                     ColumnLayout {
                                         Layout.fillWidth: true
                                         spacing: 4
-                                        FormLabel { text: "Total" }
-                                        FormField {
+                                FormLabel { text: "Total" }
+                                FormField {
                                             id: totalField
-                                            placeholderText: "0.00"
+                                            placeholderText: "Enter total to calculate subtotal and HST"
                                             inputMethodHints: Qt.ImhFormattedNumbersOnly
                                             onTextEdited: root.syncAPFromTotal()
                                         }
@@ -1687,9 +2128,13 @@ Item {
                                 FormLabel { text: "Amount *" }
                                 FormField { id: paymentAmountField; placeholderText: "0.00" }
 
-                                FormLabel { text: "From account *" }
+                                FormLabel {
+                                    visible: !root.isSetoffMethod()
+                                    text: "From account *"
+                                }
                                 SearchSelector {
                                     id: paymentAccountField
+                                    visible: !root.isSetoffMethod()
                                     allowBlank: false
                                     allOptions: root.paymentAccountOptions
                                     searchHint: "Select or search accounts"
@@ -1699,15 +2144,60 @@ Item {
                                     }
                                 }
 
+                                FormLabel {
+                                    visible: root.isSetoffMethod()
+                                    text: "Settlement account"
+                                }
+                                FormLabel {
+                                    visible: root.isSetoffMethod()
+                                    text: "Accounts Receivable - Set-off (automatic; no bank account used)"
+                                    color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#52677C"
+                                }
+
                                 FormLabel { text: "Method" }
                                 LightComboBox {
                                     id: paymentMethodField
                                     objectName: "apPaymentMethodCombo"
-                                    model: ["EFT", "Cheque", "Credit card", "Debit card", "Pre-authorized debit", "Cash", "Wire transfer", "Internal transfer", "Owner-paid", "Other"]
+                                    model: ["EFT", "Cheque", "Credit card", "Debit card", "Pre-authorized debit", "Cash", "Wire transfer", "Internal transfer", "Set-off", "Owner-paid", "Other"]
                                 }
 
-                                FormLabel { text: "Reference" }
-                                FormField { id: paymentReferenceField; placeholderText: "Confirmation or cheque number" }
+                                FormLabel { text: root.isSetoffMethod() ? "Settlement / set-off reference *" : "Reference" }
+                                FormField {
+                                    id: paymentReferenceField
+                                    placeholderText: root.isSetoffMethod() ? "Settlement reference or agreement date" : "Confirmation or cheque number"
+                                }
+
+                                FormLabel {
+                                    visible: root.isSetoffMethod()
+                                    text: "Receivable allocations *"
+                                }
+                                Button {
+                                    id: chooseSetoffReceivablesButton
+                                    visible: root.isSetoffMethod()
+                                    Layout.fillWidth: true
+                                    implicitHeight: 34
+                                    text: root.setoffAllocationRows.length > 0
+                                        ? "Review " + root.setoffAllocationRows.length + " selected receivable"
+                                            + (root.setoffAllocationRows.length === 1 ? "" : "s")
+                                        : "Choose receivables to set off"
+                                    onClicked: root.openSetoffAllocationWorkflow()
+                                }
+
+                                Label {
+                                    visible: root.isSetoffMethod()
+                                    Layout.fillWidth: true
+                                    text: root.setoffAllocationRows.length === 0
+                                        ? "Select invoices and enter an amount for each. The selector verifies every open balance."
+                                        : root.setoffAllocationRows.length + " invoice"
+                                            + (root.setoffAllocationRows.length === 1 ? "" : "s")
+                                            + " selected: " + root.moneyText(root.setoffAllocationTotal)
+                                            + "  •  Remaining: " + root.moneyText(Math.abs(root.setoffAllocationDifference))
+                                            + (Math.abs(root.setoffAllocationDifference) <= 0.005 ? " (balanced)" : "")
+                                    color: Math.abs(root.setoffAllocationDifference) <= 0.005 && root.setoffAllocationRows.length > 0
+                                        ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : "#285C37")
+                                        : (root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#607287")
+                                    wrapMode: Text.Wrap
+                                }
 
                                 FormLabel { text: "Notes" }
                                 TextArea {

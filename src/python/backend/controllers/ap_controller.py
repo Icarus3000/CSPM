@@ -214,7 +214,12 @@ class APController(QObject):
 
     @staticmethod
     def _error_text(error_value: Any) -> str:
+        # Worker.error emits ``(exception type, exception value, traceback)``.
+        # The traceback is useful in the log, but it is neither actionable nor
+        # readable in the A/P form.  Prefer the exception's user-facing value.
         if isinstance(error_value, tuple) and error_value:
+            if len(error_value) >= 2 and error_value[1]:
+                return str(error_value[1])
             for value in reversed(error_value):
                 if value:
                     return str(value)
@@ -335,6 +340,15 @@ class APController(QObject):
             dict(payload or {}),
         )
 
+    @Slot("QVariantMap")
+    def recordAPSetoff(self, payload: dict[str, Any]) -> None:
+        self._start_worker(
+            self._orchestrator.record_setoff,
+            "record_setoff",
+            self.apPaymentFinished,
+            dict(payload or {}),
+        )
+
     @Slot(str, str, str)
     def reverseAPPayment(
         self,
@@ -345,6 +359,17 @@ class APController(QObject):
         self._start_worker(
             self._orchestrator.reverse_payment,
             "reverse_payment",
+            self.apPaymentReversed,
+            payment_id,
+            reversal_id,
+            reason,
+        )
+
+    @Slot(str, str, str)
+    def reverseAPSetoff(self, payment_id: str, reversal_id: str, reason: str) -> None:
+        self._start_worker(
+            self._orchestrator.reverse_setoff,
+            "reverse_setoff",
             self.apPaymentReversed,
             payment_id,
             reversal_id,

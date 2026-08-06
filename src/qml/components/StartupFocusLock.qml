@@ -12,9 +12,8 @@ Item {
         if (!mainWindow || mainWindow.detachedMode) return;
         openingAnimRunning = true;
         focusPulseCount = 0;
-        savedFlags = mainWindow.flags;
-        mainWindow.flags = mainWindow.flags | Qt.WindowStaysOnTopHint;
-        focusTimer.start();
+        // A startup animation must not turn the application into a topmost
+        // window or repeatedly take focus from other programs.
         if (mainWindow._requestActivateIfFocusable) {
             mainWindow._requestActivateIfFocusable(mainWindow);
         }
@@ -24,12 +23,6 @@ Item {
         if (!mainWindow || !openingAnimRunning) return;
         openingAnimRunning = false;
         focusTimer.stop();
-        if (savedFlags !== null) {
-            mainWindow.flags = savedFlags;
-        }
-        if (mainWindow._requestActivateIfFocusable) {
-            mainWindow._requestActivateIfFocusable(mainWindow);
-        }
     }
 
     Timer {
@@ -42,15 +35,9 @@ Item {
                 stop();
                 return;
             }
-            // Avoid repeated requestActivate() storms during splash handoff.
-            if (focusLockManager.focusPulseCount < 2) {
-                if (focusLockManager.mainWindow._requestActivateIfFocusable) {
-                    focusLockManager.mainWindow._requestActivateIfFocusable(focusLockManager.mainWindow);
-                }
-            } else if (focusLockManager.mainWindow.raise) {
-                focusLockManager.mainWindow.raise();
-            }
-            focusLockManager.focusPulseCount += 1;
+            // This component is retained for compatibility only.  It does
+            // not reassert activation after the initial launch request.
+            focusLockManager.endFocusLock();
         }
     }
 

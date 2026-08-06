@@ -470,6 +470,25 @@ def main():
             else:
                 print(f"ERROR: Expected installer {installer_name} not found in dist/")
                 sys.exit(1)
+
+    # PyInstaller emits a named application directory by default.  CSPM's
+    # governed release contract is a flat runnable package at ``dist`` so the
+    # current executable remains ``dist/cspm.exe`` beside its _internal,
+    # data, and recovery folders.  Flatten only the freshly built staging
+    # package; never mutate an existing promoted release in place.
+    staged_package_dir = staging_dist_dir / "CSPM"
+    if not staged_package_dir.is_dir():
+        print(f"ERROR: Expected staged CSPM package is missing: {staged_package_dir}")
+        sys.exit(1)
+    for item in staged_package_dir.iterdir():
+        target_name = "cspm.exe" if item.name == "CSPM.exe" else item.name
+        target = staging_dist_dir / target_name
+        if target.exists():
+            print(f"ERROR: Refusing to flatten over an existing staged item: {target}")
+            sys.exit(1)
+        shutil.move(str(item), str(target))
+    staged_package_dir.rmdir()
+    print(f"Flattened staged runnable package at {staging_dist_dir / 'cspm.exe'}")
     
     # Finally, promote staging to target dist_dir.  Do not delete the previous
     # runnable package: quarantine it first so a failed Windows rename can be

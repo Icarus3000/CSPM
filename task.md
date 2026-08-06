@@ -1,5 +1,14 @@
 # Phase 7: Statements of Account and Ledgers Task List
 
+## Governed Historic Financial Synchronization (2026-08-06)
+
+- [x] Build a source-controlled synchronization service that treats `C:\Users\cschn\OneDrive - LPN\__Invoices (1)\Dockets.xlsm` as the historic financial authority while preserving CSPM-native records after the source snapshot cutoff.
+- [x] Normalize legacy receivable footer/duplicate/credit-sign artefacts with ledger and Invoice Log cross-checks; never import vendor expense references as A/R.
+- [x] Build an isolated candidate and audit report before any promotion; require source-owned A/R, ledger, and productivity totals to reconcile within $0.02 / 0.01 hours.
+- [x] Gate the actual CSPM Financial Dashboard and Productivity Dashboard calculations against independent candidate values, including exclusion of A/R set-offs from cash banked totals.
+- [x] Add an explicit promotion command that checks the original target hash and creates a recoverable pre-sync backup; it refuses to proceed while CSPM holds the workbook open.
+- [ ] With CSPM closed and after reviewing the candidate audit, promote the approved candidate and manually inspect the dashboard, the paid LIHDC settlement, and the partial $376.13 balance on invoice `26-0069`.
+
 ## Portable Current Data and Explicit Data Locations (2026-08-06)
 
 - [x] Replace the repository's older `data/CSPM.xlsm` with the verified current LocalAppData workbook, including the repaired invoice `26-0080`; `Dockets.xlsm` was verified identical.
@@ -34,6 +43,9 @@
 
 - [x] Replace the automatic Professional `Practice Briefing` startup tab with the native Professional no-open-tabs background and its existing quick tiles; preserve explicitly routed starts and already-open workspaces.
 - [x] Keep the console-style `HomeGrid` exclusive to its existing non-Professional shell rather than overlaying the Professional home.
+- [x] Replace the static no-tabs tiles with a responsive, no-scroll Daily Operations home: daily deadline/time/WIP/A/R KPIs, the four primary daily pathways, a capped priority queue, recent work, and WTD/YTD productivity. It reuses the existing Practice Briefing payload and does not open a workspace tab.
+- [x] Rebuild the release and place the complete runnable package at the requested `dist/cspm.exe` path; the immediately prior package is recoverably retained at `to_delete/dist__replaced_release_20260806_124516/`.
+- [x] Correct the last-tab close path: choosing **Discard** for unsaved Time Docket Entry changes now removes that tab and transitions to the native no-tabs Daily Operations home instead of recreating the same docket tab.
 - [ ] Manually launch CSPM normally and confirm the Professional no-open-tabs background/tiles are the first main-app surface with no Practice Briefing tab opened.
 
 ## Tray-Only Relaunch Wake-Up (2026-08-06)
@@ -172,3 +184,28 @@
 - [x] Identify the actual service client and use the matter's plain-English Description (falling back safely to Matter Name) in its place.
 - [x] Render third-party service context compactly as `Matter: <client name> | <matter description>` on one line; retain the normal two-field context for ordinary invoices.
 - [ ] Manual foreground verification: preview a third-party invoice and confirm the `Legal Services For` block renders `Matter: <service-client name> | <plain-English matter description>` with no coded matter number.
+
+## A/P Settlement Set-Off (2026-08-06)
+
+- [x] Add a linked, non-cash A/P set-off payment method that allocates one supplier-bill settlement against one or more existing receivables, including partial invoice allocations.
+- [x] Validate every allocation before saving and post A/P, A/R, ledger, time-entry payment state, expense clearing account, and audit evidence in one atomic workbook replacement.
+- [x] Add a matching whole-set-off reversal that restores the A/P bill and all affected receivables together.
+- [x] Rebuild and promote the runnable package at `dist/cspm.exe`; preserve its flat executable/_internal/data/recovery layout for future builds.
+- [x] Allow an A/P bill total to be entered as the authoritative amount; derive subtotal/HST safely for taxable and HST-exempt bills.
+- [x] Make the set-off allocation editor independently vertically scrollable so every allocation can be pasted and reviewed.
+- [x] Rebuild and promote the A/P usability repair at `dist/cspm.exe` (SHA-256 `39CA22521371289F5A2E1700CFB9A1F613241C2AA2E2A16660078713B04AE763`).
+- [x] Replace raw worker tracebacks in A/P with their concise validation message.
+- [x] Stop automatically applying the LIHDC agency share to dockets whose `AmountToYou` is already net of that share.
+- [x] Replace typed A/R set-off allocations with a searchable receivable-selection workflow that supports full or partial allocations and an in-dialog balancing total.
+- [ ] With CSPM closed, create a recoverable backup and repair the pre-existing double-split balances for invoices 26-0066 and 26-0069 from the supplied July settlement schedule before posting the set-off.
+- [ ] Manually verify the set-off workflow in CSPM against a copy of the production workbook before entering the July 2026 settlement.
+
+## Startup Focus Safety Repair (2026-08-06)
+
+- [x] Remove the main-window startup focus lock and every automatic Win32 foreground/topmost escalation.
+- [x] Limit splash handoff to one regular Qt activation request and prevent delayed startup timers from reclaiming focus.
+- [x] Add a regression test that rejects topmost or foreground-stealing code in the main startup path.
+- [x] Limit the settled native window to the visible canvas after confirming the previous release's actual native window covered the full 2380x1500 monitor.
+- [x] Restore the backend-boot trigger as a settlement lifecycle action; confirm read-only that the live workbook retains 115 clients, 194 matters, and 682 time entries.
+- [x] Rebuild and promote `dist/cspm.exe` (SHA-256 `C2416E8B54FF464ACF37F44B35C615C3E66C985BCFDEAAC944BC725622330791`).
+- [ ] Manually confirm that the visible dashboard loads existing data and that another app and the taskbar remain clickable on CSPM's monitor.

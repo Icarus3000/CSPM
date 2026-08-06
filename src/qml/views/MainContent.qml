@@ -1384,8 +1384,10 @@ Item {
                 option3ActiveTabId = String(tabs[nextIndex].id || "")
                 option3ActivateTab(option3ActiveTabId)
             } else {
-                option3ActiveTabId = ""
-                option3EnsureTabForCurrentWorkspace("close-last-tab")
+                // A close (including close-guard Discard) must leave the
+                // Professional shell on its no-tabs home. Re-ensuring the
+                // current stack page here recreates the exact tab just closed.
+                option3SetEmptyWorkspace("close-last-tab")
             }
         }
         if (typeof proAppShell !== "undefined" && typeof proAppShell.saveState === "function") {
@@ -4231,116 +4233,16 @@ Item {
                             }
                         }
 
-                        Rectangle {
-                            id: proEmptyWorkspace
+                        DailyOperationsHome {
                             anchors.fill: parent
-                            // This is the native Professional background and
-                            // quick-tile home shown whenever all tabs close.
                             visible: root.option3ShellEnabled && !root.option3HasCurrentWorkspace()
-                            color: root.proBackground
-                            property var quickTiles: [
-                                { "title": "Practice Briefing", "subtitle": "Today", "icon": "\uE80F", "moduleId": "home", "nodeId": "H01" },
-                                { "title": "Client Directory", "subtitle": "Clients", "icon": "\uE77B", "moduleId": "clients", "nodeId": "A01" },
-                                { "title": "Time Docket Entry", "subtitle": "Docketing", "icon": "\uE823", "moduleId": "docketing", "nodeId": "B01" },
-                                { "title": "Docket Activity Report", "subtitle": "Reports", "icon": "\uE9D9", "moduleId": "docketing", "nodeId": "B04" }
-                            ]
-
-                            ColumnLayout {
-                                id: emptyWorkspaceLayout
-                                width: Math.min(760, Math.max(320, proEmptyWorkspace.width - 80))
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 16
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: "Workspace Home"
-                                    font.family: "Segoe UI"
-                                    font.pixelSize: 22
-                                    font.weight: Font.DemiBold
-                                    color: root.proInk
-                                    horizontalAlignment: Text.AlignHCenter
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: "No open tabs"
-                                    font.family: "Segoe UI"
-                                    font.pixelSize: 12
-                                    color: root.proMutedInk
-                                    horizontalAlignment: Text.AlignHCenter
-                                    elide: Text.ElideRight
-                                }
-
-                                GridLayout {
-                                    Layout.fillWidth: true
-                                    columns: Math.max(1, Math.min(4, Math.floor((emptyWorkspaceLayout.width + 12) / 170)))
-                                    columnSpacing: 12
-                                    rowSpacing: 12
-
-                                    Repeater {
-                                        model: proEmptyWorkspace.quickTiles
-                                        delegate: Rectangle {
-                                            id: emptyTile
-                                            required property var modelData
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 86
-                                            radius: 5
-                                            color: emptyTileHover.hovered ? root.proHoverFill : root.proSurface
-                                            border.width: 1
-                                            border.color: emptyTileHover.hovered ? root.proActiveBorder : root.proBorder
-
-                                            ColumnLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: 12
-                                                spacing: 5
-
-                                                Text {
-                                                    text: emptyTile.modelData.icon
-                                                    font.family: "Segoe MDL2 Assets"
-                                                    font.pixelSize: 20
-                                                    color: root.proAccent
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: emptyTile.modelData.title
-                                                    font.family: "Segoe UI"
-                                                    font.pixelSize: 12
-                                                    font.weight: Font.DemiBold
-                                                    color: root.proInk
-                                                    horizontalAlignment: Text.AlignHCenter
-                                                    elide: Text.ElideRight
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: emptyTile.modelData.subtitle
-                                                    font.family: "Segoe UI"
-                                                    font.pixelSize: 11
-                                                    color: root.proMutedInk
-                                                    horizontalAlignment: Text.AlignHCenter
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-
-                                            HoverHandler {
-                                                id: emptyTileHover
-                                            }
-
-                                            TapHandler {
-                                                onTapped: {
-                                                    root.option3OpenScreenByModuleNode(
-                                                        String(emptyTile.modelData.moduleId || ""),
-                                                        String(emptyTile.modelData.nodeId || "")
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                            t: root.t
+                            appRef: root.appRef
+                            appStyle: root.appStyle
+                            dashboardSummary: root.dashboardSummary
+                            interactive: root.isInteractive && visible
+                            onOpenScreenRequested: function(moduleId, nodeId) {
+                                root.option3OpenScreenByModuleNode(moduleId, nodeId)
                             }
                         }
                     }

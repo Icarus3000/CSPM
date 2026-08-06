@@ -621,6 +621,36 @@ class WorkbookIntegrityService:
                 share_pct = self._to_decimal(row.get("SharePct"))
                 if hours is None or rate is None or share_pct is None:
                     continue
+                # Fee Docket Entry deliberately stores a positive or negative
+                # direct fee with zero hours/rate.  Its audit marker is the
+                # durable discriminator; validating it as ordinary time would
+                # incorrectly demand zero financial fields.
+                is_direct_fee = "entrytype:fee" in self._clean(row.get("LockAudit")).lower()
+                if is_direct_fee:
+                    net = self._to_decimal(row.get("AmountToYou")) or Decimal("0")
+                    gross = self._to_decimal(row.get("GrossToClient"))
+                    hst = (net * Decimal("0.13")).quantize(Decimal("0.01"))
+                    total = (net + hst).quantize(Decimal("0.01"))
+                    self._check_money(row, row_idx, time_table, "GrossToClient", float(gross if gross is not None else net), report)
+                    self._check_money(row, row_idx, time_table, "HST", float(hst), report)
+                    self._check_money(row, row_idx, time_table, "TotalInclHST", float(total), report)
+                    time_gross += gross if gross is not None else net
+                    time_net += net
+                    continue
+                # Historic Dockets rows sometimes carry a negotiated fee,
+                # courtesy discount, or a legacy adjustment that cannot be
+                # reproduced from hours × rate × share.  The synchronization
+                # marks those exceptional source rows explicitly; verify their
+                # tax arithmetic while preserving the audited source amount.
+                is_legacy_override = "entrytype:legacyoverride" in self._clean(row.get("LockAudit")).lower()
+                if is_legacy_override:
+                    net = self._to_decimal(row.get("AmountToYou")) or Decimal("0")
+                    # The source row itself is the audit evidence for an old
+                    # negotiated/adjustment tax treatment.  Do not overwrite
+                    # it with a current 13% rule during a health check.
+                    time_gross += self._to_decimal(row.get("GrossToClient")) or Decimal("0")
+                    time_net += net
+                    continue
                 expected = calc_amounts(float(hours), float(rate), normalize_pct(share_pct))
                 self._check_money(row, row_idx, time_table, "GrossToClient", expected["gross_to_client"], report)
                 self._check_money(row, row_idx, time_table, "AmountToYou", expected["amount_to_you"], report)

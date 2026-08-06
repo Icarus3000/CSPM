@@ -145,24 +145,12 @@ class InvoiceDraftService:
         if updated_disb:
             self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
 
-        # Determine if LIHDC is the billing client
+        # Docket rows already hold the lawyer's share in ``AmountToYou`` and
+        # the corresponding HST.  Automatically applying a further 30% split
+        # merely because LIHDC is the billing client therefore deducts that
+        # share a second time.  A user may still explicitly apply an agency
+        # split through ``apply_agency_split`` when it is genuinely required.
         agency_split_percent = "0.0"
-        try:
-            cid = str(client_id).split(',')[0].strip()
-            client_profile_res = self.repo.get_client_profile(cid)
-            client_profile = client_profile_res.get("client", {}) if client_profile_res.get("ok") else {}
-            billing_client_id = client_profile.get("parentClientId") or cid
-            if billing_client_id != cid:
-                billing_profile_res = self.repo.get_client_profile(billing_client_id)
-                billing_profile = billing_profile_res.get("client", {}) if billing_profile_res.get("ok") else client_profile
-            else:
-                billing_profile = client_profile
-            
-            billing_client_name = billing_profile.get("clientName", "") or billing_profile.get("displayName", "")
-            if "LIHDC" in str(billing_client_name).upper() or "LIHDC" in str(client_name).upper():
-                agency_split_percent = "30.0"
-        except Exception:
-            pass
 
         # 3. Create Draft Record
         draft_record = {
@@ -216,10 +204,6 @@ class InvoiceDraftService:
         drafts.append(draft_record)
         self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
         
-        # If there's a default agency split, recalculate immediately to ensure math is correct
-        if float(agency_split_percent) > 0:
-            self.recalculate_draft_totals(draft_num)
-            
         logger.info(f"[CREATE DRAFT] Success. Draft {draft_num} created.")
         return draft_num
 

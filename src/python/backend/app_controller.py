@@ -1571,6 +1571,12 @@ class AppController(QObject):
         return None
 
     def _force_window_foreground(self, target, trace_label: str):
+        """Show and request activation without taking Windows foreground focus.
+
+        CSPM may ask to be activated when launched or restored from the tray,
+        but it must never change its topmost state or seize focus from another
+        application.  Windows remains free to accept or decline this request.
+        """
         trace_start = time.perf_counter()
         if target is None:
             self._trace_startup_backend_step(
@@ -1612,25 +1618,6 @@ class AppController(QObject):
         except Exception:
             pass
 
-        if sys.platform.startswith("win"):
-            try:
-                hwnd = int(target.winId())
-            except Exception:
-                hwnd = 0
-            if hwnd > 0:
-                try:
-                    user32 = ctypes.windll.user32
-                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-                    swp_flags = 0x0001 | 0x0002 | 0x0040  # SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
-                    user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, swp_flags)  # HWND_TOPMOST
-                    user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, swp_flags)  # HWND_NOTOPMOST
-                    user32.BringWindowToTop(hwnd)
-                    user32.SetForegroundWindow(hwnd)
-                    user32.SetActiveWindow(hwnd)
-                    user32.SetFocus(hwnd)
-                    focused = True
-                except Exception:
-                    pass
         self._trace_startup_backend_step(
             f"{trace_label} -> {focused}", trace_start
         )

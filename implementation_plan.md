@@ -19,6 +19,10 @@ Use one shared application with style tokens and selective structural swaps.
 
 Do not duplicate the app. Do not fork business logic. Do not create two versions of every QML file.
 
+## Historic Financial Synchronization Boundary
+
+Historic `Dockets.xlsm` finance is synchronized through a governed backend service rather than through QML forms or the generic incremental importer. The service reads the OneDrive workbook as a dated source snapshot, produces a read-only plan, writes only an isolated candidate, and allows a separately confirmed promotion only after backup, hash, integrity, ledger/A/R, productivity, and Executive Dashboard reconciliation gates pass. Native CSPM activity after the source cutoff remains preserved. This keeps both interface styles on the same financial data model and prevents a dashboard-only correction from diverging from the ledger.
+
 ## Long-Term Target
 
 Professional mode is not just a QML skin. It is the reference implementation for

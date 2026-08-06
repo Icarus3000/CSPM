@@ -27,69 +27,8 @@ Window {
     property bool startupSplashEnabled: false
     property bool deferStartupLaunch: false
 
-    // --- BRUTE FORCE FOCUS LOCK ---
-    Item {
-        id: focusLockManager
-        property bool openingAnimRunning: false
-        property var savedFlags: null
-        property int focusPulseCount: 0
-
-        function beginFocusLock() {
-            if (mainWin.detachedMode) return;
-            if (mainWin.appStyle === "Professional") return;
-            openingAnimRunning = true;
-            focusPulseCount = 0;
-            savedFlags = mainWin.flags;
-            mainWin.flags = mainWin.flags | Qt.WindowStaysOnTopHint;
-            focusTimer.start();
-            mainWin._requestActivateIfFocusable(mainWin);
-        }
-
-        function endFocusLock() {
-            if (!openingAnimRunning) return;
-            openingAnimRunning = false;
-            focusTimer.stop();
-            if (savedFlags !== null) {
-                mainWin.flags = savedFlags;
-            }
-            mainWin._requestActivateIfFocusable(mainWin);
-        }
-
-        Timer {
-            id: focusTimer
-            interval: 50
-            repeat: true
-            running: false
-            onTriggered: {
-                if (!focusLockManager.openingAnimRunning) {
-                    stop();
-                    return;
-                }
-                // Avoid repeated requestActivate() storms during splash handoff.
-                if (focusLockManager.focusPulseCount < 2) {
-                    mainWin._requestActivateIfFocusable(mainWin);
-                } else if (mainWin.raise) {
-                    mainWin.raise();
-                }
-                focusLockManager.focusPulseCount += 1;
-            }
-        }
-        
-        Component.onCompleted: {
-            beginFocusLock();
-        }
-        
-        Connections {
-            target: mainWin
-            function onIsSettledChanged() {
-                if (mainWin.isSettled) {
-                    focusLockManager.endFocusLock();
-                    mainWin.triggerDeferredBackendBoot();
-                }
-            }
-        }
-    }
-    // ------------------------------
+    // Startup may request regular activation once, but CSPM must never set
+    // itself topmost or reassert focus after the user changes applications.
     property string instanceId: ""
     property rect detachedOriginRect: Qt.rect(0, 0, 120, 90)
     property rect detachedHostWindowRect: Qt.rect(0, 0, 1220, 920)
@@ -557,7 +496,9 @@ Window {
         }
     }
 
-    // Window remains pinned to monitor usable area; animation happens inside canvas layer.
+    // During a normal settled state, the native window is only as large as the
+    // visible canvas.  A monitor-sized transparent host blocks every other
+    // application on that monitor even when CSPM itself looks small.
     width: hostW
     height: hostH
     x: hostX
@@ -4035,20 +3976,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function forceLaunchFocus() {
-        focusAnyWindow(mainWin);
-        var foregroundHandled = false;
-        try {
-            if (appRef && appRef.forceWindowForeground) {
-                foregroundHandled = !!appRef.forceWindowForeground(mainWin);
-            }
-        } catch (e0) {
-        }
-        try {
-            if (!foregroundHandled && !mainWin.detachedMode && appRef && appRef.forceMainWindowForeground) {
-                foregroundHandled = !!appRef.forceMainWindowForeground();
-            }
-        } catch (e) {
-        }
+        forceLaunchFocusLight();
     }
 
     function markStartupFirstPixelVisible(sourceTag) {
@@ -4935,6 +4863,19 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var safeCH = Math.max(1, contentH);
         var byContent = Math.round(Math.max(safeCW, safeCH) * layoutRatios.hostMarginContentPct);
         return Math.max(byMin, Math.max(byMonitor, byContent));
+    }
+
+    function settledHostPaddingPx(refW, refH) {
+        // Keep the native host exactly aligned with the settled canvas.  This
+        // preserves the visible glow/resize perimeter without leaving a large
+        // invisible, click-blocking rectangle across the monitor.
+        var desiredPadding = glowPadding;
+        if (!isFinite(desiredPadding) || desiredPadding < 0) {
+            desiredPadding = settledPaddingPx(Math.max(1, finalW), Math.max(1, finalH));
+        }
+        var maxPadX = Math.max(0, Math.floor((Math.max(1, refW) - Math.max(1, finalW)) / 2));
+        var maxPadY = Math.max(0, Math.floor((Math.max(1, refH) - Math.max(1, finalH)) / 2));
+        return Math.max(0, Math.min(Math.round(desiredPadding), Math.min(maxPadX, maxPadY)));
     }
 
     function titleBarHeightPx() {
@@ -6528,15 +6469,6 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var refH = Math.max(1, rect.h);
         var safeFinalW = Math.max(1, finalW);
         var safeFinalH = Math.max(1, finalH);
-        var hostPad = hostMarginPx(refW, refH, safeFinalW, safeFinalH);
-
-        if (mainWin.detachedMode && mainWin.appStyle !== "Professional" && !uiMaximized) {
-            hostX = Math.round(finalX - hostPad);
-            hostY = Math.round(finalY - hostPad);
-            hostW = Math.max(1, Math.round(safeFinalW + (hostPad * 2)));
-            hostH = Math.max(1, Math.round(safeFinalH + (hostPad * 2)));
-            return;
-        }
 
         // Opening uses a screen-sized host. The drop may begin offscreen, but the
         // visible part should never depend on a giant negative-Y native window.
@@ -6549,13 +6481,28 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             return;
         }
 
-        // Keep host origin pinned to the target monitor's visible origin.
-        // Negative host origins can place top-left on a different-DPI monitor and
-        // cause Windows/Qt to remap launch coordinates mid-sequence.
-        hostX = Math.round(rect.x);
-        hostY = Math.round(rect.y);
-        hostW = Math.max(1, Math.round(rect.w + (hostPad * 2)));
-        hostH = Math.max(1, Math.round(rect.h + (hostPad * 2)));
+        if (mainWin.animationPhase === "closing") {
+            applyHostEnvelopeForClosing();
+            return;
+        }
+
+        // The restore/maximize visual effect needs a monitor-sized envelope
+        // briefly.  It returns to the tight settled host when the effect ends.
+        if (mainWin.maximizeAnimInProgress || uiMaximized) {
+            hostX = Math.round(rect.x);
+            hostY = Math.round(rect.y);
+            hostW = Math.max(1, Math.round(rect.w));
+            hostH = Math.max(1, Math.round(rect.h));
+            return;
+        }
+
+        // Normal and detached settled windows must be no larger than their
+        // visible canvas. This is an input boundary, not just a rendering one.
+        var canvasPad = settledHostPaddingPx(refW, refH);
+        hostX = Math.round(finalX - canvasPad);
+        hostY = Math.round(finalY - canvasPad);
+        hostW = Math.max(1, Math.round(safeFinalW + (canvasPad * 2)));
+        hostH = Math.max(1, Math.round(safeFinalH + (canvasPad * 2)));
     }
 
 
@@ -7858,6 +7805,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         logCornerForensics("transition-to-settled-pre");
         animationPhase = "settled";
         isSettled = true;
+        // Backend boot is a data-lifecycle requirement, not a focus side
+        // effect. Keep it explicit so removing startup focus code can never
+        // leave the live workbook unread and the dashboard at zero.
+        if (!mainWin.detachedMode) {
+            mainWin.triggerDeferredBackendBoot();
+        }
         startupLaunchScreenLocked = false;
         startupHeavyWorkAllowed = false;
         startupHeavyWorkBlockedCount = 0;
@@ -8080,12 +8033,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         interval: 120
         repeat: false
         onTriggered: {
-            if (mainWin.startupFocusReassertRemaining <= 0) return;
-            mainWin.forceLaunchFocus();
-            mainWin.startupFocusReassertRemaining = Math.max(0, mainWin.startupFocusReassertRemaining - 1);
-            if (mainWin.startupFocusReassertRemaining > 0) {
-                startupFocusReassertTimer.start();
-            }
+            // Never reclaim focus after startup.  A user may already have
+            // moved to another application by the time this timer fires.
+            mainWin.startupFocusReassertRemaining = 0;
         }
     }
 

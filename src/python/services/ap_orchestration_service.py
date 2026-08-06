@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Mapping, Protocol
 
 from domain.ap_lifecycle import APValidationError, clean_text, money
 from repositories.ap_workbook_repository import APWorkbookRepository
+from services.ap_setoff_service import APSetoffService
 
 
 class ExpenseGateway(Protocol):
@@ -35,6 +37,7 @@ class APOrchestrationService:
     def __init__(self, ap_repository: APWorkbookRepository, expense_gateway: ExpenseGateway):
         self.ap_repository = ap_repository
         self.expense_gateway = expense_gateway
+        self._setoff_service = APSetoffService(expense_gateway)
 
     @staticmethod
     def deterministic_transaction_id(bill_id: str) -> str:
@@ -43,6 +46,48 @@ class APOrchestrationService:
             raise APValidationError("APBillID is required.")
         token = hashlib.sha256(normalized).hexdigest()[:20].upper()
         return f"TXN-AP-{token}"
+
+    @staticmethod
+    def normalize_bill_amounts(bill: Mapping[str, Any]) -> dict[str, Any]:
+        """Derive the net expense and HST when the user enters a gross total.
+
+        The QML form normally performs this calculation as the user types, but
+        accounting writes must not depend on a UI signal having fired.  The
+        explicit AmountEntryMode flag also makes API/direct callers safe.
+        """
+        normalized = dict(bill)
+        entry_mode = clean_text(
+            normalized.get("AmountEntryMode") or normalized.get("amountEntryMode")
+        ).casefold()
+        total_supplied = normalized.get("Total") not in (None, "")
+        subtotal_supplied = normalized.get("Subtotal") not in (None, "")
+        calculate_from_total = entry_mode == "total" or (
+            total_supplied and not subtotal_supplied
+        )
+        if not calculate_from_total:
+            return normalized
+
+        total = money(normalized.get("Total"), "total")
+        if total <= 0:
+            raise APValidationError("A total-entered supplier bill must have a total greater than zero.")
+
+        hst_exempt = bool(normalized.get("TaxExempt") or normalized.get("HSTExempt"))
+        if hst_exempt:
+            subtotal = total
+            tax_amount = Decimal("0.00")
+        else:
+            tax_rate = Decimal("0.13")
+            subtotal = (total / (Decimal("1.00") + tax_rate)).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            # Derive tax as the residual so net plus tax always exactly equals
+            # the entered, two-decimal supplier total.
+            tax_amount = money(total - subtotal, "tax amount")
+
+        normalized["Subtotal"] = float(subtotal)
+        normalized["TaxAmount"] = float(tax_amount)
+        normalized["Total"] = float(total)
+        return normalized
 
     @classmethod
     def build_expense_payload(cls, bill: Mapping[str, Any]) -> dict[str, Any]:
@@ -72,7 +117,7 @@ class APOrchestrationService:
             "categoryName": clean_text(bill.get("CategoryName")),
             "amount": total,
             "taxAmount": bill.get("TaxAmount") or 0,
-            "taxFlag": clean_text(bill.get("TaxFlag")) or "None",
+            "taxFlag": clean_text(bill.get("TaxFlag")),
             "hstExempt": 1 if bool(bill.get("TaxExempt") or bill.get("HSTExempt")) else 0,
             "generalOfficeExpense": 1 if clean_text(bill.get("ExpenseTreatment")) == "office" else 0,
             "invoiceRef": clean_text(bill.get("VendorInvoiceNumber")),
@@ -97,15 +142,16 @@ class APOrchestrationService:
         )
 
     def create_bill(self, bill: Mapping[str, Any]) -> APOrchestrationResult:
-        bill_id = clean_text(bill.get("APBillID"))
+        normalized_bill = self.normalize_bill_amounts(bill)
+        bill_id = clean_text(normalized_bill.get("APBillID"))
         if not bill_id:
             raise APValidationError("APBillID is required.")
 
-        transaction_payload = self.build_expense_payload(bill)
+        transaction_payload = self.build_expense_payload(normalized_bill)
         expected_transaction_id = clean_text(transaction_payload.get("transactionId"))
         existing = self.ap_repository.get_bill(bill_id)
         if existing is not None:
-            if self._same_identity(existing, bill, expected_transaction_id):
+            if self._same_identity(existing, normalized_bill, expected_transaction_id):
                 return APOrchestrationResult(
                     ok=True,
                     bill=dict(existing),
@@ -140,7 +186,7 @@ class APOrchestrationService:
                 "The AP bill was not created."
             )
 
-        bill_payload = dict(bill)
+        bill_payload = dict(normalized_bill)
         bill_payload["ExpenseTransactionID"] = returned_transaction_id
         saved_bill = self.ap_repository.create_bill(bill_payload)
         return APOrchestrationResult(
@@ -185,15 +231,16 @@ class APOrchestrationService:
         }
 
     def update_bill(self, bill: Mapping[str, Any]) -> APOrchestrationResult:
-        bill_id = clean_text(bill.get("APBillID"))
+        normalized_bill = self.normalize_bill_amounts(bill)
+        bill_id = clean_text(normalized_bill.get("APBillID"))
         existing = self.ap_repository.get_bill(bill_id)
         if existing is None:
             raise APValidationError(f"Unknown AP bill ID: {bill_id}")
         if self.ap_repository.list_active_payments(bill_id):
             if (
-                money(bill.get("Subtotal"), "subtotal")
+                money(normalized_bill.get("Subtotal"), "subtotal")
                 != money(existing.get("Subtotal"), "existing subtotal")
-                or money(bill.get("TaxAmount"), "tax amount")
+                or money(normalized_bill.get("TaxAmount"), "tax amount")
                 != money(existing.get("TaxAmount"), "existing tax amount")
             ):
                 raise APValidationError(
@@ -202,7 +249,7 @@ class APOrchestrationService:
         transaction_id = clean_text(existing.get("ExpenseTransactionID"))
         if not transaction_id:
             raise APValidationError("This AP bill has no linked expense transaction and cannot be edited safely.")
-        payload = dict(bill)
+        payload = dict(normalized_bill)
         payload["ExpenseTransactionID"] = transaction_id
         transaction_payload = self.build_expense_payload(payload)
         transaction_result = dict(self.expense_gateway.save_ap_expense(transaction_payload) or {})
@@ -261,5 +308,11 @@ class APOrchestrationService:
     def record_payment(self, payment: Mapping[str, Any]) -> dict[str, Any]:
         return self.ap_repository.post_payment(payment)
 
+    def record_setoff(self, payment: Mapping[str, Any]) -> dict[str, Any]:
+        return self._setoff_service.record(payment)
+
     def reverse_payment(self, payment_id: str, reversal_id: str, reason: str) -> dict[str, Any]:
         return self.ap_repository.reverse_payment(payment_id, reversal_id, reason)
+
+    def reverse_setoff(self, payment_id: str, reversal_id: str, reason: str) -> dict[str, Any]:
+        return self._setoff_service.reverse(payment_id, reversal_id, reason)
