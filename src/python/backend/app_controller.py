@@ -2618,17 +2618,65 @@ class AppController(QObject):
 
     @Slot()
     def promptMasterDataDir(self) -> None:
-        from PySide6.QtWidgets import QFileDialog
-        from PySide6.QtCore import QDir
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from PySide6.QtCore import QDir, QCoreApplication
         import os
+        import zipfile
+
         dir_path = QFileDialog.getExistingDirectory(
             None,
-            "Select Master Data Directory (Network)",
+            "Select Shared Data Source Folder",
             self._master_data_dir or QDir.homePath(),
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
-        if dir_path:
-            self.masterDataDir = os.path.normpath(dir_path)
+        if not dir_path:
+            return
+
+        dir_path = os.path.normpath(dir_path)
+        workbook_paths = [
+            os.path.join(dir_path, "CSPM.xlsm"),
+            os.path.join(dir_path, "Dockets.xlsm"),
+        ]
+        missing = [os.path.basename(path) for path in workbook_paths if not os.path.isfile(path)]
+        if missing:
+            QMessageBox.warning(
+                None,
+                "Missing Workbooks",
+                "The shared data source folder must contain both CSPM.xlsm and Dockets.xlsm.\n\n"
+                f"Missing: {', '.join(missing)}",
+            )
+            return
+
+        invalid = [
+            os.path.basename(path)
+            for path in workbook_paths
+            if not zipfile.is_zipfile(path)
+        ]
+        if invalid:
+            QMessageBox.warning(
+                None,
+                "Malformed Workbooks",
+                "The selected shared data source contains an invalid Excel workbook.\n\n"
+                f"Invalid: {', '.join(invalid)}",
+            )
+            return
+
+        reply = QMessageBox.question(
+            None,
+            "Use Shared Data Source",
+            "CSPM.xlsm and Dockets.xlsm were found and validated in:\n\n"
+            f"{dir_path}\n\n"
+            "CSPM will pull from this shared source on its next start and push local changes "
+            "when it closes. Restart now?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            # Defer applying the new source until a clean restart.  Changing
+            # _paths here would make shutdown push this session's local data
+            # into an unpulled source folder.
+            self._settings_data["masterDataDir"] = dir_path
+            self.save_settings()
+            QCoreApplication.instance().quit()
 
     @Slot()
     def promptLocalDataDir(self) -> None:
@@ -2640,7 +2688,7 @@ class AppController(QObject):
         
         dir_path = QFileDialog.getExistingDirectory(
             None,
-            "Select Local Working Directory",
+            "Select Local Save Folder",
             self._local_data_dir or QDir.homePath(),
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
         )
@@ -2687,15 +2735,21 @@ class AppController(QObject):
             QMessageBox.warning(None, "Malformed Workbooks", "One or both workbooks in the selected folder are malformed or not valid Excel files.")
             return
             
-        msg = f"Selected Folder: {dir_path}\n\n"
+        msg = f"Selected Local Save Folder: {dir_path}\n\n"
         msg += f"CSPM.xlsm:\nSize: {cspm_sz} bytes\nModified: {cspm_mt}\n\n"
         msg += f"Dockets.xlsm:\nSize: {dockets_sz} bytes\nModified: {dockets_mt}\n\n"
         msg += "Validation: PASSED.\n\n"
-        msg += "The application must restart to apply this change. Restart now?"
+        msg += (
+            "This folder contains this computer's active CSPM and Dockets working copies.\n\n"
+            "The application must restart to apply this change. Restart now?"
+        )
         
-        reply = QMessageBox.question(None, "Confirm Data Folder", msg, QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(None, "Confirm Local Save Folder", msg, QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
-            self.localDataDir = dir_path
+            # Keep the current session bound to its active workbook through
+            # shutdown.  The selected local package is applied cleanly at the
+            # next startup after the user confirms this restart.
+            self._settings_data["localDataDir"] = dir_path
             self.save_settings()
             QCoreApplication.instance().quit()
 

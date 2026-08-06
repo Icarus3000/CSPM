@@ -480,7 +480,7 @@ Popup {
                     Layout.fillWidth: true
                     spacing: 2
                     Text {
-                        text: "Master Data Directory (Network)"
+                        text: "Shared Data Source Folder"
                         color: root.menuInk
                         font.pixelSize: 14
                         font.weight: Font.DemiBold
@@ -488,7 +488,7 @@ Popup {
                         elide: Text.ElideRight
                     }
                     Text {
-                        text: (root.appRef && root.appRef.masterDataDir) ? root.appRef.masterDataDir : "Not set (Smart Fallback)"
+                        text: (root.appRef && root.appRef.masterDataDir) ? root.appRef.masterDataDir : "Not selected - default CSPM data package"
                         color: SemanticTheme.alpha(root.menuInk, 0.6)
                         font.pixelSize: 11
                         Layout.fillWidth: true
@@ -497,11 +497,11 @@ Popup {
                 }
 
                 Text {
-                    text: "Select"
+                    text: "Choose"
                     color: root.menuInk
                     font.pixelSize: 12
                     font.weight: Font.Bold
-                    Layout.preferredWidth: 42
+                    Layout.preferredWidth: 48
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -538,7 +538,7 @@ Popup {
                     Layout.fillWidth: true
                     spacing: 2
                     Text {
-                        text: "Local Working Directory"
+                        text: "Local Save Folder"
                         color: root.menuInk
                         font.pixelSize: 14
                         font.weight: Font.DemiBold
@@ -546,7 +546,7 @@ Popup {
                         elide: Text.ElideRight
                     }
                     Text {
-                        text: (root.appRef && root.appRef.localDataDir) ? root.appRef.localDataDir : "Not set (Smart Fallback)"
+                        text: (root.appRef && root.appRef.localDataDir) ? root.appRef.localDataDir : "Not selected - default CSPM data location"
                         color: SemanticTheme.alpha(root.menuInk, 0.6)
                         font.pixelSize: 11
                         Layout.fillWidth: true
@@ -555,11 +555,11 @@ Popup {
                 }
 
                 Text {
-                    text: "Select"
+                    text: "Choose"
                     color: root.menuInk
                     font.pixelSize: 12
                     font.weight: Font.Bold
-                    Layout.preferredWidth: 42
+                    Layout.preferredWidth: 48
                     horizontalAlignment: Text.AlignRight
                     verticalAlignment: Text.AlignVCenter
                 }

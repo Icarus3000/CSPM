@@ -1,5 +1,13 @@
 # Phase 7: Statements of Account and Ledgers Task List
 
+## Portable Current Data and Explicit Data Locations (2026-08-06)
+
+- [x] Replace the repository's older `data/CSPM.xlsm` with the verified current LocalAppData workbook, including the repaired invoice `26-0080`; `Dockets.xlsm` was verified identical.
+- [x] Rename the Settings controls to **Shared Data Source Folder** and **Local Save Folder** so their roles are clear on every computer.
+- [x] Require a selected shared source to contain valid `CSPM.xlsm` and `Dockets.xlsm` files, and defer either location change until a clean restart so the active session cannot push into an unpulled/new location.
+- [x] Rebuild and promote the revised `dist/CSPM/CSPM.exe`; preserve the replaced release and the verified candidate in `to_delete/` rather than deleting either.
+- [ ] On the second computer, manually choose the desired shared source package and local save package from Settings, restart, and confirm the current invoices, clients, and dockets appear.
+
 ## Repository Build-Artifact Quarantine (2026-08-06)
 - [x] Move seven confirmed stale PyInstaller distribution/build artifacts into `to_delete/` for review rather than permanent deletion.
 - [x] Update the release builder to quarantine a replaced package and any unpromoted default staging output instead of deleting it or leaving it at the repository root.
