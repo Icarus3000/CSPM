@@ -99,6 +99,25 @@ class BillingController(QObject):
         from PySide6.QtCore import QSettings
         return str(QSettings("DigitalShovel", "CSPM").value("custom_invoice_dir", ""))
 
+    @Slot()
+    def promptCustomInvoiceDir(self):
+        from PySide6.QtWidgets import QFileDialog, QApplication
+        from PySide6.QtCore import QSettings
+        import os
+
+        parent = QApplication.activeWindow()
+        current_dir = self.customInvoiceDir
+        if not current_dir or not os.path.isdir(current_dir):
+            current_dir = os.path.expanduser("~")
+
+        selected_dir = QFileDialog.getExistingDirectory(parent, "Select Invoice Root Folder", current_dir)
+        
+        if selected_dir:
+            settings = QSettings("DigitalShovel", "CSPM")
+            settings.setValue("custom_invoice_dir", selected_dir)
+            settings.sync()
+            self.customInvoiceDirChanged.emit()
+
     def __init__(self, excel_repo, invoice_draft_service, invoice_document_service):
 
         super().__init__()
