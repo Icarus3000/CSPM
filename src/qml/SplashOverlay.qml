@@ -930,8 +930,6 @@ ApplicationWindow {
             }
         }
 
-        }
-
     }
 
     // Super Modern Elite Loading Indicator
