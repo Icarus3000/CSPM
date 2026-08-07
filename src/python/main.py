@@ -117,6 +117,45 @@ class CustomSplash(QSplashScreen):
         self.anim_out.finished.connect(self._close_after_fade)
         self._is_fading_out = False
 
+        self._progress = 0.0
+        self.progress_timer = QTimer(self)
+        self.progress_timer.timeout.connect(self._update_progress)
+        self.progress_timer.start(30)
+
+    def _update_progress(self):
+        if not self._is_fading_out:
+            # Smoothly fake progress up to 90%
+            self._progress += (90.0 - self._progress) * 0.04
+        else:
+            # Swiftly complete to 100% when app appears
+            self._progress += (100.0 - self._progress) * 0.15
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        width = self.width()
+        height = self.height()
+        
+        bar_width = width * 0.6
+        bar_height = 4
+        x = (width - bar_width) / 2
+        y = height - 40
+        
+        # Premium dark track background
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 30))
+        painter.drawRoundedRect(x, y, bar_width, bar_height, 2, 2)
+        
+        # Premium teal glow progress fill
+        fill_width = bar_width * (self._progress / 100.0)
+        if fill_width > 0:
+            painter.setBrush(QColor(0, 210, 255, 220))
+            painter.drawRoundedRect(x, y, fill_width, bar_height, 2, 2)
+        painter.end()
+
     def start_fade_in(self):
         if self._is_fading_out:
             return
