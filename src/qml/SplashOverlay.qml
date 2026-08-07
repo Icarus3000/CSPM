@@ -930,6 +930,60 @@ ApplicationWindow {
             }
         }
 
+        }
+
+    }
+
+    // Super Modern Elite Loading Indicator
+    Item {
+        id: premiumLoader
+        width: 200
+        height: 2
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 60
+        opacity: splashWin.bgOpacity * 0.85
+        visible: splashWin.bgOpacity > 0 && splashWin.logoRenderGateOpen
+        clip: true
+
+        Rectangle {
+            anchors.fill: parent
+            color: splashWin.isPro ? "#e2e8f0" : "#334155"
+            radius: 1
+        }
+
+        Rectangle {
+            id: loaderSweep
+            width: 80
+            height: parent.height
+            radius: 1
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "transparent" }
+                GradientStop { position: 0.5; color: splashWin.isPro ? "#0ea5e9" : "#38bdf8" } // Sleek sky blue
+                GradientStop { position: 1.0; color: "transparent" }
+            }
+
+            SequentialAnimation on x {
+                loops: Animation.Infinite
+                running: premiumLoader.visible
+                
+                NumberAnimation {
+                    from: -100
+                    to: premiumLoader.width + 20
+                    duration: 1400
+                    easing.type: Easing.InOutQuad
+                }
+                PauseAnimation { duration: 200 }
+                NumberAnimation {
+                    from: premiumLoader.width + 20
+                    to: -100
+                    duration: 1400
+                    easing.type: Easing.InOutQuad
+                }
+                PauseAnimation { duration: 200 }
+            }
+        }
     }
 
     AudioOutput {
