@@ -591,6 +591,13 @@ def _apply_app_icon_to_window(window: Any, icon: QIcon) -> bool:
     if window is None or icon.isNull():
         return False
     try:
+        if window.metaObject().className() == "QMessageBox":
+            return False
+        
+        if hasattr(window, "setWindowIcon"):
+            window.setWindowIcon(icon)
+            return True
+            
         set_icon = getattr(window, "setIcon", None)
         if callable(set_icon):
             set_icon(icon)
