@@ -3331,7 +3331,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
         return {
             "dateText": payloadDateText,
+            "clientId": root.currentClientId(),
             "clientText": clientCombo.editText,
+            "matterId": root.currentMatterId(),
             "matterText": matterCombo.editText,
             "parentText": parentCombo ? parentCombo.editText : "",
             "taskText": taskCombo.editText,

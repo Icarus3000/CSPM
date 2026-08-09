@@ -29,6 +29,7 @@ Item {
     property string titleText: "Module"
     property string laneKey: ""
     property var navItems: []
+    property var allNavItems: []
     property string defaultNodeId: ""
     property var laneSummary: ({})
     property var initialState: null
@@ -347,8 +348,15 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         ]
     }
 
+    function searchNavItemsList() {
+        if (root.allNavItems && root.allNavItems.length !== undefined && root.allNavItems.length > 0) {
+            return root.allNavItems
+        }
+        return normalizedNavItems()
+    }
+
     function currentNode() {
-        var list = normalizedNavItems()
+        var list = searchNavItemsList()
         for (var i = 0; i < list.length; i++) {
             var row = list[i]
             if (String(row.id || "") === String(root.activeNodeId || "")) {
@@ -361,7 +369,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
     function nodeTitleForId(nodeId) {
         var wanted = String(nodeId || "")
-        var list = normalizedNavItems()
+        var list = searchNavItemsList()
         for (var i = 0; i < list.length; i++) {
             var row = list[i]
             if (String(row.id || "") === wanted) {
@@ -371,8 +379,19 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         return wanted
     }
 
+    function nodeIndexForId(nodeId) {
+        var wanted = String(nodeId || "")
+        var list = searchNavItemsList()
+        for (var i = 0; i < list.length; i++) {
+            if (String(list[i].id || "") === wanted) {
+                return i
+            }
+        }
+        return -1
+    }
+
     function ensureActiveNode() {
-        var list = normalizedNavItems()
+        var list = searchNavItemsList()
         if (list.length <= 0) {
             activeNodeId = ""
             return
@@ -2898,14 +2917,38 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
     function snapshotState() {
         var node = root.currentNode()
-        return {
+        var baseState = {
             "tileIndex": root.tileIndex,
             "titleText": root.titleText,
             "laneKey": root.laneKey,
             "focusNodeId": root.activeNodeId,
             "focusNodeTitle": node ? String(node.title || "") : "",
-            "dirty": root.dirty
+            "dirty": root.dirty,
+            "omniQuery": queryInput.text,
+            "clientDirectoryQueryText": root.clientDirectoryQuery,
+            "clientDirectoryModeText": clientDirectoryMode,
+            "matterDirectoryQueryText": root.matterDirectoryQuery,
+            "matterDirectoryModeText": matterDirectoryMode,
+            "selectedClientId": root.selectedClientId,
+            "selectedClientName": root.selectedClientName,
+            "selectedMatterId": root.selectedMatterId,
+            "selectedMatterName": root.selectedMatterName
         }
+
+        if (wipBillingView && typeof wipBillingView.snapshotState === "function") {
+            var wipState = wipBillingView.snapshotState()
+            for (var k in wipState) {
+                baseState[k] = wipState[k]
+            }
+        } else if (root._pendingStateForLoader && typeof root._pendingStateForLoader === "object") {
+            for (var k2 in root._pendingStateForLoader) {
+                if (k2 === "selectedClientFilter" || k2 === "selectedBillingClientFilter" || k2 === "clientIdToDraft" || k2 === "matterId") {
+                    baseState[k2] = root._pendingStateForLoader[k2]
+                }
+            }
+        }
+
+        return baseState
     }
 
     function applyInitialState(state) {
@@ -5128,6 +5171,7 @@ Behavior on border.color {
                             && !root.activeIsInvoiceDirectory()
                             && !root.activeIsInvoiceReversal()
                             && !root.activeIsAccountsPayable()
+                            && !root.activeIsLegacyDocketsImport()
                         t: root.t
                         metrics: root.responsiveMetrics
                         sfxBus: root.sfxBus
