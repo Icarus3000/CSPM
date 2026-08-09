@@ -429,6 +429,7 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 6
                             backgroundColor: "transparent"
+                            visible: !host.isPreviewLoading
                             Component.onCompleted: {
                                 if (host.previewHtml) htmlPreview.loadHtml(host.previewHtml, "http://localhost")
                             }
@@ -438,6 +439,13 @@ Item {
                                     if (host.previewHtml) htmlPreview.loadHtml(host.previewHtml, "http://localhost")
                                 }
                             }
+                        }
+                        
+                        BusyIndicator {
+                            anchors.centerIn: parent
+                            width: 32
+                            height: 32
+                            visible: host.isPreviewLoading
                         }
                     }
 
@@ -617,9 +625,81 @@ Item {
                         }
                     }
                 }
+                
+                // --- Finalized Success Overlay ---
+                Rectangle {
+                    anchors.fill: parent
+                    visible: host.isFinalized
+                    color: host.isDark ? "#20242b" : "#ffffff"
+                    radius: 10
+                    border.color: host.borderColor
+                    border.width: 1
+                    
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 24
+                        
+                        Rectangle {
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 80; height: 80; radius: 40
+                            color: "#10b981" // Emerald 500
+                            Text { anchors.centerIn: parent; text: "✓"; color: "white"; font.pixelSize: 48; font.weight: Font.DemiBold }
+                        }
+                        
+                        ColumnLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 8
+                            Text {
+                                text: "Invoice Finalized Successfully"
+                                color: host.textColor
+                                font.pixelSize: 24
+                                font.weight: Font.Bold
+                                font.family: "Inter"
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+                            Text {
+                                text: "Invoice " + host.finalInvoiceNum + " has been recorded."
+                                color: host.mutedColor
+                                font.pixelSize: 15
+                                font.family: "Inter"
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+                        }
+                        
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 16
+                            Layout.topMargin: 16
+                            
+                            PillButton { 
+                                t: host.t
+                                text: "Open Final PDF"
+                                primary: false
+                                Layout.preferredWidth: 160
+                                Layout.preferredHeight: 40
+                                onClicked: Qt.openUrlExternally("file:///" + host.finalPdfPath)
+                            }
+                            
+                            PillButton { 
+                                t: host.t
+                                text: "Return to WIP"
+                                primary: true
+                                Layout.preferredWidth: 160
+                                Layout.preferredHeight: 40
+                                onClicked: {
+                                    host.isFinalized = false
+                                    if (typeof host.autoCloseTimer !== 'undefined') {
+                                        host.autoCloseTimer.start()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 Text {
                     anchors.centerIn: parent
-                    visible: !host.selectedDraftNum
+                    visible: !host.selectedDraftNum && !host.isFinalized
                     text: "Select a draft invoice to show its preview and billing controls."
                     color: host.mutedColor
                     font.pixelSize: 14

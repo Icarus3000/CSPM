@@ -39,6 +39,7 @@ Window {
     property var analysisResult: null
     property var rowsData: []
     property var importView: null
+    property var selectedMap: ({})
 
     ListModel {
         id: columnsModel
@@ -55,6 +56,7 @@ Window {
     property bool sortAsc: true
 
     property string sheetFilter: "All"
+    onSheetFilterChanged: refreshRows()
 
     property int metricNewClients: 0
     property int metricNewMatters: 0
@@ -150,17 +152,25 @@ Window {
                 Layout.fillWidth: true
             }
 
+
+
             Button {
                 text: "Import Selected Data"
                 Layout.preferredHeight: 36
-                enabled: gridWindow.rowsData.length > 0 && gridWindow.importView !== undefined
+                enabled: gridWindow.importView !== undefined
                 onClicked: {
                     var allowedRows = {}
-                    for (var i = 0; i < gridWindow.rowsData.length; i++) {
-                        var r = gridWindow.rowsData[i]
-                        if (r.selected === true) {
-                            if (!allowedRows[r.sheet]) allowedRows[r.sheet] = []
-                            allowedRows[r.sheet].push(r.row)
+                    var sheets = Object.keys(gridWindow.selectedMap || {})
+                    for (var i = 0; i < sheets.length; i++) {
+                        var sh = sheets[i]
+                        var rowsObj = gridWindow.selectedMap[sh]
+                        var rowsKeys = Object.keys(rowsObj)
+                        for (var j = 0; j < rowsKeys.length; j++) {
+                            var rStr = rowsKeys[j]
+                            if (rowsObj[rStr] === true) {
+                                if (!allowedRows[sh]) allowedRows[sh] = []
+                                allowedRows[sh].push(parseInt(rStr))
+                            }
                         }
                     }
 
@@ -271,8 +281,8 @@ Window {
                 ComboBox {
                     id: sheetFilterCombo
                     model: ["All", "Clients", "Matters", "Dockets", "Ledger", "Ledger (A/R Deduced)"]
-                    onActivated: {
-                        gridWindow.sheetFilter = sheetFilterCombo.textAt(index)
+                    onCurrentTextChanged: {
+                        gridWindow.sheetFilter = currentText
                     }
                     Layout.preferredWidth: 160
                     Layout.preferredHeight: 28
@@ -342,7 +352,8 @@ Window {
                             var allowedRows = {}
                             for (var i = 0; i < gridWindow.rowsData.length; i++) {
                                 var r = gridWindow.rowsData[i]
-                                if (r.selected === true && (gridWindow.sheetFilter === "All" || r.sheet === gridWindow.sheetFilter)) {
+                                var isSel = gridWindow.selectedMap[r.sheet] && gridWindow.selectedMap[r.sheet][r.row] === true
+                                if (isSel) {
                                     if (!allowedRows[r.sheet]) allowedRows[r.sheet] = []
                                     allowedRows[r.sheet].push(parseInt(r.row))
                                 }
@@ -400,13 +411,14 @@ Window {
                                             onClicked: {
                                                 var val = checked
                                                 gridWindow.metricAllSelected = val
-                                                var newRows = []
+                                                var sm = gridWindow.selectedMap || {}
                                                 for (var i=0; i<gridWindow.rowsData.length; i++) {
                                                     var r = gridWindow.rowsData[i]
-                                                    r.selected = val
-                                                    newRows.push(r)
+                                                    if (!sm[r.sheet]) sm[r.sheet] = {}
+                                                    sm[r.sheet][r.row] = val
                                                 }
-                                                gridWindow.rowsData = newRows
+                                                gridWindow.selectedMap = sm
+                                                gridWindow.selectedMapChanged()
                                             }
                                         }
                                     }
@@ -453,12 +465,18 @@ Window {
                                         active: model.isCheckbox === true
                                         visible: active
                                         sourceComponent: CheckBox {
-                                            checked: !!dataRow.rowData.selected
+                                            checked: gridWindow.selectedMap[dataRow.rowData.sheet] && gridWindow.selectedMap[dataRow.rowData.sheet][dataRow.rowData.row] === true
                                             onClicked: {
-                                                dataRow.rowData.selected = checked
+                                                var sm = gridWindow.selectedMap || {}
+                                                if (!sm[dataRow.rowData.sheet]) sm[dataRow.rowData.sheet] = {}
+                                                sm[dataRow.rowData.sheet][dataRow.rowData.row] = checked
+                                                gridWindow.selectedMap = sm
+                                                gridWindow.selectedMapChanged()
+                                                
                                                 var allSel = true
                                                 for (var i=0; i<gridWindow.rowsData.length; i++) {
-                                                    if (!gridWindow.rowsData[i].selected) {
+                                                    var r = gridWindow.rowsData[i]
+                                                    if (!sm[r.sheet] || sm[r.sheet][r.row] !== true) {
                                                         allSel = false
                                                         break
                                                     }

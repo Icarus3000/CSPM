@@ -20,7 +20,7 @@ Item {
     property bool isDark: SemanticTheme.isDarkMode(root.t)
 
     // Backend reference
-    property var billingBackend: (root.appRef && root.appRef.billing) ? root.appRef.billing : null
+    property var billingBackend: typeof appRef !== 'undefined' ? appRef.billing : null
 
     property bool zenModeOpen: false
     
@@ -57,6 +57,7 @@ Item {
     property var draftLineItems: []
     property string previewHtml: ""
     property bool isLoading: false
+    property bool isPreviewLoading: false
     property string selectedConcept: "Concept_A2"
     property real docketedTimeTotal: {
         var total = 0
@@ -86,7 +87,7 @@ Item {
 
     Timer {
         id: autoCloseTimer
-        interval: 2500
+        interval: 100 // Trigger almost immediately when the user clicks "Return to WIP"
         repeat: false
         onTriggered: {
             var navTarget = null;
@@ -102,6 +103,7 @@ Item {
     }
 
     property string finalInvoiceNum: ""
+    property string finalPdfPath: ""
 
     property var _activeDateField: null
 
@@ -235,7 +237,16 @@ Item {
         selectedDraftNum = draftNum
         selectedDraftData = billingBackend.getDraft(draftNum)
         draftLineItems = billingBackend.getDraftLineItems(draftNum) || []
-        billingBackend.previewInvoiceHtml(draftNum, root.selectedConcept)
+        
+        // Try to use cached preview HTML (pre-built by WIP tab) to avoid blank screen
+        var cachedHtml = billingBackend.getCachedPreviewHtml(draftNum)
+        if (cachedHtml) {
+            root.previewHtml = cachedHtml
+            root.isPreviewLoading = false
+        } else {
+            root.isPreviewLoading = true
+            billingBackend.previewInvoiceHtml(draftNum, root.selectedConcept)
+        }
     }
 
     function _finalizeDraft() {
@@ -327,21 +338,19 @@ Item {
         target: root.billingBackend
         function onInvoiceHtmlReady(html) {
             root.previewHtml = html
+            root.isPreviewLoading = false
         }
         function onDraftFinalized(result) {
+            root.isFinalizingExport = false
             root.isFinalized = true
             root.finalInvoiceNum = result
+            root.zenModeOpen = false // Ensure Zen is closed
             root._loadDrafts()
             
             // Fetch clean finalized HTML directly from backend to clear draft watermarks and update numbers
             var cleanHtml = root.billingBackend.getFinalizedHtml(root.selectedDraftNum, root.finalInvoiceNum);
             if (cleanHtml) {
                 root.previewHtml = cleanHtml;
-            }
-            
-            appToast("Invoice Finalized! Returning to WIP...")
-            if (typeof autoCloseTimer !== 'undefined') {
-                autoCloseTimer.start();
             }
         }
         function onDraftUpdated(draft) {
@@ -351,21 +360,26 @@ Item {
             if (updatedDraftNum && String(updatedDraftNum) !== root.selectedDraftNum) return
             root.selectedDraftData = root.billingBackend.getDraft(root.selectedDraftNum) || draft || null
             root.draftLineItems = root.billingBackend.getDraftLineItems(root.selectedDraftNum) || []
+            root.isPreviewLoading = true
             root.billingBackend.previewInvoiceHtml(root.selectedDraftNum, root.selectedConcept)
         }
         function onPdfExportFinished(path, success) {
             if (root.isFinalizingExport && success && path === root.pendingFinalizePath) {
-                // PDF is saved successfully, now finalize in database
+                // PDF saved — close Zen immediately so user sees the main workspace
+                root.zenModeOpen = false
+                root.finalPdfPath = path
+                // Finalize in database (isFinalizingExport stays true as a loading indicator)
                 root.billingBackend.finalizeDraft(root.selectedDraftNum, root.pendingFinalizeInvoiceNum, root.pendingFinalizePath)
-                root.isFinalizingExport = false
                 root.pendingFinalizeInvoiceNum = ""
                 root.pendingFinalizePath = ""
             } else if (root.isFinalizingExport && !success) {
-                // Reset state on failure
                 root.isFinalizingExport = false
                 root.pendingFinalizeInvoiceNum = ""
                 root.pendingFinalizePath = ""
             }
+        }
+        function onDraftFinalizationError(msg) {
+            root.isFinalizingExport = false
         }
     }
 
@@ -1320,7 +1334,6 @@ Item {
 
     Window {
         id: zenPopup
-        visible: root.zenModeOpen
         onClosing: root.zenModeOpen = false
         title: root.isFinalized ? ("Finalized: " + root.finalInvoiceNum) : ("Zen Preview — " + root.selectedDraftNum)
         width: 1024
@@ -1502,6 +1515,42 @@ Item {
                 }
             }
         }
+
+        // ── Finalizing Overlay ────────────────────────────────────────
+        Rectangle {
+            anchors.fill: parent
+            visible: root.isFinalizingExport
+            color: Qt.rgba(0, 0, 0, 0.7)
+            z: 100
+
+            Column {
+                anchors.centerIn: parent
+                spacing: 20
+
+                BusyIndicator {
+                    running: root.isFinalizingExport
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 64; height: 64
+                    palette.dark: "#3B82F6"
+                }
+
+                Text {
+                    text: "Finalizing Invoice..."
+                    font.pixelSize: 22
+                    font.weight: Font.DemiBold
+                    font.family: "Inter"
+                    color: "#FFFFFF"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+
+                Text {
+                    text: "Saving PDF and updating records"
+                    font.pixelSize: 14
+                    color: "#94A3B8"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+            }
+        }
     }
 
     // Finalize Invoice Dialog
@@ -1597,7 +1646,7 @@ Item {
         height: 250
         flags: Qt.Dialog | Qt.WindowStaysOnTopHint
         modality: Qt.ApplicationModal
-        color: root.backgroundColor
+        color: SemanticTheme.surfacePanel(root.t, root.appStyle)
 
         function open() {
             x = (Screen.desktopAvailableWidth - width) / 2

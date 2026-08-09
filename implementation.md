@@ -1,5 +1,17 @@
 # Implementation History
 
+## 2026-08-08: Import Wizard Precision Filtering (Part 2) & Theme Repairs
+
+- **Fix `0 added` records bug**: Replaced the ephemeral array-mutation logic in `AnalysisReviewGridWindow.qml` with a persistent `selectedMap`. This guarantees that checkbox states are maintained independently of QML's `Repeater` memory model and list mutations. Selected data is now reliably passed to the backend, enabling successful imports for specific filtered sheets (e.g., importing a specific docket from July 28).
+- **Analysis Grid Theme Repair**: Found that `LegacyDocketsImportView.qml` instantiated the `AnalysisReviewGridWindow.qml` popup but failed to pass the inherited `t` (theme context) property. Passed `"t": root.t` directly during `createComponent().createObject()`, restoring `SemanticTheme.js`'s ability to render the window correctly in both Light and Dark mode.
+- **Validation**: Compiled and successfully promoted `dist/CSPM/CSPM.exe` (Task 477). QML modifications correctly reference `root.t`.
+
+## 2026-08-08: Invoice Finalization Silent Failure Repair
+
+- **Root Cause**: The user reported that their generated invoice 27-0079 was not saved or appearing in the invoice directory, despite having seemingly finalized it. The issue occurred because the `exportInvoicePdf` routine in the Python backend imported `pypdf` locally within a nested function `finalize_merge`, which evaded PyInstaller's static analysis. As a result, the `pypdf` and `reportlab` libraries were not bundled into the release executable. When `exportInvoicePdf` crashed with a `ModuleNotFoundError`, a silent transient error toast was sent to the QML UI, but the UI did not properly prevent the user from thinking the invoice was finalized, and the invoice was never actually written to the database.
+- **Solution**: Added `--hidden-import=pypdf` and `--hidden-import=reportlab` to the PyInstaller configuration in `scripts/build_release.py`.
+- **Validation**: Fired off a new PyInstaller release build to ensure the missing libraries are properly packaged with the application.
+
 ## 2026-08-06: Governed Historic Financial Synchronization
 
 - **Source authority and scope**: added `FinancialSyncService` for the OneDrive historic workbook at `C:\Users\cschn\OneDrive - LPN\__Invoices (1)\Dockets.xlsm`. It treats the workbook as a dated complete snapshot through its last docket date, corrects source-era financial data in an isolated candidate, and preserves CSPM-native records strictly after the cutoff. It does not use the generic legacy importer to infer financial data.
@@ -711,3 +723,14 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 - The A/P set-off form no longer accepts pasted `Invoice = amount` lines. Its `Choose receivables to set off` action loads the existing open-invoice list, supports searching by invoice/client, selecting multiple invoices, entering a full or partial amount for each, and displays the selected, remaining, or over-allocated total before the dialog closes.
 - The posting path still sends the same structured allocation objects to the atomic A/P/A/R set-off service. The form additionally prevents a selected amount exceeding the displayed open balance and requires its allocations to equal the A/P payment total exactly.
 - Validation: 14 focused tests passed; `AccountsPayableView.qml` both parsed and instantiated with Qt's offscreen loader. The mandatory QML-lint wrapper was re-run, but remains environment-blocked by the installed PySide launcher being unable to find `qmllint.exe` (`WinError 2`). The application is currently open, so this source change has not been compiled into a new release yet.
+
+### UI Polish & Preview State Correction (2026-08-08)
+- **Progress Indicator**: Added a BusyIndicator and tied it to a new isPreviewLoading boolean property in InvoiceBuilderWorkspace.qml and InvoiceBuilderView.qml. This provides visual feedback while the preview HTML is generated.
+- **Finalized Preview State**: Updated getFinalizedHtml in illing_controller.py to use the cached payload of the draft (since the draft is deleted upon finalization), but overridden with is_draft=False and the final invoice number. This removes the DRAFT watermark from the preview upon successful finalization.
+
+
+- **Zen Mode Finalization UX**: Added logic to automatically close the Zen Mode preview window (zenModeOpen = false) upon successful draft finalization. This allows the user to immediately see the Finalized Success Overlay on the main workspace.
+
+
+- **Delayed WIP-to-Builder Transition**: Modified WIPBillingWizardView so that when Create Draft is clicked, the UI remains on the WIP tab with the loading indicator spinning until the invoiceHtmlReady signal is emitted by the backend. It now waits for the preview HTML generation to finish before transitioning to the Invoice Builder tab.
+

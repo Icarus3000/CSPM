@@ -334,6 +334,8 @@ def main():
         "--windowed",
         "--name", "CSPM",
         "--icon=src/assets/app_icon.ico",
+        "--hidden-import=pypdf",
+        "--hidden-import=reportlab",
         "--distpath", str(dist_dir),
         "--workpath", str(build_dir),
     ]

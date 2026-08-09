@@ -964,7 +964,7 @@ ApplicationWindow {
 
             SequentialAnimation on x {
                 loops: Animation.Infinite
-                running: premiumLoader.visible
+                running: true
                 
                 NumberAnimation {
                     from: -100

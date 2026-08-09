@@ -4,6 +4,7 @@ import QtQuick.Window 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Dialogs
+import Qt.labs.platform 1.1 as Platform
 import "../standards"
 import "../standards/SemanticTheme.js" as SemanticTheme
 
@@ -307,7 +308,9 @@ Rectangle {
             if (totalUpdated > 0) textParts.push(totalUpdated + " existing records updated")
             
             var text = "Successfully imported: " + textParts.join(", ") + "."
-            return "Import completed.\n" + text + (warnings > 0 ? ("\n" + warnings + " warnings") : "")
+            var warningsText = warnings > 0 ? ("\n" + warnings + " warnings") : ""
+            var errorsText = result.errors && result.errors.length > 0 ? ("\nErrors:\n" + result.errors.join("\n")) : ""
+            return "Import completed.\n" + text + warningsText + errorsText
         }
         return "Import failed: " + (result.errors ? result.errors.join(", ") : "Unknown error")
     }
@@ -434,7 +437,12 @@ Rectangle {
                 root.sourceAnalysisInProgress = false
                 root.sourceAnalysisComplete = false
                 root.analysisResult = result || ({})
-                root.statusMessage = result && result.message ? String(result.message) : "Analysis failed."
+                var errStr = "Analysis failed.";
+                if (result) {
+                    if (result.message) errStr = String(result.message);
+                    else if (result.errors && result.errors.length > 0) errStr = "Analysis failed: " + String(result.errors[0]);
+                }
+                root.statusMessage = errStr;
             }
         } catch(e) {
             root.sourceAnalysisInProgress = false
@@ -657,7 +665,12 @@ Rectangle {
                 text: "Browse..."
                 enabled: !root.importInProgress
                 Layout.preferredHeight: 36
-                onClicked: importFileDialog.open()
+                onClicked: {
+                    var p = root.appRef.browseLegacyDocketsFile()
+                    if (p && p.length > 0) {
+                        root.selectImportFile(p, true)
+                    }
+                }
 
                 contentItem: Text {
                     text: browseButton.text
@@ -899,7 +912,8 @@ Rectangle {
                             "appRef": root.appRef,
                             "visualRules": visualRules,
                             "analysisResult": root.analysisResult,
-                            "importView": root
+                            "importView": root,
+                            "t": root.t
                         })
                         gridWindow.showMaximized()
                     } else {
@@ -2178,12 +2192,13 @@ Rectangle {
         }
     }
 
-    FileDialog {
+    Platform.FileDialog {
         id: importFileDialog
         title: "Select Legacy Dockets File"
         nameFilters: ["Excel files (*.xlsm *.xlsx)", "All files (*)"]
+        options: Platform.FileDialog.DontUseNativeDialog
         onAccepted: {
-            var p = selectedFile ? selectedFile.toString() : ""
+            var p = file ? file.toString() : ""
             root.selectImportFile(p, true)
         }
     }

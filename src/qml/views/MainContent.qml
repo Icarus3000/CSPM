@@ -405,6 +405,12 @@ Item {
         return cfg.displayNavItems
     }
 
+    function laneAllNavItemsForTile(tileIndex) {
+        var cfg = laneConfigForTile(tileIndex)
+        if (!cfg || !cfg.navItems || cfg.navItems.length === undefined) return []
+        return cfg.navItems
+    }
+
     function option3ModuleForTile(tileIndex) {
         var idx = Math.round(tileIndex)
         var modules = option3NavigationModules || []
@@ -1311,6 +1317,19 @@ Item {
             var isActiveTab = String(tabs[i].id || "") === String(option3ActiveTabId || "")
             var isActiveNode = snapshotNodeId === String(tabs[i].nodeId || "")
             if (!isActiveNode && !(isActiveTab && snapshotNodeId.length > 0)) continue
+
+            // Guard: if this is the active tab but the panel's focusNodeId does
+            // NOT match the tab's nodeId, skip the full metadata sync.  This
+            // prevents a race where the panel hasn't finished transitioning and
+            // its snapshot still carries the previous screen's nodeId, which
+            // would overwrite the newly-opened tab (e.g. reverting A11→A01).
+            if (isActiveTab && !isActiveNode) {
+                if (tabs[i].dirty !== !!snapshot.state.dirty) {
+                    tabs[i].dirty = !!snapshot.state.dirty
+                    changed = true
+                }
+                continue
+            }
 
             if (tabs[i].dirty !== !!snapshot.state.dirty) {
                 tabs[i].dirty = !!snapshot.state.dirty
@@ -3562,6 +3581,7 @@ Item {
                     laneKey: "clients_matters"
                     laneSummary: root.laneSummaryForTile(0)
                     navItems: root.laneNavItemsForTile(0)
+                    allNavItems: root.laneAllNavItemsForTile(0)
                     defaultNodeId: "A01"
                     tileIndex: 0
                     titleText: root.tileTitleForIndex(0)
@@ -3652,6 +3672,7 @@ Item {
                     externalNavigationShell: root.option3ShellEnabled
                     laneSummary: root.laneSummaryForTile(1)
                     navItems: root.laneNavItemsForTile(1)
+                    allNavItems: root.laneAllNavItemsForTile(1)
                     tileIndex: 1
                     titleText: root.tileTitleForIndex(1)
                     initialState: (root.dockedStateByTile[1] !== undefined)
@@ -3757,6 +3778,7 @@ Item {
                     laneKey: "billing_tax"
                     laneSummary: root.laneSummaryForTile(2)
                     navItems: root.laneNavItemsForTile(2)
+                    allNavItems: root.laneAllNavItemsForTile(2)
                     defaultNodeId: "C01"
                     tileIndex: 2
                     titleText: root.tileTitleForIndex(2)
@@ -3855,6 +3877,7 @@ Item {
                     laneKey: "finance_ops"
                     laneSummary: root.laneSummaryForTile(3)
                     navItems: root.laneNavItemsForTile(3)
+                    allNavItems: root.laneAllNavItemsForTile(3)
                     defaultNodeId: "D01"
                     tileIndex: 3
                     titleText: root.tileTitleForIndex(3)

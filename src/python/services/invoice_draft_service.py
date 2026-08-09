@@ -29,22 +29,28 @@ class InvoiceDraftService:
         treating those rows as zero silently produces a $0 invoice.  The direct
         fee's positive gross value is therefore the canonical recovery source.
         """
+        gross = self._money(row.get(sc.COL_TIME_GROSS))
         net = self._money(row.get(sc.COL_TIME_NET))
         tax = self._money(row.get(sc.COL_TIME_HST))
         is_direct_fee = "entrytype:fee" in str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower()
 
+        # The draft invoice total must use the gross docket amount as the base.
+        # This matches the HTML invoice display, and correctly handles agency 
+        # split calculations without double-deducting the lawyer's share.
+        invoice_fee = gross if gross > 0 else net
+
         if is_direct_fee:
-            gross = self._money(row.get(sc.COL_TIME_GROSS))
             if net <= 0 and gross > 0:
                 net = gross
-            if net > 0 and tax <= 0:
-                tax = (net * Decimal("0.13")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                invoice_fee = gross
+            if invoice_fee > 0 and tax <= 0:
+                tax = (invoice_fee * Decimal("0.13")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             if normalize_fee and net > 0:
                 row[sc.COL_TIME_NET] = str(net)
                 row[sc.COL_TIME_HST] = str(tax)
                 row[sc.COL_TIME_TOTAL] = str(net + tax)
 
-        return net, tax
+        return invoice_fee, tax
 
     def create_draft(self, client_id: str, client_name: str, time_entry_ids: List[str], disb_ids: List[str] = None, grouping_pref: str = "matter") -> str:
         """
@@ -145,12 +151,27 @@ class InvoiceDraftService:
         if updated_disb:
             self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
 
-        # Docket rows already hold the lawyer's share in ``AmountToYou`` and
-        # the corresponding HST.  Automatically applying a further 30% split
-        # merely because LIHDC is the billing client therefore deducts that
-        # share a second time.  A user may still explicitly apply an agency
-        # split through ``apply_agency_split`` when it is genuinely required.
+        # Apply 30% agency split for LIHDC. Because _entry_invoice_amounts
+        # now uses GrossToClient as the draft's fee base, this accurately
+        # matches the HTML preview and correctly reduces the backend total
+        # to the net AmountToYou without double-deduction.
         agency_split_percent = "0.0"
+        try:
+            cid = str(client_id).split(',')[0].strip()
+            client_profile_res = self.repo.get_client_profile(cid)
+            client_profile = client_profile_res.get("client", {}) if client_profile_res.get("ok") else {}
+            billing_client_id = client_profile.get("parentClientId") or cid
+            if billing_client_id != cid:
+                billing_profile_res = self.repo.get_client_profile(billing_client_id)
+                billing_profile = billing_profile_res.get("client", {}) if billing_profile_res.get("ok") else client_profile
+            else:
+                billing_profile = client_profile
+            
+            billing_client_name = billing_profile.get("clientName", "") or billing_profile.get("displayName", "")
+            if "LIHDC" in str(billing_client_name).upper() or "LIHDC" in str(client_name).upper():
+                agency_split_percent = "30.0"
+        except Exception:
+            pass
 
         # 3. Create Draft Record
         draft_record = {
@@ -204,6 +225,10 @@ class InvoiceDraftService:
         drafts.append(draft_record)
         self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
         
+        # If there's an agency split, recalculate immediately to ensure math is correct
+        if float(agency_split_percent) > 0:
+            self.recalculate_draft_totals(draft_num)
+            
         logger.info(f"[CREATE DRAFT] Success. Draft {draft_num} created.")
         return draft_num
 

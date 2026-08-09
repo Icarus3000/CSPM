@@ -1149,11 +1149,23 @@ class BillingController(QObject):
 
     # ── HTML Preview ─────────────────────────────────────────────────────────
 
+    _last_preview_html = ""
+    _last_preview_draft_num = ""
+
+    @Slot(str, result=str)
+    def getCachedPreviewHtml(self, draft_num):
+        """Return the last generated preview HTML if it matches the requested draft, else empty string."""
+        if self._last_preview_draft_num == str(draft_num) and self._last_preview_html:
+            return self._last_preview_html
+        return ""
+
     @Slot(str, str)
 
     def previewInvoiceHtml(self, draft_num, template_name):
 
         """Generate an HTML preview of the draft invoice."""
+
+        self._last_preview_draft_num = str(draft_num)
 
         worker = Worker(
 
@@ -1729,8 +1741,21 @@ class BillingController(QObject):
 
     @Slot(str, str, result=str)
     def getFinalizedHtml(self, draft_num, final_invoice_num):
-        payload = self._build_invoice_payload(draft_num, is_draft=False, final_invoice_num=final_invoice_num)
-        return self._doc_svc.generate_html("Concept_A2", payload)
+        cache_key = f"{draft_num}_True_None"
+        if cache_key in self._payload_cache:
+            import copy
+            payload = copy.deepcopy(self._payload_cache[cache_key])
+            payload["is_draft"] = False
+            payload["invoice_number_raw"] = final_invoice_num
+            payload["invoice_number"] = final_invoice_num
+            return self._doc_svc.generate_html("Concept_A2", payload)
+            
+        try:
+            payload = self._build_invoice_payload(draft_num, is_draft=False, final_invoice_num=final_invoice_num)
+            return self._doc_svc.generate_html("Concept_A2", payload)
+        except Exception as e:
+            self._logger.error(f"Could not rebuild payload for finalized HTML: {e}")
+            return ""
 
     @Slot(str, str, str)
 
@@ -1802,7 +1827,9 @@ class BillingController(QObject):
 
         try:
 
-            self.invoiceHtmlReady.emit(str(result or ""))
+            html = str(result or "")
+            self._last_preview_html = html
+            self.invoiceHtmlReady.emit(html)
 
         finally:
 

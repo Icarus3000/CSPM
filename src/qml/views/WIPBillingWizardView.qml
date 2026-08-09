@@ -348,8 +348,8 @@ Item {
         { key: "billing_client", label: "BILLING CLIENT", width: 180, minWidth: 100, align: "left", resizable: true, fill: false, visible: true },
         { key: "matter", label: "MATTER", width: 180, minWidth: 100, align: "left", resizable: true, fill: false, visible: true },
         { key: "description", label: "DESCRIPTION", width: 350, minWidth: 100, align: "left", resizable: true, fill: true, visible: true },
-        { key: "hours", label: "HOURS", width: 70, minWidth: 50, align: "right", resizable: true, fill: false, visible: true },
-        { key: "amount", label: "AMOUNT", width: 100, minWidth: 60, align: "right", resizable: true, fill: false, visible: true }
+        { key: "hours", label: "HOURS", width: 70, minWidth: 70, align: "right", resizable: true, fill: false, visible: true },
+        { key: "amount", label: "AMOUNT", width: 100, minWidth: 70, align: "right", resizable: true, fill: false, visible: true }
     ]
     
     function applyInitialState(state) {
@@ -367,11 +367,20 @@ Item {
         }
         if (state.matterId) {
             root.selectedMatterId = state.matterId
-            changed = true
         }
         root.autoCheckFilterMatch();
-        if (changed) {
-            root._loadWip();
+        
+        // ALWAYS reload WIP when returning to this view so we pick up edits
+        // made in the Time Docket or Expense screens.
+        root._loadWip();
+    }
+
+    function snapshotState() {
+        return {
+            "selectedClientFilter": root.selectedClientFilter,
+            "selectedBillingClientFilter": root.selectedBillingClientFilter,
+            "clientIdToDraft": root._pendingClientIdToFilter || "ALL",
+            "matterId": root.selectedMatterId
         }
     }
 
@@ -647,10 +656,13 @@ Item {
 
             root.isLoading = false
         }
+        property string pendingDraftNumForPreview: ""
+
         function onDraftCreated(result) {
             if (!root.isBuildingInvoice) return
-            root.isBuildingInvoice = false
+            
             if (result && result.ok === false) {
+                root.isBuildingInvoice = false
                 if (result.message) appToast("Could not create draft: " + String(result.message))
                 return
             }
@@ -658,6 +670,21 @@ Item {
             root._loadWip()
             var draftNum = result.InvoiceNum || result.draftNum || (result.draft && result.draft.draftNum) || result.id || "";
             if (draftNum) {
+                // Instead of navigating immediately, ask for the preview HTML and wait for it.
+                // This keeps the "building invoice" animation running on this screen.
+                pendingDraftNumForPreview = draftNum
+                root.billingBackend.previewInvoiceHtml(draftNum, "Concept_A2")
+            } else {
+                root.isBuildingInvoice = false
+            }
+        }
+        
+        function onInvoiceHtmlReady(html) {
+            if (pendingDraftNumForPreview) {
+                var draftNum = pendingDraftNumForPreview
+                pendingDraftNumForPreview = ""
+                root.isBuildingInvoice = false
+                
                 var navTarget = null;
                 if (root.windowRef && typeof root.windowRef.option3OpenWorkspaceForTile === 'function') {
                     navTarget = root.windowRef;
@@ -680,8 +707,10 @@ Item {
                 }
             }
         }
+        
         function onError(err) {
             root.isBuildingInvoice = false
+            pendingDraftNumForPreview = ""
         }
     }
     

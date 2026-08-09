@@ -3884,6 +3884,24 @@ class AppController(QObject):
             )
             return {"ok": False, "files": [], "lastUsedPath": "", "message": str(exc)}
 
+    @Slot(result=str)
+    def browseLegacyDocketsFile(self):
+        """Open a file dialog that bypasses Windows native file-lock checks."""
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            options = QFileDialog.DontUseNativeDialog
+            path, _ = QFileDialog.getOpenFileName(
+                None,
+                "Select Legacy Dockets File",
+                "",
+                "Excel files (*.xlsm *.xlsx);;All files (*)",
+                options=options
+            )
+            return path or ""
+        except Exception as e:
+            self.error.emit(f"Error opening file dialog: {e}")
+            return ""
+
     @Slot(str, result=dict)
     def rememberLegacyDocketsImportFile(self, raw_file_path):
         try:
@@ -4127,7 +4145,10 @@ class AppController(QObject):
             data_types_json = str(data.get("dataTypes", ""))
             client_filter = str(data.get("clientFilter", ""))
             allowed_rows = data.get("allowedRows", {})
-
+            import logging
+            logging.getLogger("import.debug").info(f"startLegacyDocketsFilteredImport payload: {payload}")
+            logging.getLogger("import.debug").info(f"allowed_rows: {allowed_rows}")
+            
             with self._legacy_import_state_lock:
                 if getattr(self, "_legacy_import_active", False):
                     return False

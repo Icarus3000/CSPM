@@ -9,6 +9,11 @@
 - [x] Add an explicit promotion command that checks the original target hash and creates a recoverable pre-sync backup; it refuses to proceed while CSPM holds the workbook open.
 - [ ] With CSPM closed and after reviewing the candidate audit, promote the approved candidate and manually inspect the dashboard, the paid LIHDC settlement, and the partial $376.13 balance on invoice `26-0069`.
 
+## Matter Merging & Data Integrity (2026-08-09)
+- [x] Identify duplicate matters (e.g. LITE - tax planning) and merge them into an authoritative record by reparenting time entries.
+- [x] Identify orphaned matters in time entries (e.g. BORK - Custom Fee) and recreate them in the Matters table.
+- [x] Eliminate "ghost" matters by resolving all duplicates and orphans.
+
 ## Portable Current Data and Explicit Data Locations (2026-08-06)
 
 - [x] Replace the repository's older `data/CSPM.xlsm` with the verified current LocalAppData workbook, including the repaired invoice `26-0080`; `Dockets.xlsm` was verified identical.
@@ -209,3 +214,9 @@
 - [x] Restore the backend-boot trigger as a settlement lifecycle action; confirm read-only that the live workbook retains 115 clients, 194 matters, and 682 time entries.
 - [x] Rebuild and promote `dist/cspm.exe` (SHA-256 `C2416E8B54FF464ACF37F44B35C615C3E66C985BCFDEAAC944BC725622330791`).
 - [ ] Manually confirm that the visible dashboard loads existing data and that another app and the taskbar remain clickable on CSPM's monitor.
+
+## Finalized Preview & UI Polish (2026-08-08)
+- [x] Fix HTML Preview Loading UX: Add an animated BusyIndicator cycling circle and tie it to isPreviewLoading.
+- [x] Fix Finalized Preview State: Ensure the preview updates to hide the DRAFT tag after finalization.
+- [ ] Manual verification: Finalize an invoice and confirm the new success overlay appears, PDF-open buttons work, and the preview removes the DRAFT tag.
+

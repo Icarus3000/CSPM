@@ -25,12 +25,13 @@ if os.environ.get("CSPM_WRITE_BYTECODE", "").strip().lower() not in {"1", "true"
 # If it uses python.exe (which is a Console subsystem app), it will spawn visible
 # console windows for every background Chromium helper process it launches!
 try:
-    import PySide6
-    from pathlib import Path
-    _pyside_dir = Path(PySide6.__file__).parent
-    _webengine_process = _pyside_dir / "QtWebEngineProcess.exe"
-    if _webengine_process.exists():
-        os.environ["QTWEBENGINEPROCESS_PATH"] = str(_webengine_process)
+    if not getattr(sys, 'frozen', False):
+        import PySide6
+        from pathlib import Path
+        _pyside_dir = Path(PySide6.__file__).parent
+        _webengine_process = _pyside_dir / "QtWebEngineProcess.exe"
+        if _webengine_process.exists():
+            os.environ["QTWEBENGINEPROCESS_PATH"] = str(_webengine_process)
 except Exception:
     pass
 

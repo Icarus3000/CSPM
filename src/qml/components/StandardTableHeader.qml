@@ -163,8 +163,8 @@ Rectangle {
                         if (!leftCol || !rightCol) return
                         leftKey = leftCol.key
                         rightKey = rightCol.key
-                        startLeftWidth = leftCol.width
-                        startRightWidth = rightCol.width
+                        startLeftWidth = root.columnWidthFor(leftCol.key) / root.tableScale
+                        startRightWidth = root.columnWidthFor(rightCol.key) / root.tableScale
                         combinedWidth = startLeftWidth + startRightWidth
                         startMouseX = resizeHandle.mapToItem(root, mouse.x, mouse.y).x
                     }
