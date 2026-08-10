@@ -263,9 +263,144 @@ Item {
         }
     }
 
+    Menu {
+        id: docketContextMenu
+        width: 190
+        modal: false
+        property var docket: root.contextDocket
+
+        background: Rectangle {
+            color: SemanticTheme.surfaceRaised(root.t, root.appStyle)
+            border.color: root.borderColor
+            border.width: 1
+            radius: 6
+        }
+
+        MenuItem {
+            id: deleteDocketMenuItem
+            text: "Delete Docket"
+            enabled: !!docketContextMenu.docket && !root.isLoading && !root.isBuildingInvoice
+            onTriggered: root._requestContextDocketDeletion()
+
+            contentItem: Label {
+                text: deleteDocketMenuItem.text
+                color: deleteDocketMenuItem.enabled
+                    ? SemanticTheme.tone(root.t, "error", root.appStyle)
+                    : root.mutedColor
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 12
+            }
+            background: Rectangle {
+                color: deleteDocketMenuItem.highlighted
+                    ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.12)
+                    : "transparent"
+                radius: 4
+            }
+        }
+    }
+
+    Popup {
+        id: deleteDocketConfirmation
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        width: 460
+        height: 210
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle {
+            color: root.panelColor
+            border.color: root.borderColor
+            border.width: 1
+            radius: 8
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 14
+
+            Text {
+                text: "Delete docket?"
+                color: root.textColor
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+            }
+
+            Text {
+                text: {
+                    var docket = root.contextDocket
+                    if (!docket) return "This action cannot be undone."
+                    var date = String(docket.date || "")
+                    var description = String(docket.description || "this docket entry")
+                    return "Permanently delete " + (date ? date + " — " : "") + description + "? This action cannot be undone."
+                }
+                color: root.mutedColor
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+
+                Item { Layout.fillWidth: true }
+
+                Rectangle {
+                    Layout.preferredWidth: 96
+                    Layout.preferredHeight: 36
+                    radius: 4
+                    color: "transparent"
+                    border.color: root.borderColor
+                    border.width: 1
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Cancel"
+                        color: root.textColor
+                        font.pixelSize: 14
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: deleteDocketConfirmation.close()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 118
+                    Layout.preferredHeight: 36
+                    radius: 4
+                    color: SemanticTheme.tone(root.t, "error", root.appStyle)
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Delete Docket"
+                        color: SemanticTheme.textOnAccent(root.t, root.appStyle)
+                        font.pixelSize: 14
+                        font.weight: Font.Medium
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            deleteDocketConfirmation.close()
+                            root._deleteContextDocket()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // State
     property var wipItems: []
     property var selectedIds: ({})
+    // The row currently targeted by the right-click docket menu.  Keep this
+    // separate from invoice selection so the menu always acts on one docket.
+    property var contextDocket: null
     property int selectedCount: 0
     property real selectedTotal: 0.0
     property bool isLoading: false
@@ -472,6 +607,34 @@ Item {
         selectedIds = ({})
         selectedCount = 0
         selectedTotal = 0.0
+    }
+
+    function _openDocketContextMenu(entry, sourceItem, localX, localY) {
+        if (!entry || !entry.entryId) return
+        contextDocket = entry
+        docketContextMenu.popup(sourceItem, localX, localY)
+    }
+
+    function _requestContextDocketDeletion() {
+        if (!contextDocket || !contextDocket.entryId) return
+        deleteDocketConfirmation.open()
+    }
+
+    function _deleteContextDocket() {
+        if (!contextDocket || !contextDocket.entryId) return
+        if (!appRef || !appRef.deleteTimeEntry) {
+            return
+        }
+
+        var entryId = String(contextDocket.entryId)
+        var result = appRef.deleteTimeEntry(entryId)
+        if (result && result.ok) {
+            contextDocket = null
+            root._clearSelection()
+            root._loadWip()
+            return
+        }
+
     }
 
     // Helper to force QML binding dependency on selectedIds dictionary
@@ -1284,9 +1447,20 @@ Item {
                                 id: rowMouseArea
                                 anchors.fill: parent
                                 hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root._toggleSelection(rowDelegate.modelData.entryId, rowDelegate.modelData.net)
-                                onDoubleClicked: {
+                                onPressed: function(mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        root._openDocketContextMenu(rowDelegate.modelData, rowDelegate, mouse.x, mouse.y)
+                                    }
+                                }
+                                onClicked: function(mouse) {
+                                    if (mouse.button === Qt.LeftButton) {
+                                        root._toggleSelection(rowDelegate.modelData.entryId, rowDelegate.modelData.net)
+                                    }
+                                }
+                                onDoubleClicked: function(mouse) {
+                                    if (mouse.button !== Qt.LeftButton) return
                                     root._toggleSelection(rowDelegate.modelData.entryId, rowDelegate.modelData.net)
                                     var navTarget = null;
                                     if (root.windowRef && typeof root.windowRef.option3OpenWorkspaceForTile === "function") {

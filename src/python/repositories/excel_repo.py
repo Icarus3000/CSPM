@@ -6784,8 +6784,9 @@ class ExcelRepo:
 
         matter_rows = [self._canonicalize_matter_row(r) for r in self._read_table_rows(TBL_MATTERS)]
         time_rows = [self._canonicalize_time_row(r) for r in self._read_table_rows(TBL_TIME)]
+        disb_rows = [self._canonicalize_row(TBL_DISBURSEMENTS, r) for r in self._read_table_rows(TBL_DISBURSEMENTS)]
         txn_rows = [self._canonicalize_transaction_row(r) for r in self._read_table_rows(TBL_TRANSACTIONS_MASTER)]
-        counts = {"matters": 0, "timeEntries": 0, "transactions": 0}
+        counts = {"matters": 0, "timeEntries": 0, "disbursements": 0, "transactions": 0}
 
         for row in matter_rows:
             row_id = _clean_text(row.get(sc.COL_MATTER_ID))
@@ -6810,6 +6811,13 @@ class ExcelRepo:
             row[sc.COL_TIME_LOCK_AUDIT] = self._append_note_line(row.get(sc.COL_TIME_LOCK_AUDIT), audit_note)
             counts["timeEntries"] += 1
 
+        for row in disb_rows:
+            row_matter_id = _clean_text(row.get(sc.COL_DISB_MATTER_ID))
+            if row_matter_id.lower() != source_id.lower():
+                continue
+            row[sc.COL_DISB_MATTER_ID] = target_id
+            counts["disbursements"] += 1
+
         for row in txn_rows:
             row_matter = _clean_text(row.get(sc.COL_TXN_MATTER))
             if row_matter.lower() not in source_aliases:
@@ -6821,6 +6829,7 @@ class ExcelRepo:
 
         self._replace_table_rows(TBL_MATTERS, matter_rows)
         self._replace_table_rows(TBL_TIME, time_rows)
+        self._replace_table_rows(TBL_DISBURSEMENTS, disb_rows)
         self._replace_table_rows(TBL_TRANSACTIONS_MASTER, txn_rows)
 
         source_after = self.get_matter_profile(source_id)
@@ -8866,6 +8875,74 @@ class ExcelRepo:
         return {
             "ok": deleted,
             "message": "Matter permanently deleted." if deleted else "Matter not found."
+        }
+
+    def delete_archived_matter_profile(self, matter_id: str) -> Dict[str, Any]:
+        """Permanently delete an archived matter only after a fresh dependency check."""
+        matter = self._find_matter_row(matter_id)
+        if matter is None:
+            return {"ok": False, "message": "Matter not found."}
+
+        status = _clean_text(matter.get(sc.COL_MATTER_STATUS)).lower()
+        if status != "archived":
+            return {
+                "ok": False,
+                "message": "Only archived matters can be permanently deleted from the directory.",
+            }
+
+        dependencies = self.check_matter_dependencies(matter_id)
+        if not dependencies.get("ok"):
+            return {
+                "ok": False,
+                "message": dependencies.get("message", "Could not verify linked records."),
+            }
+        if not dependencies.get("canDelete"):
+            return {
+                "ok": False,
+                "message": "This archived matter still has linked records and cannot be deleted.",
+                "dependencies": dependencies,
+            }
+
+        deleted = self._delete_row_by_key_hard(TBL_MATTERS, sc.COL_MATTER_ID, matter_id)
+        return {
+            "ok": deleted,
+            "message": "Archived matter permanently deleted." if deleted else "Matter not found.",
+            "dependencies": dependencies,
+        }
+
+    def check_matter_dependencies(self, matter_id: str) -> Dict[str, Any]:
+        """
+        Checks if a matter has any remaining dependencies (time entries, disbursements, transactions, trademarks).
+        Used to safely determine if an archived matter can be permanently deleted.
+        """
+        self.ensure_schema()
+        matter_id_lower = _clean_text(matter_id).lower()
+        if not matter_id_lower:
+            return {"ok": False, "message": "Invalid matter ID", "canDelete": False}
+        
+        matter_aliases = {matter_id_lower}
+        matter_profile = self.get_matter_profile(matter_id)
+        if bool(matter_profile.get("ok")):
+            matter = dict(matter_profile.get("matter") or {})
+            if matter.get("matterName"): matter_aliases.add(_clean_text(matter.get("matterName")).lower())
+            if matter.get("matterNumber"): matter_aliases.add(_clean_text(matter.get("matterNumber")).lower())
+        
+        time_count = sum(1 for r in self._read_table_rows(TBL_TIME) if _clean_text(r.get(sc.COL_TIME_MATTER_ID)).lower() == matter_id_lower)
+        disb_count = sum(1 for r in self._read_table_rows(TBL_DISBURSEMENTS) if _clean_text(r.get(sc.COL_DISB_MATTER_ID)).lower() == matter_id_lower)
+        txn_count = sum(1 for r in self._read_table_rows(TBL_TRANSACTIONS_MASTER) if _clean_text(r.get(sc.COL_TXN_MATTER)).lower() in matter_aliases)
+        tm_count = sum(1 for r in self._read_table_rows(TBL_TRADEMARKS) if _clean_text(r.get(sc.COL_TM_MATTER_NUMBER)).lower() in matter_aliases)
+        
+        total_dependencies = time_count + disb_count + txn_count + tm_count
+        
+        return {
+            "ok": True,
+            "canDelete": total_dependencies == 0,
+            "timeCount": time_count,
+            "disbursementCount": disb_count,
+            "transactionCount": txn_count,
+            "invoiceCount": 0,
+            "trademarkCount": tm_count,
+            "totalDependencies": total_dependencies
         }
 
     def _build_matter_number(
@@ -11610,51 +11687,211 @@ class ExcelRepo:
             "client": requested_client
         }
 
-    def statement_of_account_report(self, payload: dict) -> dict:
-        """Generate a print-ready Statement of Account using the canonical engine."""
-        payload = dict(payload or {})
-        
-        # Open items only is determined by the UI toggle; default to True for statements if not specified
-        if "openItemsOnly" not in payload:
-            payload["openItemsOnly"] = True
-            
-        ledger_res = self._canonical_ar_ledger(payload)
+    def _statement_open_invoice_candidates(self, payload: dict) -> dict:
+        """Return one current open-invoice row per invoice for a billing client.
+
+        Statements must be based on the same as-of AR stream as the ledger, but
+        the recipient-facing document is invoice-oriented rather than an event
+        ledger.  Payments and adjustments are therefore rolled into their
+        invoice, producing the exact outstanding balance at the statement date.
+        """
+        request = dict(payload or {})
+        billing_client = _clean_text(
+            request.get("billingClient") or request.get("client") or request.get("clientId")
+        )
+        if not billing_client:
+            return {"ok": False, "message": "Choose a billing client before generating a statement."}
+
+        ledger_request = dict(request)
+        ledger_request["client"] = billing_client
+        ledger_request["client_level"] = "billing"
+        # We need all activity up to the as-of date so each invoice's remaining
+        # balance can be calculated before excluding paid invoices.
+        ledger_request["openItemsOnly"] = False
+        ledger_res = self._canonical_ar_ledger(ledger_request)
         if not ledger_res.get("ok"):
             return ledger_res
-            
-        requested_client = ledger_res.get("client")
-        client_level = _clean_text(payload.get("client_level") or "work").lower()
-        as_of = payload.get("endDate") or date.today().isoformat()
-        
-        events = ledger_res.get("events", [])
-        opening_balance = ledger_res.get("openingBalance", 0.0)
-        closing_balance = ledger_res.get("closingBalance", 0.0)
-        
+
+        grouped: Dict[str, Dict[str, Any]] = {}
+        closed_statuses = {"paid", "closed", "void", "voided", "cancelled", "canceled", "reversed"}
+        for event in ledger_res.get("events", []):
+            if not isinstance(event, dict):
+                continue
+            invoice = _clean_text(event.get("invoice") or event.get("reference"))
+            if not invoice:
+                continue
+            key = invoice.casefold()
+            group = grouped.setdefault(
+                key,
+                {
+                    "invoice": invoice,
+                    "date": _clean_text(event.get("date")),
+                    "invoiceTotal": 0.0,
+                    "paidCredits": 0.0,
+                    "status": _clean_text(event.get("status")),
+                    "workClients": [],
+                },
+            )
+            if not group["date"] and _clean_text(event.get("date")):
+                group["date"] = _clean_text(event.get("date"))
+            if _clean_text(event.get("type")).lower() == "invoice":
+                group["invoiceTotal"] += self._money_round(event.get("debit"))
+                group["status"] = _clean_text(event.get("status")) or group["status"]
+            else:
+                group["paidCredits"] += self._money_round(event.get("credit"))
+            work_client = _clean_text(event.get("workClient"))
+            if work_client and work_client not in group["workClients"]:
+                group["workClients"].append(work_client)
+
+        candidates: List[Dict[str, Any]] = []
+        for group in grouped.values():
+            invoice_total = round(float(group["invoiceTotal"]), 2)
+            paid_credits = round(float(group["paidCredits"]), 2)
+            balance_due = round(invoice_total - paid_credits, 2)
+            if invoice_total <= 0 or balance_due <= 0.009:
+                continue
+            status_key = _clean_text(group["status"]).casefold()
+            if status_key in closed_statuses:
+                continue
+            work_clients = group["workClients"]
+            service_for = ", ".join(work_clients) if work_clients else billing_client
+            candidates.append(
+                {
+                    "invoice": group["invoice"],
+                    "reference": group["invoice"],
+                    "date": group["date"],
+                    "description": f"Legal services for {service_for}",
+                    "serviceFor": service_for,
+                    "status": "Partially Paid" if paid_credits > 0.009 else "Unpaid",
+                    "invoiceTotal": invoice_total,
+                    "invoiceTotalFormatted": f"${invoice_total:,.2f}",
+                    "paidCredits": paid_credits,
+                    "paidCreditsFormatted": f"${paid_credits:,.2f}" if paid_credits > 0.009 else "—",
+                    "balanceDue": balance_due,
+                    "balanceDueFormatted": f"${balance_due:,.2f}",
+                }
+            )
+        candidates.sort(key=lambda row: (row.get("date") or "", row.get("invoice") or ""))
+
+        as_of_date = self._parse_date_value(
+            request.get("asOfDate") or request.get("endDate") or request.get("as_of_date")
+        ) or date.today()
+        return {
+            "ok": True,
+            "billingClient": billing_client,
+            "asOfDate": as_of_date.isoformat(),
+            "invoices": candidates,
+        }
+
+    def list_statement_billing_clients(self) -> List[Dict[str, Any]]:
+        """List bill-to parties with current open receivables for statement selection."""
+        try:
+            self.ensure_schema()
+            receivables = self._read_table_rows(TBL_RECEIVABLES)
+            profiles = self._read_table_rows(TBL_CLIENT_PROFILES)
+            clients = self._read_table_rows(TBL_CLIENTS)
+            parents = self._read_table_rows(TBL_PARENTS)
+        except Exception:
+            return []
+
+        _parent_names, parent_lookup = self._client_parent_lookup(profiles, clients, parents)
+        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        closed_statuses = {"paid", "closed", "void", "voided", "cancelled", "canceled", "reversed"}
+        choices: Dict[str, Dict[str, Any]] = {}
+        for row in receivables:
+            invoice = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
+            if not invoice or not actual_invoice_pattern.match(invoice):
+                continue
+            balance = self._money_round(row.get(sc.COL_RECV_BALANCE_DUE))
+            status = _clean_text(row.get(sc.COL_RECV_STATUS)).casefold()
+            if balance <= 0.009 or status in closed_statuses:
+                continue
+            billing_client = _clean_text(row.get(sc.COL_RECV_CLIENT))
+            work_client = _clean_text(row.get(sc.COL_RECV_WORK_CLIENT))
+            parent = None
+            for value in (work_client, billing_client):
+                for key in _report_name_keys(value):
+                    parent = parent_lookup.get(key)
+                    if parent:
+                        break
+                if parent:
+                    break
+            name = _clean_text((parent or {}).get("name")) or billing_client or work_client
+            if not name:
+                continue
+            key = name.casefold()
+            choice = choices.setdefault(
+                key,
+                {"name": name, "openInvoiceCount": 0, "openBalance": 0.0},
+            )
+            choice["openInvoiceCount"] += 1
+            choice["openBalance"] = round(choice["openBalance"] + balance, 2)
+
+        rows = list(choices.values())
+        for row in rows:
+            row["openBalanceFormatted"] = f"${row['openBalance']:,.2f}"
+        return sorted(rows, key=lambda row: row["name"].casefold())
+
+    def statement_of_account_report(self, payload: dict) -> dict:
+        """Create a selectable, billing-client Statement of Account document."""
+        request = dict(payload or {})
+        candidate_res = self._statement_open_invoice_candidates(request)
+        if not candidate_res.get("ok"):
+            return candidate_res
+
+        candidates = candidate_res.get("invoices", [])
+        selection_was_supplied = "selectedInvoiceNumbers" in request
+        raw_selection = request.get("selectedInvoiceNumbers") or []
+        if isinstance(raw_selection, (str, bytes)):
+            raw_selection = [raw_selection]
+        selected_keys = {
+            _clean_text(value).casefold()
+            for value in raw_selection
+            if _clean_text(value)
+        }
+        selected_rows = [
+            dict(row)
+            for row in candidates
+            if not selection_was_supplied or row["invoice"].casefold() in selected_keys
+        ]
+        selected_invoice_numbers = [row["invoice"] for row in selected_rows]
+        selected_total = round(sum(float(row["balanceDue"]) for row in selected_rows), 2)
+        total_open_balance = round(sum(float(row["balanceDue"]) for row in candidates), 2)
+        billing_client = candidate_res["billingClient"]
+        as_of = candidate_res["asOfDate"]
+
         cards = [
-            {"label": "Opening Balance", "value": ledger_res.get("openingBalanceFormatted"), "displayValue": ledger_res.get("openingBalanceFormatted"), "tone": "secondary"},
-            {"label": "Statement Balance", "value": ledger_res.get("closingBalanceFormatted"), "displayValue": ledger_res.get("closingBalanceFormatted"), "tone": "warning"},
+            {
+                "label": "Selected Invoices",
+                "value": str(len(selected_rows)),
+                "displayValue": f"{len(selected_rows)} of {len(candidates)}",
+                "tone": "secondary",
+            },
+            {
+                "label": "Amount Due",
+                "value": f"${selected_total:,.2f}",
+                "displayValue": f"${selected_total:,.2f}",
+                "tone": "warning",
+            },
         ]
-        
         summary_rows = [
-            {"label": "Statement Period", "value": f"Up to {as_of}"},
-            {"label": "Opening Balance", "value": ledger_res.get("openingBalanceFormatted")},
-            {"label": "Ending Balance", "value": ledger_res.get("closingBalanceFormatted")},
+            {"label": "Billing Client", "value": billing_client},
+            {"label": "Statement Date", "value": as_of},
+            {"label": "Invoices Included", "value": str(len(selected_rows))},
+            {"label": "Amount Due", "value": f"${selected_total:,.2f}"},
         ]
-        
         summary_columns = [
             {"key": "label", "label": "Statement Summary", "width": 180, "minWidth": 120},
             {"key": "value", "label": "Value", "width": 420, "minWidth": 200},
         ]
-        
         columns = [
-            {"key": "date", "label": "Date", "width": 105, "minWidth": 88},
-            {"key": "reference", "label": "Reference", "width": 100, "minWidth": 88},
-            {"key": "description", "label": "Description", "width": 330, "minWidth": 180},
-            {"key": "debitFormatted", "label": "Charges", "width": 112, "minWidth": 95, "align": "right", "format": "currency"},
-            {"key": "creditFormatted", "label": "Credits", "width": 110, "minWidth": 95, "align": "right", "format": "currency"},
-            {"key": "balanceFormatted", "label": "Running Balance", "width": 112, "minWidth": 95, "align": "right", "format": "currency"},
+            {"key": "date", "label": "Invoice Date", "width": 90, "minWidth": 80},
+            {"key": "reference", "label": "Invoice", "width": 90, "minWidth": 80},
+            {"key": "serviceFor", "label": "Legal Services For", "width": 230, "minWidth": 140},
+            {"key": "invoiceTotalFormatted", "label": "Invoice Total", "width": 105, "minWidth": 90, "align": "right"},
+            {"key": "paidCreditsFormatted", "label": "Paid / Credits", "width": 105, "minWidth": 90, "align": "right"},
+            {"key": "balanceDueFormatted", "label": "Amount Due", "width": 105, "minWidth": 90, "align": "right"},
         ]
-        
         sections = [
             {
                 "sectionId": "header",
@@ -11665,9 +11902,9 @@ class ExcelRepo:
             },
             {
                 "sectionId": "detail",
-                "title": "Account Activity",
+                "title": "Outstanding Invoices",
                 "columns": columns,
-                "rows": events,
+                "rows": selected_rows,
                 "defaultExpanded": True,
             },
         ]
@@ -11676,21 +11913,35 @@ class ExcelRepo:
             "ok": True,
             "reportId": "statement_of_account",
             "title": "Statement of Account",
-            "client": requested_client,
-            "clientLevel": client_level,
+            "client": billing_client,
+            "billingClient": billing_client,
+            "clientLevel": "billing",
             "asOfDate": as_of,
             "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "filterSummary": f"Client: {requested_client} | As of: {as_of}",
+            "filterSummary": f"Billing Client: {billing_client} | Open invoices only | As of: {as_of}",
             "cards": cards,
-            "rows": events,
+            "rows": selected_rows,
+            "availableInvoices": candidates,
+            "selectedInvoiceNumbers": selected_invoice_numbers,
+            "selectionProvided": selection_was_supplied,
             "summaryRows": summary_rows,
             "summary": {
-                "activityCount": len(events),
-                "openingBalance": opening_balance,
-                "closingBalance": closing_balance,
+                "invoiceCount": len(selected_rows),
+                "availableInvoiceCount": len(candidates),
+                "amountDue": selected_total,
+                "totalOpenBalance": total_open_balance,
+            },
+            "exportPayload": {
+                "statement": {
+                    "billingClient": billing_client,
+                    "asOfDate": as_of,
+                    "invoiceCount": len(selected_rows),
+                    "amountDue": selected_total,
+                    "amountDueFormatted": f"${selected_total:,.2f}",
+                },
             },
             "sections": sections,
-            "message": "" if events else "No account activity found for this client.",
+            "message": "" if candidates else "No unpaid invoices found for this billing client.",
         }
 
     def export_statement_of_account_csv(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -11737,8 +11988,8 @@ class ExcelRepo:
                             row.get("reference", ""),
                             row.get("description", ""),
                             row.get("invoiceTotalAmount", row.get("chargeAmount", row.get("invoiceTotal", ""))),
-                            row.get("paymentAmount", row.get("payment", "")),
-                            row.get("balanceAmount", row.get("balance", "")),
+                            row.get("paymentAmount", row.get("payment", row.get("paidCredits", ""))),
+                            row.get("balanceAmount", row.get("balance", row.get("balanceDue", ""))),
                         ])
                 output_path = candidate
                 break

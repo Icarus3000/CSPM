@@ -544,6 +544,183 @@ def _build_generic_story(payload, styles, available_width):
     return story
 
 
+def _statement_rows(payload):
+    sections = payload.get("sections", []) or []
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            if _safe_text(section.get("sectionId")).casefold() == "detail":
+                rows = section.get("rows", []) or []
+                return rows if isinstance(rows, list) else []
+    rows = payload.get("rows", []) or []
+    return rows if isinstance(rows, list) else []
+
+
+def generate_statement_of_account_pdf(payload, export_dir, logo_path):
+    """Render the client-facing statement as a premium branded document.
+
+    This intentionally does not reuse the generic report story.  A statement is
+    a receivables document sent outside the firm, so it receives the same calm
+    hierarchy, balance callout, and branded presentation expected of an invoice.
+    """
+    os.makedirs(export_dir, exist_ok=True)
+    payload = dict(payload or {})
+    config = dict(payload.get("config", {}) or {})
+    statement = dict(payload.get("statement", {}) or {})
+    rows = _statement_rows(payload)
+    billing_client = _safe_text(statement.get("billingClient") or payload.get("client"))
+    as_of_date = _safe_text(statement.get("asOfDate") or payload.get("asOfDate"))
+    amount_due = _safe_text(statement.get("amountDueFormatted")) or _money(statement.get("amountDue"))
+    invoice_count = int(statement.get("invoiceCount") or len(rows))
+    generated = datetime.now().strftime("%Y-%m-%d")
+
+    safe_title = "StatementOfAccount"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filepath = os.path.join(export_dir, f"{safe_title}_{stamp}.pdf")
+    doc = SimpleDocTemplate(
+        filepath,
+        pagesize=letter,
+        leftMargin=0.55 * inch,
+        rightMargin=0.55 * inch,
+        topMargin=1.50 * inch,
+        bottomMargin=0.68 * inch,
+        title="Statement of Account",
+        author=_safe_text(config.get("firmName") or "Cory Schneider Law Office"),
+    )
+    styles = _styles()
+    title_style = ParagraphStyle(
+        "StatementTitle",
+        parent=styles["sectionTitle"],
+        fontSize=13,
+        leading=15,
+        textColor=colors.HexColor("#102A43"),
+        spaceAfter=3,
+    )
+    caption_style = ParagraphStyle(
+        "StatementCaption",
+        parent=styles["cell"],
+        fontSize=7.8,
+        leading=10,
+        textColor=colors.HexColor("#52657A"),
+    )
+    white_label = ParagraphStyle(
+        "StatementWhiteLabel",
+        parent=styles["cell"],
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.white,
+    )
+    white_amount = ParagraphStyle(
+        "StatementWhiteAmount",
+        parent=styles["cellRight"],
+        fontName="Helvetica-Bold",
+        fontSize=17,
+        leading=19,
+        textColor=colors.white,
+    )
+
+    story = [
+        Paragraph("STATEMENT OF ACCOUNT", title_style),
+        Paragraph(
+            "A concise summary of the selected outstanding invoices on your account.",
+            caption_style,
+        ),
+        Spacer(1, 0.17 * inch),
+    ]
+
+    bill_to = Paragraph(
+        "<b>BILL TO</b><br/>" + _escaped(billing_client or "Billing Client"),
+        styles["cell"],
+    )
+    statement_meta = Paragraph(
+        "<b>Statement date</b><br/>" + _escaped(as_of_date or generated)
+        + "<br/><br/><b>Invoices included</b><br/>" + str(invoice_count),
+        styles["cell"],
+    )
+    overview = Table(
+        [[bill_to, statement_meta]],
+        colWidths=[doc.width * 0.64, doc.width * 0.36],
+        style=TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]
+        ),
+    )
+    story.extend([overview, Spacer(1, 0.15 * inch)])
+
+    due_callout = Table(
+        [[Paragraph("AMOUNT DUE", white_label), Paragraph(amount_due, white_amount)]],
+        colWidths=[doc.width * 0.54, doc.width * 0.46],
+        style=TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#17324D")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+                ("TOPPADDING", (0, 0), (-1, -1), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        ),
+    )
+    story.extend([due_callout, Spacer(1, 0.22 * inch)])
+
+    story.append(_section_title("Outstanding Invoices", styles))
+    headers = [
+        _paragraph("Invoice Date", styles["tableHeader"]),
+        _paragraph("Invoice", styles["tableHeader"]),
+        _paragraph("Legal Services For", styles["tableHeader"]),
+        _paragraph("Invoice Total", styles["tableHeaderRight"]),
+        _paragraph("Paid / Credits", styles["tableHeaderRight"]),
+        _paragraph("Amount Due", styles["tableHeaderRight"]),
+    ]
+    data = [headers]
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        data.append(
+            [
+                _paragraph(row.get("date", ""), styles["cell"]),
+                _paragraph(row.get("reference", row.get("invoice", "")), styles["cell"]),
+                _paragraph(row.get("serviceFor", row.get("description", "")), styles["cell"]),
+                _paragraph(row.get("invoiceTotalFormatted", _money(row.get("invoiceTotal"))), styles["cellRight"]),
+                _paragraph(row.get("paidCreditsFormatted", _money(row.get("paidCredits"))), styles["cellRight"]),
+                _paragraph(row.get("balanceDueFormatted", _money(row.get("balanceDue"))), styles["cellRight"]),
+            ]
+        )
+    if len(data) == 1:
+        data.append([_paragraph("No invoices were selected for this statement.", styles["muted"])] + [""] * 5)
+        span_empty = True
+    else:
+        span_empty = False
+    statement_table = Table(
+        data,
+        colWidths=[doc.width * 0.12, doc.width * 0.12, doc.width * 0.28, doc.width * 0.16, doc.width * 0.16, doc.width * 0.16],
+        repeatRows=1,
+        style=_table_style(span_empty=span_empty),
+    )
+    story.extend([statement_table, Spacer(1, 0.18 * inch)])
+
+    payment_note = Paragraph(
+        "Please remit payment using the payment instructions shown on your invoice. "
+        "If you have questions about this statement, please contact our office directly.",
+        caption_style,
+    )
+    story.append(payment_note)
+
+    draw_page = lambda canvas, document: _draw_header_footer(canvas, document, {**config, "title": "Statement of Account"}, logo_path)
+    doc.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
+    return filepath
+
+
 def generate_generic_report_pdf(payload, export_dir, logo_path):
     os.makedirs(export_dir, exist_ok=True)
     payload = dict(payload or {})

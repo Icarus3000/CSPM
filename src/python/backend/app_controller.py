@@ -3293,9 +3293,50 @@ class AppController(QObject):
                 self.toast.emit("Matter deleted permanently")
                 self.clientDataChanged.emit()
             return result
-        except Exception as e:
-            self._log_error(e, context="deleteMatterProfile")
-            return {"ok": False, "message": str(e)}
+        except Exception as exc:
+            self._report_failure("Could not delete matter", context="matter.delete", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(str, result=dict)
+    def deleteArchivedMatterProfile(self, matter_id: str):
+        try:
+            result = dict(self._excel_repo.delete_archived_matter_profile(matter_id) or {})
+            if result.get("ok"):
+                self.toast.emit("Archived matter permanently deleted")
+                self.clientDataChanged.emit()
+            return result
+        except Exception as exc:
+            self._report_failure("Could not delete archived matter", context="matter.archive.delete", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(str, result=dict)
+    def checkMatterDependencies(self, matter_id: str):
+        try:
+            return dict(self._excel_repo.check_matter_dependencies(matter_id) or {})
+        except Exception as exc:
+            self._report_failure("Could not check matter dependencies", context="matter.dependencies", exc=exc)
+            return {"ok": False, "message": str(exc), "canDelete": False}
+
+    @Slot(str, str, result=dict)
+    def mergeMatters(self, source_matter_id: str, target_matter_name: str):
+        try:
+            payload = {
+                "sourceKey": source_matter_id,
+                "targetKey": target_matter_name,
+                "reason": "Manual UI Merge",
+                "actor": "AppController"
+            }
+            result = dict(self._excel_repo.merge_duplicate_matters(payload) or {})
+            if result.get("ok"):
+                self.toast.emit(f"Matter merged into {target_matter_name}")
+                self.clientDataChanged.emit()
+            else:
+                message = str(result.get("message", "Merge failed.") or "").strip()
+                self.error.emit(message)
+            return result
+        except Exception as exc:
+            self._report_failure("Could not merge matters", context="matter.merge", exc=exc)
+            return {"ok": False, "message": str(exc)}
 
     @Slot("QVariantMap", result=dict)
     def saveMatterProfile(self, payload):
@@ -4415,7 +4456,10 @@ class AppController(QObject):
             return self.exportDocketActivityPdf(export_payload)
         if report_id in {"ar_aging", "ar_aging_report", "accounts_receivable", "statement_of_account"} or report_id.startswith("ar_aging_"):
             try:
-                from services.report_pdf_exporter import generate_generic_report_pdf
+                from services.report_pdf_exporter import (
+                    generate_generic_report_pdf,
+                    generate_statement_of_account_pdf,
+                )
 
                 export_payload = payload_dict.get("exportPayload")
                 if not isinstance(export_payload, dict):
@@ -4432,7 +4476,10 @@ class AppController(QObject):
                 for export_dir in candidate_dirs:
                     try:
                         export_dir.mkdir(parents=True, exist_ok=True)
-                        filepath = generate_generic_report_pdf(export_payload, str(export_dir), str(logo_path))
+                        if report_id == "statement_of_account":
+                            filepath = generate_statement_of_account_pdf(export_payload, str(export_dir), str(logo_path))
+                        else:
+                            filepath = generate_generic_report_pdf(export_payload, str(export_dir), str(logo_path))
                         if filepath:
                             break
                     except Exception as exc:
@@ -4450,8 +4497,10 @@ class AppController(QObject):
                     "message": f"PDF exported: {os.path.basename(filepath)} | Saved to: {os.path.dirname(filepath)}",
                 }
             except Exception as exc:
-                self._report_failure("Could not export A/R aging PDF", context="report.ar_aging.export_pdf", exc=exc)
-                logging.getLogger("cspm.pdf").exception("A/R aging PDF export failed")
+                report_name = "Statement of Account" if report_id == "statement_of_account" else "A/R aging"
+                report_context = "report.statement_of_account.export_pdf" if report_id == "statement_of_account" else "report.ar_aging.export_pdf"
+                self._report_failure(f"Could not export {report_name} PDF", context=report_context, exc=exc)
+                logging.getLogger("cspm.pdf").exception("%s PDF export failed", report_name)
                 return {"ok": False, "message": str(exc), "path": "", "filename": ""}
         return {
             "ok": False,
@@ -4485,6 +4534,18 @@ class AppController(QObject):
                 exc=exc,
             )
             return {"ok": False, "message": str(exc)}
+
+    @Slot(result=list)
+    def listStatementBillingClients(self):
+        try:
+            return self._excel_repo.list_statement_billing_clients()
+        except Exception as exc:
+            self._report_failure(
+                "Failed to load statement billing clients",
+                context="app.report.statement_of_account.billing_clients",
+                exc=exc,
+            )
+            return []
 
     @Slot(result=list)
     def getExcludedARInvoices(self) -> list:

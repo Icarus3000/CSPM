@@ -14,81 +14,228 @@ Item {
     property var sfxBus
     property string appStyle: (root.appRef && root.appRef.appStyle) ? String(root.appRef.appStyle) : "Professional"
     readonly property bool isProMode: appStyle === "Professional"
-    
-    // Core parameters for statement
+
+    // Context routes from a profile/A-R report still prefill the bill-to party.
     property string selectedClientLabel: ""
     property string selectedClientId: ""
+    property string billingClientName: ""
     property string asOfDateText: ""
-    property bool openItemsOnly: true
-
-    // Report data
+    property var billingClientRows: []
+    property var billingClientNames: []
+    property var availableInvoices: []
+    property var selectedInvoiceMap: ({})
+    property int selectionRevision: 0
     property var reportData: null
     property bool busy: false
-    property string statusText: "Select a client and click Generate Statement."
+    property bool statementReady: false
+    property string statusText: "Choose a billing client to load its unpaid invoices."
 
-    onVisibleChanged: {
-        if (visible && (root.selectedClientId || root.selectedClientLabel)) {
-            root.loadStatement()
-        }
-    }
-    onSelectedClientIdChanged: {
-        if (visible && root.selectedClientId) {
-            root.loadStatement()
-        }
-    }
-    onSelectedClientLabelChanged: {
-        if (visible && root.selectedClientLabel) {
-            root.loadStatement()
-        }
-    }
+    signal reportWindowRequested(var reportDocument)
 
     VisualRules {
         id: visualRules
         appStyle: root.appStyle
     }
 
-    signal reportWindowRequested(var reportDocument)
+    function cleanText(value) {
+        return value === undefined || value === null ? "" : String(value).trim()
+    }
 
-    function loadStatement() {
-        if (!root.selectedClientLabel && !root.selectedClientId) {
-            root.statusText = "Please specify a client."
-            return
-        }
-        
-        if (!root.appRef || typeof root.appRef.getStatementOfAccount !== "function") {
-            root.statusText = "Backend not available."
-            return
-        }
+    function formatCurrency(value) {
+        var amount = Number(value || 0)
+        return "$" + amount.toLocaleString(Qt.locale(), "f", 2)
+    }
 
-        root.busy = true
-        root.statusText = "Generating statement..."
-        
-        var payload = {
-            "client": root.selectedClientLabel || root.selectedClientId,
+    function selectedInvoiceNumbers() {
+        var selected = []
+        for (var i = 0; i < root.availableInvoices.length; ++i) {
+            var invoice = root.cleanText(root.availableInvoices[i].invoice)
+            if (invoice.length > 0 && root.selectedInvoiceMap[invoice])
+                selected.push(invoice)
+        }
+        return selected
+    }
+
+    function selectedInvoiceCount() {
+        return root.selectedInvoiceNumbers().length
+    }
+
+    function selectedBalance() {
+        var amount = 0
+        for (var i = 0; i < root.availableInvoices.length; ++i) {
+            var row = root.availableInvoices[i]
+            var invoice = root.cleanText(row.invoice)
+            if (invoice.length > 0 && root.selectedInvoiceMap[invoice])
+                amount += Number(row.balanceDue || 0)
+        }
+        return amount
+    }
+
+    function isInvoiceSelected(invoice) {
+        return !!root.selectedInvoiceMap[root.cleanText(invoice)]
+    }
+
+    function setInvoiceSelected(invoice, selected) {
+        var key = root.cleanText(invoice)
+        if (key.length === 0)
+            return
+        var next = {}
+        for (var existing in root.selectedInvoiceMap)
+            next[existing] = root.selectedInvoiceMap[existing]
+        next[key] = !!selected
+        root.selectedInvoiceMap = next
+        root.selectionRevision += 1
+        root.statementReady = false
+        root.statusText = root.selectedInvoiceCount() + " invoice" + (root.selectedInvoiceCount() === 1 ? "" : "s")
+                + " selected — " + root.formatCurrency(root.selectedBalance()) + ". Click Generate Statement when ready."
+    }
+
+    function selectAllInvoices(selected) {
+        var next = {}
+        for (var i = 0; i < root.availableInvoices.length; ++i) {
+            var invoice = root.cleanText(root.availableInvoices[i].invoice)
+            if (invoice.length > 0)
+                next[invoice] = !!selected
+        }
+        root.selectedInvoiceMap = next
+        root.selectionRevision += 1
+        root.statementReady = false
+        root.statusText = selected
+                ? root.availableInvoices.length + " open invoices selected."
+                : "No invoices selected."
+    }
+
+    function setBillingClient(value, shouldLoad) {
+        var name = root.cleanText(value)
+        if (name === root.billingClientName && !shouldLoad)
+            return
+        root.billingClientName = name
+        root.availableInvoices = []
+        root.selectedInvoiceMap = ({})
+        root.selectionRevision += 1
+        root.reportData = null
+        root.statementReady = false
+        if (billingClientCombo.editText !== name)
+            billingClientCombo.editText = name
+        if (shouldLoad && name.length > 0)
+            root.refreshOpenInvoices()
+    }
+
+    function loadBillingClients() {
+        if (!root.appRef)
+            return
+        var rows = []
+        try {
+            if (typeof root.appRef.listStatementBillingClients === "function")
+                rows = root.appRef.listStatementBillingClients() || []
+            if ((!rows || rows.length === 0) && typeof root.appRef.listClientNames === "function") {
+                var names = root.appRef.listClientNames() || []
+                for (var i = 0; i < names.length; ++i)
+                    rows.push({ "name": String(names[i]) })
+            }
+        } catch (e) {
+            rows = []
+        }
+        var namesOut = []
+        for (var j = 0; j < rows.length; ++j) {
+            var name = root.cleanText(rows[j].name || rows[j])
+            if (name.length > 0 && namesOut.indexOf(name) < 0)
+                namesOut.push(name)
+        }
+        root.billingClientRows = rows
+        root.billingClientNames = namesOut
+        if (root.billingClientName.length === 0 && root.selectedClientLabel.length > 0)
+            root.setBillingClient(root.selectedClientLabel, false)
+    }
+
+    function basePayload() {
+        return {
+            "billingClient": root.billingClientName,
+            "client": root.billingClientName,
             "clientId": root.selectedClientId,
+            "client_level": "billing",
             "asOfDate": root.asOfDateText,
-            "openItemsOnly": root.openItemsOnly
-        }
-        
-        // This is a synchronous call to the backend
-        var res = root.appRef.getStatementOfAccount(payload)
-        
-        root.busy = false
-        if (res && res.ok) {
-            root.reportData = res
-            root.statusText = "Statement generated."
-        } else {
-            root.reportData = null
-            root.statusText = "Error: " + (res ? res.message : "Failed to load statement.")
+            "openItemsOnly": true
         }
     }
-    
+
+    function refreshOpenInvoices() {
+        if (root.billingClientName.length === 0) {
+            root.statusText = "Choose a billing client before loading invoices."
+            return
+        }
+        if (!root.appRef || typeof root.appRef.getStatementOfAccount !== "function") {
+            root.statusText = "Statement backend not available."
+            return
+        }
+        root.busy = true
+        root.statusText = "Loading open invoices…"
+        var response = root.appRef.getStatementOfAccount(root.basePayload())
+        root.busy = false
+        if (response && response.ok) {
+            root.availableInvoices = response.availableInvoices || []
+            root.reportData = null
+            root.selectAllInvoices(true)
+            if (root.availableInvoices.length === 0)
+                root.statusText = "No unpaid invoices found for " + root.billingClientName + "."
+        } else {
+            root.availableInvoices = []
+            root.selectedInvoiceMap = ({})
+            root.selectionRevision += 1
+            root.statusText = "Could not load invoices: " + root.cleanText(response && response.message)
+        }
+    }
+
+    function generateStatement() {
+        var selected = root.selectedInvoiceNumbers()
+        if (selected.length === 0) {
+            root.statusText = "Select at least one unpaid invoice for this statement."
+            return
+        }
+        if (!root.appRef || typeof root.appRef.getStatementOfAccount !== "function") {
+            root.statusText = "Statement backend not available."
+            return
+        }
+        var payload = root.basePayload()
+        payload.selectedInvoiceNumbers = selected
+        root.busy = true
+        root.statusText = "Preparing selected statement…"
+        var response = root.appRef.getStatementOfAccount(payload)
+        root.busy = false
+        if (response && response.ok) {
+            root.reportData = response
+            root.availableInvoices = response.availableInvoices || root.availableInvoices
+            root.statementReady = true
+            root.statusText = selected.length + " invoice" + (selected.length === 1 ? "" : "s")
+                    + " included — " + root.formatCurrency(root.selectedBalance()) + " due."
+        } else {
+            root.statementReady = false
+            root.statusText = "Could not generate statement: " + root.cleanText(response && response.message)
+        }
+    }
+
     function printStatement() {
-        if (!root.reportData || !root.reportData.ok) {
-            root.statusText = "Please generate a statement first."
+        if (!root.statementReady || !root.reportData || !root.reportData.ok) {
+            root.statusText = "Generate the selected statement before printing or exporting."
             return
         }
         root.reportWindowRequested(root.reportData)
+    }
+
+    Component.onCompleted: {
+        root.loadBillingClients()
+        if (root.selectedClientLabel.length > 0)
+            root.setBillingClient(root.selectedClientLabel, true)
+    }
+
+    onAppRefChanged: root.loadBillingClients()
+    onSelectedClientLabelChanged: {
+        if (root.selectedClientLabel.length > 0)
+            root.setBillingClient(root.selectedClientLabel, root.visible)
+    }
+    onVisibleChanged: {
+        if (visible && root.billingClientName.length === 0 && root.selectedClientLabel.length > 0)
+            root.setBillingClient(root.selectedClientLabel, true)
     }
 
     Rectangle {
@@ -100,22 +247,20 @@ Item {
             anchors.margins: root.isProMode ? 16 : 12
             spacing: 12
 
-            // Header Section
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 80
+                Layout.preferredHeight: 138
                 color: SemanticTheme.surfacePanel(root.t, root.appStyle)
                 radius: root.isProMode ? visualRules.radiusPanel : 6
                 border.color: SemanticTheme.borderSubtle(root.t, root.appStyle)
-                
-                RowLayout {
+
+                ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 16
-                    
-                    ColumnLayout {
+                    anchors.margins: 14
+                    spacing: 10
+
+                    RowLayout {
                         Layout.fillWidth: true
-                        spacing: 2
                         Text {
                             text: "Statement of Account"
                             font.pixelSize: visualRules.proWorkspaceTitleFontPx
@@ -123,190 +268,237 @@ Item {
                             font.weight: Font.DemiBold
                             color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                         }
+                        Item { Layout.fillWidth: true }
                         Text {
-                            text: root.selectedClientLabel || root.selectedClientId || "No client selected"
-                            font.pixelSize: visualRules.proBodyFontPx
+                            text: "Open invoices only"
+                            font.pixelSize: visualRules.proCaptionFontPx
                             font.family: visualRules.textFontFamily
                             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                            elide: Text.ElideRight
                         }
                     }
-                    
+
                     RowLayout {
+                        Layout.fillWidth: true
                         spacing: 12
-                        
+
                         ColumnLayout {
-                            spacing: 4
+                            Layout.preferredWidth: 360
+                            Layout.maximumWidth: 430
+                            Layout.fillWidth: true
+                            spacing: 3
                             Text {
-                                text: "As of Date"
+                                text: "Billing Client"
+                                font.pixelSize: visualRules.proCaptionFontPx
+                                font.family: visualRules.textFontFamily
+                                color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                            }
+                            ComboBox {
+                                id: billingClientCombo
+                                Layout.fillWidth: true
+                                editable: true
+                                model: root.billingClientNames
+                                font.pixelSize: visualRules.proBodyFontPx
+                                font.family: visualRules.textFontFamily
+                                onActivated: function(index) { root.setBillingClient(String(model[index]), false) }
+                                onAccepted: root.setBillingClient(editText, false)
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.preferredWidth: 180
+                            spacing: 3
+                            Text {
+                                text: "Statement Date"
                                 font.pixelSize: visualRules.proCaptionFontPx
                                 font.family: visualRules.textFontFamily
                                 color: SemanticTheme.inkMuted(root.t, root.appStyle)
                             }
                             TextField {
                                 id: asOfDateInput
+                                Layout.fillWidth: true
                                 text: root.asOfDateText
-                                placeholderText: "YYYY-MM-DD (or blank for today)"
+                                placeholderText: "YYYY-MM-DD"
                                 font.pixelSize: visualRules.proBodyFontPx
                                 font.family: visualRules.textFontFamily
-                                implicitWidth: 150
                                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                                 onTextChanged: root.asOfDateText = text
                             }
                         }
-                        
-                        ColumnLayout {
-                            spacing: 4
-                            Text {
-                                text: "Filter"
-                                font.pixelSize: visualRules.proCaptionFontPx
-                                font.family: visualRules.textFontFamily
-                                color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                            }
-                            CheckBox {
-                                text: "Open Items Only"
-                                checked: root.openItemsOnly
-                                font.pixelSize: visualRules.proBodyFontPx
-                                font.family: visualRules.textFontFamily
-                                onCheckedChanged: root.openItemsOnly = checked
-                            }
-                        }
-                        
+
                         Button {
-                            text: "Generate"
+                            text: root.busy ? "Loading…" : "Load Open Invoices"
+                            enabled: !root.busy && root.billingClientName.length > 0
                             font.pixelSize: visualRules.proBodyFontPx
                             font.family: visualRules.textFontFamily
-                            font.weight: Font.Medium
-                            enabled: !root.busy
-                            onClicked: root.loadStatement()
+                            onClicked: root.refreshOpenInvoices()
                         }
-                        
-                        Button {
-                            text: "Print / Export"
-                            font.pixelSize: visualRules.proBodyFontPx
-                            font.family: visualRules.textFontFamily
-                            font.weight: Font.Medium
-                            enabled: root.reportData !== null
-                            onClicked: root.printStatement()
-                        }
+
+                        Item { Layout.fillWidth: true }
                     }
                 }
             }
 
-            // Body Section
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 color: SemanticTheme.surfacePanel(root.t, root.appStyle)
                 radius: root.isProMode ? visualRules.radiusPanel : 6
                 border.color: SemanticTheme.borderSubtle(root.t, root.appStyle)
-                
+
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.margins: 14
                     spacing: 8
-                    
-                    // Summary Cards
+
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: root.reportData !== null
-                        spacing: 16
-                        
-                        Repeater {
-                            model: (root.reportData && root.reportData.cards) ? root.reportData.cards : []
-                            delegate: Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 70
-                                color: SemanticTheme.surfaceRaised(root.t, root.appStyle)
-                                radius: 4
-                                border.color: SemanticTheme.borderSubtle(root.t, root.appStyle)
-                                
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 8
-                                    spacing: 2
-                                    Text {
-                                        text: modelData.label || ""
-                                        font.pixelSize: visualRules.proCaptionFontPx
-                                        font.family: visualRules.textFontFamily
-                                        color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                        Layout.alignment: Qt.AlignHCenter
-                                    }
-                                    Text {
-                                        text: modelData.displayValue || ""
-                                        font.pixelSize: visualRules.proWorkspaceTitleFontPx
-                                        font.family: visualRules.textFontFamily
-                                        font.weight: Font.DemiBold
-                                        color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                        Layout.alignment: Qt.AlignHCenter
-                                    }
-                                }
-                            }
+                        Text {
+                            text: "Select invoices to include"
+                            font.pixelSize: visualRules.proSectionTitleFontPx
+                            font.family: visualRules.textFontFamily
+                            font.weight: Font.DemiBold
+                            color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+                        }
+                        Text {
+                            text: root.availableInvoices.length + " unpaid invoice" + (root.availableInvoices.length === 1 ? "" : "s")
+                            font.pixelSize: visualRules.proCaptionFontPx
+                            font.family: visualRules.textFontFamily
+                            color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                        }
+                        Item { Layout.fillWidth: true }
+                        Button {
+                            text: "Select All"
+                            enabled: root.availableInvoices.length > 0 && !root.busy
+                            onClicked: root.selectAllInvoices(true)
+                        }
+                        Button {
+                            text: "Clear"
+                            enabled: root.availableInvoices.length > 0 && !root.busy
+                            onClicked: root.selectAllInvoices(false)
                         }
                     }
-                    
+
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 1
                         color: SemanticTheme.borderSubtle(root.t, root.appStyle)
-                        visible: root.reportData !== null
                     }
-                    
-                    // Table Header
+
                     RowLayout {
                         Layout.fillWidth: true
-                        visible: root.reportData !== null
                         spacing: 8
-                        
-                        Text { text: "Date"; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkMuted(root.t, root.appStyle); Layout.preferredWidth: 90 }
-                        Text { text: "Ref"; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkMuted(root.t, root.appStyle); Layout.preferredWidth: 90 }
-                        Text { text: "Description"; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkMuted(root.t, root.appStyle); Layout.fillWidth: true }
-                        Text { text: "Charges"; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkMuted(root.t, root.appStyle); Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight }
-                        Text { text: "Credits"; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkMuted(root.t, root.appStyle); Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight }
-                        Text { text: "Balance"; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkMuted(root.t, root.appStyle); Layout.preferredWidth: 110; horizontalAlignment: Text.AlignRight }
+                        Text { text: "Include"; Layout.preferredWidth: 68; font.pixelSize: visualRules.proCaptionFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkMuted(root.t, root.appStyle) }
+                        Text { text: "Date"; Layout.preferredWidth: 92; font.pixelSize: visualRules.proCaptionFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkMuted(root.t, root.appStyle) }
+                        Text { text: "Invoice"; Layout.preferredWidth: 90; font.pixelSize: visualRules.proCaptionFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkMuted(root.t, root.appStyle) }
+                        Text { text: "Legal Services For"; Layout.fillWidth: true; font.pixelSize: visualRules.proCaptionFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkMuted(root.t, root.appStyle) }
+                        Text { text: "Invoice Total"; Layout.preferredWidth: 105; horizontalAlignment: Text.AlignRight; font.pixelSize: visualRules.proCaptionFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkMuted(root.t, root.appStyle) }
+                        Text { text: "Paid / Credits"; Layout.preferredWidth: 110; horizontalAlignment: Text.AlignRight; font.pixelSize: visualRules.proCaptionFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkMuted(root.t, root.appStyle) }
+                        Text { text: "Amount Due"; Layout.preferredWidth: 105; horizontalAlignment: Text.AlignRight; font.pixelSize: visualRules.proCaptionFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkMuted(root.t, root.appStyle) }
                     }
-                    
-                    // Table Body
+
                     ListView {
-                        id: eventsList
+                        id: invoiceList
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        visible: root.reportData !== null
                         clip: true
                         spacing: 2
-                        model: (root.reportData && root.reportData.rows) ? root.reportData.rows : []
-                        
+                        model: root.availableInvoices
+
                         delegate: Rectangle {
-                            width: ListView.view.width
-                            height: 36
-                            color: index % 2 === 0 ? SemanticTheme.surfaceApp(root.t, root.appStyle) : "transparent"
-                            
+                            id: invoiceRow
+                            required property var modelData
+                            required property int index
+                            width: invoiceList.width
+                            height: 42
+                            color: index % 2 === 0 ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : "transparent"
+                            border.color: SemanticTheme.borderSubtle(root.t, root.appStyle)
+                            border.width: 1
+
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 2
-                                anchors.rightMargin: 2
+                                anchors.leftMargin: 4
+                                anchors.rightMargin: 8
                                 spacing: 8
-                                
-                                Text { text: modelData.date || ""; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle); Layout.preferredWidth: 90; elide: Text.ElideRight }
-                                Text { text: modelData.reference || ""; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle); Layout.preferredWidth: 90; elide: Text.ElideRight }
-                                Text { text: modelData.description || ""; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle); Layout.fillWidth: true; elide: Text.ElideRight }
-                                Text { text: modelData.debitFormatted || ""; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle); Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight }
-                                Text { text: modelData.creditFormatted || ""; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle); Layout.preferredWidth: 100; horizontalAlignment: Text.AlignRight }
-                                Text { text: modelData.balanceFormatted || ""; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkPrimary(root.t, root.appStyle); Layout.preferredWidth: 110; horizontalAlignment: Text.AlignRight }
+                                CheckBox {
+                                    Layout.preferredWidth: 68
+                                    checked: root.selectionRevision >= 0 && root.isInvoiceSelected(invoiceRow.modelData.invoice)
+                                    onClicked: root.setInvoiceSelected(invoiceRow.modelData.invoice, checked)
+                                }
+                                Text { text: invoiceRow.modelData.date || ""; Layout.preferredWidth: 92; elide: Text.ElideRight; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle) }
+                                Text { text: invoiceRow.modelData.invoice || ""; Layout.preferredWidth: 90; elide: Text.ElideRight; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.Medium; color: SemanticTheme.inkPrimary(root.t, root.appStyle) }
+                                Text { text: invoiceRow.modelData.serviceFor || ""; Layout.fillWidth: true; elide: Text.ElideRight; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle) }
+                                Text { text: invoiceRow.modelData.invoiceTotalFormatted || ""; Layout.preferredWidth: 105; horizontalAlignment: Text.AlignRight; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle) }
+                                Text { text: invoiceRow.modelData.paidCreditsFormatted || ""; Layout.preferredWidth: 110; horizontalAlignment: Text.AlignRight; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; color: SemanticTheme.inkPrimary(root.t, root.appStyle) }
+                                Text { text: invoiceRow.modelData.balanceDueFormatted || ""; Layout.preferredWidth: 105; horizontalAlignment: Text.AlignRight; font.pixelSize: visualRules.proBodyFontPx; font.family: visualRules.textFontFamily; font.weight: Font.DemiBold; color: SemanticTheme.inkPrimary(root.t, root.appStyle) }
                             }
                         }
+
+                        Text {
+                            anchors.centerIn: parent
+                            visible: invoiceList.count === 0 && !root.busy
+                            text: root.billingClientName.length > 0
+                                ? "No unpaid invoices are available for this billing client."
+                                : "Choose a billing client, then load its open invoices."
+                            font.pixelSize: visualRules.proBodyFontPx
+                            font.family: visualRules.textFontFamily
+                            color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                        }
                     }
-                    
-                    // Status
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 82
+                color: SemanticTheme.surfacePanel(root.t, root.appStyle)
+                radius: root.isProMode ? visualRules.radiusPanel : 6
+                border.color: SemanticTheme.borderSubtle(root.t, root.appStyle)
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 14
+                    spacing: 16
+
+                    ColumnLayout {
+                        spacing: 2
+                        Text {
+                            text: root.selectedInvoiceCount() + " invoice" + (root.selectedInvoiceCount() === 1 ? "" : "s") + " selected"
+                            font.pixelSize: visualRules.proBodyFontPx
+                            font.family: visualRules.textFontFamily
+                            color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                        }
+                        Text {
+                            text: root.formatCurrency(root.selectedBalance())
+                            font.pixelSize: visualRules.proWorkspaceTitleFontPx
+                            font.family: visualRules.textFontFamily
+                            font.weight: Font.DemiBold
+                            color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+                        }
+                    }
+                    Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: SemanticTheme.borderSubtle(root.t, root.appStyle) }
                     Text {
-                        visible: root.reportData === null
+                        Layout.fillWidth: true
                         text: root.statusText
-                        font.pixelSize: visualRules.proBodyFontPx
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: visualRules.proCaptionFontPx
                         font.family: visualRules.textFontFamily
                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                        Layout.alignment: Qt.AlignCenter
-                        Layout.fillHeight: true
-                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Button {
+                        text: "Generate Statement"
+                        enabled: !root.busy && root.selectedInvoiceCount() > 0
+                        font.pixelSize: visualRules.proBodyFontPx
+                        font.family: visualRules.textFontFamily
+                        font.weight: Font.Medium
+                        onClicked: root.generateStatement()
+                    }
+                    Button {
+                        text: "Print / Export"
+                        enabled: !root.busy && root.statementReady
+                        font.pixelSize: visualRules.proBodyFontPx
+                        font.family: visualRules.textFontFamily
+                        font.weight: Font.Medium
+                        onClicked: root.printStatement()
                     }
                 }
             }

@@ -3672,7 +3672,6 @@ Item {
                     externalNavigationShell: root.option3ShellEnabled
                     laneSummary: root.laneSummaryForTile(1)
                     navItems: root.laneNavItemsForTile(1)
-                    allNavItems: root.laneAllNavItemsForTile(1)
                     tileIndex: 1
                     titleText: root.tileTitleForIndex(1)
                     initialState: (root.dockedStateByTile[1] !== undefined)
@@ -3778,7 +3777,6 @@ Item {
                     laneKey: "billing_tax"
                     laneSummary: root.laneSummaryForTile(2)
                     navItems: root.laneNavItemsForTile(2)
-                    allNavItems: root.laneAllNavItemsForTile(2)
                     defaultNodeId: "C01"
                     tileIndex: 2
                     titleText: root.tileTitleForIndex(2)
@@ -3877,7 +3875,6 @@ Item {
                     laneKey: "finance_ops"
                     laneSummary: root.laneSummaryForTile(3)
                     navItems: root.laneNavItemsForTile(3)
-                    allNavItems: root.laneAllNavItemsForTile(3)
                     defaultNodeId: "D01"
                     tileIndex: 3
                     titleText: root.tileTitleForIndex(3)

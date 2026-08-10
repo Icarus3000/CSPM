@@ -1,5 +1,22 @@
 # Implementation History
 
+## 2026-08-10: Selectable Billing-Client Statement of Account
+
+- **Workflow**: the Statement of Account report now explicitly selects a Billing Client, loads its open invoices as of the requested statement date, and checks them all by default. The invoice table supports individual inclusion, Select All, Clear, a live selected-invoice count, and a live amount-due total. Invoice choices only shape the outward-facing statement; they do not modify receivables, payments, or any ledger data.
+- **Accounting contract**: the canonical A/R event stream is rolled up by invoice as of the statement date. Fully paid, voided, reversed, or zero-balance items are not offered for selection; partial payments/credits reduce the displayed invoice balance before the user selects it.
+- **Presentation**: replaced the generic statement PDF with a dedicated, invoice-grade layout: branded firm header/logo, bill-to block, statement date, a prominent navy amount-due callout, a concise selected-invoice table, and a payment-contact note. The Report Window's existing branding-profile selector supplies the chosen firm identity.
+- **Validation/release**: `python -m py_compile` passed for the repository, controller, and PDF exporter. `tests/test_statement_of_account.py` passed (2 tests), including default/open selection, manual selection, selected balance, as-of date, and PDF creation. The governed QML-lint wrapper passed for `StatementOfAccountView.qml`. A complete package was built and copy-promoted to `dist/cspm.exe` (SHA-256 `8B3F64D8C9072B5B94845DDAC21777D1A0B768E32788FD0B7C59CAB2452DD381`); the previous release remains recoverable in `to_delete/dist__replaced_release_20260810_010816/`. No real Qt/WebEngine foreground session was launched here; manual statement/PDF verification remains required.
+
+## 2026-08-09: Matter Merging & Data Integrity
+
+- **Ghost Matters Identified**: A script scan of `data/CSPM.xlsm` revealed two distinct issues causing "ghost" matters:
+  1. **Duplicate Matter**: Client `LITE` had two matters named "tax planning" with different UUIDs (`7be2fc9e...` and `ac637785...`). 
+  2. **Orphaned Time Entry**: Client `BORK` had two time entries referencing a matter ID of `Custom Fee`, which did not exist in the `Matters` table.
+- **Resolution**:
+  - The duplicate matter `ac637785...` had exactly zero associated time dockets, while `7be2fc9e...` was the authoritative record. The empty duplicate was automatically merged/deleted.
+  - A new proper Matter record was created for Client `BORK` with the name `Custom Fee` and a valid UUID, and the orphaned time entries were re-parented to this new UUID.
+- **Result**: All ghost matters were eliminated programmatically without needing a manual UI review, as no conflicting dockets existed.
+
 ## 2026-08-08: Import Wizard Precision Filtering (Part 2) & Theme Repairs
 
 - **Fix `0 added` records bug**: Replaced the ephemeral array-mutation logic in `AnalysisReviewGridWindow.qml` with a persistent `selectedMap`. This guarantees that checkbox states are maintained independently of QML's `Repeater` memory model and list mutations. Selected data is now reliably passed to the backend, enabling successful imports for specific filtered sheets (e.g., importing a specific docket from July 28).
@@ -734,3 +751,10 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 
 - **Delayed WIP-to-Builder Transition**: Modified WIPBillingWizardView so that when Create Draft is clicked, the UI remains on the WIP tab with the loading indicator spinning until the invoiceHtmlReady signal is emitted by the backend. It now waits for the preview HTML generation to finish before transitioning to the Invoice Builder tab.
 
+
+
+### Matter Merge UI Implementation (2026-08-09)
+* **QML View**: Added a MergeMatterDialog inside MatterProfilePanel.qml that displays a dropdown of all active matters.
+* **Controller**: Added @Slot(str, str) mergeMatters(source_matter_id, target_matter_name) to pp_controller.py.
+* **Client Repo**: Proxied merge_duplicate_matters to xcel_repo.py.
+* **Excel Repo**: Upgraded _merge_duplicate_matters to reassign TBL_DISBURSEMENTS in addition to time and transactions, and modified the UI connection so it safely handles the target matter lookup by name or ID.

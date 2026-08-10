@@ -1,5 +1,14 @@
 # Phase 7: Statements of Account and Ledgers Task List
 
+## Selectable Billing-Client Statements (2026-08-10)
+
+- [x] Add an explicit Billing Client selector that lists bill-to parties with open receivables.
+- [x] Load unpaid and partially paid invoices by billing client and statement date, selecting every open invoice by default.
+- [x] Let the user manually include/exclude invoices, select all/clear, and see the selected balance update before generation; the selection never changes A/R data.
+- [x] Replace the generic statement PDF path with a dedicated branded Statement of Account layout, including bill-to details, selected invoices, amount-due callout, and payment-contact note.
+- [x] Add focused regression coverage and promote the runnable package at `dist/cspm.exe` (SHA-256 `8B3F64D8C9072B5B94845DDAC21777D1A0B768E32788FD0B7C59CAB2452DD381`); the replaced package is recoverably retained under `to_delete/`.
+- [ ] Manual foreground verification: open **Reports → Statement of Account**, choose a billing client, deselect at least one unpaid invoice, generate, and confirm the PDF contains only the selected invoices and the matching amount due.
+
 ## Governed Historic Financial Synchronization (2026-08-06)
 
 - [x] Build a source-controlled synchronization service that treats `C:\Users\cschn\OneDrive - LPN\__Invoices (1)\Dockets.xlsm` as the historic financial authority while preserving CSPM-native records after the source snapshot cutoff.
@@ -13,7 +22,10 @@
 - [x] Identify duplicate matters (e.g. LITE - tax planning) and merge them into an authoritative record by reparenting time entries.
 - [x] Identify orphaned matters in time entries (e.g. BORK - Custom Fee) and recreate them in the Matters table.
 - [x] Eliminate "ghost" matters by resolving all duplicates and orphans.
-
+- [x] Backend: Expose `mergeMatters` function via `AppController` that links to `ClientRepo` and `ExcelRepo`.
+- [x] Backend: Update `_merge_duplicate_matters` to reassign disbursements alongside time and transactions.
+- [x] QML: Add **Merge Matter** dialog to the matter profile view (`MatterProfilePanel.qml`).
+- [ ] Manual foreground verification: Launch the application and test the UI merge of "CRA Audit" into "Legacy Matter EASY-LEVI-TAX-26-0021" for the Easy 4.0 client.
 ## Portable Current Data and Explicit Data Locations (2026-08-06)
 
 - [x] Replace the repository's older `data/CSPM.xlsm` with the verified current LocalAppData workbook, including the repaired invoice `26-0080`; `Dockets.xlsm` was verified identical.
@@ -172,20 +184,6 @@
 
 - [x] Add light-gray contextual placeholders for blank Date, Description, Hours, and Hourly Rate inputs in the Invoice Builder line-item editor.
 - [x] Identify direct fee entries in the draft-line payload and replace the time-only fields with one `Fee amount ($)` input when editing a fee.
-- [x] Persist a time line's changed hourly rate as well as hours; persist a fee line's amount while preserving its zero-hour/zero-rate shape.
-- [ ] Manual foreground verification: edit one time docket and one direct fee line in an invoice draft; confirm the time line shows Hours/Rate while the fee line shows only Fee amount, then save and confirm the preview total changes.
-
-## Bulk Docket Move Between Matters (2026-08-06)
-
-- [x] Add a Docketing & Deadlines workspace for reviewing and moving multiple time or direct-fee dockets from one matter to another over an inclusive date range.
-- [x] Allow the destination matter to belong to another client; move selected dockets to that matter's client and billing-parent relationship as part of the same update.
-- [x] Protect invoice-linked dockets (draft or finalized) from reassignment; allow selected or all eligible unbilled dockets and write a durable audit note for every move.
-- [x] Replace the raw Qt matter popups with searchable application-themed selectors. Matter choices now display as `Client | Matter Description | Matter Number`.
-- [ ] Manual foreground verification: open `Move Dockets Between Matters` in both light and dark themes, search/select source and destination matters, move a selected subset and then all eligible dockets for a date range including a cross-client destination; confirm the destination matter/client display and that invoice-linked entries are excluded.
-
-## Third-Party Billing Invoice Context (2026-08-06)
-
-- [x] When the bill-to client differs from the service client, omit the internal matter-number code from the invoice service context and matter headings.
 - [x] Identify the actual service client and use the matter's plain-English Description (falling back safely to Matter Name) in its place.
 - [x] Render third-party service context compactly as `Matter: <client name> | <matter description>` on one line; retain the normal two-field context for ordinary invoices.
 - [ ] Manual foreground verification: preview a third-party invoice and confirm the `Legal Services For` block renders `Matter: <service-client name> | <plain-English matter description>` with no coded matter number.

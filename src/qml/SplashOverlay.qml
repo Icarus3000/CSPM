@@ -128,6 +128,13 @@ ApplicationWindow {
     property double sequenceStartEpochMs: 0
     property double sharedStartEpochMs: 0
     property bool sequenceStartQueued: false
+    // This is deliberately started when the indicator is first revealed, rather
+    // than from the shared application clock.  A warm WebEngine process can add
+    // clock skew before the splash is painted, which made the previous indicator
+    // feel as though it had already completed.
+    property double splashProgressStartEpochMs: 0
+    property real splashProgress: 0.0
+    property int splashProgressDurationMs: Math.max(1, splashWin.fadeOutStartMs - splashWin.logoStartMs)
     property real lightSweepVisibleOpacityThreshold: 0.08
     property real bgOpacity: 0.0
     property real logoOpacity: 0.0
@@ -540,6 +547,21 @@ ApplicationWindow {
         splashSequence.restart();
     }
 
+    function startSplashProgress() {
+        splashProgress = 0.0;
+        splashProgressStartEpochMs = Date.now();
+        splashProgressTimer.restart();
+    }
+
+    function updateSplashProgress() {
+        if (splashProgressStartEpochMs <= 0 || isDestroying) return;
+        var elapsedMs = Math.max(0, Date.now() - splashProgressStartEpochMs);
+        splashProgress = Math.max(0.0, Math.min(1.0, elapsedMs / splashProgressDurationMs));
+        if (splashProgress >= 1.0) {
+            splashProgressTimer.stop();
+        }
+    }
+
     function restartLogoAnimation(reasonTag) {
         try {
             if (logoWebLoader && logoWebLoader.item && logoWebLoader.item.restartAnimation) {
@@ -685,6 +707,7 @@ ApplicationWindow {
         try {
             syncStartTimer.stop();
             splashFocusReassertTimer.stop();
+            splashProgressTimer.stop();
             delayedAudioStart.stop();
             if (typeof burnPhaseTimer !== "undefined" && burnPhaseTimer) burnPhaseTimer.stop();
             logoLoadWaitTimer.stop();
@@ -932,56 +955,132 @@ ApplicationWindow {
 
     }
 
-    // Super Modern Elite Loading Indicator
+    // The splash indicator is a real elapsed-time progress bar.  It begins at
+    // zero as the logo is revealed and completes just before the splash fades.
+    // Layered cyan/indigo light gives it a contained plasma glow without a
+    // ShaderEffect dependency during startup.
     Item {
         id: premiumLoader
-        width: 200
-        height: 2
+        width: 220
+        height: 18
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 60
-        opacity: splashWin.bgOpacity * 0.85
+        anchors.bottomMargin: 54
+        opacity: splashWin.bgOpacity * 0.92
         visible: splashWin.bgOpacity > 0 && splashWin.logoRenderGateOpen
-        clip: true
 
         Rectangle {
-            anchors.fill: parent
-            color: splashWin.isPro ? "#e2e8f0" : "#334155"
-            radius: 1
+            id: loaderOuterGlow
+            x: -5
+            y: 1
+            width: parent.width + 10
+            height: parent.height - 2
+            radius: height / 2
+            color: "#38bdf8"
+            opacity: 0.10 + (0.12 * splashWin.splashProgress)
         }
 
         Rectangle {
-            id: loaderSweep
-            width: 80
-            height: parent.height
-            radius: 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: "transparent" }
-                GradientStop { position: 0.5; color: splashWin.isPro ? "#0ea5e9" : "#38bdf8" } // Sleek sky blue
-                GradientStop { position: 1.0; color: "transparent" }
+            id: loaderInnerGlow
+            x: -1
+            y: 4
+            width: parent.width + 2
+            height: parent.height - 8
+            radius: height / 2
+            color: "#6366f1"
+            opacity: 0.16 + (0.12 * splashWin.splashProgress)
+        }
+
+        Rectangle {
+            id: loaderTrack
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width
+            height: 6
+            radius: height / 2
+            color: splashWin.isPro ? "#dbe5f2" : "#26364d"
+            border.width: 1
+            border.color: splashWin.isPro ? "#c4d2e4" : "#3d526e"
+        }
+
+        Item {
+            id: loaderFillClip
+            x: loaderTrack.x + loaderTrack.border.width
+            y: loaderTrack.y + loaderTrack.border.width
+            width: Math.max(0, (loaderTrack.width - (2 * loaderTrack.border.width)) * splashWin.splashProgress)
+            height: Math.max(0, loaderTrack.height - (2 * loaderTrack.border.width))
+            clip: true
+
+            Rectangle {
+                width: loaderTrack.width
+                height: parent.height
+                radius: height / 2
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#22d3ee" }
+                    GradientStop { position: 0.32; color: "#3b82f6" }
+                    GradientStop { position: 0.68; color: "#6366f1" }
+                    GradientStop { position: 1.0; color: "#c084fc" }
+                }
             }
 
-            SequentialAnimation on x {
-                loops: Animation.Infinite
-                running: true
-                
-                NumberAnimation {
-                    from: -100
-                    to: premiumLoader.width + 20
-                    duration: 1400
-                    easing.type: Easing.InOutQuad
+            Rectangle {
+                id: loaderShimmer
+                width: 64
+                height: parent.height
+                radius: height / 2
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "transparent" }
+                    GradientStop { position: 0.5; color: "#e0f2fe" }
+                    GradientStop { position: 1.0; color: "transparent" }
                 }
-                PauseAnimation { duration: 200 }
-                NumberAnimation {
-                    from: premiumLoader.width + 20
-                    to: -100
-                    duration: 1400
-                    easing.type: Easing.InOutQuad
+
+                SequentialAnimation on x {
+                    loops: Animation.Infinite
+                    running: loaderFillClip.width > 0 && splashWin.splashProgress < 1.0
+
+                    NumberAnimation {
+                        from: -loaderShimmer.width
+                        to: loaderFillClip.width
+                        duration: 760
+                        easing.type: Easing.InOutSine
+                    }
+                    PauseAnimation { duration: 260 }
                 }
-                PauseAnimation { duration: 200 }
             }
         }
+
+        Rectangle {
+            id: loaderPlasmaHead
+            width: 15
+            height: 12
+            radius: height / 2
+            x: loaderTrack.x + Math.max(-width / 2,
+                Math.min(loaderTrack.width - width / 2,
+                    (loaderTrack.width * splashWin.splashProgress) - (width / 2)))
+            y: loaderTrack.y - 3
+            color: "#a5f3fc"
+            opacity: splashWin.splashProgress > 0.01 ? 0.50 : 0.0
+        }
+
+        Rectangle {
+            width: 5
+            height: 5
+            radius: height / 2
+            x: loaderTrack.x + Math.max(-width / 2,
+                Math.min(loaderTrack.width - width / 2,
+                    (loaderTrack.width * splashWin.splashProgress) - (width / 2)))
+            y: loaderTrack.y + 0.5
+            color: "#f0f9ff"
+            opacity: splashWin.splashProgress > 0.01 ? 0.96 : 0.0
+        }
+    }
+
+    Timer {
+        id: splashProgressTimer
+        interval: 16
+        repeat: true
+        onTriggered: splashWin.updateSplashProgress()
     }
 
     AudioOutput {
@@ -1177,6 +1276,9 @@ ApplicationWindow {
                 splashWin.logoScale = 0.82;
                 splashWin.opacity = 1.0;
                 splashWin.logoRenderGateOpen = false;
+                splashWin.splashProgress = 0.0;
+                splashWin.splashProgressStartEpochMs = 0;
+                splashProgressTimer.stop();
                 splashWin.sequenceFinishedDispatched = false;
                 splashWin.splashGoneLogged = false;
                 splashWin.waitingForLaunchHandoffRelease = false;
@@ -1258,6 +1360,7 @@ ApplicationWindow {
                 ScriptAction {
                     script: {
                         splashWin.logoRenderGateOpen = true;
+                        splashWin.startSplashProgress();
                         splashWin.restartLogoAnimation("logo-open");
                         splashWin.phaseLog("Phase 2: logo-open");
                     }

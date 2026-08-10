@@ -1880,6 +1880,9 @@ class ClientRepo:
     def delete_matter_profile(self, matter_id: str) -> Dict[str, Any]:
         return self.db.delete_matter_profile(matter_id)
 
+    def merge_duplicate_matters(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.db._merge_duplicate_matters(payload)
+
     def save_matter_profile(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         self.db.ensure_schema()
         normalized = self.db._normalize_matter_profile_payload(payload)

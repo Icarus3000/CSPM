@@ -3134,8 +3134,22 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         startTimerAfterLock()
     }
 
+    function feeCalculationHours() {
+        // A manually typed value is the active source of truth for the live
+        // preview.  The timer remains the fallback for timer-driven dockets.
+        // This keeps Total Fees accurate before the user leaves the field or
+        // saves the docket.
+        if (timeInput) {
+            var parsed = root.parseTimeEntryInputToSeconds(timeInput.text)
+            if (parsed && parsed.ok) {
+                return Math.max(0, Number(parsed.seconds || 0)) / 3600.0
+            }
+        }
+        return Math.max(0, Math.floor(root.elapsedSeconds || 0)) / 3600.0
+    }
+
     function calculateFees() {
-        var hours = Math.max(0, Math.floor(root.elapsedSeconds || 0)) / 3600.0
+        var hours = root.feeCalculationHours()
         var r = parseFloat(rateInput.text) || 0.0
         var b = parseFloat(billInput.text) || 0.0
         feesInput.text = "$" + (hours * r * (b / 100.0)).toFixed(2)

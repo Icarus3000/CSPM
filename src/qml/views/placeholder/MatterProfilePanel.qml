@@ -124,6 +124,38 @@ Rectangle {
                 Layout.preferredHeight: root.fieldHeightPx
                 onClicked: root.gotoNode("D07")
             }
+            PillButton {
+                t: root.t
+                metrics: root.responsiveMetrics
+                sfxBus: root.sfxBus
+                text: "Merge Matter"
+                primary: false
+                visible: root.selectedMatterId.length > 0
+                Layout.preferredWidth: root.ratioPxW(0.12, 110)
+                Layout.preferredHeight: root.fieldHeightPx
+                onClicked: mergeMatterDialog.open()
+            }
+
+            PillButton {
+                t: root.t
+                metrics: root.responsiveMetrics
+                sfxBus: root.sfxBus
+                text: "Delete Archived"
+                primary: false
+                visible: root.selectedMatterId.length > 0
+                    && String(root.selectedMatterProfile && root.selectedMatterProfile.status ? root.selectedMatterProfile.status : "").trim().toLowerCase() === "archived"
+                Layout.preferredWidth: root.ratioPxW(0.132, 124)
+                Layout.preferredHeight: root.fieldHeightPx
+                ToolTip.text: "Permanently delete this archived matter"
+                onClicked: {
+                    archivedMatterDeleteDialogProfile.openFor({
+                        "matterId": root.selectedMatterId,
+                        "matterNumber": root.selectedMatterProfile && root.selectedMatterProfile.matterNumber ? root.selectedMatterProfile.matterNumber : "",
+                        "matterName": root.selectedMatterProfile && root.selectedMatterProfile.matterName ? root.selectedMatterProfile.matterName : root.selectedMatterName,
+                        "displayName": root.selectedMatterProfile && root.selectedMatterProfile.displayName ? root.selectedMatterProfile.displayName : ""
+                    })
+                }
+            }
         }
 
 Rectangle {
@@ -381,5 +413,77 @@ Rectangle {
                 }
             }
         }
+    }
+
+    Dialog {
+        id: mergeMatterDialog
+        title: "Merge Matter"
+        modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        width: 500
+        height: 250
+        anchors.centerIn: parent
+
+        onAccepted: {
+            var targetRow = root.resolveMatterDirectoryRowByKey(targetMatterCombo.editText)
+            var targetMatterId = String(targetRow && targetRow.matterId ? targetRow.matterId : "").trim()
+            if (!targetMatterId) {
+                root.saveMessage = "Choose a target matter from the directory list."
+                return
+            }
+            if (targetMatterId === root.selectedMatterId) {
+                root.saveMessage = "Source and target matters must be different."
+                return
+            }
+
+            var res = undefined
+            if (typeof root.mergeMatters === "function") {
+                res = root.mergeMatters(root.selectedMatterId, targetMatterId)
+            } else if (root.appRef && root.appRef.mergeMatters) {
+                res = root.appRef.mergeMatters(root.selectedMatterId, targetMatterId)
+            }
+
+            if (res && res.ok) {
+                mergeSuccessDialogProfile.sourceMatterId = root.selectedMatterId
+                mergeSuccessDialogProfile.targetMatterId = targetMatterId
+                mergeSuccessDialogProfile.open()
+                root.refreshMatterDirectory(true)
+            } else {
+                root.saveMessage = res && res.message ? res.message : "Matter merge failed."
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 15
+
+            Text {
+                text: "Select the authoritative matter to merge this one into. All dockets and transactions will be moved to the target matter. The current matter will be deleted. This cannot be undone."
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+                font.pixelSize: 13
+            }
+
+            ModernComboBox {
+                id: targetMatterCombo
+                t: root.t
+                metrics: root.responsiveMetrics
+                label: "Target Matter"
+                fullModel: root.matterDirectoryNameOptions
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.fieldHeightPx
+            }
+        }
+    }
+
+    MatterMergeSuccessDialog {
+        id: mergeSuccessDialogProfile
+        host: root
+    }
+
+    ArchivedMatterDeleteDialog {
+        id: archivedMatterDeleteDialogProfile
+        host: root
     }
 }
