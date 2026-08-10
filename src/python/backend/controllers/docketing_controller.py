@@ -115,6 +115,24 @@ class DocketingController(QObject):
         worker.signals.error.connect(partial(self._on_payment_error, worker))
         self._start_worker(worker)
 
+    @Slot(str, result=dict)
+    def getPaymentEntry(self, payment_id):
+        try:
+            return self._excel_repo.get_invoice_payment_entry(str(payment_id or ""))
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    @Slot("QVariantMap")
+    def updatePayment(self, payload):
+        worker = Worker(
+            self._excel_repo.update_invoice_payment,
+            dict(payload or {}),
+            name="updatePayment",
+        )
+        worker.signals.result.connect(partial(self._on_payment_saved, worker))
+        worker.signals.error.connect(partial(self._on_payment_error, worker))
+        self._start_worker(worker)
+
     def _on_payment_saved(self, worker, result):
         try:
             res_dict = dict(result or {})

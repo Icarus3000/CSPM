@@ -2194,29 +2194,21 @@ class ExcelRepo:
         return rows
 
     def list_invoice_payment_history(self, invoice_ref: str) -> List[Dict[str, Any]]:
-        """Return transaction and ledger evidence for a single invoice reference."""
+        """Return the dated payment activity recorded against one invoice.
+
+        The ledger is the authoritative receivables record.  A payment posted
+        through CSPM creates both a financial transaction and a ledger entry,
+        so returning both naively makes one payment appear twice.  Keep the
+        ledger entry, then only add older transaction-only payments that have
+        no matching ledger transaction.
+        """
 
         target = _clean_text(invoice_ref)
         if not target:
             return []
         target_lc = target.lower()
         rows: List[Dict[str, Any]] = []
-
-        for row in self.list_transactions({"invoiceRef": target}):
-            if _clean_text(row.get("invoiceRef")).lower() != target_lc:
-                continue
-            rows.append(
-                {
-                    "date": _clean_text(row.get("txnDate")),
-                    "type": _clean_text(row.get("type")) or "Transaction",
-                    "reference": _clean_text(row.get("transactionId")),
-                    "method": _clean_text(row.get("fromAccount")),
-                    "amount": self._money_round(row.get("amount")),
-                    "notes": _clean_text(row.get("notes")),
-                    "source": "Transactions",
-                }
-            )
-
+        ledger_transaction_ids = set()
         for row in self._read_table_rows(TBL_LEDGER):
             if _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).lower() != target_lc:
                 continue
@@ -2224,12 +2216,26 @@ class ExcelRepo:
             write_off = self._money_round(row.get(sc.COL_LEDGER_WRITE_OFF))
             if collected <= 0 and write_off <= 0:
                 continue
+            transaction_id = _clean_text(row.get(sc.COL_LEDGER_TRX_ID))
+            external_reference = _clean_text(row.get(sc.COL_LEDGER_EXTERNAL_REF_ID))
+            if transaction_id:
+                ledger_transaction_ids.add(transaction_id.lower())
+            # Older ledger rows sometimes stored the generated transaction ID
+            # in ExternalRef instead of TransactionID.
+            if external_reference.lower().startswith("txn_"):
+                ledger_transaction_ids.add(external_reference.lower())
             rows.append(
                 {
                     "date": self._date_iso(row.get(sc.COL_LEDGER_DATE)),
                     "type": "Payment" if collected > 0 else "Write-off/Adjustment",
-                    "reference": _clean_text(row.get(sc.COL_LEDGER_EXTERNAL_REF_ID))
-                    or _clean_text(row.get(sc.COL_LEDGER_TRX_ID)),
+                    "paymentId": transaction_id
+                    or _clean_text(row.get(sc.COL_LEDGER_ID)),
+                    "transactionId": transaction_id,
+                    "ledgerId": _clean_text(row.get(sc.COL_LEDGER_ID)),
+                    "editable": True,
+                    "reference": transaction_id
+                    or external_reference
+                    or _clean_text(row.get(sc.COL_LEDGER_ID)),
                     "method": _clean_text(row.get(sc.COL_LEDGER_CATEGORY)),
                     "amount": collected if collected > 0 else write_off,
                     "notes": _clean_text(row.get(sc.COL_LEDGER_DESCRIPTION)),
@@ -2237,8 +2243,356 @@ class ExcelRepo:
                 }
             )
 
+        # Preserve genuinely historic payment transactions that predate the
+        # ledger workflow, but do not show invoice-creation revenue or a
+        # duplicate transaction that already has ledger evidence.
+        for row in self.list_transactions({"invoiceRef": target}):
+            if _clean_text(row.get("invoiceRef")).lower() != target_lc:
+                continue
+            transaction_id = _clean_text(row.get("transactionId"))
+            if transaction_id and transaction_id.lower() in ledger_transaction_ids:
+                continue
+            transaction_type = _clean_text(row.get("type")).lower()
+            notes = _clean_text(row.get("notes"))
+            note_key = notes.lower()
+            is_payment_note = (
+                "payment" in note_key
+                or "applied to invoice" in note_key
+                or "received from" in note_key
+            )
+            if transaction_type != "income" or not is_payment_note:
+                continue
+            amount = self._money_round(row.get("amount"))
+            if amount <= 0:
+                continue
+            rows.append(
+                {
+                    "date": _clean_text(row.get("txnDate")),
+                    "type": "Payment",
+                    "paymentId": transaction_id,
+                    "transactionId": transaction_id,
+                    "ledgerId": "",
+                    "editable": True,
+                    "reference": transaction_id,
+                    "method": _clean_text(row.get("fromAccount")),
+                    "amount": amount,
+                    "notes": notes,
+                    "source": "Transactions",
+                }
+            )
+
         rows.sort(key=lambda item: (_clean_text(item.get("date")), _clean_text(item.get("reference"))), reverse=True)
         return rows
+
+    def _invoice_payment_record(self, payment_id: str) -> Dict[str, Any]:
+        """Resolve a payment ID to its linked ledger and transaction evidence."""
+
+        target = _clean_text(payment_id)
+        if not target:
+            raise ValueError("Payment ID is required.")
+        target_lc = target.lower()
+        ledger_rows = self._read_table_rows(TBL_LEDGER)
+        transaction_rows = self._read_table_rows(TBL_TRANSACTIONS_MASTER)
+        ledger_index = -1
+        ledger_row: Dict[str, Any] = {}
+
+        for index, row in enumerate(ledger_rows):
+            identifiers = (
+                _clean_text(row.get(sc.COL_LEDGER_ID)),
+                _clean_text(row.get(sc.COL_LEDGER_TRX_ID)),
+                _clean_text(row.get(sc.COL_LEDGER_EXTERNAL_REF_ID)),
+            )
+            if any(identifier.lower() == target_lc for identifier in identifiers if identifier):
+                ledger_index = index
+                ledger_row = dict(row)
+                break
+
+        transaction_id = _clean_text(ledger_row.get(sc.COL_LEDGER_TRX_ID)) or target
+        transaction_index = -1
+        transaction_row: Dict[str, Any] = {}
+        for index, row in enumerate(transaction_rows):
+            if _clean_text(row.get(sc.COL_TXN_ID)).lower() == transaction_id.lower():
+                transaction_index = index
+                transaction_row = dict(row)
+                transaction_id = _clean_text(row.get(sc.COL_TXN_ID))
+                break
+
+        if ledger_index < 0 and transaction_index < 0:
+            raise ValueError(f"Payment {target} was not found.")
+
+        invoice = _clean_text(ledger_row.get(sc.COL_LEDGER_REFERENCE)) or _clean_text(
+            transaction_row.get(sc.COL_TXN_INVOICE_REF)
+        )
+        if not invoice:
+            raise ValueError(f"Payment {target} is not linked to an invoice.")
+
+        return {
+            "paymentId": transaction_id
+            or _clean_text(ledger_row.get(sc.COL_LEDGER_ID))
+            or target,
+            "invoice": invoice,
+            "ledgerIndex": ledger_index,
+            "ledgerRow": ledger_row,
+            "ledgerRows": ledger_rows,
+            "transactionId": transaction_id,
+            "transactionIndex": transaction_index,
+            "transactionRow": transaction_row,
+            "transactionRows": transaction_rows,
+        }
+
+    def get_invoice_payment_entry(self, payment_id: str) -> Dict[str, Any]:
+        """Return one saved payment in the editable Payment Entry shape."""
+
+        try:
+            record = self._invoice_payment_record(payment_id)
+            invoice = _clean_text(record.get("invoice"))
+            ledger_row = dict(record.get("ledgerRow") or {})
+            transaction_row = dict(record.get("transactionRow") or {})
+            collected = self._money_round(ledger_row.get(sc.COL_LEDGER_COLLECTED))
+            write_off = self._money_round(ledger_row.get(sc.COL_LEDGER_WRITE_OFF))
+            if not ledger_row:
+                collected = self._money_round(transaction_row.get(sc.COL_TXN_AMOUNT))
+            if collected <= 0 and write_off <= 0:
+                raise ValueError(f"Payment {payment_id} has no editable amount.")
+
+            receivable = None
+            for row in self._read_table_rows(TBL_RECEIVABLES):
+                if _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).lower() == invoice.lower():
+                    receivable = dict(row)
+                    break
+            if receivable is None:
+                raise ValueError(f"Invoice {invoice} was not found in Receivables.")
+
+            reference = _clean_text(ledger_row.get(sc.COL_LEDGER_EXTERNAL_REF_ID))
+            if reference.lower() == _clean_text(record.get("transactionId")).lower():
+                reference = ""
+            notes = _clean_text(transaction_row.get(sc.COL_TXN_NOTES)) or _clean_text(
+                ledger_row.get(sc.COL_LEDGER_DESCRIPTION)
+            )
+            return {
+                "ok": True,
+                "paymentId": _clean_text(record.get("paymentId")),
+                "transactionId": _clean_text(record.get("transactionId")),
+                "ledgerId": _clean_text(ledger_row.get(sc.COL_LEDGER_ID)),
+                "invoice": invoice,
+                "invoiceRow": self._payment_invoice_snapshot(receivable),
+                "date": self._date_iso(
+                    ledger_row.get(sc.COL_LEDGER_DATE)
+                    or transaction_row.get(sc.COL_TXN_DATE)
+                ),
+                "mode": "Write-off / Adjustment" if write_off > 0 else "Payment",
+                "method": _clean_text(ledger_row.get(sc.COL_LEDGER_CATEGORY))
+                or _clean_text(transaction_row.get(sc.COL_TXN_FROM_ACCOUNT)),
+                "reference": reference,
+                "amount": collected,
+                "adjustmentAmount": write_off,
+                "adjustmentReason": "",
+                "notes": notes,
+            }
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    def update_invoice_payment(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Amend one recorded payment and keep A/R, ledger, and WIP in sync."""
+
+        self.ensure_schema()
+        data = dict(payload or {})
+        record = self._invoice_payment_record(
+            _clean_text(data.get("paymentId") or data.get("transactionId"))
+        )
+        invoice = _clean_text(record.get("invoice"))
+        payment_date = _clean_text(data.get("date") or data.get("paymentDate"))
+        if not _is_valid_iso_date(payment_date):
+            raise ValueError("Payment date must be in YYYY-MM-DD format.")
+
+        ledger_row = dict(record.get("ledgerRow") or {})
+        transaction_row = dict(record.get("transactionRow") or {})
+        old_payment = self._money_round(ledger_row.get(sc.COL_LEDGER_COLLECTED))
+        old_adjustment = self._money_round(ledger_row.get(sc.COL_LEDGER_WRITE_OFF))
+        if not ledger_row:
+            old_payment = self._money_round(transaction_row.get(sc.COL_TXN_AMOUNT))
+
+        # Editing preserves the original payment kind.  A payment can be
+        # corrected without accidentally converting cash received into a
+        # write-off (or vice versa).
+        if old_payment > 0:
+            payment_amount = self._money_round(data.get("amount"))
+            adjustment_amount = 0.0
+            if payment_amount <= 0:
+                raise ValueError("Payment amount must be greater than 0.")
+        else:
+            payment_amount = 0.0
+            adjustment_amount = self._money_round(
+                data.get("adjustmentAmount") or data.get("amount")
+            )
+            if adjustment_amount <= 0:
+                raise ValueError("Adjustment amount must be greater than 0.")
+
+        receivable_rows = self._read_table_rows(TBL_RECEIVABLES)
+        receivable_index = -1
+        receivable: Dict[str, Any] = {}
+        for index, row in enumerate(receivable_rows):
+            if _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).lower() == invoice.lower():
+                receivable_index = index
+                receivable = dict(row)
+                break
+        if receivable_index < 0:
+            raise ValueError(f"Invoice {invoice} was not found in Receivables.")
+
+        invoice_total = self._money_round(receivable.get(sc.COL_RECV_TOTAL_INVOICED))
+        base_paid = self._money_round(receivable.get(sc.COL_RECV_AMOUNT_PAID)) - old_payment
+        base_credits = self._money_round(receivable.get(sc.COL_RECV_CREDITS_ADJ)) - old_adjustment
+        if base_paid < -0.01 or base_credits < -0.01:
+            raise ValueError("This payment no longer matches the invoice balance. Refresh and try again.")
+        next_paid = self._money_round(max(0.0, base_paid) + payment_amount)
+        next_credits = self._money_round(max(0.0, base_credits) + adjustment_amount)
+        next_balance = self._money_round(invoice_total - next_paid - next_credits)
+        if next_balance < -0.01:
+            raise ValueError(
+                f"Updated amount exceeds the invoice total by ${abs(next_balance):,.2f}."
+            )
+        if abs(next_balance) <= 0.01:
+            next_balance = 0.0
+
+        method = _clean_text(data.get("method"))
+        reference = _clean_text(data.get("reference"))
+        notes = _clean_text(data.get("notes"))
+        adjustment_reason = _clean_text(data.get("adjustmentReason"))
+        transaction_id = _clean_text(record.get("transactionId"))
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        transaction_rows = list(record.get("transactionRows") or [])
+        transaction_index = int(record.get("transactionIndex", -1))
+        if payment_amount > 0:
+            if transaction_index >= 0:
+                updated_transaction = dict(transaction_rows[transaction_index])
+                updated_transaction[sc.COL_TXN_DATE] = payment_date
+                updated_transaction[sc.COL_TXN_TYPE] = "Income"
+                updated_transaction[sc.COL_TXN_FROM_ACCOUNT] = method or _clean_text(
+                    updated_transaction.get(sc.COL_TXN_FROM_ACCOUNT)
+                )
+                updated_transaction[sc.COL_TXN_AMOUNT] = payment_amount
+                updated_transaction[sc.COL_TXN_INVOICE_REF] = invoice
+                updated_transaction[sc.COL_TXN_NOTES] = notes or f"{method or 'Payment'} applied to invoice {invoice}"
+                updated_transaction[sc.COL_TXN_CLEARED_AT] = payment_date
+                updated_transaction[sc.COL_TXN_UPDATED_AT] = now_stamp
+                transaction_rows[transaction_index] = updated_transaction
+                transaction_id = _clean_text(updated_transaction.get(sc.COL_TXN_ID))
+            else:
+                result = self.save_transaction(
+                    {
+                        "txnDate": payment_date,
+                        "class": "Business",
+                        "businessUnit": "Legal Practice",
+                        "type": "Income",
+                        "fromAccount": method or "Operating Account",
+                        "payee": _clean_text(receivable.get(sc.COL_RECV_CLIENT)),
+                        "client": _clean_text(receivable.get(sc.COL_RECV_WORK_CLIENT))
+                        or _clean_text(receivable.get(sc.COL_RECV_CLIENT)),
+                        "categoryCode": "INC_LEGAL_FEES",
+                        "categoryName": "Legal Fees Revenue",
+                        "member": "Cory",
+                        "amount": payment_amount,
+                        "taxAmount": 0.0,
+                        "taxFlag": "None",
+                        "hstExempt": 1,
+                        "invoiceRef": invoice,
+                        "status": "Cleared",
+                        "currency": "CAD",
+                        "notes": notes or f"{method or 'Payment'} applied to invoice {invoice}",
+                        "clearedAt": payment_date,
+                    }
+                )
+                if not result.get("ok"):
+                    raise ValueError(_clean_text(result.get("message")) or "Payment transaction was not saved.")
+                transaction_id = _clean_text(result.get("transactionId"))
+        if transaction_index >= 0:
+            self._replace_table_rows(TBL_TRANSACTIONS_MASTER, transaction_rows)
+
+        ledger_rows = list(record.get("ledgerRows") or [])
+        ledger_index = int(record.get("ledgerIndex", -1))
+        ledger_description = (
+            f"Payment applied to invoice {invoice}"
+            if payment_amount > 0
+            else f"Credit/Adj applied to invoice {invoice}"
+        )
+        if payment_amount > 0 and method:
+            ledger_description += f" ({method})"
+        if notes:
+            ledger_description += f" - {notes}"
+        elif adjustment_reason:
+            ledger_description += f" - {adjustment_reason}"
+        updated_ledger = dict(ledger_row) if ledger_row else {
+            sc.COL_LEDGER_ID: self._new_id("LED"),
+            sc.COL_LEDGER_CLIENT_VENDOR: _clean_text(receivable.get(sc.COL_RECV_CLIENT)),
+            sc.COL_LEDGER_BILLINGS_EXCL_HST: 0.0,
+            sc.COL_LEDGER_HST_COLLECTED: 0.0,
+            sc.COL_LEDGER_EXPENSES_EXCL_HST: 0.0,
+            sc.COL_LEDGER_HST_PAID: 0.0,
+            sc.COL_LEDGER_WORK_CLIENT: _clean_text(receivable.get(sc.COL_RECV_WORK_CLIENT)),
+            sc.COL_LEDGER_CREATED_AT: now_stamp,
+        }
+        updated_ledger[sc.COL_LEDGER_DATE] = payment_date
+        updated_ledger[sc.COL_LEDGER_DESCRIPTION] = ledger_description
+        updated_ledger[sc.COL_LEDGER_CATEGORY] = method or (
+            "Payment" if payment_amount > 0 else "Credit/Adj"
+        )
+        updated_ledger[sc.COL_LEDGER_REFERENCE] = invoice
+        updated_ledger[sc.COL_LEDGER_COLLECTED] = payment_amount
+        updated_ledger[sc.COL_LEDGER_WRITE_OFF] = adjustment_amount
+        updated_ledger[sc.COL_LEDGER_RECEIVABLE] = self._money_round(
+            -(payment_amount + adjustment_amount)
+        )
+        updated_ledger[sc.COL_LEDGER_TRX_ID] = transaction_id
+        updated_ledger[sc.COL_LEDGER_EXTERNAL_REF_ID] = reference
+        updated_ledger[sc.COL_LEDGER_ORIGINAL_AMOUNT] = self._money_round(
+            payment_amount + adjustment_amount
+        )
+        if ledger_index >= 0:
+            ledger_rows[ledger_index] = updated_ledger
+        else:
+            ledger_rows.append(updated_ledger)
+        self._replace_table_rows(TBL_LEDGER, ledger_rows)
+
+        updated_receivable = dict(receivable)
+        updated_receivable[sc.COL_RECV_AMOUNT_PAID] = next_paid
+        updated_receivable[sc.COL_RECV_CREDITS_ADJ] = next_credits
+        updated_receivable[sc.COL_RECV_BALANCE_DUE] = next_balance
+        updated_receivable[sc.COL_RECV_STATUS] = "Paid" if next_balance <= 0 else "Partial"
+        receivable_rows[receivable_index] = updated_receivable
+        self._replace_table_rows(TBL_RECEIVABLES, receivable_rows)
+
+        payment_status = updated_receivable[sc.COL_RECV_STATUS]
+        for table, invoice_column in (
+            (TBL_TIME, sc.COL_TIME_INVOICE_REF),
+            (TBL_DISBURSEMENTS, sc.COL_DISB_INVOICE_REF),
+        ):
+            rows = self._read_table_rows(table)
+            updated_rows: List[Dict[str, Any]] = []
+            for row in rows:
+                next_row = dict(row)
+                if _clean_text(next_row.get(invoice_column)).lower() == invoice.lower():
+                    next_row[sc.COL_TIME_PAYMENT_STATUS if table == TBL_TIME else sc.COL_DISB_PAYMENT_STATUS] = payment_status
+                    next_row[sc.COL_TIME_INVOICE_TOTAL if table == TBL_TIME else sc.COL_DISB_INVOICE_TOTAL] = invoice_total
+                    next_row[sc.COL_TIME_INVOICE_AMOUNT_PAID if table == TBL_TIME else sc.COL_DISB_INVOICE_AMOUNT_PAID] = self._money_round(next_paid + next_credits)
+                    next_row[sc.COL_TIME_INVOICE_BALANCE_DUE if table == TBL_TIME else sc.COL_DISB_INVOICE_BALANCE_DUE] = next_balance
+                updated_rows.append(next_row)
+            self._replace_table_rows(table, updated_rows)
+
+        return {
+            "ok": True,
+            "mode": "Payment" if payment_amount > 0 else "Adjustment",
+            "invoice": invoice,
+            "paymentId": transaction_id or _clean_text(updated_ledger.get(sc.COL_LEDGER_ID)),
+            "transactionId": transaction_id,
+            "ledgerId": _clean_text(updated_ledger.get(sc.COL_LEDGER_ID)),
+            "amount": self._money_round(payment_amount + adjustment_amount),
+            "paymentAmount": payment_amount,
+            "adjustmentAmount": adjustment_amount,
+            "afterBalance": next_balance,
+            "invoiceRow": self._payment_invoice_snapshot(updated_receivable),
+            "message": f"Payment for invoice {invoice} updated.",
+        }
 
     def post_invoice_payment(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Post a payment or write-off against one open receivable invoice."""

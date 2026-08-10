@@ -2011,11 +2011,20 @@ class BillingController(QObject):
     def getInvoiceSummary(self, invoiceNum):
         """Fetch a full 360 summary for a specific invoice including matters and receivables."""
         try:
-            from repositories.excel_repo import TBL_INVOICE_LOG, TBL_RECEIVABLES, TBL_TIME, TBL_MATTERS
+            from repositories.excel_repo import (
+                TBL_DISBURSEMENTS,
+                TBL_INVOICE_LOG,
+                TBL_MATTERS,
+                TBL_RECEIVABLES,
+                TBL_TIME,
+                TBL_TRANSACTIONS_MASTER,
+            )
             from domain import schema_constants as sc
             invoice_log = self._excel_repo._read_table_rows(TBL_INVOICE_LOG)
             receivables = self._excel_repo._read_table_rows(TBL_RECEIVABLES)
             times = self._excel_repo._read_table_rows(TBL_TIME)
+            disbursements = self._excel_repo._read_table_rows(TBL_DISBURSEMENTS)
+            transactions = self._excel_repo._read_table_rows(TBL_TRANSACTIONS_MASTER)
             matters = self._excel_repo._read_table_rows(TBL_MATTERS)
             
             inv_row = {}
@@ -2040,16 +2049,88 @@ class BillingController(QObject):
                     m_id = str(t.get(sc.COL_TIME_MATTER_ID) or "").strip()
                     if m_id:
                         matter_ids.add(m_id)
+
+            for disbursement in disbursements:
+                if str(disbursement.get(sc.COL_DISB_INVOICE_REF) or "").strip() == invoiceNum:
+                    m_id = str(disbursement.get(sc.COL_DISB_MATTER_ID) or "").strip()
+                    if m_id:
+                        matter_ids.add(m_id)
+
+            # Some imported legacy records contain the matter identifier in
+            # Transactions Master rather than the time or disbursement tables.
+            matter_lookup_values = set(matter_ids)
+            for transaction in transactions:
+                if str(transaction.get(sc.COL_TXN_INVOICE_REF) or "").strip() == invoiceNum:
+                    matter_value = str(transaction.get(sc.COL_TXN_MATTER) or "").strip()
+                    if matter_value:
+                        matter_lookup_values.add(matter_value)
             
-            matter_names = []
+            matter_details = []
             for m in matters:
                 m_id = str(m.get(sc.COL_MATTER_ID) or "").strip()
-                if m_id in matter_ids:
-                    name = str(m.get(sc.COL_MATTER_NAME) or m.get(sc.COL_MATTER_DISPLAY_NAME) or "").strip()
-                    if name:
-                        matter_names.append(name)
+                m_number = str(m.get(sc.COL_MATTER_NUMBER) or "").strip()
+                m_name = str(m.get(sc.COL_MATTER_NAME) or "").strip()
+                m_display = str(m.get(sc.COL_MATTER_DISPLAY_NAME) or "").strip()
+                if m_id in matter_lookup_values or m_number in matter_lookup_values or m_name in matter_lookup_values or m_display in matter_lookup_values:
+                    description = str(
+                        m.get(sc.COL_MATTER_DESCRIPTION)
+                        or m_name
+                        or m_display
+                        or m_number
+                        or m_id
+                    ).strip()
+                    if description:
+                        matter_details.append(
+                            {
+                                "description": description,
+                                "matterNumber": m_number,
+                                "inferred": False,
+                            }
+                        )
+
+            # Historic invoices were sometimes imported without their time
+            # rows.  When exactly one substantive matter belongs to the invoice
+            # client and predates the invoice, show its plain-English
+            # description rather than presenting a made-up matter reference.
+            if not matter_details:
+                invoice_client = str(
+                    inv_row.get(sc.COL_INV_SUB_CLIENT)
+                    or inv_row.get(sc.COL_INV_CLIENT_NAME)
+                    or inv_row.get("BillToClient")
+                    or ""
+                ).strip().lower()
+                invoice_date = str(inv_row.get(sc.COL_INV_INVOICE_DATE) or "").strip()[:10]
+                candidates = []
+                for m in matters:
+                    if not invoice_client or str(m.get(sc.COL_MATTER_CLIENT_NAME) or "").strip().lower() != invoice_client:
+                        continue
+                    description = str(
+                        m.get(sc.COL_MATTER_DESCRIPTION)
+                        or m.get(sc.COL_MATTER_NAME)
+                        or m.get(sc.COL_MATTER_DISPLAY_NAME)
+                        or ""
+                    ).strip()
+                    if not description or description.lower().startswith("legacy matter "):
+                        continue
+                    opened = str(m.get(sc.COL_MATTER_OPEN_DATE) or "").strip()[:10]
+                    if invoice_date and opened and opened > invoice_date:
+                        continue
+                    candidates.append((description, str(m.get(sc.COL_MATTER_NUMBER) or "").strip()))
+                if len(candidates) == 1:
+                    description, matter_number = candidates[0]
+                    matter_details.append(
+                        {
+                            "description": description,
+                            "matterNumber": matter_number,
+                            "inferred": True,
+                        }
+                    )
             
-            inv_row["Matters"] = matter_names
+            # Keep the original string array for older QML callers, while the
+            # directory gets structured descriptions and may show multiple
+            # linked matters cleanly.
+            inv_row["Matters"] = [detail["description"] for detail in matter_details]
+            inv_row["MatterDetails"] = matter_details
             return inv_row
             
         except Exception as exc:

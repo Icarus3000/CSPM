@@ -21,6 +21,9 @@ Item {
     property bool lastSaveOk: true
     property string saveMessage: ""
     property string lastSavedPaymentId: ""
+    property string editingPaymentId: ""
+    property real editingOriginalPaymentAmount: 0
+    property real editingOriginalAdjustmentAmount: 0
     property string currentNodeId: ""
     property bool _hydrating: false
     property var invoiceRows: []
@@ -225,11 +228,55 @@ Item {
                         : ""
                 }
             } else {
-                selectedInvoiceIndex = -1
-                selectedInvoice = ({})
-                historyRows = []
+                if (!editingPaymentId) {
+                    selectedInvoiceIndex = -1
+                    selectedInvoice = ({})
+                    historyRows = []
+                }
             }
         }
+    }
+
+    function loadPaymentForEdit(paymentId) {
+        var backend = _paymentBackend()
+        if (!backend || !backend.getPaymentEntry) {
+            lastSaveOk = false
+            saveMessage = "Payment editing is unavailable."
+            return
+        }
+        var result = {}
+        try {
+            result = backend.getPaymentEntry(paymentId)
+        } catch (e) {
+            result = { "ok": false, "message": String(e) }
+        }
+        if (!result || !result.ok) {
+            lastSaveOk = false
+            saveMessage = _clean(result && result.message) || "The selected payment could not be loaded."
+            return
+        }
+
+        _hydrating = true
+        editingPaymentId = _clean(result.paymentId || paymentId)
+        editingOriginalPaymentAmount = Number(result.amount || 0)
+        editingOriginalAdjustmentAmount = Number(result.adjustmentAmount || 0)
+        selectedInvoice = result.invoiceRow || { "invoice": _clean(result.invoice) }
+        selectedInvoiceIndex = sortedInvoiceIndex(_clean(result.invoice))
+        searchInput.text = _clean(result.invoice)
+        dateInput.text = _clean(result.date)
+        modeCombo.editText = _clean(result.mode) || "Payment"
+        methodCombo.editText = _clean(result.method) || "EFT"
+        referenceInput.text = _clean(result.reference)
+        amountInput.text = Number(result.amount || 0).toFixed(2)
+        adjustmentAmountInput.text = Number(result.adjustmentAmount || 0).toFixed(2)
+        adjustmentReasonInput.text = _clean(result.adjustmentReason)
+        notesInput.text = _clean(result.notes)
+        lastSavedPaymentId = editingPaymentId
+        saveMessage = "Editing saved payment " + editingPaymentId + "."
+        lastSaveOk = true
+        _hydrating = false
+        dirty = false
+        refreshHistory()
     }
 
     function refreshHistory() {
@@ -249,6 +296,9 @@ Item {
 
     function selectInvoice(row, index) {
         _hydrating = true
+        editingPaymentId = ""
+        editingOriginalPaymentAmount = 0
+        editingOriginalAdjustmentAmount = 0
         selectedInvoice = row || ({})
         selectedInvoiceIndex = index
         amountInput.text = selectedInvoice && selectedInvoice.balance !== undefined
@@ -263,6 +313,9 @@ Item {
         adjustmentReasonInput.text = ""
         saveMessage = ""
         lastSavedPaymentId = ""
+        editingPaymentId = ""
+        editingOriginalPaymentAmount = 0
+        editingOriginalAdjustmentAmount = 0
         _hydrating = false
         dirty = false
         
@@ -276,6 +329,10 @@ Item {
     }
 
     function resetDraft() {
+        if (editingPaymentId) {
+            loadPaymentForEdit(editingPaymentId)
+            return
+        }
         _hydrating = true
         dateInput.text = _todayIso()
         modeCombo.editText = "Payment"
@@ -306,6 +363,7 @@ Item {
             "mode": _clean(modeCombo.editText),
             "method": _clean(methodCombo.editText),
             "reference": _clean(referenceInput.text),
+            "paymentId": editingPaymentId,
             "amount": _num(amountInput.text, 0.0),
             "adjustmentAmount": _num(adjustmentAmountInput.text, 0.0),
             "adjustmentReason": _clean(adjustmentReasonInput.text),
@@ -321,7 +379,7 @@ Item {
         if (paymentAmt <= 0 && adjAmt <= 0) return "You must enter a payment or adjustment amount greater than 0."
         var totalApplied = paymentAmt + adjAmt
         var balance = Number(selectedValue("balance", 0) || 0)
-        if (totalApplied - balance > 0.01) return "Total amount exceeds the selected invoice balance."
+        if (!editingPaymentId && totalApplied - balance > 0.01) return "Total amount exceeds the selected invoice balance."
         if (paymentAmt > 0 && _clean(payload.mode).toLowerCase().indexOf("payment") >= 0 && !_clean(payload.method)) return "Payment method is required."
         if (adjAmt > 0 && !_clean(payload.adjustmentReason)) return "Adjustment reason is required if an adjustment amount is entered."
         return ""
@@ -339,16 +397,17 @@ Item {
             return
         }
         var backend = _paymentBackend()
-        if (!backend || !backend.postPayment) {
+        if (!backend || (editingPaymentId ? !backend.updatePayment : !backend.postPayment)) {
             lastSaveOk = false
-            saveMessage = "Payment backend is unavailable."
+            saveMessage = editingPaymentId ? "Payment editing backend is unavailable." : "Payment backend is unavailable."
             dirty = true
             saveFinished(false, saveMessage, "")
             return
         }
         saveInProgress = true
         try {
-            backend.postPayment(payload)
+            if (editingPaymentId) backend.updatePayment(payload)
+            else backend.postPayment(payload)
         } catch (e) {
             saveInProgress = false
             lastSaveOk = false
@@ -368,12 +427,14 @@ Item {
             "payload": _buildPayload(),
             "saveMessage": saveMessage,
             "lastSavedPaymentId": lastSavedPaymentId,
+            "paymentId": editingPaymentId,
             "dirty": dirty
         }
     }
 
     function applyState(state) {
         if (!state) return
+        var paymentId = _clean(state.paymentId || state.editPaymentId)
         _hydrating = true
         var searchVal = String(state.invoiceNum || state.searchText || "")
         searchInput.text = _clean(searchVal)
@@ -397,8 +458,17 @@ Item {
         notesInput.text = _clean(payload.notes)
         saveMessage = _clean(state.saveMessage)
         lastSavedPaymentId = _clean(state.lastSavedPaymentId)
+        if (!paymentId) {
+            editingPaymentId = ""
+            editingOriginalPaymentAmount = 0
+            editingOriginalAdjustmentAmount = 0
+        }
         _hydrating = false
         dirty = !!state.dirty
+        if (paymentId) {
+            loadPaymentForEdit(paymentId)
+            return
+        }
         refreshInvoices()
         refreshHistory()
     }
@@ -414,7 +484,9 @@ Item {
             root.lastSavedPaymentId = root._clean(paymentId)
             root.saveMessage = root._clean(result && result.message)
             if (root.saveMessage.length <= 0) {
-                root.saveMessage = root.lastSaveOk ? "Payment posted." : "Payment posting failed."
+                root.saveMessage = root.lastSaveOk
+                    ? (root.editingPaymentId ? "Payment updated." : "Payment posted.")
+                    : (root.editingPaymentId ? "Payment update failed." : "Payment posting failed.")
             }
             if (root.lastSaveOk) {
                 if (typeof app !== "undefined" && app && app.recordTelemetry) {
@@ -424,11 +496,17 @@ Item {
                 if (result && result.invoiceRow) {
                     root.selectedInvoice = result.invoiceRow
                 }
-                amountInput.text = root.selectedInvoice && root.selectedInvoice.balance !== undefined ? Number(root.selectedInvoice.balance || 0).toFixed(2) : ""
-                adjustmentAmountInput.text = ""
-                adjustmentReasonInput.text = ""
-                referenceInput.text = ""
-                notesInput.text = ""
+                if (root.editingPaymentId) {
+                    root.editingPaymentId = root._clean((result && result.paymentId) || root.editingPaymentId)
+                    root.editingOriginalPaymentAmount = Number(result && result.paymentAmount !== undefined ? result.paymentAmount : amountInput.text)
+                    root.editingOriginalAdjustmentAmount = Number(result && result.adjustmentAmount !== undefined ? result.adjustmentAmount : adjustmentAmountInput.text)
+                } else {
+                    amountInput.text = root.selectedInvoice && root.selectedInvoice.balance !== undefined ? Number(root.selectedInvoice.balance || 0).toFixed(2) : ""
+                    adjustmentAmountInput.text = ""
+                    adjustmentReasonInput.text = ""
+                    referenceInput.text = ""
+                    notesInput.text = ""
+                }
                 
                 root.refreshInvoices()
                 root.refreshHistory()
@@ -655,7 +733,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: root._clean(root.selectedValue("invoice", "")).length > 0
-                                ? ("Invoice " + root.selectedValue("invoice", ""))
+                                ? ((root.editingPaymentId ? "Edit payment — Invoice " : "Invoice ") + root.selectedValue("invoice", ""))
                                 : "Select an open invoice"
                             color: root._text
                             font.family: "Segoe UI"
@@ -811,14 +889,14 @@ Item {
                                 spacing: 8
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "Projected balance after posting"
+                                    text: root.editingPaymentId ? "Projected balance after update" : "Projected balance after posting"
                                     color: root._text
                                     font.family: "Segoe UI"
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
                                 }
                                 Text {
-                                    text: root.money(Math.max(0, Number(root.selectedValue("balance", 0) || 0) - root._num(amountInput.text, 0) - root._num(adjustmentAmountInput.text, 0)))
+                                    text: root.money(Math.max(0, Number(root.selectedValue("balance", 0) || 0) + root.editingOriginalPaymentAmount + root.editingOriginalAdjustmentAmount - root._num(amountInput.text, 0) - root._num(adjustmentAmountInput.text, 0)))
                                     color: root._accent
                                     font.family: "Segoe UI"
                                     font.pixelSize: 14
@@ -832,7 +910,7 @@ Item {
                             Layout.preferredHeight: root.fieldHeightPx
                             spacing: 8
                             PillButton {
-                                text: root.saveInProgress ? "Posting..." : "Post Transaction"
+                                text: root.saveInProgress ? (root.editingPaymentId ? "Updating..." : "Posting...") : (root.editingPaymentId ? "Update Payment" : "Post Transaction")
                                 t: root.t
                                 metrics: root.metrics
                                 appStyle: root.appStyle
@@ -844,7 +922,7 @@ Item {
                                 onClicked: root.runPrimaryAction()
                             }
                             PillButton {
-                                text: "Clear"
+                                text: root.editingPaymentId ? "Reset" : "Clear"
                                 t: root.t
                                 metrics: root.metrics
                                 appStyle: root.appStyle

@@ -33,6 +33,7 @@ Item {
     property string selectedInvoiceNum: ""
     property var selectedInvoiceData: null
     property var selectedInvoiceSummary: null
+    property var selectedPaymentHistory: []
     property var _calInstance: null
     property bool _isEditingFinancials: false
     // Normal lookup/posting lives in the invoice directory; reversal stays a
@@ -42,6 +43,9 @@ Item {
     property int outerMargin: root.compactLayout ? 12 : 16
     property int detailMargin: root.compactLayout ? 18 : 28
     property int actionWidth: root.compactLayout ? 132 : 150
+    property int invoiceCardHeight: root.compactLayout ? 195 : 215
+    property int ledgerAmountColumnWidth: root.compactLayout ? 82 : 96
+    property int ledgerDateColumnWidth: root.compactLayout ? 70 : 82
 
     Component.onCompleted: {
         _loadInvoices()
@@ -105,18 +109,46 @@ Item {
             selectedInvoiceNum = ""
             selectedInvoiceData = null
             selectedInvoiceSummary = null
+            selectedPaymentHistory = []
             return
         }
         selectedInvoiceNum = invNum
         for (var i = 0; i < invoicesModel.length; i++) {
             if (String(invoicesModel[i].InvoiceNum) === invNum) {
                 selectedInvoiceData = invoicesModel[i]
-                if (root.billingBackend) {
-                    selectedInvoiceSummary = root.billingBackend.getInvoiceSummary(invNum)
-                }
+                root._refreshSelectedInvoiceDetails()
                 break
             }
         }
+    }
+
+    function _refreshSelectedInvoiceDetails() {
+        if (!root.selectedInvoiceNum) return
+        if (root.billingBackend) {
+            root.selectedInvoiceSummary = root.billingBackend.getInvoiceSummary(root.selectedInvoiceNum)
+        }
+        if (root.appController) {
+            root.selectedPaymentHistory = root.appController.listInvoicePaymentHistory(root.selectedInvoiceNum)
+        }
+    }
+
+    function _paymentDateLabel(value) {
+        var dateText = String(value || "").substring(0, 10)
+        if (!dateText) return "Date not recorded"
+        var dateValue = new Date(dateText + "T12:00:00")
+        if (isNaN(dateValue.getTime())) return dateText
+        return Qt.locale().toString(dateValue, "MMM d, yyyy")
+    }
+
+    function _openPaymentEntry(invoiceNumber, paymentId) {
+        var invoice = String(invoiceNumber || root.selectedInvoiceNum || "")
+        if (!invoice) return
+        var state = {
+            "focusNodeId": "C07",
+            "invoiceNum": invoice
+        }
+        if (paymentId) state.paymentId = String(paymentId)
+        root.workspaceOpenRequested(2, "C07", state)
     }
 
     signal workspaceOpenRequested(int tileIndex, string nodeId, var state)
@@ -147,6 +179,15 @@ Item {
                         })
                     }
                 }
+            }
+        }
+    }
+
+    Connections {
+        target: root.appController ? root.appController.docketing : null
+        function onPaymentSaveFinished(result) {
+            if (result && result.ok && String(result.invoice || "") === root.selectedInvoiceNum) {
+                root._refreshSelectedInvoiceDetails()
             }
         }
     }
@@ -340,9 +381,10 @@ Item {
                     // Status Badge
                     Rectangle {
                         property string st: root.selectedInvoiceSummary ? (root.selectedInvoiceSummary.Status || "Unknown") : ""
-                        width: 100
-                        height: 32
-                        radius: visualRules.isPro ? 16 : 16
+                        property bool canRecordPayment: st.toLowerCase() === "unpaid"
+                        width: 125
+                        height: 40
+                        radius: visualRules.isPro ? 20 : 20
                         color: st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "success", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "error", "Professional")))
                         border.color: st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.border(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.border(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.border(root.t, "error", "Professional")))
                         border.width: 1
@@ -350,22 +392,35 @@ Item {
                         Text {
                             anchors.centerIn: parent
                             text: parent.st
-                            font.pixelSize: 14
+                            font.pixelSize: 16
                             font.weight: Font.DemiBold
                             color: parent.st === "Closed" || parent.st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.ink(root.t, "success", "Professional")) : (parent.st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.ink(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.ink(root.t, "error", "Professional")))
                         }
+                        MouseArea {
+                            id: statusPillMouse
+                            anchors.fill: parent
+                            enabled: parent.canRecordPayment
+                            hoverEnabled: parent.canRecordPayment
+                            cursorShape: parent.canRecordPayment ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: root._openPaymentEntry(root.selectedInvoiceNum, "")
+                        }
+                        ToolTip.visible: statusPillMouse.containsMouse && statusPillMouse.enabled
+                        ToolTip.text: "Record a payment for this invoice"
                     }
                 }
 
                 // 3 Cards Layout
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: root.invoiceCardHeight
+                    Layout.minimumHeight: root.invoiceCardHeight
+                    Layout.maximumHeight: root.invoiceCardHeight
                     spacing: root.compactLayout ? 14 : 22
 
                     // Card 1: Client & Matters
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.compactLayout ? 156 : 172
+                        Layout.fillHeight: true
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
                         radius: visualRules.isPro ? visualRules.radiusPanel : 8
                         border.color: root._border
@@ -373,9 +428,10 @@ Item {
                         
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: root.compactLayout ? 12 : 16
+                            anchors.margins: root.compactLayout ? 16 : 20
                             spacing: 8
-                            Text { text: "Client Details"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
+                            Item { Layout.fillHeight: true }
+                            Text { text: "Client & Matter Details"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
                             Text {
                                 text: root.selectedInvoiceSummary ? (root.selectedInvoiceSummary.ClientName || "") : ""
                                 font.pixelSize: 16
@@ -385,28 +441,39 @@ Item {
                                 Layout.fillWidth: true
                             }
                             Item { height: 4 }
-                            Text { text: "Matters:"; font.pixelSize: 12; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle); visible: (root.selectedInvoiceSummary && root.selectedInvoiceSummary.Matters && root.selectedInvoiceSummary.Matters.length > 0) }
+                            Text { text: "Matter:"; font.pixelSize: 12; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
                             ListView {
                                 Layout.fillWidth: true
-                                Layout.fillHeight: true
+                                Layout.preferredHeight: visible ? (root.compactLayout ? 44 : 56) : 0
                                 clip: true
-                                model: root.selectedInvoiceSummary ? (root.selectedInvoiceSummary.Matters || []) : []
+                                visible: root.selectedInvoiceSummary && root.selectedInvoiceSummary.MatterDetails && root.selectedInvoiceSummary.MatterDetails.length > 0
+                                model: root.selectedInvoiceSummary ? (root.selectedInvoiceSummary.MatterDetails || []) : []
                                 delegate: Text {
-                                    text: "• " + modelData
+                                    text: modelData.description || ""
                                     font.pixelSize: 13
                                     color: root._text
                                     elide: Text.ElideRight
                                     width: ListView.view.width
                                 }
+                                ScrollBar.vertical: ScrollBar { }
                             }
-                            Item { Layout.fillHeight: true; visible: (!root.selectedInvoiceSummary || !root.selectedInvoiceSummary.Matters || root.selectedInvoiceSummary.Matters.length === 0) }
+                            Text {
+                                visible: !root.selectedInvoiceSummary || !root.selectedInvoiceSummary.MatterDetails || root.selectedInvoiceSummary.MatterDetails.length === 0
+                                text: "No matter is linked to this historic invoice."
+                                font.pixelSize: 12
+                                font.italic: true
+                                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                            Item { Layout.fillHeight: true }
                         }
                     }
 
                     // Card 2: Financial Breakdown
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.compactLayout ? 156 : 172
+                        Layout.fillHeight: true
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
                         radius: visualRules.isPro ? visualRules.radiusPanel : 8
                         border.color: root._border
@@ -414,8 +481,9 @@ Item {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: root.compactLayout ? 12 : 16
+                            anchors.margins: root.compactLayout ? 16 : 20
                             spacing: 8
+                            Item { Layout.fillHeight: true }
                             RowLayout {
                                 Layout.fillWidth: true
                                 Text { text: "Financial Breakdown"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle); Layout.fillWidth: true }
@@ -552,7 +620,7 @@ Item {
                     // Card 3: Ledger Status
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: root.compactLayout ? 156 : 172
+                        Layout.fillHeight: true
                         color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
                         radius: visualRules.isPro ? visualRules.radiusPanel : 8
                         border.color: root._border
@@ -560,14 +628,70 @@ Item {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: root.compactLayout ? 12 : 16
+                            anchors.margins: root.compactLayout ? 16 : 20
                             spacing: 8
-                            Text { text: "Ledger Status"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
-                            GridLayout {
-                                columns: 2
+                            Item { Layout.fillHeight: true }
+                            Text { text: "Payment & Ledger Status"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
+                            ListView {
                                 Layout.fillWidth: true
-                                rowSpacing: 16
-                                
+                                Layout.preferredHeight: visible ? (root.compactLayout ? 50 : 62) : 0
+                                clip: true
+                                visible: root.selectedPaymentHistory.length > 0
+                                model: root.selectedPaymentHistory
+                                delegate: RowLayout {
+                                    width: ListView.view.width
+                                    height: 22
+                                    spacing: 6
+                                    Text {
+                                        text: modelData.type || "Payment"
+                                        font.pixelSize: 12
+                                        color: root._text
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        text: "$" + parseFloat(modelData.amount || 0).toFixed(2)
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        color: modelData.type === "Write-off/Adjustment" ? root._text : SemanticTheme.tone(root.t, "success", root.appStyle)
+                                        Layout.preferredWidth: root.ledgerAmountColumnWidth
+                                        horizontalAlignment: Text.AlignRight
+                                        elide: Text.ElideRight
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: modelData.editable !== false && !!modelData.paymentId
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: root._openPaymentEntry(root.selectedInvoiceNum, modelData.paymentId)
+                                        }
+                                    }
+                                    Text {
+                                        text: root._paymentDateLabel(modelData.date)
+                                        font.pixelSize: 11
+                                        color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                                        Layout.preferredWidth: root.ledgerDateColumnWidth
+                                        horizontalAlignment: Text.AlignRight
+                                        elide: Text.ElideRight
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            enabled: modelData.editable !== false && !!modelData.paymentId
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: root._openPaymentEntry(root.selectedInvoiceNum, modelData.paymentId)
+                                        }
+                                    }
+                                }
+                                ScrollBar.vertical: ScrollBar { }
+                            }
+                            Text {
+                                visible: root.selectedPaymentHistory.length === 0
+                                text: "No payments recorded"
+                                font.pixelSize: 12
+                                font.italic: true
+                                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                            }
+                            Item {
+                                id: ledgerStatusMetrics
+                                visible: false
+                                Layout.preferredHeight: 0
                                 property int daysUnpaid: {
                                     if (!root.selectedInvoiceData || !root.selectedInvoiceSummary) return -1;
                                     var st = root.selectedInvoiceSummary.Status || "";
@@ -580,21 +704,29 @@ Item {
                                     var diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
                                     return diffDays;
                                 }
-
-                                Text { text: "Amount Paid:"; font.pixelSize: 13; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
-                                Text { 
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Text { text: "Amount Paid:"; font.pixelSize: 13; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle); Layout.fillWidth: true }
+                                Text {
                                     text: root.selectedInvoiceSummary ? "$" + parseFloat(root.selectedInvoiceSummary.AmountPaid || 0).toFixed(2) : "$0.00"
                                     font.pixelSize: 16; font.weight: Font.DemiBold; color: root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.tone(root.t, "success", root.appStyle)
-                                    Layout.alignment: Qt.AlignRight
+                                    Layout.preferredWidth: root.ledgerAmountColumnWidth
+                                    horizontalAlignment: Text.AlignRight
                                 }
-                                
-                                Rectangle { Layout.columnSpan: 2; Layout.fillWidth: true; height: 1; color: root._border }
-                                
-                                Text { text: "Balance Owing:"; font.pixelSize: 14; font.weight: Font.Bold; color: root._text; Layout.alignment: Qt.AlignTop }
+                                Item { Layout.preferredWidth: root.ledgerDateColumnWidth }
+                            }
+                            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root._border }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Text { text: "Balance Owing:"; font.pixelSize: 14; font.weight: Font.Bold; color: root._text; Layout.fillWidth: true; Layout.alignment: Qt.AlignTop }
                                 ColumnLayout {
+                                    Layout.preferredWidth: root.ledgerAmountColumnWidth
                                     Layout.alignment: Qt.AlignRight | Qt.AlignTop
                                     spacing: 2
-                                    Text { 
+                                    Text {
                                         text: {
                                             if (root._isEditingFinancials) {
                                                 var b = parseFloat(editBilledField.text) || 0
@@ -602,22 +734,23 @@ Item {
                                                 var owing = b - paid
                                                 if (owing <= 0.01 && owing >= -0.01) owing = 0
                                                 return "$" + owing.toFixed(2)
-                                            } else {
-                                                return root.selectedInvoiceSummary ? "$" + parseFloat(root.selectedInvoiceSummary.BalanceDue || 0).toFixed(2) : "$0.00"
                                             }
+                                            return root.selectedInvoiceSummary ? "$" + parseFloat(root.selectedInvoiceSummary.BalanceDue || 0).toFixed(2) : "$0.00"
                                         }
                                         font.pixelSize: 18; font.weight: Font.Bold; color: root._danger
-                                        Layout.alignment: Qt.AlignRight
+                                        Layout.fillWidth: true
+                                        horizontalAlignment: Text.AlignRight
                                     }
                                     Text {
-                                        text: parent.parent.daysUnpaid >= 0 ? "(" + parent.parent.daysUnpaid + " days outstanding)" : ""
+                                        text: ledgerStatusMetrics.daysUnpaid >= 0 ? "(" + ledgerStatusMetrics.daysUnpaid + " days outstanding)" : ""
                                         font.pixelSize: 12
                                         color: root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.tone(root.t, "error", root.appStyle)
                                         font.italic: true
-                                        visible: parent.parent.daysUnpaid >= 0
+                                        visible: ledgerStatusMetrics.daysUnpaid >= 0
                                         Layout.alignment: Qt.AlignRight
                                     }
                                 }
+                                Item { Layout.preferredWidth: root.ledgerDateColumnWidth }
                             }
                             Item { Layout.fillHeight: true }
                         }

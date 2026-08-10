@@ -218,3 +218,13 @@
 - [x] Fix Finalized Preview State: Ensure the preview updates to hide the DRAFT tag after finalization.
 - [ ] Manual verification: Finalize an invoice and confirm the new success overlay appears, PDF-open buttons work, and the preview removes the DRAFT tag.
 
+## Invoice Directory Matter & Payment Detail (2026-08-10)
+- [x] Show each invoice's linked matter with its plain-English description; include time, disbursement, and transaction matter links, with a conservative single-matter historic fallback.
+- [x] Show dated payment activity in the ledger card, preserve multiple partial payments, and avoid duplicate transaction/ledger evidence or invoice-creation revenue.
+- [x] Refresh an open Invoice Directory immediately after a payment is saved, so the dated history, paid total, and balance update without reselection.
+- [x] Enforce all three invoice cards at the 25%-taller height, with balanced flexible top/bottom space rather than an advisory preferred height that the layout may ignore.
+- [x] Make the Unpaid status pill 25% more prominent and route it directly to Payment Entry for that invoice.
+- [x] Present ledger payments as aligned `Payment | Amount | Date` columns, and let the amount or date open that exact editable payment record; an update adjusts the existing payment rather than creating a second payment.
+- [x] Rebuild and promote `dist/cspm.exe` after the update (SHA-256 `7688024CF76F5B41F1E60B9BC91EF44BD155C524260217D06C45BF368671DBA7`); retain the replaced release at `to_delete/dist__replaced_release_20260810_092700/`.
+- [ ] Manual foreground verification: select invoice `26-0061` in Invoice Directory; confirm `Commercial Contracts Review`, the Jun 30, 2026 EFT payment, the aligned payment columns, and the taller balanced cards are visible. Confirm an Unpaid pill opens Payment Entry for its invoice, and that clicking a payment amount/date opens that payment for editing. Then post two partial payments against a test invoice and confirm both payment dates/amounts remain listed and one can be amended without duplication.
+
