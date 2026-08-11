@@ -677,7 +677,7 @@ def generate_statement_of_account_pdf(payload, export_dir, logo_path):
     headers = [
         _paragraph("Invoice Date", styles["tableHeader"]),
         _paragraph("Invoice", styles["tableHeader"]),
-        _paragraph("Legal Services For", styles["tableHeader"]),
+        _paragraph("Client & Matter", styles["tableHeader"]),
         _paragraph("Invoice Total", styles["tableHeaderRight"]),
         _paragraph("Paid / Credits", styles["tableHeaderRight"]),
         _paragraph("Amount Due", styles["tableHeaderRight"]),

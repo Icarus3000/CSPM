@@ -239,6 +239,150 @@ Rectangle {
     }
 }
 
+        Rectangle {
+            id: matterFinancialProfileCard
+            visible: root.selectedMatterId.length > 0
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.max(92, matterFinancialProfileContent.implicitHeight + 16)
+            radius: Math.max(5, root.sectionRadiusPx - 3)
+            color: SemanticTheme.alpha(root._panel, 0.66)
+            border.width: 1
+            border.color: SemanticTheme.borderSubtle(root.t, root.appStyle)
+
+            ColumnLayout {
+                id: matterFinancialProfileContent
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 4
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        text: "WIP & unpaid invoices"
+                        color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))
+                        font.weight: Font.DemiBold
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    PillButton {
+                        t: root.t
+                        metrics: root.responsiveMetrics
+                        sfxBus: root.sfxBus
+                        text: "Open WIP Ledger"
+                        primary: false
+                        Layout.preferredWidth: root.ratioPxW(0.128, 126)
+                        Layout.preferredHeight: root.fieldHeightPx
+                        onClicked: root.openMatterWipLedger()
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.matterFinancialSummaryLoading
+                    text: "Loading unbilled WIP and unpaid invoices…"
+                    color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: !root.matterFinancialSummaryLoading
+                        && (!root.matterFinancialSummary || !root.matterFinancialSummary.ok)
+                    text: root.matterFinancialSummary && root.matterFinancialSummary.message
+                        ? String(root.matterFinancialSummary.message)
+                        : "Load a matter to see WIP and unpaid invoices."
+                    color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                    wrapMode: Text.WordWrap
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: !root.matterFinancialSummaryLoading
+                        && root.matterFinancialSummary && root.matterFinancialSummary.ok
+                    spacing: 14
+
+                    Text {
+                        text: "Unbilled WIP: " + Number(root.matterFinancialSummary.unbilledWipCount || 0)
+                            + " item(s) · " + root.matterFinancialMoney(root.matterFinancialSummary.unbilledWipAmount)
+                        color: Number(root.matterFinancialSummary.unbilledWipCount || 0) > 0
+                            ? "#b36a1d" : SemanticTheme.inkMuted(root.t, root.appStyle)
+                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
+                        font.weight: Font.DemiBold
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Text {
+                        text: "Unpaid invoices: " + Number(root.matterFinancialSummary.unpaidInvoiceCount || 0)
+                            + " · " + root.matterFinancialMoney(root.matterFinancialSummary.unpaidInvoiceAmount)
+                        color: Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
+                            ? "#bd312c" : SemanticTheme.inkMuted(root.t, root.appStyle)
+                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
+                        font.weight: Font.DemiBold
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.matterFinancialSummary && root.matterFinancialSummary.ok
+                        && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) === 0
+                    text: "No unpaid invoices are linked to this matter."
+                    color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                }
+
+                Column {
+                    Layout.fillWidth: true
+                    visible: root.matterFinancialSummary && root.matterFinancialSummary.ok
+                        && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
+                    spacing: 2
+
+                    Repeater {
+                        model: root.matterFinancialSummary && root.matterFinancialSummary.unpaidInvoices
+                            ? root.matterFinancialSummary.unpaidInvoices : []
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: parent ? parent.width : 0
+                            height: Math.max(24, unpaidInvoiceLink.implicitHeight + 6)
+                            radius: 3
+                            color: unpaidInvoiceMouse.containsMouse
+                                ? SemanticTheme.alpha(root._accent, 0.12)
+                                : SemanticTheme.alpha(root._bg, 0.20)
+                            border.width: 1
+                            border.color: SemanticTheme.alpha(root._accent, 0.24)
+
+                            Text {
+                                id: unpaidInvoiceLink
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.margins: 6
+                                text: "Invoice " + String(modelData.invoiceNum || "")
+                                    + " · Amount due " + root.matterFinancialMoney(modelData.balanceDue)
+                                    + " — open in Invoice Directory"
+                                color: SemanticTheme.accentPrimary(root.t, root.appStyle)
+                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                                font.underline: unpaidInvoiceMouse.containsMouse
+                                elide: Text.ElideRight
+                            }
+
+                            MouseArea {
+                                id: unpaidInvoiceMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.openMatterInvoice(String(modelData.invoiceNum || ""))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
 
         Text {
 

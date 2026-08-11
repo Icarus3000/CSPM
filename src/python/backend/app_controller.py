@@ -57,6 +57,79 @@ DEFAULT_APP_STYLE = "Professional"
 AR_AGING_REPORT_IDS = {"ar_aging", "ar_aging_report", "accounts_receivable"}
 
 
+def _restart_command(
+    executable: Optional[str] = None,
+    argv: Optional[list[str]] = None,
+    frozen: Optional[bool] = None,
+) -> list[str]:
+    """Return the exact command that starts this app again in either mode."""
+    app_executable = str(executable or sys.executable)
+    app_argv = list(argv if argv is not None else sys.argv)
+    if not app_argv:
+        return [app_executable]
+    is_frozen = bool(getattr(sys, "frozen", False) if frozen is None else frozen)
+    if is_frozen:
+        return [app_executable, *app_argv[1:]]
+    return [app_executable, str(Path(app_argv[0]).resolve()), *app_argv[1:]]
+
+
+def _powershell_wait_and_launch_script(parent_pid: int, command: list[str], working_dir: str) -> str:
+    """Build a Windows-only, injection-safe delayed relaunch script."""
+    if not command:
+        raise ValueError("Restart command is empty.")
+
+    def quote(value: str) -> str:
+        return "'" + str(value).replace("'", "''") + "'"
+
+    argument_values = ", ".join(quote(value) for value in command[1:])
+    argument_array = "@(" + argument_values + ")"
+    return (
+        "$ErrorActionPreference = 'Stop'; "
+        f"Wait-Process -Id {int(parent_pid)} -ErrorAction SilentlyContinue; "
+        f"Start-Process -FilePath {quote(command[0])} "
+        f"-ArgumentList {argument_array} -WorkingDirectory {quote(working_dir)}"
+    )
+
+
+def _schedule_application_restart() -> None:
+    """Launch CSPM after this single-instance process has fully exited."""
+    import base64
+
+    command = _restart_command()
+    working_dir = os.getcwd()
+    if not sys.platform.startswith("win"):
+        subprocess.Popen(command, cwd=working_dir)
+        return
+
+    script = _powershell_wait_and_launch_script(os.getpid(), command, working_dir)
+    encoded_script = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    powershell_exe = os.path.join(
+        os.environ.get("WINDIR", r"C:\\Windows"),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    )
+    creation_flags = (
+        getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+        | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    )
+    subprocess.Popen(
+        [
+            powershell_exe,
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            encoded_script,
+        ],
+        cwd=working_dir,
+        creationflags=creation_flags,
+        close_fds=True,
+    )
+
+
 def _safe_atomic_json_write(target_path: Path, payload: dict) -> bool:
     import tempfile
     import os
@@ -155,6 +228,17 @@ class AppController(QObject):
     importProgress = Signal(str, int, int)  # phase, current, total
     importFinished = Signal(dict)  # full results dict
     importDuplicateFound = Signal(dict)  # duplicate prompt payload with requestId
+    # Statement preparation reads and reconciles workbook data.  These signals
+    # keep that work off the QML event loop so a report tab can render its
+    # loading state immediately instead of appearing to hang.
+    statementBillingClientsReady = Signal(str, "QVariantList")
+    statementBillingClientsFailed = Signal(str, str)
+    statementOfAccountReady = Signal(str, "QVariantMap")
+    statementOfAccountFailed = Signal(str, str)
+    # Matter financial cards must not make the editable Matter screen look
+    # frozen while Excel-backed WIP/A/R data is being read.
+    matterFinancialSummaryReady = Signal(str, "QVariantMap")
+    matterFinancialSummaryFailed = Signal(str, str)
 
     def __init__(
         self,
@@ -1235,6 +1319,13 @@ class AppController(QObject):
             "overdueDeadlines": [],
             "overdueBills": [],
             "readyToBillMatters": [],
+            "arSummary": {
+                "totalAr": 0.0,
+                "openInvoiceCount": 0,
+                "overdueAr": 0.0,
+                "overdueInvoiceCount": 0,
+                "overdueGraceDays": 30,
+            },
             "summary": self._default_home_dashboard_summary(),
             "productivitySummary": {
                 "today": {"hours": 0.0, "gross": 0.0},
@@ -2748,7 +2839,7 @@ class AppController(QObject):
                 "Verification SUCCESS. Files are identically seeded.\n\n"
                 f"Shared Source: {s_dir}\n"
                 f"Local Working: {l_dir}\n\n"
-                "The application will now restart to apply this new architecture."
+                "CSPM will now close and reopen automatically to apply these folders."
             )
             QMessageBox.information(dialog, "Setup Complete", msg)
             
@@ -2762,13 +2853,19 @@ class AppController(QObject):
             self._settings_data["localDataDir"] = l_dir
             self.save_settings()
             
+            try:
+                _schedule_application_restart()
+            except Exception as exc:
+                QMessageBox.critical(
+                    dialog,
+                    "Restart Could Not Be Scheduled",
+                    f"Your folder settings were saved, but CSPM could not restart automatically:\n{exc}",
+                )
+                return
+
             dialog.accept()
-            
-            # Restart
-            # Use DETACHED_PROCESS (0x00000008) so the new instance survives the current one closing.
-            subprocess.Popen([sys.executable] + sys.argv[1:], creationflags=0x00000008)
             from PySide6.QtCore import QCoreApplication
-            QCoreApplication.instance().quit()
+            QTimer.singleShot(0, QCoreApplication.instance().quit)
 
         apply_btn.clicked.connect(on_apply)
         
@@ -3316,6 +3413,44 @@ class AppController(QObject):
         except Exception as exc:
             self._report_failure("Could not check matter dependencies", context="matter.dependencies", exc=exc)
             return {"ok": False, "message": str(exc), "canDelete": False}
+
+    @Slot(str, result=dict)
+    def getMatterFinancialSummary(self, matter_id: str):
+        """Synchronous compatibility endpoint for a small matter financial read."""
+        try:
+            return dict(self._excel_repo.get_matter_financial_summary(matter_id) or {})
+        except Exception as exc:
+            self._report_failure("Could not load matter financial summary", context="matter.financial_summary", exc=exc)
+            return {"ok": False, "message": str(exc), "matterId": str(matter_id or "")}
+
+    @Slot(str, str)
+    def requestMatterFinancialSummary(self, request_id: str, matter_id: str) -> None:
+        """Load a matter's WIP/unpaid-invoice summary without blocking QML."""
+        token = str(request_id or "")
+        normalized_matter_id = str(matter_id or "")
+
+        def _load() -> Dict[str, Any]:
+            return dict(self._excel_repo.get_matter_financial_summary(normalized_matter_id) or {})
+
+        def _ready(result: Any) -> None:
+            self.matterFinancialSummaryReady.emit(token, dict(result or {}))
+
+        def _failed(error_info: tuple) -> None:
+            _type, exc, _traceback = error_info
+            message = str(exc or "Could not load matter financial summary.")
+            self._report_failure(
+                "Could not load matter financial summary",
+                context="matter.financial_summary.async",
+                exc=exc,
+            )
+            self.matterFinancialSummaryFailed.emit(token, message)
+
+        self._start_background_worker(
+            _load,
+            name="matter_financial_summary",
+            on_result=_ready,
+            on_error=_failed,
+        )
 
     @Slot(str, str, result=dict)
     def mergeMatters(self, source_matter_id: str, target_matter_name: str):
@@ -4546,6 +4681,79 @@ class AppController(QObject):
                 exc=exc,
             )
             return []
+
+    @Slot(str)
+    def requestStatementBillingClients(self, request_id: str) -> None:
+        """Load Statement bill-to choices without blocking the QML thread."""
+
+        token = str(request_id or "")
+        started = time.perf_counter()
+
+        def _load() -> list:
+            return list(self._excel_repo.list_statement_billing_clients() or [])
+
+        def _ready(rows: Any) -> None:
+            logging.getLogger("performance.statement").info(
+                "statement billing-client choices completed in %.3fs",
+                max(0.0, time.perf_counter() - started),
+            )
+            self.statementBillingClientsReady.emit(token, list(rows or []))
+
+        def _failed(error_info: tuple) -> None:
+            _type, exc, _traceback = error_info
+            message = str(exc or "Could not load statement billing clients.")
+            self._report_failure(
+                "Failed to load statement billing clients",
+                context="app.report.statement_of_account.billing_clients.async",
+                exc=exc,
+            )
+            self.statementBillingClientsFailed.emit(token, message)
+
+        self._start_background_worker(
+            _load,
+            name="statement_billing_clients",
+            on_result=_ready,
+            on_error=_failed,
+        )
+
+    @Slot(str, "QVariantMap")
+    def requestStatementOfAccount(self, request_id: str, payload) -> None:
+        """Prepare a Statement report off-thread and return it to QML by token."""
+
+        token = str(request_id or "")
+        source = payload.toVariant() if hasattr(payload, "toVariant") else payload
+        request_payload = dict(source or {})
+        started = time.perf_counter()
+
+        def _load() -> Dict[str, Any]:
+            return dict(self._excel_repo.statement_of_account_report(request_payload) or {})
+
+        def _ready(result: Any) -> None:
+            response = dict(result or {})
+            logging.getLogger("performance.statement").info(
+                "statement report completed in %.3fs client=%s ok=%s",
+                max(0.0, time.perf_counter() - started),
+                str(request_payload.get("billingClient") or request_payload.get("client") or ""),
+                bool(response.get("ok")),
+            )
+            self.statementOfAccountReady.emit(token, response)
+
+        def _failed(error_info: tuple) -> None:
+            _type, exc, _traceback = error_info
+            message = str(exc or "Could not prepare statement.")
+            self._report_failure(
+                "Failed to generate Statement of Account",
+                context="app.report.statement_of_account.async",
+                exc=exc,
+            )
+            self.statementOfAccountFailed.emit(token, message)
+
+        self._start_background_worker(
+            _load,
+            name="statement_of_account",
+            on_result=_ready,
+            on_error=_failed,
+        )
 
     @Slot(result=list)
     def getExcludedARInvoices(self) -> list:

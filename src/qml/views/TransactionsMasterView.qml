@@ -28,6 +28,9 @@ Item {
     property string saveMessage: ""
     property string lastSavedTransactionId: ""
     property bool _hydrating: false
+    // An existing transaction must retain its stored combo values even if the
+    // related account/client/matter was later retired from current lookups.
+    property bool editingStoredTransaction: false
     // Async save callback target — resolved at runtime
     property var docketAppRef: (typeof docketApp !== "undefined") ? docketApp : null
 
@@ -225,19 +228,25 @@ Item {
     function _applyRules() {
         if (_hydrating) return
         _hydrating = true
-        if (!_needsToAccount()) toAccountCombo.editText = ""
-        if (!_isExpense()) {
-            generalOfficeCombo.editText = "No"
-            parentCombo.editText = ""
-            clientCombo.editText = ""
-            matterCombo.editText = ""
-            billClaimPctInput.text = "0.00"
-        }
-        if (_yesNoToInt(generalOfficeCombo.editText) === 1) {
-            parentCombo.editText = ""
-            clientCombo.editText = ""
-            matterCombo.editText = ""
-            billClaimPctInput.text = "0.00"
+        // Draft-entry rules must never erase the stored context of an
+        // existing transaction.  Historic transfer rows can legitimately
+        // retain a client/matter even though those fields are not normally
+        // collected for a brand-new transfer.
+        if (!editingStoredTransaction) {
+            if (!_needsToAccount()) toAccountCombo.editText = ""
+            if (!_isExpense()) {
+                generalOfficeCombo.editText = "No"
+                parentCombo.editText = ""
+                clientCombo.editText = ""
+                matterCombo.editText = ""
+                billClaimPctInput.text = "0.00"
+            }
+            if (_yesNoToInt(generalOfficeCombo.editText) === 1) {
+                parentCombo.editText = ""
+                clientCombo.editText = ""
+                matterCombo.editText = ""
+                billClaimPctInput.text = "0.00"
+            }
         }
         if (_yesNoToInt(hstExemptCombo.editText) === 1) {
             taxAmountInput.text = "0.00"
@@ -415,6 +424,7 @@ Item {
     }
 
     function resetDraft() {
+        editingStoredTransaction = false
         _hydrating = true
         transactionIdInput.text = ""
         txnDateInput.text = _todayIso()
@@ -461,6 +471,13 @@ Item {
     function applyState(state) {
         if (!state || !state.payload) return
         var payload = state.payload
+        var categoryText = _clean(state.categoryText)
+        if (!categoryText) {
+            categoryText = _clean(payload.categoryCode)
+            if (categoryText && _clean(payload.categoryName)) categoryText += " - "
+            categoryText += _clean(payload.categoryName)
+        }
+        editingStoredTransaction = true
         _hydrating = true
         transactionIdInput.text = _clean(payload.transactionId)
         txnDateInput.text = _clean(payload.txnDate)
@@ -470,7 +487,7 @@ Item {
         fromAccountCombo.editText = _clean(payload.fromAccount)
         toAccountCombo.editText = _clean(payload.toAccount)
         payeeCombo.editText = _clean(payload.payee)
-        categoryCombo.editText = _clean(state.categoryText)
+        categoryCombo.editText = categoryText
         memberCombo.editText = _clean(payload.member)
         amountInput.text = String(payload.amount || "")
         taxAmountInput.text = String(payload.taxAmount || "")
@@ -689,7 +706,7 @@ Item {
                 }
                 ModernTextField { id: transactionIdInput; t: root.t; metrics: root.metrics; label: "Transaction ID"; enabled: false; Layout.fillWidth: true; Layout.preferredHeight: fieldHeightPx }
 
-                ModernComboBox { id: businessUnitCombo; t: root.t; metrics: root.metrics; label: "Business Unit"; fullModel: []; enabled: root._isBusiness(); Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: businessUnitCombo; t: root.t; metrics: root.metrics; label: "Business Unit"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; enabled: root._isBusiness(); Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
                 ModernComboBox { id: memberCombo; t: root.t; metrics: root.metrics; label: "Member"; fullModel: root.memberOptions; editText: "Joint"; Layout.fillWidth: true; Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
                 ModernComboBox {
                     id: statusCombo
@@ -704,11 +721,11 @@ Item {
                     onActivated: { root._markDirty(); root._applyRules() }
                 }
 
-                ModernComboBox { id: fromAccountCombo; t: root.t; metrics: root.metrics; label: "From Account *"; fullModel: []; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
-                ModernComboBox { id: toAccountCombo; t: root.t; metrics: root.metrics; label: root._needsToAccount() ? "To Account *" : "To Account"; fullModel: []; enabled: root._needsToAccount(); Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: fromAccountCombo; t: root.t; metrics: root.metrics; label: "From Account *"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: toAccountCombo; t: root.t; metrics: root.metrics; label: root._needsToAccount() ? "To Account *" : "To Account"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; enabled: root._needsToAccount(); Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
 
-                ModernComboBox { id: payeeCombo; t: root.t; metrics: root.metrics; label: root._lower(typeCombo.editText) === "transfer" ? "Payee (Optional)" : "Payee *"; fullModel: []; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
-                ModernComboBox { id: categoryCombo; t: root.t; metrics: root.metrics; label: "Category *"; fullModel: []; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: payeeCombo; t: root.t; metrics: root.metrics; label: root._lower(typeCombo.editText) === "transfer" ? "Payee (Optional)" : "Payee *"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: categoryCombo; t: root.t; metrics: root.metrics; label: "Category *"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
 
                 ModernTextField { id: amountInput; t: root.t; metrics: root.metrics; label: "Amount *"; Layout.fillWidth: true; Layout.preferredHeight: fieldHeightPx; onTextChanged: { root._markDirty(); root._recalcClaim() } }
                 ModernTextField { id: taxAmountInput; t: root.t; metrics: root.metrics; label: "Tax Amount"; text: "0.00"; enabled: root._yesNoToInt(hstExemptCombo.editText) !== 1; Layout.fillWidth: true; Layout.preferredHeight: fieldHeightPx; onTextChanged: { root._markDirty(); root._recalcClaim() } }
@@ -744,9 +761,9 @@ Item {
                 ModernComboBox { id: shadowCombo; t: root.t; metrics: root.metrics; label: "Shadow"; fullModel: root.yesNoOptions; editable: false; editText: "No"; Layout.fillWidth: true; Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
                 ModernComboBox { id: currencyCombo; t: root.t; metrics: root.metrics; label: "Currency"; fullModel: root.currencyOptions; editText: "CAD"; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
 
-                ModernComboBox { id: parentCombo; t: root.t; metrics: root.metrics; label: "Parent"; fullModel: []; enabled: root._isExpense() && root._yesNoToInt(generalOfficeCombo.editText) !== 1; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
-                ModernComboBox { id: clientCombo; t: root.t; metrics: root.metrics; label: "Client"; fullModel: []; enabled: root._isExpense() && root._yesNoToInt(generalOfficeCombo.editText) !== 1; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
-                ModernComboBox { id: matterCombo; t: root.t; metrics: root.metrics; label: "Matter"; fullModel: []; enabled: root._isExpense() && root._yesNoToInt(generalOfficeCombo.editText) !== 1; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: parentCombo; t: root.t; metrics: root.metrics; label: "Parent"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; enabled: root._isExpense() && root._yesNoToInt(generalOfficeCombo.editText) !== 1; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: clientCombo; t: root.t; metrics: root.metrics; label: "Client"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; enabled: root._isExpense() && root._yesNoToInt(generalOfficeCombo.editText) !== 1; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
+                ModernComboBox { id: matterCombo; t: root.t; metrics: root.metrics; label: "Matter"; fullModel: []; preserveUnknownEditTextOnModelChanged: root.editingStoredTransaction; enabled: root._isExpense() && root._yesNoToInt(generalOfficeCombo.editText) !== 1; Layout.fillWidth: true; Layout.columnSpan: root.formGridSpan(transactionFormGrid.columns, 2); Layout.preferredHeight: fieldHeightPx; onEditTextChanged: root._markDirty(); onActivated: root._markDirty() }
                 ModernTextField { id: billClaimPctInput; t: root.t; metrics: root.metrics; label: "Bill Claim %"; text: "0.00"; visible: root._isExpense(); enabled: root._isExpense() && root._yesNoToInt(generalOfficeCombo.editText) !== 1; Layout.fillWidth: true; Layout.preferredHeight: fieldHeightPx; onTextChanged: { root._markDirty(); root._recalcClaim() } }
                 ModernTextField { id: totalClaimAmountInput; t: root.t; metrics: root.metrics; label: "Total Claim Amount"; text: "0.00"; visible: root._isExpense(); enabled: false; Layout.fillWidth: true; Layout.preferredHeight: fieldHeightPx }
 

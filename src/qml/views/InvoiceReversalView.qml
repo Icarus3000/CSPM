@@ -34,6 +34,8 @@ Item {
     property var selectedInvoiceData: null
     property var selectedInvoiceSummary: null
     property var selectedPaymentHistory: []
+    property bool invoiceListLoading: false
+    property bool invoiceDetailsLoading: false
     property var _calInstance: null
     property bool _isEditingFinancials: false
     // Normal lookup/posting lives in the invoice directory; reversal stays a
@@ -43,7 +45,9 @@ Item {
     property int outerMargin: root.compactLayout ? 12 : 16
     property int detailMargin: root.compactLayout ? 18 : 28
     property int actionWidth: root.compactLayout ? 132 : 150
-    property int invoiceCardHeight: root.compactLayout ? 195 : 215
+    // Keep the three summary cards deliberately substantial.  Their paired
+    // expanding spacers preserve equal breathing room above and below content.
+    property int invoiceCardHeight: root.compactLayout ? 232 : 255
     property int ledgerAmountColumnWidth: root.compactLayout ? 82 : 96
     property int ledgerDateColumnWidth: root.compactLayout ? 70 : 82
 
@@ -53,7 +57,12 @@ Item {
 
     function _loadInvoices() {
         if (!billingBackend) return
-        var rawInvoices = billingBackend.listFinalizedInvoices()
+        invoiceListLoading = true
+        billingBackend.loadFinalizedInvoices()
+    }
+
+    function _applyInvoices(rawInvoices) {
+        rawInvoices = rawInvoices || []
         var filtered = []
         var query = (typeof searchInput !== "undefined" && searchInput) ? searchInput.text.toLowerCase() : ""
 
@@ -94,6 +103,7 @@ Item {
                 if (String(invoicesModel[j].InvoiceNum) === selectedInvoiceNum) {
                     selectedInvoiceData = invoicesModel[j]
                     found = true
+                    root._refreshSelectedInvoiceDetails()
                     break
                 }
             }
@@ -102,17 +112,22 @@ Item {
                 selectedInvoiceData = null
             }
         }
+        invoiceListLoading = false
     }
 
     function _selectInvoice(invNum) {
-        if (selectedInvoiceNum === invNum) {
+        if (selectedInvoiceNum === invNum && selectedInvoiceData) {
             selectedInvoiceNum = ""
             selectedInvoiceData = null
             selectedInvoiceSummary = null
             selectedPaymentHistory = []
+            invoiceDetailsLoading = false
             return
         }
         selectedInvoiceNum = invNum
+        selectedInvoiceSummary = null
+        selectedPaymentHistory = []
+        invoiceDetailsLoading = true
         for (var i = 0; i < invoicesModel.length; i++) {
             if (String(invoicesModel[i].InvoiceNum) === invNum) {
                 selectedInvoiceData = invoicesModel[i]
@@ -124,12 +139,12 @@ Item {
 
     function _refreshSelectedInvoiceDetails() {
         if (!root.selectedInvoiceNum) return
-        if (root.billingBackend) {
-            root.selectedInvoiceSummary = root.billingBackend.getInvoiceSummary(root.selectedInvoiceNum)
-        }
-        if (root.appController) {
-            root.selectedPaymentHistory = root.appController.listInvoicePaymentHistory(root.selectedInvoiceNum)
-        }
+        root.invoiceDetailsLoading = true
+        if (root.billingBackend) root.billingBackend.loadInvoiceDirectoryDetails(root.selectedInvoiceNum)
+    }
+
+    onBillingBackendChanged: {
+        if (billingBackend && invoicesModel.length === 0) _loadInvoices()
     }
 
     function _paymentDateLabel(value) {
@@ -140,15 +155,95 @@ Item {
         return Qt.locale().toString(dateValue, "MMM d, yyyy")
     }
 
-    function _openPaymentEntry(invoiceNumber, paymentId) {
+    function _paymentWorkspaceState(invoiceNumber, paymentId, clientName) {
         var invoice = String(invoiceNumber || root.selectedInvoiceNum || "")
-        if (!invoice) return
+        if (!invoice) return null
+        var payment = String(paymentId || "")
+        var contextId = payment.length > 0 ? "edit:" + payment : "new:" + invoice
+        var title = payment.length > 0 ? "Payment: " + payment : "Payment Entry: " + invoice
         var state = {
             "focusNodeId": "C07",
-            "invoiceNum": invoice
+            "invoiceNum": invoice,
+            "entityType": "payment",
+            "entityId": contextId,
+            "entityTitle": title,
+            "tabTitle": title,
+            // Do not write the C07 state into the currently active Invoice
+            // Directory panel before its own payment tab is activated.
+            "deferTabStateUntilActivated": true
         }
-        if (paymentId) state.paymentId = String(paymentId)
+        if (payment.length > 0) state.paymentId = payment
+        if (clientName) state.clientName = String(clientName)
+        return state
+    }
+
+    function _openPaymentEntry(invoiceNumber, paymentId, clientName) {
+        var state = _paymentWorkspaceState(invoiceNumber, paymentId, clientName)
+        if (!state) return
         root.workspaceOpenRequested(2, "C07", state)
+    }
+
+    function _transactionWorkspaceState(invoiceNumber, historyRow, clientName) {
+        if (!historyRow) return null
+        var transaction = String(historyRow.transactionId || historyRow.paymentId || "")
+        if (!transaction) return null
+        var payload = historyRow.transactionPayload
+        if (!payload || typeof payload !== "object") return null
+        var title = "Transaction: " + transaction
+        var state = {
+            "focusNodeId": "C11",
+            "invoiceNum": String(invoiceNumber || root.selectedInvoiceNum || ""),
+            "entityType": "transaction",
+            "entityId": transaction,
+            "entityTitle": title,
+            "tabTitle": title,
+            "payload": payload,
+            "categoryText": String(payload.categoryCode || "")
+                + (payload.categoryCode && payload.categoryName ? " - " : "")
+                + String(payload.categoryName || ""),
+            // Just like a payment tab, do not apply this new tab's state to
+            // the still-visible Invoice Directory before activation.
+            "deferTabStateUntilActivated": true
+        }
+        if (clientName) state.clientName = String(clientName)
+        return state
+    }
+
+    function _setoffWorkspaceState(invoiceNumber, historyRow, clientName) {
+        if (!historyRow) return null
+        var billId = String(historyRow.apBillId || "")
+        var paymentId = String(historyRow.apPaymentId || historyRow.paymentId || "")
+        if (!billId || !paymentId) return null
+        var title = "Settlement Set-off: " + paymentId
+        var state = {
+            "focusNodeId": "C18",
+            "invoiceNum": String(invoiceNumber || root.selectedInvoiceNum || ""),
+            "entityType": "ap_setoff",
+            "entityId": paymentId,
+            "entityTitle": title,
+            "tabTitle": title,
+            "apBillId": billId,
+            "apPaymentId": paymentId,
+            "deferTabStateUntilActivated": true
+        }
+        if (clientName) state.clientName = String(clientName)
+        return state
+    }
+
+    function _openPaymentHistoryRecord(historyRow) {
+        if (!historyRow) return
+        var clientName = root.selectedInvoiceData ? root.selectedInvoiceData.ClientName : ""
+        if (String(historyRow.openTarget || "") === "ap_setoff") {
+            var setoffState = root._setoffWorkspaceState(root.selectedInvoiceNum, historyRow, clientName)
+            if (setoffState) root.workspaceOpenRequested(2, "C18", setoffState)
+            return
+        }
+        if (String(historyRow.openTarget || "") === "transaction") {
+            var transactionState = root._transactionWorkspaceState(root.selectedInvoiceNum, historyRow, clientName)
+            if (transactionState) root.workspaceOpenRequested(2, "C11", transactionState)
+            return
+        }
+        root._openPaymentEntry(root.selectedInvoiceNum, historyRow.paymentId, clientName)
     }
 
     signal workspaceOpenRequested(int tileIndex, string nodeId, var state)
@@ -164,12 +259,44 @@ Item {
     // Connect to billingBackend signals if it exists
     Connections {
         target: root.billingBackend
+        function onFinalizedInvoicesLoaded(invoices) {
+            root._applyInvoices(invoices || [])
+        }
+        function onInvoiceDirectoryDetailsLoaded(payload) {
+            if (!payload || String(payload.invoiceNum || "") !== root.selectedInvoiceNum) return
+            root.selectedInvoiceSummary = payload.summary || {}
+            root.selectedPaymentHistory = payload.paymentHistory || []
+            root.invoiceDetailsLoading = false
+        }
+        function onInvoiceDirectoryDetailsFailed(invoiceNum, _message) {
+            if (String(invoiceNum || "") === root.selectedInvoiceNum) {
+                root.invoiceDetailsLoading = false
+                root.selectedInvoiceSummary = {}
+                root.selectedPaymentHistory = []
+            }
+        }
+        function onInvoiceReversalProgress(payload) {
+            if (!payload || String(payload.invoiceNum || "") !== root.selectedInvoiceNum) return
+            reverseDialog.operationInProgress = payload.active === true
+        }
         function onDraftReversed(result) {
             if (result.ok) {
+                reverseDialog.operationInProgress = false
                 reverseDialog.visible = false
-                selectedInvoiceNum = ""
-                selectedInvoiceData = null
-                _loadInvoices()
+                root.selectedInvoiceNum = ""
+                root.selectedInvoiceData = null
+                root.selectedInvoiceSummary = null
+                root.selectedPaymentHistory = []
+                root.invoiceDetailsLoading = false
+                root._loadInvoices()
+
+                if (result.action === "correct_reissue" && result.invoiceNum) {
+                    root.workspaceOpenRequested(2, "C01", {
+                        "focusNodeId": "C01",
+                        "correctionInvoiceNum": String(result.invoiceNum)
+                    })
+                    return
+                }
                 
                 if (result.newDraftNum) {
                     if (root.appRef && root.appRef.handleWorkspaceOpenRequested) {
@@ -217,6 +344,13 @@ Item {
                     font.pixelSize: 16
                     font.bold: true
                 }
+
+                Text {
+                    visible: root.invoiceListLoading
+                    text: "Loading invoices…"
+                    color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                    font.pixelSize: 12
+                }
                 
                 TextField {
                     id: searchInput
@@ -247,15 +381,23 @@ Item {
                     model: root.invoicesModel
 
                     delegate: Rectangle {
+                        id: invoiceDirectoryRow
+                        property string matterDescription: String(modelData.MatterDescription || "").trim()
+
                         width: invoiceListView.width
-                        height: 60
+                        // Keep the familiar two-line row for historic entries
+                        // with no resolved matter, and give a third line just
+                        // enough room to identify the plain-English matter.
+                        height: matterDescription.length > 0 ? 76 : 60
                         color: root.selectedInvoiceNum === (modelData.InvoiceNum || "") ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.accentPrimary(root.t, root.appStyle), 0.16) : SemanticTheme.hoverOverlay(root.t, root.appStyle)) : "transparent"
                         border.color: root._border
                         border.width: 1
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
 
                         MouseArea {
+                            id: invoiceRowMouseArea
                             anchors.fill: parent
+                            hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: root._selectInvoice(modelData.InvoiceNum || "")
                         }
@@ -289,7 +431,21 @@ Item {
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                             }
+
+                            Text {
+                                visible: invoiceDirectoryRow.matterDescription.length > 0
+                                text: "Matter · " + invoiceDirectoryRow.matterDescription
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                color: root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
                         }
+
+                        ToolTip.visible: invoiceRowMouseArea.containsMouse && matterDescription.length > 0
+                        ToolTip.text: matterDescription
+                        ToolTip.delay: 500
                     }
                     
                     ScrollBar.vertical: ScrollBar { }
@@ -376,25 +532,33 @@ Item {
                         }
                     }
 
+                    Text {
+                        visible: root.invoiceDetailsLoading
+                        text: "Loading invoice details..."
+                        font.pixelSize: 13
+                        color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                    }
+
                     Item { Layout.fillWidth: true } // spacer
 
                     // Status Badge
                     Rectangle {
-                        property string st: root.selectedInvoiceSummary ? (root.selectedInvoiceSummary.Status || "Unknown") : ""
-                        property bool canRecordPayment: st.toLowerCase() === "unpaid"
-                        width: 125
-                        height: 40
-                        radius: visualRules.isPro ? 20 : 20
-                        color: st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "success", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "error", "Professional")))
-                        border.color: st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.border(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.border(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.border(root.t, "error", "Professional")))
+                        property bool loading: root.invoiceDetailsLoading
+                        property string st: loading ? "Loading..." : (root.selectedInvoiceSummary ? (root.selectedInvoiceSummary.Status || "Unknown") : "Unavailable")
+                        property bool canRecordPayment: !loading && st.toLowerCase() === "unpaid"
+                        width: 144
+                        height: 46
+                        radius: visualRules.isPro ? 23 : 23
+                        color: loading ? SemanticTheme.alpha(root._primary, 0.12) : (st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "success", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "error", "Professional"))))
+                        border.color: loading ? root._primary : (st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.border(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.border(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.border(root.t, "error", "Professional"))))
                         border.width: 1
                         Layout.alignment: Qt.AlignTop | Qt.AlignRight
                         Text {
                             anchors.centerIn: parent
                             text: parent.st
-                            font.pixelSize: 16
+                            font.pixelSize: 17
                             font.weight: Font.DemiBold
-                            color: parent.st === "Closed" || parent.st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.ink(root.t, "success", "Professional")) : (parent.st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.ink(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.ink(root.t, "error", "Professional")))
+                            color: parent.loading ? root._primary : (parent.st === "Closed" || parent.st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.ink(root.t, "success", "Professional")) : (parent.st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.ink(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.ink(root.t, "error", "Professional"))))
                         }
                         MouseArea {
                             id: statusPillMouse
@@ -402,7 +566,7 @@ Item {
                             enabled: parent.canRecordPayment
                             hoverEnabled: parent.canRecordPayment
                             cursorShape: parent.canRecordPayment ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: root._openPaymentEntry(root.selectedInvoiceNum, "")
+                            onClicked: root._openPaymentEntry(root.selectedInvoiceNum, "", root.selectedInvoiceData ? root.selectedInvoiceData.ClientName : "")
                         }
                         ToolTip.visible: statusPillMouse.containsMouse && statusPillMouse.enabled
                         ToolTip.text: "Record a payment for this invoice"
@@ -631,23 +795,43 @@ Item {
                             anchors.margins: root.compactLayout ? 16 : 20
                             spacing: 8
                             Item { Layout.fillHeight: true }
-                            Text { text: "Payment & Ledger Status"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
+                            Text { text: "Payment & Ledger"; font.pixelSize: 12; font.weight: Font.Bold; color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle) }
                             ListView {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: visible ? (root.compactLayout ? 50 : 62) : 0
+                                // Reserve only the rows that actually exist;
+                                // a one-payment history must not create a blank
+                                // 62 px canyon above the balance summary.
+                                Layout.preferredHeight: visible
+                                    ? Math.min(root.compactLayout ? 52 : 56,
+                                        Math.max(24, root.selectedPaymentHistory.length * 24))
+                                    : 0
                                 clip: true
                                 visible: root.selectedPaymentHistory.length > 0
                                 model: root.selectedPaymentHistory
                                 delegate: RowLayout {
                                     width: ListView.view.width
-                                    height: 22
+                                    height: 24
                                     spacing: 6
                                     Text {
-                                        text: modelData.type || "Payment"
+                                        text: modelData.displayLabel
+                                            ? modelData.displayLabel
+                                            : modelData.paymentId
+                                            ? (modelData.type || "Payment") + " " + modelData.paymentId
+                                            : (modelData.type || "Payment")
                                         font.pixelSize: 12
-                                        color: root._text
+                                        font.weight: modelData.paymentId ? Font.DemiBold : Font.Normal
+                                        color: paymentLinkMouse.enabled ? root._primary : root._text
+                                        font.underline: paymentLinkMouse.containsMouse
                                         Layout.fillWidth: true
                                         elide: Text.ElideRight
+                                        MouseArea {
+                                            id: paymentLinkMouse
+                                            anchors.fill: parent
+                                            enabled: modelData.editable !== false && !!modelData.paymentId
+                                            hoverEnabled: enabled
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: root._openPaymentHistoryRecord(modelData)
+                                        }
                                     }
                                     Text {
                                         text: "$" + parseFloat(modelData.amount || 0).toFixed(2)
@@ -661,7 +845,7 @@ Item {
                                             anchors.fill: parent
                                             enabled: modelData.editable !== false && !!modelData.paymentId
                                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: root._openPaymentEntry(root.selectedInvoiceNum, modelData.paymentId)
+                                            onClicked: root._openPaymentHistoryRecord(modelData)
                                         }
                                     }
                                     Text {
@@ -675,7 +859,7 @@ Item {
                                             anchors.fill: parent
                                             enabled: modelData.editable !== false && !!modelData.paymentId
                                             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: root._openPaymentEntry(root.selectedInvoiceNum, modelData.paymentId)
+                                            onClicked: root._openPaymentHistoryRecord(modelData)
                                         }
                                     }
                                 }
@@ -783,11 +967,11 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 if (root.selectedInvoiceData) {
-                                    root.workspaceOpenRequested(2, "C07", {
-                                        "focusNodeId": "C07",
-                                        "invoiceNum": root.selectedInvoiceData.InvoiceNum,
-                                        "clientName": root.selectedInvoiceData.ClientName
-                                    })
+                                    root._openPaymentEntry(
+                                        root.selectedInvoiceData.InvoiceNum,
+                                        "",
+                                        root.selectedInvoiceData.ClientName
+                                    )
                                 }
                             }
                         }
@@ -870,6 +1054,8 @@ Item {
                                         "selectedInvoiceNum": root.selectedInvoiceData.InvoiceNum
                                     })
                                 } else {
+                                    reverseDialog.operationInProgress = false
+                                    reverseDialog.pdfAction = "keep"
                                     reverseDialog.visible = true
                                 }
                             }
@@ -908,9 +1094,12 @@ Item {
         color: "transparent"
         visible: false
 
-        property string pdfAction: "move"
+        // An invoice can be corrected even when no PDF was generated or the
+        // original file is unavailable.  Keep is therefore the safe default.
+        property string pdfAction: "keep"
         property string targetDir: ""
         property string sourcePdfPath: ""
+        property bool operationInProgress: false
 
         MouseArea {
             anchors.fill: parent
@@ -924,8 +1113,9 @@ Item {
         }
 
         Rectangle {
-            width: 480
-            height: 380
+            id: reverseDialogCard
+            width: Math.min(620, Math.max(360, parent.width - 32))
+            height: Math.min(parent.height - 24, 560)
             anchors.centerIn: parent
             color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : root._bg
             radius: visualRules.isPro ? visualRules.radiusPopup : 8
@@ -934,153 +1124,360 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 24
-                spacing: 16
+                anchors.margins: 22
+                spacing: 12
 
-                Text {
-                    text: "Reverse Invoice " + (root.selectedInvoiceNum || "")
-                    font.pixelSize: 20
-                    font.weight: Font.DemiBold
-                    color: root._text
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+
+                    Text {
+                        text: "Correct or Reverse Invoice " + (root.selectedInvoiceNum || "")
+                        font.pixelSize: 20
+                        font.weight: Font.DemiBold
+                        color: root._text
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 32
+                        color: "transparent"
+                        border.color: root._border
+                        border.width: 1
+                        radius: visualRules.isPro ? visualRules.radiusControl : 4
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\u00d7"
+                            color: root._text
+                            font.pixelSize: 20
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !reverseDialog.operationInProgress
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: reverseDialog.visible = false
+                        }
+                    }
                 }
 
                 Text {
-                    text: "This will revert all associated time and disbursement entries back to unbilled, and remove the invoice from receivables and logs."
-                    font.pixelSize: 14
+                    text: "Correct & Reissue returns only this invoice's WIP to unbilled work and reserves the same invoice number for its replacement. Reassign the returned WIP if needed, then build a fresh draft. The original and reversal remain internal audit evidence and do not appear on the client statement."
+                    font.pixelSize: 13
                     color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
                 }
 
-                Text {
-                    text: "What would you like to do with the generated PDF file?"
-                    font.pixelSize: 14
-                    font.weight: Font.Medium
-                    color: root._text
-                    Layout.topMargin: 8
-                }
-
-                ColumnLayout {
-                    spacing: 8
+                ScrollView {
+                    id: reversalOptionsScroll
                     Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: reverseDialog.pdfAction !== "keep"
-                        
-                        Text { text: "Source PDF:"; font.pixelSize: 13; color: root._text; Layout.alignment: Qt.AlignVCenter }
-                        
+                    ColumnLayout {
+                        width: reversalOptionsScroll.availableWidth
+                        spacing: 10
+
+                        Text {
+                            text: "Invoice PDF (optional)"
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                            color: root._text
+                        }
+
+                        Text {
+                            text: "No PDF available? Leave \"Keep PDF\" selected and continue."
+                            font.pixelSize: 13
+                            color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 36
-                            color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : SemanticTheme.tableAlternateRowBackground(root.t, root.appStyle)
-                            border.color: root._border
+                            Layout.preferredHeight: 40
+                            color: reverseDialog.pdfAction === "keep" ? SemanticTheme.alpha(root._primary, 0.10) : "transparent"
+                            border.color: reverseDialog.pdfAction === "keep" ? root._primary : root._border
                             border.width: 1
                             radius: visualRules.isPro ? visualRules.radiusControl : 4
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: 8
-                                text: reverseDialog.sourcePdfPath !== "" ? reverseDialog.sourcePdfPath : "Select PDF file..."
-                                color: reverseDialog.sourcePdfPath !== "" ? root._text : (root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle))
-                                font.pixelSize: 13
-                                elide: Text.ElideMiddle
-                                width: parent.width - 16
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 10
+
+                                Rectangle {
+                                    Layout.preferredWidth: 15
+                                    Layout.preferredHeight: 15
+                                    radius: 8
+                                    color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : root._bg
+                                    border.color: reverseDialog.pdfAction === "keep" ? root._primary : root._border
+                                    border.width: 1
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 7
+                                        height: 7
+                                        radius: 4
+                                        color: root._primary
+                                        visible: reverseDialog.pdfAction === "keep"
+                                    }
+                                }
+                                Text {
+                                    text: "Keep PDF in its current folder"
+                                    font.pixelSize: 14
+                                    color: root._text
+                                    Layout.fillWidth: true
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                             }
-                        }
-                        
-                        Rectangle {
-                            width: 80
-                            height: 36
-                            color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : root._border
-                            radius: visualRules.isPro ? visualRules.radiusControl : 4
-                            Text { anchors.centerIn: parent; text: "Browse"; font.pixelSize: 13; color: root._text }
+
                             MouseArea {
                                 anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: sourcePdfDialog.open()
+                                enabled: !reverseDialog.operationInProgress
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: reverseDialog.pdfAction = "keep"
                             }
                         }
-                    }
 
-                    RowLayout {
-                        spacing: 8
-                        RadioButton {
-                            id: moveRadio
-                            checked: true
-                            onCheckedChanged: if (checked) reverseDialog.pdfAction = "move"
-                        }
-                        Text { text: "Move to folder (default: archive/REVERSED)"; font.pixelSize: 14; color: root._text }
-                    }
-
-                    RowLayout {
-                        spacing: 8
-                        visible: moveRadio.checked
-                        Layout.leftMargin: 32
-                        Layout.fillWidth: true
-                        
                         Rectangle {
                             Layout.fillWidth: true
-                            height: 36
-                            color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : SemanticTheme.tableAlternateRowBackground(root.t, root.appStyle)
-                            border.color: root._border
+                            Layout.preferredHeight: 40
+                            color: reverseDialog.pdfAction === "move" ? SemanticTheme.alpha(root._primary, 0.10) : "transparent"
+                            border.color: reverseDialog.pdfAction === "move" ? root._primary : root._border
                             border.width: 1
                             radius: visualRules.isPro ? visualRules.radiusControl : 4
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: 8
-                                text: reverseDialog.targetDir !== "" ? reverseDialog.targetDir : "Default REVERSED folder"
-                                color: reverseDialog.targetDir !== "" ? root._text : (root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle))
-                                font.pixelSize: 13
-                                elide: Text.ElideMiddle
-                                width: parent.width - 16
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 10
+
+                                Rectangle {
+                                    Layout.preferredWidth: 15
+                                    Layout.preferredHeight: 15
+                                    radius: 8
+                                    color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : root._bg
+                                    border.color: reverseDialog.pdfAction === "move" ? root._primary : root._border
+                                    border.width: 1
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 7
+                                        height: 7
+                                        radius: 4
+                                        color: root._primary
+                                        visible: reverseDialog.pdfAction === "move"
+                                    }
+                                }
+                                Text {
+                                    text: "Move selected PDF to a REVERSED folder"
+                                    font.pixelSize: 14
+                                    color: root._text
+                                    Layout.fillWidth: true
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: !reverseDialog.operationInProgress
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: reverseDialog.pdfAction = "move"
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 8
+                            Layout.leftMargin: 36
+                            Layout.fillWidth: true
+                            visible: reverseDialog.pdfAction === "move"
+
+                            Text { text: "PDF:"; font.pixelSize: 13; color: root._text; Layout.alignment: Qt.AlignVCenter }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 36
+                                color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : SemanticTheme.tableAlternateRowBackground(root.t, root.appStyle)
+                                border.color: root._border
+                                border.width: 1
+                                radius: visualRules.isPro ? visualRules.radiusControl : 4
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                    text: reverseDialog.sourcePdfPath !== "" ? reverseDialog.sourcePdfPath : "Select PDF file..."
+                                    color: reverseDialog.sourcePdfPath !== "" ? root._text : (root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle))
+                                    font.pixelSize: 13
+                                    elide: Text.ElideMiddle
+                                    width: parent.width - 16
+                                }
+                            }
+                            Rectangle {
+                                Layout.preferredWidth: 80
+                                Layout.preferredHeight: 36
+                                color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : root._border
+                                radius: visualRules.isPro ? visualRules.radiusControl : 4
+                                Text { anchors.centerIn: parent; text: "Browse"; font.pixelSize: 13; color: root._text }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: sourcePdfDialog.open() }
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 8
+                            visible: reverseDialog.pdfAction === "move"
+                            Layout.leftMargin: 36
+                            Layout.fillWidth: true
+
+                            Text { text: "Folder:"; font.pixelSize: 13; color: root._text; Layout.alignment: Qt.AlignVCenter }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 36
+                                color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : SemanticTheme.tableAlternateRowBackground(root.t, root.appStyle)
+                                border.color: root._border
+                                border.width: 1
+                                radius: visualRules.isPro ? visualRules.radiusControl : 4
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                    text: reverseDialog.targetDir !== "" ? reverseDialog.targetDir : "Default: REVERSED next to the PDF"
+                                    color: reverseDialog.targetDir !== "" ? root._text : (root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle))
+                                    font.pixelSize: 13
+                                    elide: Text.ElideMiddle
+                                    width: parent.width - 16
+                                }
+                            }
+                            Rectangle {
+                                Layout.preferredWidth: 80
+                                Layout.preferredHeight: 36
+                                color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : root._border
+                                radius: visualRules.isPro ? visualRules.radiusControl : 4
+                                Text { anchors.centerIn: parent; text: "Browse"; font.pixelSize: 13; color: root._text }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: targetFolderDialog.open() }
                             }
                         }
 
                         Rectangle {
-                            width: 80
-                            height: 36
-                            color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : root._border
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 40
+                            color: reverseDialog.pdfAction === "delete" ? SemanticTheme.alpha(root._danger, 0.10) : "transparent"
+                            border.color: reverseDialog.pdfAction === "delete" ? root._danger : root._border
+                            border.width: 1
                             radius: visualRules.isPro ? visualRules.radiusControl : 4
-                            Text { anchors.centerIn: parent; text: "Browse"; font.pixelSize: 13; color: root._text }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 10
+
+                                Rectangle {
+                                    Layout.preferredWidth: 15
+                                    Layout.preferredHeight: 15
+                                    radius: 8
+                                    color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : root._bg
+                                    border.color: reverseDialog.pdfAction === "delete" ? root._danger : root._border
+                                    border.width: 1
+                                    Rectangle {
+                                        anchors.centerIn: parent
+                                        width: 7
+                                        height: 7
+                                        radius: 4
+                                        color: root._danger
+                                        visible: reverseDialog.pdfAction === "delete"
+                                    }
+                                }
+                                Text {
+                                    text: "Delete selected PDF permanently"
+                                    font.pixelSize: 14
+                                    color: root._text
+                                    Layout.fillWidth: true
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
                             MouseArea {
                                 anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: targetFolderDialog.open()
+                                enabled: !reverseDialog.operationInProgress
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: reverseDialog.pdfAction = "delete"
                             }
                         }
-                    }
 
-                    RowLayout {
-                        spacing: 8
-                        RadioButton {
-                            id: deleteRadio
-                            onCheckedChanged: if (checked) reverseDialog.pdfAction = "delete"
-                        }
-                        Text { text: "Delete PDF permanently"; font.pixelSize: 14; color: root._text }
-                    }
+                        RowLayout {
+                            spacing: 8
+                            Layout.leftMargin: 36
+                            Layout.fillWidth: true
+                            visible: reverseDialog.pdfAction === "delete"
 
-                    RowLayout {
-                        spacing: 8
-                        RadioButton {
-                            id: keepRadio
-                            onCheckedChanged: if (checked) reverseDialog.pdfAction = "keep"
+                            Text { text: "PDF:"; font.pixelSize: 13; color: root._text; Layout.alignment: Qt.AlignVCenter }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 36
+                                color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : SemanticTheme.tableAlternateRowBackground(root.t, root.appStyle)
+                                border.color: root._border
+                                border.width: 1
+                                radius: visualRules.isPro ? visualRules.radiusControl : 4
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 8
+                                    text: reverseDialog.sourcePdfPath !== "" ? reverseDialog.sourcePdfPath : "Select PDF file..."
+                                    color: reverseDialog.sourcePdfPath !== "" ? root._text : (root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle))
+                                    font.pixelSize: 13
+                                    elide: Text.ElideMiddle
+                                    width: parent.width - 16
+                                }
+                            }
+                            Rectangle {
+                                Layout.preferredWidth: 80
+                                Layout.preferredHeight: 36
+                                color: root.isProMode ? SemanticTheme.surfaceInput(root.t, root.appStyle) : root._border
+                                radius: visualRules.isPro ? visualRules.radiusControl : 4
+                                Text { anchors.centerIn: parent; text: "Browse"; font.pixelSize: 13; color: root._text }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: sourcePdfDialog.open() }
+                            }
                         }
-                        Text { text: "Keep PDF in current folder"; font.pixelSize: 14; color: root._text }
+
                     }
                 }
 
-                Item { Layout.fillHeight: true }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: root._border
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: reverseDialog.operationInProgress
+                    spacing: 8
+
+                    BusyIndicator {
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        running: reverseDialog.operationInProgress
+                    }
+                    Text {
+                        text: "Working safely... CSPM is preparing the correction. This can take a moment; keep this window open."
+                        color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
+                        font.pixelSize: 13
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                    }
+                }
 
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 12
-                    Layout.alignment: Qt.AlignRight
+
+                    Item { Layout.fillWidth: true }
 
                     Rectangle {
-                        width: 100
-                        height: 36
+                        Layout.preferredWidth: 96
+                        Layout.minimumWidth: 84
+                        Layout.preferredHeight: 36
                         color: "transparent"
                         border.color: root._border
                         border.width: 1
@@ -1088,38 +1485,45 @@ Item {
                         Text { anchors.centerIn: parent; text: "Cancel"; color: root._text; font.pixelSize: 14 }
                         MouseArea {
                             anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: !reverseDialog.operationInProgress
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: reverseDialog.visible = false
                         }
                     }
 
                     Rectangle {
-                        width: 140
-                        height: 36
+                        Layout.preferredWidth: 154
+                        Layout.minimumWidth: 126
+                        Layout.preferredHeight: 36
                         color: root._primary
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
-                        Text { anchors.centerIn: parent; text: "Reverse & Edit"; color: root.isProMode ? SemanticTheme.readableInk(root._primary) : SemanticTheme.surfacePanel(root.t, root.appStyle); font.pixelSize: 14; font.weight: Font.Medium }
+                        Text { anchors.centerIn: parent; text: "Correct & Reissue"; color: root.isProMode ? SemanticTheme.readableInk(root._primary) : SemanticTheme.surfacePanel(root.t, root.appStyle); font.pixelSize: 14; font.weight: Font.Medium }
                         MouseArea {
                             anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: !reverseDialog.operationInProgress
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
                                 if (root.billingBackend) {
-                                    root.billingBackend.reverseAndEditInvoice(root.selectedInvoiceNum, reverseDialog.sourcePdfPath, reverseDialog.pdfAction, reverseDialog.targetDir)
+                                    reverseDialog.operationInProgress = true
+                                    root.billingBackend.correctAndReissueInvoice(root.selectedInvoiceNum, reverseDialog.sourcePdfPath, reverseDialog.pdfAction, reverseDialog.targetDir)
                                 }
                             }
                         }
                     }
                     Rectangle {
-                        width: 120
-                        height: 36
+                        Layout.preferredWidth: 116
+                        Layout.minimumWidth: 96
+                        Layout.preferredHeight: 36
                         color: root._danger
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
                         Text { anchors.centerIn: parent; text: "Reverse Only"; color: root.isProMode ? SemanticTheme.readableInk(root._danger) : SemanticTheme.surfacePanel(root.t, root.appStyle); font.pixelSize: 14; font.weight: Font.Medium }
                         MouseArea {
                             anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
+                            enabled: !reverseDialog.operationInProgress
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
                                 if (root.billingBackend) {
+                                    reverseDialog.operationInProgress = true
                                     root.billingBackend.reverseInvoice(root.selectedInvoiceNum, reverseDialog.sourcePdfPath, reverseDialog.pdfAction, reverseDialog.targetDir)
                                 }
                             }

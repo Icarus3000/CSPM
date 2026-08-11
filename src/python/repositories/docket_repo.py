@@ -1121,6 +1121,8 @@ class DocketRepo:
             inc_status = True
             if status_mode == "all": inc_status = True
             elif status_mode == "all_except_merged": inc_status = raw_status != "merged"
+            elif status_mode in ("unbilled_wip", "unbilled_work"):
+                inc_status = norm_status in {"Draft", "Ready for Billing"}
             elif status_mode in ("draft", "draft_only", "unbilled", "open"): inc_status = norm_status == "Draft"
             elif status_mode in ("ready", "ready_for_billing"): inc_status = norm_status == "Ready for Billing"
             elif status_mode in ("billed", "billed_only"): inc_status = norm_status == "Billed"

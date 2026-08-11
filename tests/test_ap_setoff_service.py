@@ -25,7 +25,12 @@ from repositories.excel_repo import (
     TBL_TRANSACTION_CATEGORIES,
     TBL_TRANSACTIONS_MASTER,
 )
-from services.ap_setoff_service import APSetoffService, SETOFF_ACCOUNT, SETOFF_METHOD
+from services.ap_setoff_service import (
+    APSetoffService,
+    SETOFF_ACCOUNT,
+    SETOFF_CATEGORY_CODE,
+    SETOFF_METHOD,
+)
 from services.paths import AppPaths
 
 
@@ -259,6 +264,97 @@ def test_setoff_validation_leaves_every_ledger_unchanged(tmp_path: Path) -> None
     assert receivables["26-0042"][sc.COL_RECV_AMOUNT_PAID] == 0
     assert receivables["26-0054"][sc.COL_RECV_AMOUNT_PAID] == 0
     assert _rows(repo, TBL_LEDGER) == []
+
+
+def test_historic_setoff_reconstruction_replaces_false_bank_transfer_evidence(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    workbook = load_workbook(repo.paths.workbook_path(), keep_vba=True, data_only=False)
+    try:
+        receivables = APSetoffService(repo)._read_finance(workbook, TBL_RECEIVABLES)
+        for row in receivables:
+            if row[sc.COL_RECV_INVOICE_NUM] == "26-0042":
+                row.update({
+                    sc.COL_RECV_AMOUNT_PAID: 60.0,
+                    sc.COL_RECV_BALANCE_DUE: 0.0,
+                    sc.COL_RECV_STATUS: "Closed",
+                })
+            else:
+                row.update({
+                    sc.COL_RECV_AMOUNT_PAID: 40.0,
+                    sc.COL_RECV_BALANCE_DUE: 30.0,
+                    sc.COL_RECV_STATUS: "Open",
+                })
+        transactions = APSetoffService(repo)._read_finance(workbook, TBL_TRANSACTIONS_MASTER)
+        transactions.extend([
+            {
+                sc.COL_TXN_ID: "TXN-LEGACY-1", sc.COL_TXN_DATE: "2026-07-29",
+                sc.COL_TXN_CLASS: "Business", sc.COL_TXN_TYPE: "Transfer",
+                sc.COL_TXN_FROM_ACCOUNT: "CIBC_CHEQUING", sc.COL_TXN_TO_ACCOUNT: "AMEX",
+                sc.COL_TXN_PAYEE: "Costco", sc.COL_TXN_AMOUNT: 60.0,
+                sc.COL_TXN_INVOICE_REF: "26-0042", sc.COL_TXN_NOTES: "Payment for 26-0042 (Set-off)",
+                sc.COL_TXN_STATUS: "Cleared", sc.COL_TXN_CURRENCY: "CAD",
+            },
+            {
+                sc.COL_TXN_ID: "TXN-LEGACY-2", sc.COL_TXN_DATE: "2026-07-29",
+                sc.COL_TXN_CLASS: "Business", sc.COL_TXN_TYPE: "Transfer",
+                sc.COL_TXN_FROM_ACCOUNT: "CIBC_CHEQUING", sc.COL_TXN_TO_ACCOUNT: "AMEX",
+                sc.COL_TXN_PAYEE: "Costco", sc.COL_TXN_AMOUNT: 40.0,
+                sc.COL_TXN_INVOICE_REF: "26-0054", sc.COL_TXN_NOTES: "Payment for 26-0054 (Set-off)",
+                sc.COL_TXN_STATUS: "Cleared", sc.COL_TXN_CURRENCY: "CAD",
+            },
+            {
+                sc.COL_TXN_ID: "TXN-LEGACY-EXP", sc.COL_TXN_DATE: "2026-07-01",
+                sc.COL_TXN_CLASS: "Business", sc.COL_TXN_TYPE: "Expense",
+                sc.COL_TXN_FROM_ACCOUNT: "CIBC_CHEQUING", sc.COL_TXN_TO_ACCOUNT: "CIBC_CHEQUING",
+                sc.COL_TXN_PAYEE: "Costco", sc.COL_TXN_AMOUNT: 100.0,
+                sc.COL_TXN_TAX_AMOUNT: 0.0, sc.COL_TXN_INVOICE_REF: "Settlement agreement",
+                sc.COL_TXN_NOTES: "Settlement fee — paid by offsets", sc.COL_TXN_STATUS: "Cleared",
+                sc.COL_TXN_CURRENCY: "CAD",
+            },
+        ])
+        service = APSetoffService(repo)
+        service._write_finance(workbook, TBL_RECEIVABLES, receivables)
+        service._write_finance(workbook, TBL_TRANSACTIONS_MASTER, transactions)
+        repo._safe_save(workbook, repo.paths.workbook_path())
+    finally:
+        repo._close_workbook(workbook)
+
+    result = APSetoffService(repo).reconstruct_historic_setoff({
+        "APPaymentID": "APP-SET-HISTORIC-1",
+        "APBillID": "AP-SET-1",
+        "PaymentDate": "2026-07-29",
+        "Amount": 100.0,
+        "Reference": "Settlement agreement",
+        "Allocations": [
+            {"InvoiceID": "26-0042", "Amount": 60.0},
+            {"InvoiceID": "26-0054", "Amount": 40.0},
+        ],
+        "LegacyTransactionIDs": ["TXN-LEGACY-1", "TXN-LEGACY-2"],
+    })
+
+    assert result["ok"] is True
+    retirement = APSetoffService(repo).retire_superseded_historic_settlement_expense(
+        "AP-SET-1", "APP-SET-HISTORIC-1", "TXN-LEGACY-EXP"
+    )
+    assert retirement["ok"] is True
+    from repositories.ap_workbook_repository import APWorkbookRepository
+    assert APWorkbookRepository(repo.paths.workbook_path()).get_bill("AP-SET-1")["Status"] == "Paid"
+    payment = APWorkbookRepository(repo.paths.workbook_path()).list_payments("AP-SET-1")[0]
+    assert payment["FromAccount"] == SETOFF_ACCOUNT
+    assert payment["Method"] == SETOFF_METHOD
+    assert len(_rows(repo, TBL_LEDGER)) == 2
+    repaired = {row[sc.COL_TXN_ID]: row for row in _rows(repo, TBL_TRANSACTIONS_MASTER)}
+    for legacy_id in ("TXN-LEGACY-1", "TXN-LEGACY-2"):
+        assert repaired[legacy_id][sc.COL_TXN_FROM_ACCOUNT] == SETOFF_ACCOUNT
+        assert repaired[legacy_id][sc.COL_TXN_TO_ACCOUNT] == "AP_PAYABLE"
+        assert repaired[legacy_id][sc.COL_TXN_PAYEE] == "LIHDC Professional Corporation"
+        assert repaired[legacy_id][sc.COL_TXN_CATEGORY_CODE] == SETOFF_CATEGORY_CODE
+        assert "No bank movement" in repaired[legacy_id][sc.COL_TXN_NOTES]
+    retired = repaired["TXN-LEGACY-EXP"]
+    assert retired[sc.COL_TXN_STATUS] == "Void"
+    assert retired[sc.COL_TXN_FROM_ACCOUNT] == SETOFF_ACCOUNT
+    assert retired[sc.COL_TXN_TO_ACCOUNT] in (None, "")
+    assert retired[sc.COL_TXN_PAYEE] == "LIHDC Professional Corporation"
 
 
 def test_ap_expense_gateway_defaults_business_context_for_ap_form(tmp_path: Path) -> None:

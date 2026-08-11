@@ -405,6 +405,7 @@ Item {
     property real selectedTotal: 0.0
     property bool isLoading: false
     property bool isBuildingInvoice: false
+    property string wipStatusText: "Preparing WIP workbench…"
     property string selectedClientFilter: ""
     property string selectedBillingClientFilter: ""
     property string _pendingClientIdToFilter: ""
@@ -505,9 +506,9 @@ Item {
         }
         root.autoCheckFilterMatch();
         
-        // ALWAYS reload WIP when returning to this view so we pick up edits
-        // made in the Time Docket or Expense screens.
-        root._loadWip();
+        // Component creation loads WIP once.  Returning to this tab uses the
+        // controller's signature-checked cache instead of forcing an Excel
+        // scan every time the user navigates here.
     }
 
     function snapshotState() {
@@ -553,25 +554,11 @@ Item {
         applySort()
     }
 
-    Timer {
-        id: initDelayTimer
-        interval: 300
-        repeat: false
-        running: false
-        onTriggered: {
-            if (billingBackend) {
-                billingBackend.loadUnbilledWip()
-            }
-        }
-    }
-
-    Component.onCompleted: _loadWip()
-    function _loadWip(quiet) {
+    Component.onCompleted: _loadWip(false)
+    function _loadWip(forceRefresh) {
         if (!billingBackend) return
-        if (!quiet) {
-            isLoading = true
-        }
-        initDelayTimer.start()
+        isLoading = true
+        billingBackend.loadUnbilledWip(!!forceRefresh)
     }
     function _toggleSelection(entryId, net) {
         var copy = {}
@@ -631,7 +618,7 @@ Item {
         if (result && result.ok) {
             contextDocket = null
             root._clearSelection()
-            root._loadWip()
+            root._loadWip(true)
             return
         }
 
@@ -756,6 +743,9 @@ Item {
     // Signal connections
     Connections {
         target: root.billingBackend
+        function onWipLoadStatusChanged(message) {
+            root.wipStatusText = String(message || "")
+        }
         function onWipDataLoaded(data) {
             root.wipItems = data
             if (root.sortCol !== "") {
@@ -830,7 +820,7 @@ Item {
                 return
             }
             root._clearSelection()
-            root._loadWip()
+            root._loadWip(true)
             var draftNum = result.InvoiceNum || result.draftNum || (result.draft && result.draft.draftNum) || result.id || "";
             if (draftNum) {
                 // Instead of navigating immediately, ask for the preview HTML and wait for it.
@@ -1291,6 +1281,15 @@ Item {
                     }
                 }
                 Item { Layout.fillWidth: true }
+                Text {
+                    text: root.wipStatusText
+                    color: root.mutedColor
+                    font.pixelSize: 12
+                    font.family: "Inter"
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 300
+                    verticalAlignment: Text.AlignVCenter
+                }
                 // Refresh button
                 Rectangle {
                     width: 36
@@ -1308,7 +1307,7 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root._loadWip()
+                        onClicked: root._loadWip(true)
                     }
                 }
                 // Zen Mode Expand Button
@@ -1382,7 +1381,7 @@ Item {
                                 running: root.isLoading
                             }
                             Text {
-                                text: "Loading unbilled WIP..."
+                                text: root.wipStatusText || "Loading unbilled WIP..."
                                 color: root.mutedColor
                                 font.pixelSize: 14
                                 font.family: "Inter"

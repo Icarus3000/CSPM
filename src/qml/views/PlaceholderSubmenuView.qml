@@ -127,6 +127,12 @@ Item {
     property string selectedMatterName: ""
     property var selectedMatterProfile: ({})
     property string matterProfileLookupMessage: ""
+    // Loaded asynchronously so opening an editable matter does not stall while
+    // its WIP and A/R are read from the workbook.
+    property var matterFinancialSummary: ({ "ok": false })
+    property bool matterFinancialSummaryLoading: false
+    property string matterFinancialSummaryToken: ""
+    property string matterPersistedStatus: ""
     Item {
         id: matterDescriptionInput
         property string text: ""
@@ -1489,6 +1495,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
         if (key.length <= 0) {
             selectedMatterProfile = ({})
+            matterFinancialSummary = ({ "ok": false })
+            matterFinancialSummaryLoading = false
             matterProfileLookupMessage = "Select a matter to load profile details."
             return
         }
@@ -1518,9 +1526,96 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                 Object.keys(loadedRow).length > 0 ? loadedRow : loaded
             )
             matterProfileLookupMessage = "Matter profile loaded."
+            matterPersistedStatus = String(loaded.status || "Open").trim()
+            refreshMatterFinancialSummary(selectedMatterId)
         } else {
             selectedMatterProfile = ({})
+            matterFinancialSummary = ({ "ok": false })
+            matterFinancialSummaryLoading = false
             matterProfileLookupMessage = result && result.message ? String(result.message) : ("Matter not found: " + key)
+        }
+    }
+
+    function refreshMatterFinancialSummary(matterId) {
+        var id = String(matterId || selectedMatterId || "").trim()
+        if (id.length <= 0 || !appRef || !appRef.requestMatterFinancialSummary) {
+            matterFinancialSummary = ({ "ok": false })
+            matterFinancialSummaryLoading = false
+            return
+        }
+        matterFinancialSummaryToken = "matter-financial-"
+            + id + "-" + Date.now() + "-" + Math.random().toString(36).slice(2)
+        matterFinancialSummaryLoading = true
+        matterFinancialSummary = ({ "ok": false, "matterId": id })
+        appRef.requestMatterFinancialSummary(matterFinancialSummaryToken, id)
+    }
+
+    function matterFinancialMoney(value) {
+        var numeric = Number(value || 0)
+        if (!isFinite(numeric)) numeric = 0
+        return "$" + numeric.toLocaleString(Qt.locale(), "f", 2)
+    }
+
+    function matterStatusIsFinanciallyRestricted(statusValue) {
+        var status = String(statusValue || "").trim().toLowerCase()
+        return status === "on hold" || status === "closed" || status === "archived"
+    }
+
+    function matterStatusSelectionIsBlocked(statusValue) {
+        if (!matterEditMode || !matterStatusIsFinanciallyRestricted(statusValue)) return false
+        var currentStatus = String(matterPersistedStatus || "").trim().toLowerCase()
+        if (currentStatus === String(statusValue || "").trim().toLowerCase()) return false
+        return !!(matterFinancialSummary && matterFinancialSummary.ok && matterFinancialSummary.hasFinancialBlockers)
+    }
+
+    function matterFinancialBlockerText() {
+        var summary = matterFinancialSummary || ({})
+        var parts = []
+        var wipCount = Number(summary.unbilledWipCount || 0)
+        var invoiceCount = Number(summary.unpaidInvoiceCount || 0)
+        if (wipCount > 0) parts.push(wipCount + " unbilled WIP item(s) " + matterFinancialMoney(summary.unbilledWipAmount))
+        if (invoiceCount > 0) parts.push(invoiceCount + " unpaid invoice(s) " + matterFinancialMoney(summary.unpaidInvoiceAmount))
+        return parts.join(" and ")
+    }
+
+    function openMatterWipLedger() {
+        var matterId = String(selectedMatterId || "").trim()
+        if (matterId.length <= 0) return
+        var state = {
+            "focusNodeId": "B04",
+            "matterIdFilterText": matterId,
+            "matterFilterText": "All Matters",
+            "statusModeText": "Unbilled WIP",
+            "currentPreset": "all",
+            "forceNewInstance": true
+        }
+        if (root.externalNavigationShell && !root.detachedWindow) {
+            root.workspaceOpenRequested(1, "B04", state)
+            return
+        }
+        root._pendingStateForLoader = state
+        root.gotoNode("B04")
+        if (docketActivityReportPanel && docketActivityReportPanel.applyState) {
+            docketActivityReportPanel.applyState(state, true)
+        }
+    }
+
+    function openMatterInvoice(invoiceNum) {
+        var invoice = String(invoiceNum || "").trim()
+        if (invoice.length <= 0) return
+        var state = {
+            "focusNodeId": "C04",
+            "selectedInvoiceNum": invoice,
+            "forceNewInstance": true
+        }
+        if (root.externalNavigationShell && !root.detachedWindow) {
+            root.workspaceOpenRequested(2, "C04", state)
+            return
+        }
+        root._pendingStateForLoader = state
+        root.gotoNode("C04")
+        if (invoiceDirectoryView && invoiceDirectoryView.applyJumpState) {
+            invoiceDirectoryView.applyJumpState(state)
         }
     }
 
@@ -1730,6 +1825,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         _setComboBoxSilently(matterParentCombo, String(profile.parentName || ""))
         _setComboBoxSilently(matterTypeCombo, String(profile.matterType || "General"))
         _setComboBoxSilently(matterStatusCombo, String(profile.status || "Open"))
+        matterPersistedStatus = String(profile.status || "Open").trim()
         _setComboBoxSilently(matterPracticeAreaCombo, String(profile.practiceArea || ""))
         _setComboBoxSilently(matterResponsibleLawyerCombo, String(profile.responsibleLawyer || ""))
         _setComboBoxSilently(
@@ -1907,9 +2003,10 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         if (saveInProgress) return
         saveInProgress = true
         var result = {}
+        var payload = buildMatterProfilePayload()
         try {
             if (appRef && appRef.saveMatterProfile) {
-                result = appRef.saveMatterProfile(buildMatterProfilePayload())
+                result = appRef.saveMatterProfile(payload)
             } else {
                 result = {
                     "ok": false,
@@ -1927,6 +2024,40 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         lastSavedMatterId = (result && result.matterId !== undefined && result.matterId !== null)
             ? String(result.matterId)
             : ""
+
+        // A successful editor save must be reflected by a fresh workbook read
+        // before we leave the edit screen.  This prevents a stale profile from
+        // looking like a saved rename, and keeps the editor open if the exact
+        // name/display-name pair was not persisted.
+        if (lastSaveOk && root.matterEditMode) {
+            var verification = ({})
+            try {
+                verification = appRef && appRef.getMatterProfile
+                    ? appRef.getMatterProfile(lastSavedMatterId)
+                    : ({ "ok": false, "message": "Matter profile verification is unavailable." })
+            } catch (eVerify) {
+                verification = { "ok": false, "message": String(eVerify) }
+            }
+
+            var verifiedMatter = verification && verification.matter ? verification.matter : ({})
+            var expectedMatterName = String(payload.matterName || "").trim()
+            var expectedDisplayName = String(payload.displayName || payload.matterName || "").trim()
+            var namesPersisted = verification && verification.ok
+                && String(verifiedMatter.matterName || "").trim() === expectedMatterName
+                && String(verifiedMatter.displayName || "").trim() === expectedDisplayName
+
+            if (!namesPersisted) {
+                lastSaveOk = false
+                root.dirty = true
+                saveMessage = "Matter changes could not be verified in the workbook. Review the fields and save again; the editor has remained open."
+                return
+            }
+
+            selectedMatterProfile = verifiedMatter
+            selectedMatterId = String(verifiedMatter.matterId || lastSavedMatterId || selectedMatterId || "")
+            selectedMatterName = root.matterDirectoryOptionLabel(verifiedMatter)
+        }
+
         if (result && result.message !== undefined && String(result.message).length > 0) {
             saveMessage = String(result.message)
         } else if (lastSaveOk) {
@@ -1935,11 +2066,12 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             saveMessage = "Matter profile save failed."
         }
         if (lastSaveOk) {
+            root.matterPersistedStatus = String(matterStatusCombo.editText || "Open").trim()
             root.dirty = false
             root.refreshMatterDirectory(false)
             root.refreshMatterWizardClientOptions()
             if (root.returnFromMatterEdit()) {
-                root.matterProfileLookupMessage = "Matter profile updated."
+                root.matterProfileLookupMessage = "Matter profile updated and reloaded from the workbook."
             }
             root.submitRequested(root.snapshotState())
         } else {
@@ -2894,6 +3026,10 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             return
         }
         if (activeIsNewMatterWizard() && matterEditMode) {
+            if (root.dirty) {
+                discardMatterEditPopup.open()
+                return
+            }
             returnFromMatterEdit()
             root.dirty = false
             return
@@ -3008,9 +3144,16 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             if (transactionMasterView.loadRecentTransactions) {
                 transactionMasterView.loadRecentTransactions()
             }
+            if (transactionMasterView.applyState) {
+                transactionMasterView.applyState(state)
+            }
         }
         if (root.activeIsPaymentEntry() && paymentEntryView) {
             paymentEntryView.applyState(state)
+        }
+        if (root.activeIsAccountsPayable() && accountsPayableLoader.item
+                && accountsPayableLoader.item.applyStartupState) {
+            accountsPayableLoader.item.applyStartupState(state)
         }
         if (root.activeIsInvoiceReversal() && invoiceReversalView) {
             invoiceReversalView.applyJumpState(state)
@@ -3022,6 +3165,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             } else {
                 console.log("PlaceholderSubmenuView: ERROR - wipBillingView is null or undefined when trying to apply state!")
             }
+        }
+        if (root.activeIsDocketActivityReport() && docketActivityReportPanel && docketActivityReportPanel.applyState) {
+            docketActivityReportPanel.applyState(state, true)
         }
         if (root.activeIsInvoiceBuilder() && invoiceBuilderView) {
             var dn = root.initialInvoiceDraftNumber()
@@ -3036,13 +3182,19 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         root.activeNodeId = String(nodeId || "")
         ensureActiveNode()
         if (!_hydrating) {
-            root.dirty = true
+            // Reports do not have a draft to save. In particular, D17 used to
+            // inherit the generic placeholder's dirty flag and showed an
+            // alarming but false "Unsaved" badge on first open.
+            root.dirty = !root.activeIsStatementOfAccount()
         }
     }
 
     onNavItemsChanged: ensureActiveNode()
     onDefaultNodeIdChanged: ensureActiveNode()
     onActiveNodeIdChanged: {
+        if (root.activeIsStatementOfAccount()) {
+            root.dirty = false
+        }
         if (root._hydrating) return
         if (root.activeIsNewClientWizard()) {
             root.refreshParentClientOptions()
@@ -3089,6 +3241,21 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
     Connections {
         target: root.appRef
+        ignoreUnknownSignals: true
+        function onMatterFinancialSummaryReady(requestId, summary) {
+            if (String(requestId || "") !== root.matterFinancialSummaryToken) return
+            root.matterFinancialSummaryLoading = false
+            root.matterFinancialSummary = summary || ({ "ok": false })
+        }
+        function onMatterFinancialSummaryFailed(requestId, message) {
+            if (String(requestId || "") !== root.matterFinancialSummaryToken) return
+            root.matterFinancialSummaryLoading = false
+            root.matterFinancialSummary = ({
+                "ok": false,
+                "matterId": root.selectedMatterId,
+                "message": String(message || "Could not load WIP and unpaid invoices.")
+            })
+        }
         function onBackendBootChanged() {
             if (!(root.appRef && root.appRef.backendBooted)) return
             root.refreshParentClientOptions()
@@ -3506,6 +3673,9 @@ Behavior on border.color {
 
                     Rectangle {
                         id: summaryCapsule
+                        // A Statement of Account is a focused, client-facing report.
+                        // The lane-level queue counter has no bearing on it.
+                        visible: !root.activeIsStatementOfAccount()
                         readonly property bool activeClientsShortcut: root.tileIndex === 0
                         Layout.preferredWidth: root.ratioPxW(0.225, 210)
                         Layout.minimumWidth: root.ratioPxW(0.185, 170)
@@ -3606,6 +3776,7 @@ Behavior on border.color {
                         && !root.activeIsARAgingReport()
                         && !root.activeIsDocketActivityReport()
                         && !root.activeIsClientLedgerReport()
+                        && !root.activeIsStatementOfAccount()
                         && !root.activeIsTransactionsMaster()
                         && !root.activeIsPaymentEntry()
                         && !root.activeIsLegacyDocketsImport()
@@ -3819,25 +3990,40 @@ Behavior on border.color {
                     }
                 }
 
-                Rectangle {
+                Loader {
+                    id: statementOfAccountLoader
+                    // Do not construct a workbook-backed report view merely
+                    // because the broad Finance workspace was loaded.  The
+                    // previous hidden Rectangle still created the full
+                    // Statement component (and triggered its data load).
+                    active: root.activeIsStatementOfAccount()
                     visible: root.activeIsStatementOfAccount()
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: root.sectionRadiusPx
-                    color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
-                    border.width: 1
-                    border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
 
-                    StatementOfAccountView {
-                        id: statementOfAccountView
-                        onReportWindowRequested: function(reportDocument) { root.reportWindowRequested(reportDocument) }
-                        anchors.fill: parent
-                        anchors.margins: root.ratioPx(root.scaleRatios.descPadPct * 1.15, 10)
-                        t: root.t
-                        appRef: root.appRef
-                        sfxBus: root.sfxBus
-                        selectedClientId: root.selectedClientId
-                        selectedClientLabel: root.selectedClientName
+                    sourceComponent: Component {
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: root.sectionRadiusPx
+                            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
+                            border.width: 1
+                            border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+
+                            StatementOfAccountView {
+                                onReportWindowRequested: function(reportDocument) { root.reportWindowRequested(reportDocument) }
+                                onWorkspaceOpenRequested: function(tileIndex, nodeId, state) {
+                                    root.workspaceOpenRequested(tileIndex, nodeId, state)
+                                }
+                                anchors.fill: parent
+                                anchors.margins: root.ratioPx(root.scaleRatios.descPadPct * 1.15, 10)
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                appRef: root.appRef
+                                sfxBus: root.sfxBus
+                                selectedClientId: root.selectedClientId
+                                selectedClientLabel: root.selectedClientName
+                            }
+                        }
                     }
                 }
 
@@ -3911,8 +4097,8 @@ Behavior on border.color {
                         anchors.fill: parent
                         active: parent.visible
                         onLoaded: {
-                            if (item && item.applyInitialState && root._pendingStateForLoader) {
-                                item.applyInitialState(root._pendingStateForLoader)
+                            if (item && item.applyState && root._pendingStateForLoader) {
+                                item.applyState(root._pendingStateForLoader)
                             }
                         }
                         sourceComponent: Component {
@@ -4060,6 +4246,7 @@ Behavior on border.color {
                                 metrics: root.responsiveMetrics
                                 appRef: root.appRef
                                 sfxBus: root.sfxBus
+                                startupState: root.initialState
                             }
                         }
                     }
@@ -4880,7 +5067,18 @@ Behavior on border.color {
                         Layout.columnSpan: 1
                         Layout.preferredHeight: root.fieldHeightPx
                         fullModel: root.matterStatusOptions
-                        onEditTextChanged: if (!root._hydrating) root.dirty = true
+                        onEditTextChanged: {
+                            if (root._hydrating) return
+                            if (root.matterStatusSelectionIsBlocked(editText)) {
+                                root._setComboBoxSilently(matterStatusCombo, root.matterPersistedStatus || "Open")
+                                root.saveMessage = "Status cannot be changed while this matter has "
+                                    + root.matterFinancialBlockerText()
+                                    + ". Open the WIP ledger or unpaid invoice list below to resolve it first."
+                                root.lastSaveOk = false
+                                return
+                            }
+                            root.dirty = true
+                        }
                     }
 
                     ModernComboBox {
@@ -5099,6 +5297,159 @@ Behavior on border.color {
                         onTextChanged: if (!root._hydrating) root.dirty = true
                     }
                 }
+
+                Rectangle {
+                    id: matterFinancialStatusCard
+                    visible: root.matterEditMode && root.selectedMatterId.length > 0
+                    Layout.fillWidth: true
+                    Layout.topMargin: root.controlGapPx
+                    Layout.preferredHeight: Math.max(
+                        root.ratioPxH(0.115, 94),
+                        matterFinancialStatusContent.implicitHeight + root.ratioPx(0.018, 14)
+                    )
+                    radius: root.sectionRadiusPx
+                    color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.68)
+                    border.width: 1
+                    border.color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.34)
+
+                    ColumnLayout {
+                        id: matterFinancialStatusContent
+                        anchors.fill: parent
+                        anchors.margins: root.ratioPx(0.008, 8)
+                        spacing: root.ratioPx(0.005, 4)
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: root.controlGapPx
+
+                            Text {
+                                text: "Financial status"
+                                color: root._text
+                                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 10))
+                                font.weight: Font.DemiBold
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            PillButton {
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                sfxBus: root.sfxBus
+                                text: "Open WIP Ledger"
+                                primary: false
+                                Layout.preferredWidth: root.ratioPxW(0.128, 126)
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: root.openMatterWipLedger()
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.matterFinancialSummaryLoading
+                            text: "Loading unbilled WIP and unpaid invoices…"
+                            color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.68)
+                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: !root.matterFinancialSummaryLoading
+                                && (!root.matterFinancialSummary || !root.matterFinancialSummary.ok)
+                            text: root.matterFinancialSummary && root.matterFinancialSummary.message
+                                ? String(root.matterFinancialSummary.message)
+                                : "Financial status will load after this matter is saved."
+                            color: Qt.rgba(0.90, 0.45, 0.25, 0.96)
+                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            wrapMode: Text.WordWrap
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            visible: !root.matterFinancialSummaryLoading
+                                && root.matterFinancialSummary && root.matterFinancialSummary.ok
+                            spacing: root.ratioPx(0.016, 14)
+
+                            Text {
+                                text: "Unbilled WIP: "
+                                    + Number(root.matterFinancialSummary.unbilledWipCount || 0)
+                                    + " item(s) · " + root.matterFinancialMoney(root.matterFinancialSummary.unbilledWipAmount)
+                                color: Number(root.matterFinancialSummary.unbilledWipCount || 0) > 0
+                                    ? Qt.rgba(0.86, 0.55, 0.14, 0.98)
+                                    : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
+                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                font.weight: Font.DemiBold
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Text {
+                                text: "Unpaid invoices: "
+                                    + Number(root.matterFinancialSummary.unpaidInvoiceCount || 0)
+                                    + " · " + root.matterFinancialMoney(root.matterFinancialSummary.unpaidInvoiceAmount)
+                                color: Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
+                                    ? Qt.rgba(0.80, 0.24, 0.20, 0.98)
+                                    : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
+                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                font.weight: Font.DemiBold
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.matterFinancialSummary && root.matterFinancialSummary.ok
+                                && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) === 0
+                            text: "No unpaid invoices are linked to this matter."
+                            color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.68)
+                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                        }
+
+                        Column {
+                            Layout.fillWidth: true
+                            visible: root.matterFinancialSummary && root.matterFinancialSummary.ok
+                                && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
+                            spacing: 2
+
+                            Repeater {
+                                model: root.matterFinancialSummary && root.matterFinancialSummary.unpaidInvoices
+                                    ? root.matterFinancialSummary.unpaidInvoices : []
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: parent ? parent.width : 0
+                                    height: Math.max(root.ratioPxH(0.030, 25), invoiceLinkText.implicitHeight + 6)
+                                    radius: Math.max(3, root.sectionRadiusPx - 4)
+                                    color: invoiceLinkMouse.containsMouse
+                                        ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.12)
+                                        : Qt.rgba(root._bg.r, root._bg.g, root._bg.b, 0.20)
+                                    border.width: 1
+                                    border.color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.24)
+
+                                    Text {
+                                        id: invoiceLinkText
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.margins: 6
+                                        text: "Invoice " + String(modelData.invoiceNum || "")
+                                            + " · Amount due " + root.matterFinancialMoney(modelData.balanceDue)
+                                            + " — open in Invoice Directory"
+                                        color: root._accent
+                                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                        font.underline: invoiceLinkMouse.containsMouse
+                                        elide: Text.ElideRight
+                                    }
+
+                                    MouseArea {
+                                        id: invoiceLinkMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.openMatterInvoice(String(modelData.invoiceNum || ""))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -5115,6 +5466,7 @@ Behavior on border.color {
                         && !root.activeIsARAgingReport()
                         && !root.activeIsDocketActivityReport()
                         && !root.activeIsClientLedgerReport()
+                        && !root.activeIsStatementOfAccount()
                         && !root.activeIsTransactionsMaster()
                         && !root.activeIsPaymentEntry()
                         && !root.activeIsWipToBill()
@@ -5155,6 +5507,7 @@ Behavior on border.color {
                     visible: !root.activeIsClientLedgerReport()
                         && !root.activeIsFinancialDashboard()
                         && !root.activeIsARAgingReport()
+                        && !root.activeIsStatementOfAccount()
                         && !root.activeIsPaymentEntry()
                         && !root.activeIsWipToBill()
                         && !root.activeIsInvoiceBuilder()
@@ -5178,7 +5531,9 @@ Behavior on border.color {
                         text: root.activeIsNewClientWizard()
                             ? (root.saveInProgress ? "Saving..." : "Save Client")
                             : (root.activeIsNewMatterWizard()
-                                ? (root.saveInProgress ? "Saving..." : "Save Matter")
+                                ? (root.saveInProgress
+                                    ? "Saving..."
+                                    : (root.matterEditMode ? "Save Matter & Return" : "Save Matter"))
                                 : (root.activeIsTransactionsMaster()
                                     ? "Save Transaction"
                                     : (root.activeIsDocketActivityReport()
@@ -5282,6 +5637,86 @@ Behavior on border.color {
                     wrapMode: Text.WordWrap
                     font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
                 }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: discardMatterEditPopup
+        parent: root.Window.window ? root.Window.window.contentItem : root
+        modal: true
+        focus: true
+        dim: true
+        closePolicy: Popup.CloseOnEscape
+        anchors.centerIn: parent
+        padding: root.ratioPx(0.010, 10)
+        width: Math.max(
+            root.ratioPxW(0.34, 360),
+            Math.min(root.ratioPxW(0.56, 680), (parent ? parent.width : root.width) - root.ratioPx(0.018, 18))
+        )
+
+        background: Rectangle {
+            radius: root.sectionRadiusPx
+            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.96)
+            border.width: 1
+            border.color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.66)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: root.ratioPx(0.008, 8)
+
+            Text {
+                Layout.fillWidth: true
+                text: "Discard unsaved matter changes?"
+                color: root._text
+                font.pixelSize: root.ratioPx(
+                    root.scaleRatios.headerTitleFontPct * 0.62,
+                    root.metricFloor("fontFloorBodyPx", 10)
+                )
+                font.weight: Font.DemiBold
+                wrapMode: Text.WordWrap
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "The Matter Name and Display Name will remain unchanged until you choose Save Matter & Return."
+                color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.86)
+                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.ratioPx(0.008, 8)
+
+                Item { Layout.fillWidth: true }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Keep Editing"
+                    primary: false
+                    Layout.preferredWidth: root.ratioPxW(0.128, 128)
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: discardMatterEditPopup.close()
+                }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Discard Changes"
+                    primary: true
+                    Layout.preferredWidth: root.ratioPxW(0.142, 142)
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: {
+                        discardMatterEditPopup.close()
+                        root.returnFromMatterEdit()
+                        root.dirty = false
+                        root.matterProfileLookupMessage = "Changes discarded. The saved matter profile was reloaded."
                     }
                 }
             }
@@ -5446,14 +5881,16 @@ Behavior on border.color {
 
     Popup {
         id: deleteMatterConfirmPopup
+        property string blockerMessage: ""
         modal: true
         focus: true
         dim: true
         closePolicy: Popup.CloseOnEscape
-        width: root.ratioPxW(0.46, 360)
+        width: Math.max(root.ratioPxW(0.46, 360), 560)
         padding: root.ratioPx(0.010, 10)
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
+        onOpened: blockerMessage = ""
 
         background: Rectangle {
             radius: root.isProMode ? 4 : root.ratioPx(0.012, 10)
@@ -5476,13 +5913,25 @@ Behavior on border.color {
             Text {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Deleting a matter is DESTRUCTIVE and IRREVERSIBLE. You will permanently lose all associated data. It is strongly recommended to use 'Closed', 'Archived', or 'Inactive' status instead, which can be re-activated later.\n\nAre you absolutely sure you want to permanently delete this matter?"
+                text: "Deleting a matter is DESTRUCTIVE and IRREVERSIBLE. You will permanently lose all associated data. Use a non-active status instead whenever possible. Deletion is blocked when this matter has active unbilled WIP or unpaid invoices.\n\nAre you absolutely sure you want to permanently delete this matter?"
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
                 font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
             }
 
+            Text {
+                Layout.fillWidth: true
+                visible: deleteMatterConfirmPopup.blockerMessage.length > 0
+                text: deleteMatterConfirmPopup.blockerMessage
+                color: "#d32f2f"
+                wrapMode: Text.WordWrap
+                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                font.weight: Font.DemiBold
+            }
+
             RowLayout {
                 Layout.fillWidth: true
+                Layout.minimumHeight: root.fieldHeightPx
+                Layout.preferredHeight: root.fieldHeightPx
                 spacing: root.ratioPx(0.006, 6)
 
                 PillButton {
@@ -5492,22 +5941,34 @@ Behavior on border.color {
                     text: "Permanently Delete"
                     primary: true
                     accentColor: "#d32f2f"
-                    Layout.fillWidth: true
+                    Layout.fillWidth: false
+                    Layout.minimumWidth: root.ratioPxW(0.174, 174)
+                    Layout.preferredWidth: root.ratioPxW(0.188, 188)
+                    Layout.minimumHeight: root.fieldHeightPx
+                    Layout.preferredHeight: root.fieldHeightPx
                     onClicked: {
-                        deleteMatterConfirmPopup.close()
-                        var pId = root.selectedMatterProfile && root.selectedMatterProfile.matterId ? root.selectedMatterProfile.matterId : ""
+                        var pId = root.selectedMatterProfile && root.selectedMatterProfile.matterId
+                            ? root.selectedMatterProfile.matterId : root.selectedMatterId
                         if (pId && root.appRef && root.appRef.deleteMatterProfile) {
                             var res = root.appRef.deleteMatterProfile(pId)
                             if (res && res.ok) {
+                                deleteMatterConfirmPopup.close()
                                 root.refreshMatterDirectory(true)
                                 root.saveMessage = "Matter permanently deleted."
                                 root.requestExternalWorkspaceFocus("A09")
                             } else {
-                                root.saveMessage = "Failed to delete matter: " + (res ? res.message : "Unknown error")
+                                var message = "Failed to delete matter: " + (res ? res.message : "Unknown error")
+                                deleteMatterConfirmPopup.blockerMessage = message
+                                root.saveMessage = message
+                                root.lastSaveOk = false
                             }
+                        } else {
+                            deleteMatterConfirmPopup.blockerMessage = "No saved matter is selected for deletion."
                         }
                     }
                 }
+
+                Item { Layout.fillWidth: true }
 
                 PillButton {
                     t: root.t
@@ -5515,7 +5976,11 @@ Behavior on border.color {
                     sfxBus: root.sfxBus
                     text: "Cancel"
                     primary: false
-                    Layout.fillWidth: true
+                    Layout.fillWidth: false
+                    Layout.minimumWidth: root.ratioPxW(0.124, 124)
+                    Layout.preferredWidth: root.ratioPxW(0.136, 136)
+                    Layout.minimumHeight: root.fieldHeightPx
+                    Layout.preferredHeight: root.fieldHeightPx
                     onClicked: {
                         deleteMatterConfirmPopup.close()
                     }

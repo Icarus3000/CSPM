@@ -43,6 +43,13 @@ Item {
             "overdueDeadlines": [],
             "overdueBills": [],
             "readyToBillMatters": [],
+            "arSummary": {
+                "totalAr": 0.0,
+                "openInvoiceCount": 0,
+                "overdueAr": 0.0,
+                "overdueInvoiceCount": 0,
+                "overdueGraceDays": 30
+            },
             "summary": {},
             "productivitySummary": {
                 "today": { "hours": 0.0, "gross": 0.0, "net": 0.0 },
@@ -105,6 +112,11 @@ Item {
         for (var i = 0; i < rows.length; ++i)
             total += number(rows[i][key])
         return total
+    }
+
+    function arSummaryValue(key) {
+        var summary = root.briefing && root.briefing.arSummary ? root.briefing.arSummary : ({})
+        return number(summary[key])
     }
 
     function priorityItems() {
@@ -199,11 +211,13 @@ Item {
             "moduleId": "billing", "nodeId": "C01"
         },
         {
-            "label": "Overdue A/R",
-            "value": formatMoney(sumAmount(briefing.overdueBills, "wipAmount")),
-            "detail": String(entryCount(briefing.overdueBills)) + " invoices need review",
+            "label": "Total A/R",
+            "value": formatMoney(arSummaryValue("totalAr")),
+            "detail": "Overdue: " + formatMoney(arSummaryValue("overdueAr"))
+                + " \u00b7 " + String(whole(arSummaryValue("overdueInvoiceCount")))
+                + (whole(arSummaryValue("overdueInvoiceCount")) === 1 ? " invoice" : " invoices"),
             "icon": "\uE9D9",
-            "tone": entryCount(briefing.overdueBills) > 0 ? "urgent" : "accent",
+            "tone": arSummaryValue("overdueInvoiceCount") > 0 ? "urgent" : "accent",
             "moduleId": "finance", "nodeId": "D06"
         }
     ]
@@ -566,13 +580,14 @@ Item {
                                 ]
 
                                 delegate: ColumnLayout {
+                                    id: productivityMetricDelegate
                                     required property var modelData
                                     Layout.fillWidth: true
                                     spacing: 0
 
                                     Text {
                                         Layout.fillWidth: true
-                                        text: modelData.label
+                                        text: productivityMetricDelegate.modelData.label
                                         color: root.mutedInkColor
                                         font.family: "Segoe UI"
                                         font.pixelSize: root.tight ? 8 : 9
@@ -581,7 +596,7 @@ Item {
 
                                     Text {
                                         Layout.fillWidth: true
-                                        text: modelData.value
+                                        text: productivityMetricDelegate.modelData.value
                                         color: root.inkColor
                                         font.family: "Segoe UI"
                                         font.pixelSize: root.tight ? 12 : 15

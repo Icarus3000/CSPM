@@ -208,7 +208,7 @@ var MODULE_CONFIGS = [
                     { "id": "C01", "label": "WIP-to-Bill Workbench", "route": "/billing/wip-to-bill" },
                     { "id": "C03", "label": "Invoice Builder", "route": "/billing/invoice-builder" },
                     { "id": "C04", "label": "Invoice Directory", "route": "/billing/invoice-directory" },
-                    { "id": "C07", "label": "Payment & Adjustment Entry", "route": "/billing/payment-entry", "saveCommand": "payment" },
+                    { "id": "C07", "label": "Payment & Adjustment Entry", "route": "/billing/payment-entry", "tabType": "payment", "singleInstance": false, "saveCommand": "payment" },
                     { "id": "C08", "label": "Reverse an Invoice", "route": "/billing/reverse-invoice" },
                     { "id": "C05", "label": "WIP Billing Wizard", "route": "/billing/wip-wizard", "hidden": true },
                     { "id": "C06", "label": "Draft Review Workspace", "route": "/billing/draft-review", "hidden": true }
@@ -218,8 +218,8 @@ var MODULE_CONFIGS = [
                 "id": "transactions-setup",
                 "title": "Accounts & Expenses",
                 "items": [
-                    { "id": "C18", "label": "Accounts Payable (Expenses)", "route": "/billing/accounts-payable" },
-                    { "id": "C11", "label": "Transactions Master", "route": "/billing/transactions-master", "saveCommand": "transaction" }
+                    { "id": "C18", "label": "Accounts Payable (Expenses)", "route": "/billing/accounts-payable", "tabType": "ap_setoff", "singleInstance": false },
+                    { "id": "C11", "label": "Transactions Master", "route": "/billing/transactions-master", "tabType": "transaction", "singleInstance": false, "saveCommand": "transaction" }
                 ]
             }
         ]

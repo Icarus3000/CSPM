@@ -2,6 +2,8 @@ import re
 
 import logging
 
+import time
+
 from decimal import Decimal
 
 from functools import partial
@@ -72,6 +74,8 @@ class BillingController(QObject):
 
     wipDataLoaded = Signal('QVariantList')
 
+    wipLoadStatusChanged = Signal(str)
+
     draftCreated = Signal('QVariantMap')
 
     draftUpdated = Signal('QVariantMap')
@@ -82,7 +86,25 @@ class BillingController(QObject):
 
     draftFinalized = Signal('QVariantMap')
 
+    draftsLoaded = Signal('QVariantList')
+
+    finalizedInvoiceHtmlReady = Signal(str, str, str)
+
+    finalizedInvoiceHtmlFailed = Signal(str, str, str)
+
+    invoiceNumberReuseStatusLoaded = Signal(str, 'QVariantMap')
+
+    nextInvoiceNumberLoaded = Signal(str)
+
     draftReversed = Signal('QVariantMap')
+
+    finalizedInvoicesLoaded = Signal('QVariantList')
+
+    invoiceDirectoryDetailsLoaded = Signal('QVariantMap')
+
+    invoiceDirectoryDetailsFailed = Signal(str, str)
+
+    invoiceReversalProgress = Signal('QVariantMap')
 
     invoiceHtmlReady = Signal(str)
 
@@ -131,6 +153,12 @@ class BillingController(QObject):
         self._threadpool = QThreadPool.globalInstance()
         self._active_workers = set()
         self._payload_cache = {}
+        self._wip_cache: List[Dict[str, Any]] = []
+        self._wip_cache_signature = ""
+        self._wip_load_in_progress = False
+        self._finalized_invoice_load_in_progress = False
+        self._invoice_directory_detail_requests = set()
+        self._invoice_reversal_in_progress = False
 
     # ── Worker helpers ───────────────────────────────────────────────────────
 
@@ -147,12 +175,37 @@ class BillingController(QObject):
     # ── WIP Loading ──────────────────────────────────────────────────────────
 
     @Slot()
+    @Slot(bool)
+    def loadUnbilledWip(self, force_refresh=False):
 
-    def loadUnbilledWip(self):
+        """Load WIP, serving a verified in-memory snapshot when possible."""
 
-        """Load all unbilled WIP time entries, grouped by client."""
+        current_signature = self._wip_workbook_signature()
+        cache_is_current = bool(
+            self._wip_cache_signature
+            and current_signature
+            and self._wip_cache_signature == current_signature
+        )
+        if cache_is_current and not force_refresh:
+            logger.info("WIP workbench served %d cached row(s).", len(self._wip_cache))
+            self.wipLoadStatusChanged.emit(
+                f"Ready \u2022 {len(self._wip_cache)} WIP entries \u2022 cached"
+            )
+            self.wipDataLoaded.emit(list(self._wip_cache))
+            return
 
-        worker = Worker(self._load_unbilled_wip_impl, name="loadUnbilledWip")
+        if self._wip_load_in_progress:
+            logger.info("WIP load request ignored because a refresh is already running.")
+            self.wipLoadStatusChanged.emit("Loading unbilled WIP\u2026")
+            return
+
+        self._wip_load_in_progress = True
+        self.wipLoadStatusChanged.emit("Refreshing unbilled WIP\u2026")
+        worker = Worker(
+            self._load_unbilled_wip_impl,
+            current_signature,
+            name="loadUnbilledWip",
+        )
 
         worker.signals.result.connect(partial(self._on_wip_loaded, worker))
 
@@ -160,17 +213,35 @@ class BillingController(QObject):
 
         self._start_worker(worker)
 
-    def _load_unbilled_wip_impl(self):
+    def _wip_workbook_signature(self) -> str:
+        try:
+            return str(
+                self._excel_repo._workbook_signature(
+                    self._excel_repo.paths.workbook_path()
+                )
+                or ""
+            )
+        except Exception:
+            return ""
+
+    def _load_unbilled_wip_impl(self, workbook_signature=""):
+
+        started = time.perf_counter()
 
         from repositories.excel_repo import TBL_TIME, TBL_CLIENTS, TBL_MATTERS
 
-        
 
-        # Build lookups for Client and Matter names
-
-        clients = self._excel_repo._read_table_rows(TBL_CLIENTS)
-
-        profiles = self._excel_repo._read_table_rows(sc.TBL_CLIENT_PROFILES)
+        # A cold WIP load used to parse the macro workbook once per table.
+        # Read the related tables from one immutable workbook snapshot instead.
+        table_rows = self._excel_repo._read_table_rows_bulk([
+            TBL_CLIENTS,
+            sc.TBL_CLIENT_PROFILES,
+            sc.TBL_PARENTS,
+            TBL_MATTERS,
+            TBL_TIME,
+        ])
+        clients = table_rows.get(TBL_CLIENTS.table, [])
+        profiles = table_rows.get(sc.TBL_CLIENT_PROFILES, [])
 
         client_map = {}
 
@@ -195,7 +266,7 @@ class BillingController(QObject):
 
                 client_parent_map[c_id] = p_id
 
-        parents = self._excel_repo._read_table_rows(sc.TBL_PARENTS)
+        parents = table_rows.get(sc.TBL_PARENTS, [])
 
         parent_map = {}
 
@@ -208,7 +279,7 @@ class BillingController(QObject):
 
                 parent_map[p_id] = p_name or p_id
 
-        matters = self._excel_repo._read_table_rows(TBL_MATTERS)
+        matters = table_rows.get(TBL_MATTERS.table, [])
 
         matter_map = {}
 
@@ -258,7 +329,7 @@ class BillingController(QObject):
 
                 matter_map[m_id] = display or m_id
 
-        rows = self._excel_repo._read_table_rows(TBL_TIME)
+        rows = table_rows.get(TBL_TIME.table, [])
 
         wip_rows = []
 
@@ -384,16 +455,40 @@ class BillingController(QObject):
 
         wip_rows.sort(key=lambda r: (r["clientName"], r["date"]))
 
-        return wip_rows
+        return {
+            "rows": wip_rows,
+            "signature": str(workbook_signature or ""),
+            "elapsedSeconds": round(time.perf_counter() - started, 3),
+        }
 
     def _on_wip_loaded(self, worker, result):
 
         try:
 
-            self.wipDataLoaded.emit(list(result or []))
+            payload = (
+                dict(result or {})
+                if isinstance(result, dict)
+                else {"rows": list(result or [])}
+            )
+            rows = list(payload.get("rows") or [])
+            elapsed_seconds = float(payload.get("elapsedSeconds") or 0.0)
+            loaded_signature = str(payload.get("signature") or "")
+            if loaded_signature and loaded_signature == self._wip_workbook_signature():
+                self._wip_cache = list(rows)
+                self._wip_cache_signature = loaded_signature
+            else:
+                # The workbook changed while the worker was reading it.  The
+                # rows are still useful now, but must not become a stale cache.
+                self._wip_cache = []
+                self._wip_cache_signature = ""
+            self.wipDataLoaded.emit(rows)
+            duration = f" \u2022 {elapsed_seconds:.1f}s" if elapsed_seconds else ""
+            self.wipLoadStatusChanged.emit(
+                f"Ready \u2022 {len(rows)} WIP entries{duration}"
+            )
 
         finally:
-
+            self._wip_load_in_progress = False
             self._release_worker(worker)
 
     def _on_wip_error(self, worker, err_tuple):
@@ -403,11 +498,20 @@ class BillingController(QObject):
             exctype, value, tb_str = err_tuple
 
             self.error.emit(f"Could not load WIP data: {value}")
-
-            self.wipDataLoaded.emit([])
+            if (
+                self._wip_cache
+                and self._wip_cache_signature == self._wip_workbook_signature()
+            ):
+                self.wipDataLoaded.emit(list(self._wip_cache))
+                self.wipLoadStatusChanged.emit(
+                    "Showing the last loaded WIP snapshot \u2022 refresh failed"
+                )
+            else:
+                self.wipDataLoaded.emit([])
+                self.wipLoadStatusChanged.emit("Could not load WIP")
 
         finally:
-
+            self._wip_load_in_progress = False
             self._release_worker(worker)
 
     # ── Draft Creation ───────────────────────────────────────────────────────
@@ -1124,17 +1228,14 @@ class BillingController(QObject):
 
     @Slot(str, str, str, str)
     def reverseInvoice(self, invoice_num, source_pdf_path, pdf_action, target_dir):
-        """Reverse a finalized invoice."""
-        try:
-            self._draft_svc.reverse_invoice(str(invoice_num), str(source_pdf_path), str(pdf_action), str(target_dir))
-            self.toast.emit(f"Invoice {invoice_num} reversed.")
-
-            self.draftReversed.emit({"ok": True, "invoiceNum": invoice_num})
-
-        except Exception as exc:
-
-            self.error.emit(f"Could not reverse invoice: {exc}")
-            self.draftReversed.emit({"ok": False, "message": str(exc)})
+        """Reverse a finalized invoice without blocking the QML event loop."""
+        self._start_invoice_reversal_worker(
+            "reverse",
+            invoice_num,
+            source_pdf_path,
+            pdf_action,
+            target_dir,
+        )
 
     @Slot(str, str, str, str)
     def reverseAndEditInvoice(self, invoice_num, source_pdf_path, pdf_action, target_dir):
@@ -1146,6 +1247,140 @@ class BillingController(QObject):
         except Exception as exc:
             self.error.emit(f"Could not reverse and edit invoice: {exc}")
             self.draftReversed.emit({"ok": False, "message": str(exc)})
+
+    @Slot(str, str, str, str)
+    def correctAndReissueInvoice(self, invoice_num, source_pdf_path, pdf_action, target_dir):
+        """Return an erroneous unpaid invoice to WIP and reserve its number.
+
+        This is the user-facing correction flow.  The returned WIP may be
+        reassigned before a fresh draft is built; the builder then carries the
+        original invoice number forward automatically.
+        """
+        self._start_invoice_reversal_worker(
+            "correct_reissue",
+            invoice_num,
+            source_pdf_path,
+            pdf_action,
+            target_dir,
+        )
+
+    def _start_invoice_reversal_worker(
+        self,
+        action: str,
+        invoice_num: str,
+        source_pdf_path: str,
+        pdf_action: str,
+        target_dir: str,
+    ) -> None:
+        """Run the destructive invoice correction path off the UI thread."""
+        invoice = str(invoice_num or "").strip()
+        if not invoice:
+            self.error.emit("Select an invoice before starting a correction.")
+            return
+        if self._invoice_reversal_in_progress:
+            self.toast.emit("An invoice correction is already in progress. Please wait for it to finish.")
+            return
+
+        self._invoice_reversal_in_progress = True
+        self.invoiceReversalProgress.emit({
+            "active": True,
+            "action": action,
+            "invoiceNum": invoice,
+        })
+        worker = Worker(
+            self._run_invoice_reversal_operation,
+            action,
+            invoice,
+            str(source_pdf_path or ""),
+            str(pdf_action or "keep"),
+            str(target_dir or ""),
+            name=f"invoice-{action}",
+        )
+        worker.signals.result.connect(
+            partial(self._on_invoice_reversal_finished, worker, action, invoice)
+        )
+        worker.signals.error.connect(
+            partial(self._on_invoice_reversal_failed, worker, action, invoice)
+        )
+        self._start_worker(worker)
+
+    def _run_invoice_reversal_operation(
+        self,
+        action: str,
+        invoice_num: str,
+        source_pdf_path: str,
+        pdf_action: str,
+        target_dir: str,
+    ) -> Dict[str, Any]:
+        if action == "correct_reissue":
+            return dict(self._draft_svc.correct_invoice_for_reissue(
+                invoice_num,
+                source_pdf_path,
+                pdf_action,
+                target_dir,
+            ) or {})
+
+        self._draft_svc.reverse_invoice(
+            invoice_num,
+            source_pdf_path,
+            pdf_action,
+            target_dir,
+        )
+        return {}
+
+    def _on_invoice_reversal_finished(
+        self,
+        worker: Worker,
+        action: str,
+        invoice_num: str,
+        result: Any,
+    ) -> None:
+        try:
+            if action == "correct_reissue":
+                self.toast.emit(
+                    f"Invoice {invoice_num} is reserved for correction. "
+                    "Reassign its returned WIP if needed, then create a new draft."
+                )
+            else:
+                self.toast.emit(f"Invoice {invoice_num} reversed.")
+            payload = {"ok": True, "action": action, "invoiceNum": invoice_num}
+            payload.update(dict(result or {}))
+            self.draftReversed.emit(payload)
+        finally:
+            self._invoice_reversal_in_progress = False
+            self.invoiceReversalProgress.emit({
+                "active": False,
+                "action": action,
+                "invoiceNum": invoice_num,
+            })
+            self._release_worker(worker)
+
+    def _on_invoice_reversal_failed(
+        self,
+        worker: Worker,
+        action: str,
+        invoice_num: str,
+        err_tuple: tuple,
+    ) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            verb = "prepare invoice correction" if action == "correct_reissue" else "reverse invoice"
+            message = str(value or "The operation did not complete.")
+            self.error.emit(f"Could not {verb}: {message}")
+            self.draftReversed.emit({
+                "ok": False,
+                "action": action,
+                "invoiceNum": invoice_num,
+                "message": message,
+            })
+        finally:
+            self._invoice_reversal_in_progress = False
+            self.invoiceReversalProgress.emit({
+                "active": False,
+                "action": action,
+                "invoiceNum": invoice_num,
+            })
+            self._release_worker(worker)
 
     # ── HTML Preview ─────────────────────────────────────────────────────────
 
@@ -1741,6 +1976,9 @@ class BillingController(QObject):
 
     @Slot(str, str, result=str)
     def getFinalizedHtml(self, draft_num, final_invoice_num):
+        return self._get_finalized_html_impl(draft_num, final_invoice_num)
+
+    def _get_finalized_html_impl(self, draft_num, final_invoice_num):
         cache_key = f"{draft_num}_True_None"
         if cache_key in self._payload_cache:
             import copy
@@ -1756,6 +1994,44 @@ class BillingController(QObject):
         except Exception as e:
             self._logger.error(f"Could not rebuild payload for finalized HTML: {e}")
             return ""
+
+    @Slot(str, str)
+    def loadFinalizedInvoiceHtml(self, draft_num, final_invoice_num):
+        """Build finalized document HTML off the UI thread before PDF export."""
+        draft_num = str(draft_num)
+        final_invoice_num = str(final_invoice_num)
+        worker = Worker(
+            self._get_finalized_html_impl,
+            draft_num,
+            final_invoice_num,
+            name="loadFinalizedInvoiceHtml",
+        )
+        worker.signals.result.connect(
+            partial(self._on_finalized_invoice_html_ready, worker, draft_num, final_invoice_num)
+        )
+        worker.signals.error.connect(
+            partial(self._on_finalized_invoice_html_failed, worker, draft_num, final_invoice_num)
+        )
+        self._start_worker(worker)
+
+    def _on_finalized_invoice_html_ready(
+        self, worker: Worker, draft_num: str, final_invoice_num: str, html: Any
+    ) -> None:
+        try:
+            self.finalizedInvoiceHtmlReady.emit(draft_num, final_invoice_num, str(html or ""))
+        finally:
+            self._release_worker(worker)
+
+    def _on_finalized_invoice_html_failed(
+        self, worker: Worker, draft_num: str, final_invoice_num: str, err_tuple: tuple
+    ) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            message = f"Could not prepare finalized invoice: {value}"
+            self.error.emit(message)
+            self.finalizedInvoiceHtmlFailed.emit(draft_num, final_invoice_num, message)
+        finally:
+            self._release_worker(worker)
 
     @Slot(str, str, str)
 
@@ -1995,17 +2271,206 @@ class BillingController(QObject):
             self.error.emit(f"Could not list drafts: {exc}")
             return []
 
+    @Slot()
+    def loadDrafts(self):
+        """Load the draft list in a worker so refreshes do not block the workspace."""
+        worker = Worker(self.listDrafts, name="loadDrafts")
+        worker.signals.result.connect(partial(self._on_drafts_loaded, worker))
+        worker.signals.error.connect(partial(self._on_drafts_load_failed, worker))
+        self._start_worker(worker)
+
+    def _on_drafts_loaded(self, worker: Worker, result: Any) -> None:
+        try:
+            self.draftsLoaded.emit(list(result or []))
+        finally:
+            self._release_worker(worker)
+
+    def _on_drafts_load_failed(self, worker: Worker, err_tuple: tuple) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            self.error.emit(f"Could not load draft invoices: {value}")
+            self.draftsLoaded.emit([])
+        finally:
+            self._release_worker(worker)
+
     @Slot(result='QVariantList')
     def listFinalizedInvoices(self):
-        """List all finalized invoices from the invoice log."""
+        """List finalized invoices with their plain-English matter summary."""
         try:
-            from repositories.excel_repo import TBL_INVOICE_LOG
-            rows = self._excel_repo._read_table_rows(TBL_INVOICE_LOG)
-            # Make sure we map standard fields for generic list UI if needed
-            return [dict(r) for r in rows]
+            return self._list_finalized_invoices_impl()
         except Exception as exc:
             self.error.emit(f"Could not list finalized invoices: {exc}")
             return []
+
+    @Slot()
+    def loadFinalizedInvoices(self):
+        """Load the directory list in a worker so opening a tab paints immediately."""
+        if self._finalized_invoice_load_in_progress:
+            return
+        self._finalized_invoice_load_in_progress = True
+        worker = Worker(self._list_finalized_invoices_impl, name="loadFinalizedInvoices")
+        worker.signals.result.connect(partial(self._on_finalized_invoices_loaded, worker))
+        worker.signals.error.connect(partial(self._on_finalized_invoices_failed, worker))
+        self._start_worker(worker)
+
+    def _on_finalized_invoices_loaded(self, worker: Worker, result: Any) -> None:
+        try:
+            self.finalizedInvoicesLoaded.emit(list(result or []))
+        finally:
+            self._finalized_invoice_load_in_progress = False
+            self._release_worker(worker)
+
+    def _on_finalized_invoices_failed(self, worker: Worker, err_tuple: tuple) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            self.error.emit(f"Could not list finalized invoices: {value}")
+            self.finalizedInvoicesLoaded.emit([])
+        finally:
+            self._finalized_invoice_load_in_progress = False
+            self._release_worker(worker)
+
+    def _list_finalized_invoices_impl(self) -> List[Dict[str, Any]]:
+        from repositories.excel_repo import (
+            TBL_DISBURSEMENTS,
+            TBL_INVOICE_LOG,
+            TBL_MATTERS,
+            TBL_TIME,
+            TBL_TRANSACTIONS_MASTER,
+        )
+
+        tables = [
+            TBL_INVOICE_LOG,
+            TBL_TIME,
+            TBL_DISBURSEMENTS,
+            TBL_TRANSACTIONS_MASTER,
+            TBL_MATTERS,
+        ]
+        bulk_reader = getattr(self._excel_repo, "_read_table_rows_bulk", None)
+        if callable(bulk_reader):
+            table_rows = bulk_reader(tables)
+        else:
+            table_rows = {
+                table.table: self._excel_repo._read_table_rows(table)
+                for table in tables
+            }
+        rows = table_rows.get(TBL_INVOICE_LOG.table, [])
+        matter_descriptions = self._finalized_invoice_matter_descriptions(rows, table_rows)
+        result = []
+        for row in rows:
+            invoice = dict(row)
+            invoice_number = str(invoice.get(sc.COL_INV_INVOICE_NUM) or "").strip()
+            invoice["MatterDescription"] = matter_descriptions.get(invoice_number, "")
+            result.append(invoice)
+        return result
+
+    def _finalized_invoice_matter_descriptions(self, invoice_rows, table_rows=None):
+        """Return one concise matter description per finalized invoice.
+
+        The Invoice Log does not store a matter field.  Resolve it in one pass
+        from linked time, disbursement, and transaction rows, with the same
+        conservative single-matter fallback used by the invoice detail card.
+        """
+        from repositories.excel_repo import (
+            TBL_DISBURSEMENTS,
+            TBL_MATTERS,
+            TBL_TIME,
+            TBL_TRANSACTIONS_MASTER,
+        )
+
+        def text(value):
+            return str(value or "").strip()
+
+        def key(value):
+            return text(value).casefold()
+
+        matter_keys_by_invoice = {
+            text(row.get(sc.COL_INV_INVOICE_NUM)): []
+            for row in invoice_rows
+            if text(row.get(sc.COL_INV_INVOICE_NUM))
+        }
+        if not matter_keys_by_invoice:
+            return {}
+
+        def rows_for(table):
+            if table_rows is not None:
+                return table_rows.get(table.table, [])
+            return self._excel_repo._read_table_rows(table)
+
+        for row in rows_for(TBL_TIME):
+            invoice = text(row.get(sc.COL_TIME_INVOICE_REF))
+            matter = text(row.get(sc.COL_TIME_MATTER_ID))
+            if invoice in matter_keys_by_invoice and matter and matter not in matter_keys_by_invoice[invoice]:
+                matter_keys_by_invoice[invoice].append(matter)
+        for row in rows_for(TBL_DISBURSEMENTS):
+            invoice = text(row.get(sc.COL_DISB_INVOICE_REF))
+            matter = text(row.get(sc.COL_DISB_MATTER_ID))
+            if invoice in matter_keys_by_invoice and matter and matter not in matter_keys_by_invoice[invoice]:
+                matter_keys_by_invoice[invoice].append(matter)
+        for row in rows_for(TBL_TRANSACTIONS_MASTER):
+            invoice = text(row.get(sc.COL_TXN_INVOICE_REF))
+            matter = text(row.get(sc.COL_TXN_MATTER))
+            if invoice in matter_keys_by_invoice and matter and matter not in matter_keys_by_invoice[invoice]:
+                matter_keys_by_invoice[invoice].append(matter)
+
+        descriptions_by_matter_key = {}
+        matters_by_client = {}
+        for matter in rows_for(TBL_MATTERS):
+            description = text(
+                matter.get(sc.COL_MATTER_DESCRIPTION)
+                or matter.get(sc.COL_MATTER_NAME)
+                or matter.get(sc.COL_MATTER_DISPLAY_NAME)
+            )
+            if not description:
+                continue
+            for lookup in (
+                matter.get(sc.COL_MATTER_ID),
+                matter.get(sc.COL_MATTER_NUMBER),
+                matter.get(sc.COL_MATTER_NAME),
+                matter.get(sc.COL_MATTER_DISPLAY_NAME),
+            ):
+                lookup_key = key(lookup)
+                if lookup_key:
+                    descriptions_by_matter_key[lookup_key] = description
+            client_key = key(matter.get(sc.COL_MATTER_CLIENT_NAME))
+            if client_key:
+                matters_by_client.setdefault(client_key, []).append(
+                    (text(matter.get(sc.COL_MATTER_OPEN_DATE))[:10], description)
+                )
+
+        result = {}
+        for invoice in invoice_rows:
+            invoice_number = text(invoice.get(sc.COL_INV_INVOICE_NUM))
+            if not invoice_number:
+                continue
+            descriptions = []
+            for matter_key in matter_keys_by_invoice.get(invoice_number, set()):
+                description = descriptions_by_matter_key.get(key(matter_key), "")
+                if description and description.casefold() not in {
+                    existing.casefold() for existing in descriptions
+                }:
+                    descriptions.append(description)
+
+            # Some historic records have no linked time/disbursement rows. If
+            # the client has exactly one plausible matter, it is still useful
+            # to show that plain-English description in the directory.
+            if not descriptions:
+                client_key = key(
+                    invoice.get(sc.COL_INV_SUB_CLIENT)
+                    or invoice.get(sc.COL_INV_CLIENT_NAME)
+                    or invoice.get(sc.COL_INV_BILL_TO_CLIENT)
+                )
+                invoice_date = text(invoice.get(sc.COL_INV_INVOICE_DATE))[:10]
+                candidates = {
+                    description
+                    for opened, description in matters_by_client.get(client_key, [])
+                    if not invoice_date or not opened or opened <= invoice_date
+                }
+                if len(candidates) == 1:
+                    descriptions = list(candidates)
+
+            if descriptions:
+                result[invoice_number] = " · ".join(descriptions)
+        return result
 
     @Slot(str, result='QVariantMap')
     def getInvoiceSummary(self, invoiceNum):
@@ -2020,12 +2485,28 @@ class BillingController(QObject):
                 TBL_TRANSACTIONS_MASTER,
             )
             from domain import schema_constants as sc
-            invoice_log = self._excel_repo._read_table_rows(TBL_INVOICE_LOG)
-            receivables = self._excel_repo._read_table_rows(TBL_RECEIVABLES)
-            times = self._excel_repo._read_table_rows(TBL_TIME)
-            disbursements = self._excel_repo._read_table_rows(TBL_DISBURSEMENTS)
-            transactions = self._excel_repo._read_table_rows(TBL_TRANSACTIONS_MASTER)
-            matters = self._excel_repo._read_table_rows(TBL_MATTERS)
+            tables = [
+                TBL_INVOICE_LOG,
+                TBL_RECEIVABLES,
+                TBL_TIME,
+                TBL_DISBURSEMENTS,
+                TBL_TRANSACTIONS_MASTER,
+                TBL_MATTERS,
+            ]
+            bulk_reader = getattr(self._excel_repo, "_read_table_rows_bulk", None)
+            if callable(bulk_reader):
+                table_rows = bulk_reader(tables)
+            else:
+                table_rows = {
+                    table.table: self._excel_repo._read_table_rows(table)
+                    for table in tables
+                }
+            invoice_log = table_rows.get(TBL_INVOICE_LOG.table, [])
+            receivables = table_rows.get(TBL_RECEIVABLES.table, [])
+            times = table_rows.get(TBL_TIME.table, [])
+            disbursements = table_rows.get(TBL_DISBURSEMENTS.table, [])
+            transactions = table_rows.get(TBL_TRANSACTIONS_MASTER.table, [])
+            matters = table_rows.get(TBL_MATTERS.table, [])
             
             inv_row = {}
             for r in invoice_log:
@@ -2137,6 +2618,60 @@ class BillingController(QObject):
             self.error.emit(f"Could not get invoice summary: {exc}")
             return {}
 
+    @Slot(str)
+    def loadInvoiceDirectoryDetails(self, invoice_num):
+        """Load an invoice card and its payment history outside the UI thread."""
+        invoice = str(invoice_num or "").strip()
+        if not invoice or invoice in self._invoice_directory_detail_requests:
+            return
+        self._invoice_directory_detail_requests.add(invoice)
+        worker = Worker(
+            self._load_invoice_directory_details_impl,
+            invoice,
+            name="loadInvoiceDirectoryDetails",
+        )
+        worker.signals.result.connect(partial(self._on_invoice_directory_details_loaded, worker, invoice))
+        worker.signals.error.connect(partial(self._on_invoice_directory_details_failed, worker, invoice))
+        self._start_worker(worker)
+
+    def _load_invoice_directory_details_impl(self, invoice_num: str) -> Dict[str, Any]:
+        return {
+            "invoiceNum": invoice_num,
+            "summary": self.getInvoiceSummary(invoice_num),
+            "paymentHistory": self._excel_repo.list_invoice_payment_history(invoice_num),
+        }
+
+    def _on_invoice_directory_details_loaded(
+        self,
+        worker: Worker,
+        invoice_num: str,
+        result: Any,
+    ) -> None:
+        try:
+            payload = dict(result or {})
+            payload["invoiceNum"] = invoice_num
+            payload["summary"] = dict(payload.get("summary") or {})
+            payload["paymentHistory"] = list(payload.get("paymentHistory") or [])
+            self.invoiceDirectoryDetailsLoaded.emit(payload)
+        finally:
+            self._invoice_directory_detail_requests.discard(invoice_num)
+            self._release_worker(worker)
+
+    def _on_invoice_directory_details_failed(
+        self,
+        worker: Worker,
+        invoice_num: str,
+        err_tuple: tuple,
+    ) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            message = str(value or "Could not load invoice details.")
+            self.error.emit(f"Could not load invoice details: {message}")
+            self.invoiceDirectoryDetailsFailed.emit(invoice_num, message)
+        finally:
+            self._invoice_directory_detail_requests.discard(invoice_num)
+            self._release_worker(worker)
+
     @Slot(str, result='QVariantMap')
     def repairFinalizedInvoiceAmounts(self, invoice_num):
         """Repair one finalized invoice from its linked billed WIP entries."""
@@ -2216,6 +2751,28 @@ class BillingController(QObject):
 
             return "26-0001"
 
+    @Slot()
+    def loadNextInvoiceNumber(self):
+        """Find the next invoice number without holding up the Finalize dialog."""
+        worker = Worker(self.nextInvoiceNumber, name="loadNextInvoiceNumber")
+        worker.signals.result.connect(partial(self._on_next_invoice_number_loaded, worker))
+        worker.signals.error.connect(partial(self._on_next_invoice_number_failed, worker))
+        self._start_worker(worker)
+
+    def _on_next_invoice_number_loaded(self, worker: Worker, invoice_num: Any) -> None:
+        try:
+            self.nextInvoiceNumberLoaded.emit(str(invoice_num or ""))
+        finally:
+            self._release_worker(worker)
+
+    def _on_next_invoice_number_failed(self, worker: Worker, err_tuple: tuple) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            self.error.emit(f"Could not suggest the next invoice number: {value}")
+            self.nextInvoiceNumberLoaded.emit("")
+        finally:
+            self._release_worker(worker)
+
     @Slot(str, result=bool)
 
     def isInvoiceNumberUsed(self, invoice_num):
@@ -2224,44 +2781,63 @@ class BillingController(QObject):
 
         try:
 
-            from repositories.excel_repo import TBL_INVOICE_LOG, TBL_TIME
-
-            inv_clean = str(invoice_num).strip().lower()
-
-            
-
-            # Check invoice log
-
-            rows = self._excel_repo._read_table_rows(TBL_INVOICE_LOG)
-
-            for row in rows:
-
-                inv = str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().lower()
-
-                if inv == inv_clean:
-
-                    return True
-
-                    
-
-            # Check time entries
-
-            time_rows = self._excel_repo._read_table_rows(TBL_TIME)
-
-            for row in time_rows:
-
-                inv = str(row.get(sc.COL_TIME_INVOICE_REF) or "").strip().lower()
-
-                if inv == inv_clean:
-
-                    return True
-
-                    
-
-            return False
+            status = self._draft_svc.invoice_number_reuse_status(str(invoice_num))
+            return not bool(status.get("canUse"))
 
         except Exception as exc:
 
             logger.error("isInvoiceNumberUsed error: %s", exc, exc_info=True)
 
             return False
+
+    @Slot(str, result='QVariantMap')
+    def invoiceNumberReuseStatus(self, invoice_num):
+        """Return UI guidance for a normal or reclaimed invoice number."""
+        try:
+            return self._draft_svc.invoice_number_reuse_status(str(invoice_num))
+        except Exception as exc:
+            logger.error("invoiceNumberReuseStatus error: %s", exc, exc_info=True)
+            return {
+                "state": "used",
+                "canUse": False,
+                "message": f"Could not verify invoice number: {exc}",
+            }
+
+    @Slot(str)
+    def loadInvoiceNumberReuseStatus(self, invoice_num):
+        """Validate an invoice number in a worker before opening the PDF save dialog."""
+        invoice_num = str(invoice_num)
+        worker = Worker(
+            self.invoiceNumberReuseStatus,
+            invoice_num,
+            name="loadInvoiceNumberReuseStatus",
+        )
+        worker.signals.result.connect(
+            partial(self._on_invoice_number_reuse_status_loaded, worker, invoice_num)
+        )
+        worker.signals.error.connect(
+            partial(self._on_invoice_number_reuse_status_failed, worker, invoice_num)
+        )
+        self._start_worker(worker)
+
+    def _on_invoice_number_reuse_status_loaded(
+        self, worker: Worker, invoice_num: str, result: Any
+    ) -> None:
+        try:
+            self.invoiceNumberReuseStatusLoaded.emit(invoice_num, dict(result or {}))
+        finally:
+            self._release_worker(worker)
+
+    def _on_invoice_number_reuse_status_failed(
+        self, worker: Worker, invoice_num: str, err_tuple: tuple
+    ) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            message = f"Could not verify invoice number: {value}"
+            self.error.emit(message)
+            self.invoiceNumberReuseStatusLoaded.emit(
+                invoice_num,
+                {"state": "used", "canUse": False, "message": message},
+            )
+        finally:
+            self._release_worker(worker)

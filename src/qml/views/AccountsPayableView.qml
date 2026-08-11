@@ -18,6 +18,7 @@ Item {
     property var t
     property var metrics
     property var appRef
+    property var startupState: null
     property string appStyle: (root.appRef && root.appRef.appStyle) ? String(root.appRef.appStyle) : "Professional"
     property bool isProMode: root.appStyle === "Professional"
 
@@ -53,6 +54,11 @@ Item {
     property string detailRequest: ""
     property var activePaymentChoices: []
     property var selectedReversalPayment: null
+    property var recordedSetoffPayment: null
+    property string requestedSettlementBillId: ""
+    property string requestedSettlementPaymentId: ""
+    property string appliedSettlementPaymentId: ""
+    readonly property bool viewingRecordedSetoff: root.recordedSetoffPayment !== null
     readonly property real billColumnMargin: 12
     readonly property real billColumnSpacing: 8
     readonly property real billDueColumnWidth: 96
@@ -298,6 +304,77 @@ Item {
         return prefix + "-" + Date.now().toString()
     }
 
+    function _setoffAllocationsFromPayment(payment) {
+        var marker = "CSPM_SET_OFF_ALLOCATIONS_V1:"
+        var lines = String(payment && payment.Notes ? payment.Notes : "").split("\n")
+        for (var index = 0; index < lines.length; index++) {
+            var line = String(lines[index] || "")
+            if (line.indexOf(marker) !== 0)
+                continue
+            try {
+                var raw = JSON.parse(line.slice(marker.length))
+                var rows = []
+                for (var allocationIndex = 0; allocationIndex < raw.length; allocationIndex++) {
+                    var allocation = raw[allocationIndex] || {}
+                    var invoice = String(allocation.invoice || allocation.InvoiceID || "").trim()
+                    var amount = Number(allocation.amount !== undefined ? allocation.amount : allocation.Amount)
+                    if (invoice.length > 0 && isFinite(amount) && amount > 0)
+                        rows.push({ "invoice": invoice, "amount": amount, "balance": amount })
+                }
+                return rows
+            } catch (error) {
+                console.warn("[AP] recorded set-off allocation evidence could not be read", error)
+                return []
+            }
+        }
+        return []
+    }
+
+    function _showRecordedSetoff(payment) {
+        if (!payment) return
+        root.recordedSetoffPayment = payment
+        root.paymentMode = true
+        root.entryPanelVisible = true
+        paymentDateField.text = String(payment.PaymentDate || "")
+        paymentAmountField.text = root.apMoney(payment.Amount)
+        paymentMethodField.currentIndex = paymentMethodField.find("Set-off")
+        paymentReferenceField.text = String(payment.Reference || "")
+        paymentNotesField.text = String(payment.Notes || "").split("CSPM_SET_OFF_ALLOCATIONS_V1:", 1)[0].replace(/\s+$/, "")
+        root.selectedPaymentAccountId = "AR_SET_OFF"
+        root.setoffAllocationRows = root._setoffAllocationsFromPayment(payment)
+        root.statusMessage = "Recorded A/R–A/P settlement set-off. No bank account was used. To correct it, reverse the set-off and record a corrected replacement."
+        root.errorState = false
+    }
+
+    function applyStartupState(state) {
+        if (!state || typeof state !== "object") return
+        var billId = String(state.apBillId || "").trim()
+        var paymentId = String(state.apPaymentId || state.entityId || "").trim()
+        if (!billId || !paymentId || root.billRows.length === 0) return
+        if (root.appliedSettlementPaymentId === paymentId) return
+        var bill = null
+        for (var index = 0; index < root.billRows.length; index++) {
+            var candidate = root.billRows[index] || {}
+            if (String(candidate.APBillID || "").trim() === billId) {
+                bill = candidate
+                break
+            }
+        }
+        if (!bill) {
+            root.errorState = true
+            root.statusMessage = "The requested settlement A/P bill was not found."
+            return
+        }
+        root.requestedSettlementBillId = billId
+        root.requestedSettlementPaymentId = paymentId
+        root.appliedSettlementPaymentId = paymentId
+        root.contextBill = bill
+        root.selectBill(bill)
+        root.paymentMode = true
+        root.entryPanelVisible = true
+        root.requestBillDetails(bill, "setoff_detail")
+    }
+
     function moneyText(value) {
         var number = Number(value || 0)
         return isFinite(number) ? "$" + number.toFixed(2) : "$0.00"
@@ -442,6 +519,11 @@ Item {
     }
 
     function savePayment() {
+        if (root.viewingRecordedSetoff) {
+            root.errorState = true
+            root.statusMessage = "Posted set-offs are corrected by reversal and replacement, not by editing their audit evidence in place."
+            return
+        }
         if (!root.selectedBill) {
             root.errorState = true
             root.statusMessage = "Select a bill before recording a payment."
@@ -645,6 +727,7 @@ Item {
 
     function selectBill(row) {
         root.selectedBill = row
+        root.recordedSetoffPayment = null
         paymentAmountField.text = Number(row.Balance || 0).toFixed(2)
         root.clearSetoffAllocations()
         root.statusMessage = ""
@@ -793,7 +876,10 @@ Item {
         paymentDateField.text = root.todayText()
         root.loadSetupLists()
         root.loadBills()
+        Qt.callLater(function() { root.applyStartupState(root.startupState) })
     }
+
+    onStartupStateChanged: Qt.callLater(function() { root.applyStartupState(root.startupState) })
 
     Connections {
         target: root.apController
@@ -818,6 +904,7 @@ Item {
             }
             console.log("[AP] reload completed", root.operationVersion, "rows=", root.billRows.length,
                         "error=", root.errorState, "status=", root.statusMessage)
+            root.applyStartupState(root.startupState)
         }
 
         function onApSaveFinished(result) {
@@ -855,6 +942,23 @@ Item {
             }
             if (root.detailRequest === "edit") {
                 root.populateEditForm(details)
+            } else if (root.detailRequest === "setoff_detail") {
+                root.activePaymentChoices = details.activePayments || []
+                var wanted = String(root.requestedSettlementPaymentId || "")
+                var payment = null
+                for (var index = 0; index < root.activePaymentChoices.length; index++) {
+                    var candidate = root.activePaymentChoices[index] || {}
+                    if (String(candidate.APPaymentID || "") === wanted) {
+                        payment = candidate
+                        break
+                    }
+                }
+                if (!payment) {
+                    root.errorState = true
+                    root.statusMessage = "The requested settlement set-off payment was not found."
+                } else {
+                    root._showRecordedSetoff(payment)
+                }
             } else if (root.detailRequest === "reverse_payment") {
                 root.activePaymentChoices = details.activePayments || []
                 root.selectedReversalPayment = root.activePaymentChoices.length > 0
@@ -2116,6 +2220,7 @@ Item {
                                 FormField {
                                         id: paymentDateField
                                         placeholderText: "YYYY-MM-DD"
+                                        readOnly: root.viewingRecordedSetoff
                                         MouseArea {
                                             anchors.fill: parent
                                             acceptedButtons: Qt.LeftButton
@@ -2126,7 +2231,7 @@ Item {
                                     }
 
                                 FormLabel { text: "Amount *" }
-                                FormField { id: paymentAmountField; placeholderText: "0.00" }
+                                FormField { id: paymentAmountField; placeholderText: "0.00"; readOnly: root.viewingRecordedSetoff }
 
                                 FormLabel {
                                     visible: !root.isSetoffMethod()
@@ -2135,6 +2240,7 @@ Item {
                                 SearchSelector {
                                     id: paymentAccountField
                                     visible: !root.isSetoffMethod()
+                                    enabled: !root.viewingRecordedSetoff
                                     allowBlank: false
                                     allOptions: root.paymentAccountOptions
                                     searchHint: "Select or search accounts"
@@ -2159,12 +2265,14 @@ Item {
                                     id: paymentMethodField
                                     objectName: "apPaymentMethodCombo"
                                     model: ["EFT", "Cheque", "Credit card", "Debit card", "Pre-authorized debit", "Cash", "Wire transfer", "Internal transfer", "Set-off", "Owner-paid", "Other"]
+                                    enabled: !root.viewingRecordedSetoff
                                 }
 
                                 FormLabel { text: root.isSetoffMethod() ? "Settlement / set-off reference *" : "Reference" }
                                 FormField {
                                     id: paymentReferenceField
                                     placeholderText: root.isSetoffMethod() ? "Settlement reference or agreement date" : "Confirmation or cheque number"
+                                    readOnly: root.viewingRecordedSetoff
                                 }
 
                                 FormLabel {
@@ -2174,12 +2282,16 @@ Item {
                                 Button {
                                     id: chooseSetoffReceivablesButton
                                     visible: root.isSetoffMethod()
+                                    enabled: !root.viewingRecordedSetoff
                                     Layout.fillWidth: true
                                     implicitHeight: 34
-                                    text: root.setoffAllocationRows.length > 0
+                                    text: root.viewingRecordedSetoff
+                                        ? root.setoffAllocationRows.length + " recorded receivable allocation"
+                                            + (root.setoffAllocationRows.length === 1 ? "" : "s")
+                                        : (root.setoffAllocationRows.length > 0
                                         ? "Review " + root.setoffAllocationRows.length + " selected receivable"
                                             + (root.setoffAllocationRows.length === 1 ? "" : "s")
-                                        : "Choose receivables to set off"
+                                        : "Choose receivables to set off")
                                     onClicked: root.openSetoffAllocationWorkflow()
                                 }
 
@@ -2199,11 +2311,33 @@ Item {
                                     wrapMode: Text.Wrap
                                 }
 
+                                Repeater {
+                                    visible: root.viewingRecordedSetoff && root.setoffAllocationRows.length > 0
+                                    model: root.setoffAllocationRows
+                                    delegate: RowLayout {
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: String(modelData.invoice || "")
+                                            color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
+                                            elide: Text.ElideRight
+                                        }
+                                        Label {
+                                            text: root.moneyText(modelData.amount)
+                                            color: root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : "#285C37"
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+                                }
+
                                 FormLabel { text: "Notes" }
                                 TextArea {
                                     id: paymentNotesField
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 72
+                                    readOnly: root.viewingRecordedSetoff
                                     color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
                                     wrapMode: TextEdit.Wrap
                                     padding: 9
@@ -2226,8 +2360,18 @@ Item {
                                 }
 
                                 Button {
+                                    visible: root.paymentMode && root.viewingRecordedSetoff
                                     Layout.fillWidth: true
                                     implicitHeight: 34
+                                    enabled: !root.busy && root.selectedBill
+                                    text: "Reverse set-off…"
+                                    onClicked: root.openPaymentReversal(root.selectedBill)
+                                }
+
+                                Button {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 34
+                                    visible: !root.viewingRecordedSetoff
                                     enabled: !root.busy && (!root.paymentMode || root.selectedBill)
                                     text: root.busy ? "Working..." : (root.paymentMode
                                         ? "Record payment"

@@ -1080,6 +1080,9 @@ Item {
     function option3OpenWorkspace(moduleData, item, params) {
         if (!moduleData || !item) return false
 
+        var perfKey = "workspace-open-" + String(Date.now()) + "-" + String(item.tileIndex || "")
+        root.perfStart(perfKey, "tile=" + String(item.tileIndex || "")
+            + " node=" + String(item.nodeId || item.id || ""))
         var wasSuspended = root.option3SuspendTabMutation
         root.option3SuspendTabMutation = true
         try {
@@ -1110,7 +1113,7 @@ Item {
                     incomingState.focusNodeTitle = String(item.label || item.title || "")
                 }
     
-                if (tabParams.activate !== false) {
+                if (tabParams.activate !== false && !tabParams.deferTabStateUntilActivated) {
                     // This must happen BEFORE tab activation, otherwise the old B01/Yoo state
                     // can be snapshotted and re-applied during activation.
                     root.applyStateToTile(idx, incomingState)
@@ -1172,6 +1175,7 @@ Item {
             return true
         } finally {
             root.option3SuspendTabMutation = wasSuspended
+            root.perfEnd(perfKey, "activeTile=" + String(root.activeTileIndex))
         }
     }
 
@@ -1200,7 +1204,13 @@ Item {
             targetState.focusNodeId = effectiveNodeId
         }
 
-        if (targetState && typeof targetState === "object") {
+        // Option 3 owns its own pre-activation state handoff in
+        // option3OpenWorkspace().  Applying it here as well made a routed
+        // workspace restore run two to five times, and each live panel may
+        // refresh its data during applyInitialState().
+        if (targetState && typeof targetState === "object"
+                && !root.option3ShellEnabled
+                && !targetState.deferTabStateUntilActivated) {
             root.applyStateToTile(idx, targetState)
         }
 
@@ -1220,7 +1230,7 @@ Item {
             result = root.launchTileFromHome(idx, null)
         }
 
-        if (targetState && typeof targetState === "object") {
+        if (targetState && typeof targetState === "object" && !root.option3ShellEnabled) {
             Qt.callLater(function() {
                 root.applyStateToTile(idx, targetState)
                 root.focusShellWindow()

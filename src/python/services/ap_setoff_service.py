@@ -18,7 +18,7 @@ from domain.ap_schema import (
 from repositories.ap_workbook_repository import _read_rows, _replace_rows
 from repositories.excel_repo import (
     TBL_LEDGER, TBL_RECEIVABLES, TBL_TIME, TBL_TRANSACTION_ACCOUNTS,
-    TBL_TRANSACTIONS_MASTER, with_db_lock,
+    TBL_TRANSACTION_CATEGORIES, TBL_TRANSACTIONS_MASTER, with_db_lock,
 )
 
 
@@ -26,6 +26,8 @@ SETOFF_ACCOUNT = "AR_SET_OFF"
 SETOFF_ACCOUNT_NAME = "Accounts Receivable - Set-off"
 SETOFF_METHOD = "Set-off"
 ALLOCATION_MARKER = "CSPM_SET_OFF_ALLOCATIONS_V1:"
+SETOFF_CATEGORY_CODE = "AP_SET_OFF"
+SETOFF_CATEGORY_NAME = "Settlement set-off"
 
 
 def _amount(value: Any, field: str = "amount") -> Decimal:
@@ -160,6 +162,293 @@ class APSetoffService:
             sc.COL_TXN_ACCOUNT_ACTIVE: 1,
             sc.COL_TXN_ACCOUNT_ALIASES: "A/R set-off; set-off clearing",
         })
+
+    @staticmethod
+    def _ensure_setoff_category(rows: list[dict[str, Any]]) -> None:
+        """Expose reconstructed historical allocations without a bank category."""
+
+        if any(
+            clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_CODE)).casefold()
+            == SETOFF_CATEGORY_CODE.casefold()
+            for row in rows
+        ):
+            return
+        rows.append({
+            sc.COL_TXN_CATEGORY_LKP_CODE: SETOFF_CATEGORY_CODE,
+            sc.COL_TXN_CATEGORY_LKP_NAME: SETOFF_CATEGORY_NAME,
+            sc.COL_TXN_CATEGORY_LKP_TYPE: "Transfer",
+            sc.COL_TXN_CATEGORY_LKP_CLASS_SCOPE: "Business",
+            sc.COL_TXN_CATEGORY_LKP_TAX_FLAG_DEFAULT: "None",
+            sc.COL_TXN_CATEGORY_LKP_BILLABLE_ALLOWED: 0,
+            sc.COL_TXN_CATEGORY_LKP_MEDICAL_ELIGIBLE: 0,
+            sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_ELIGIBLE: 0,
+            sc.COL_TXN_CATEGORY_LKP_BUSINESS_DEDUCTIBLE_ELIGIBLE: 0,
+            sc.COL_TXN_CATEGORY_LKP_ACTIVE: 1,
+            sc.COL_TXN_CATEGORY_LKP_SORT_ORDER: 9999,
+            sc.COL_TXN_CATEGORY_LKP_NOTES: "Non-cash A/R to A/P settlement set-off.",
+        })
+
+    @with_db_lock
+    def reconstruct_historic_setoff(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Restore one legacy set-off where receivables were imported but A/P was not.
+
+        This is deliberately narrower than :meth:`record`: it verifies that
+        each receivable already reflects the supplied allocation, then creates
+        the missing governed A/P payment and ledger evidence without applying
+        the allocation a second time.  The supplied legacy transaction rows
+        are converted from false bank transfers into explicit A/R--A/P
+        clearing transfers so no CIBC/AMEX/merchant details remain.
+        """
+
+        self.repo.ensure_schema()
+        data = dict(payload or {})
+        bill_id = clean_text(data.get("APBillID"))
+        payment_id = clean_text(data.get("APPaymentID"))
+        reference = clean_text(data.get("Reference"))
+        payment_date = clean_text(data.get("PaymentDate"))
+        amount = _amount(data.get("Amount"), "set-off amount")
+        allocations = self._allocations(data)
+        legacy_ids = [clean_text(value) for value in list(data.get("LegacyTransactionIDs") or [])]
+        legacy_ids = [value for value in legacy_ids if value]
+        if not bill_id or not payment_id or not reference:
+            raise APValidationError("A/P bill, set-off payment ID, and reference are required.")
+        if not legacy_ids or len(set(ident.casefold() for ident in legacy_ids)) != len(legacy_ids):
+            raise APValidationError("Each reconstructed set-off needs one unique legacy transaction ID per allocation.")
+        if len(legacy_ids) != len(allocations):
+            raise APValidationError("Each reconstructed set-off allocation must name its legacy transaction ID.")
+        if amount <= 0 or sum(item["amount"] for item in allocations) != amount:
+            raise APValidationError("Set-off allocations must total the A/P payment amount exactly.")
+        try:
+            date.fromisoformat(payment_date)
+        except Exception as exc:
+            raise APValidationError("Set-off date must be YYYY-MM-DD.") from exc
+
+        path = self.repo.paths.workbook_path()
+        wb = load_workbook(path, keep_vba=True, data_only=False)
+        saved = False
+        try:
+            bills = _read_rows(wb, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS)
+            payments = _read_rows(wb, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS)
+            receivables = self._read_finance(wb, TBL_RECEIVABLES)
+            ledger = self._read_finance(wb, TBL_LEDGER)
+            transactions = self._read_finance(wb, TBL_TRANSACTIONS_MASTER)
+            accounts = self._read_finance(wb, TBL_TRANSACTION_ACCOUNTS)
+            categories = self._read_finance(wb, TBL_TRANSACTION_CATEGORIES)
+
+            if self._find(payments, "APPaymentID", payment_id):
+                raise APValidationError(f"Duplicate A/P payment ID: {payment_id}")
+            bill = self._find(bills, "APBillID", bill_id)
+            if not bill:
+                raise APValidationError("Selected A/P bill was not found.")
+            if clean_text(bill.get("Status")).casefold() not in {"unpaid", "draft"}:
+                raise APValidationError("The settlement A/P bill has already been posted or cannot be reconstructed.")
+            if _amount(bill.get("AmountPaid"), "A/P bill amount paid") != Decimal("0.00"):
+                raise APValidationError("The settlement A/P bill already has payment activity.")
+            if _amount(bill.get("Total"), "A/P bill total") != amount:
+                raise APValidationError("The supplied set-off amount does not equal the settlement A/P bill total.")
+            linked_txn = self._find(transactions, sc.COL_TXN_ID, bill.get("ExpenseTransactionID"))
+            if not linked_txn:
+                raise APValidationError("The settlement A/P bill has no linked expense transaction to clear.")
+
+            transaction_by_id = {
+                clean_text(row.get(sc.COL_TXN_ID)).casefold(): row for row in transactions
+            }
+            receivable_by_invoice = {
+                clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold(): row for row in receivables
+            }
+            for allocation, legacy_id in zip(allocations, legacy_ids):
+                receivable = receivable_by_invoice.get(allocation["invoice"].casefold())
+                if not receivable:
+                    raise APValidationError(f"Invoice {allocation['invoice']} is missing from receivables.")
+                # These receivables were already reduced by the legacy import.
+                # Requiring an exact match prevents this repair from silently
+                # combining an unrelated receipt with a settlement allocation.
+                if _amount(receivable.get(sc.COL_RECV_AMOUNT_PAID), "invoice amount paid") != allocation["amount"]:
+                    raise APValidationError(
+                        f"Invoice {allocation['invoice']} does not have the expected historic set-off amount."
+                    )
+                legacy = transaction_by_id.get(legacy_id.casefold())
+                if not legacy:
+                    raise APValidationError(f"Legacy transaction {legacy_id} was not found.")
+                if clean_text(legacy.get(sc.COL_TXN_INVOICE_REF)).casefold() != allocation["invoice"].casefold():
+                    raise APValidationError(f"Legacy transaction {legacy_id} does not belong to invoice {allocation['invoice']}.")
+                if _amount(legacy.get(sc.COL_TXN_AMOUNT), "legacy transaction amount") != allocation["amount"]:
+                    raise APValidationError(f"Legacy transaction {legacy_id} does not match its set-off allocation amount.")
+                if clean_text(legacy.get(sc.COL_TXN_TYPE)).casefold() != "transfer" or "set-off" not in clean_text(legacy.get(sc.COL_TXN_NOTES)).casefold():
+                    raise APValidationError(f"Legacy transaction {legacy_id} is not a recognized historic set-off transfer.")
+
+            allocation_json = json.dumps(
+                [{"invoice": item["invoice"], "amount": float(item["amount"])} for item in allocations],
+                separators=(",", ":"),
+            )
+            payment_notes = self._note(
+                clean_text(data.get("Notes")),
+                ALLOCATION_MARKER + allocation_json,
+            )
+            payments.append({
+                "APPaymentID": payment_id, "APBillID": bill_id, "PaymentDate": payment_date,
+                "Amount": float(amount), "FromAccount": SETOFF_ACCOUNT, "Method": SETOFF_METHOD,
+                "Reference": reference, "Status": "Posted", "ReversalOfPaymentID": "",
+                "ReversalReason": "", "Notes": payment_notes, "CreatedAt": _stamp(), "UpdatedAt": _stamp(),
+            })
+            snapshot = build_bill_snapshot(
+                bill_id=bill.get("APBillID"), vendor=bill.get("Vendor"),
+                vendor_invoice_number=bill.get("VendorInvoiceNumber"), invoice_date=bill.get("InvoiceDate"),
+                subtotal=bill.get("Subtotal"), tax_amount=bill.get("TaxAmount"),
+                payments=self._payment_lifecycle([
+                    row for row in payments
+                    if clean_text(row.get("APBillID")).casefold() == bill_id.casefold()
+                ]),
+            )
+            bill.update({
+                "AmountPaid": float(snapshot.total_paid), "Balance": float(snapshot.balance),
+                "Status": snapshot.status.value, "UpdatedAt": _stamp(),
+            })
+            for index, allocation in enumerate(allocations, start=1):
+                receivable = receivable_by_invoice[allocation["invoice"].casefold()]
+                ledger.append({
+                    sc.COL_LEDGER_ID: f"LED-SET-{payment_id}-{index}", sc.COL_LEDGER_DATE: payment_date,
+                    sc.COL_LEDGER_CLIENT_VENDOR: receivable.get(sc.COL_RECV_CLIENT, ""),
+                    sc.COL_LEDGER_DESCRIPTION: f"Set-off applied to invoice {allocation['invoice']} (A/P {bill_id})",
+                    sc.COL_LEDGER_CATEGORY: SETOFF_METHOD, sc.COL_LEDGER_REFERENCE: allocation["invoice"],
+                    sc.COL_LEDGER_BILLINGS_EXCL_HST: 0.0, sc.COL_LEDGER_HST_COLLECTED: 0.0,
+                    sc.COL_LEDGER_EXPENSES_EXCL_HST: 0.0, sc.COL_LEDGER_HST_PAID: 0.0,
+                    sc.COL_LEDGER_COLLECTED: float(allocation["amount"]), sc.COL_LEDGER_WRITE_OFF: 0.0,
+                    sc.COL_LEDGER_RECEIVABLE: -float(allocation["amount"]), sc.COL_LEDGER_TRX_ID: payment_id,
+                    sc.COL_LEDGER_EXTERNAL_REF_ID: payment_id, sc.COL_LEDGER_ORIGINAL_AMOUNT: float(allocation["amount"]),
+                    sc.COL_LEDGER_WORK_CLIENT: receivable.get(sc.COL_RECV_WORK_CLIENT, ""), sc.COL_LEDGER_CREATED_AT: _stamp(),
+                })
+                legacy = transaction_by_id[legacy_ids[index - 1].casefold()]
+                legacy.update({
+                    sc.COL_TXN_FROM_ACCOUNT: SETOFF_ACCOUNT,
+                    sc.COL_TXN_TO_ACCOUNT: "AP_PAYABLE",
+                    sc.COL_TXN_PAYEE: clean_text(bill.get("Vendor")),
+                    sc.COL_TXN_CATEGORY_CODE: SETOFF_CATEGORY_CODE,
+                    sc.COL_TXN_CATEGORY_NAME: SETOFF_CATEGORY_NAME,
+                    sc.COL_TXN_TAX_AMOUNT: 0.0,
+                    sc.COL_TXN_TAX_FLAG: "None",
+                    sc.COL_TXN_HST_EXEMPT: 1,
+                    sc.COL_TXN_GENERAL_OFFICE_EXPENSE: 0,
+                    sc.COL_TXN_NOTES: (
+                        f"Set-off allocation for invoice {allocation['invoice']} against "
+                        f"LIHDC settlement {payment_id}. No bank movement."
+                    ),
+                    sc.COL_TXN_STATUS: "Cleared",
+                    sc.COL_TXN_CLEARED_AT: payment_date,
+                    sc.COL_TXN_UPDATED_AT: _stamp(),
+                })
+            linked_txn[sc.COL_TXN_FROM_ACCOUNT] = SETOFF_ACCOUNT
+            linked_txn[sc.COL_TXN_STATUS] = "Cleared"
+            linked_txn[sc.COL_TXN_CLEARED_AT] = payment_date
+            linked_txn[sc.COL_TXN_NOTES] = self._note(
+                linked_txn.get(sc.COL_TXN_NOTES), f"Set-off {payment_id}: {reference}"
+            )
+            linked_txn[sc.COL_TXN_UPDATED_AT] = _stamp()
+            self._ensure_setoff_account(accounts)
+            self._ensure_setoff_category(categories)
+            _replace_rows(wb, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
+            _replace_rows(wb, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
+            for tref, rows in (
+                (TBL_LEDGER, ledger), (TBL_TRANSACTIONS_MASTER, transactions),
+                (TBL_TRANSACTION_ACCOUNTS, accounts), (TBL_TRANSACTION_CATEGORIES, categories),
+            ):
+                self._write_finance(wb, tref, rows)
+            self.repo._safe_save(wb, path)
+            saved = True
+        finally:
+            if not saved:
+                self.repo._close_workbook(wb)
+        return {
+            "ok": True, "APPaymentID": payment_id, "APBillID": bill_id,
+            "allocationCount": len(allocations),
+            "message": "Historic settlement set-off was reconstructed across A/P, ledger, and transaction records.",
+        }
+
+    @with_db_lock
+    def retire_superseded_historic_settlement_expense(
+        self,
+        bill_id: str,
+        payment_id: str,
+        legacy_transaction_id: str,
+    ) -> dict[str, Any]:
+        """Void an imported bank-labelled settlement expense superseded by A/P.
+
+        The governed A/P bill is the sole expense authority once its set-off
+        payment exists. Keeping the old imported expense active would both
+        display fictitious banking details and double-count the settlement.
+        """
+
+        self.repo.ensure_schema()
+        bill_id = clean_text(bill_id)
+        payment_id = clean_text(payment_id)
+        legacy_transaction_id = clean_text(legacy_transaction_id)
+        if not bill_id or not payment_id or not legacy_transaction_id:
+            raise APValidationError("Settlement bill, payment, and legacy transaction IDs are required.")
+        path = self.repo.paths.workbook_path()
+        wb = load_workbook(path, keep_vba=True, data_only=False)
+        saved = False
+        try:
+            bills = _read_rows(wb, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS)
+            payments = _read_rows(wb, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS)
+            transactions = self._read_finance(wb, TBL_TRANSACTIONS_MASTER)
+            bill = self._find(bills, "APBillID", bill_id)
+            payment = self._find(payments, "APPaymentID", payment_id)
+            legacy = self._find(transactions, sc.COL_TXN_ID, legacy_transaction_id)
+            if not bill or not payment or not legacy:
+                raise APValidationError("The governed LIHDC settlement evidence is incomplete.")
+            if clean_text(payment.get("APBillID")).casefold() != bill_id.casefold():
+                raise APValidationError("The supplied set-off payment belongs to a different A/P bill.")
+            if clean_text(payment.get("Method")).casefold() != SETOFF_METHOD.casefold():
+                raise APValidationError("The supplied A/P payment is not a set-off.")
+            if clean_text(bill.get("Status")).casefold() != "paid":
+                raise APValidationError("The governed settlement A/P bill is not posted as paid.")
+            existing_reason = clean_text(legacy.get(sc.COL_TXN_VOID_REASON))
+            if (
+                clean_text(legacy.get(sc.COL_TXN_STATUS)).casefold() == "void"
+                and payment_id.casefold() in existing_reason.casefold()
+            ):
+                return {
+                    "ok": True, "transactionId": legacy_transaction_id,
+                    "message": "Superseded historic settlement expense was already voided.",
+                }
+            legacy_note = clean_text(legacy.get(sc.COL_TXN_NOTES)).casefold()
+            legacy_invoice_ref = clean_text(legacy.get(sc.COL_TXN_INVOICE_REF)).casefold()
+            if "settlement" not in legacy_note and "settlement" not in legacy_invoice_ref:
+                raise APValidationError("Legacy transaction is not identified as the settlement expense.")
+            legacy.update({
+                sc.COL_TXN_TYPE: "Expense",
+                sc.COL_TXN_FROM_ACCOUNT: SETOFF_ACCOUNT,
+                sc.COL_TXN_TO_ACCOUNT: "",
+                sc.COL_TXN_PAYEE: clean_text(bill.get("Vendor")),
+                sc.COL_TXN_PARENT: "",
+                sc.COL_TXN_CLIENT: "",
+                sc.COL_TXN_MATTER: "",
+                sc.COL_TXN_CATEGORY_CODE: clean_text(bill.get("CategoryCode")) or "EXP_LEGAL_FEES",
+                sc.COL_TXN_CATEGORY_NAME: clean_text(bill.get("CategoryName")) or "Legal Fees Expense",
+                sc.COL_TXN_TAX_FLAG: "Business Deductible",
+                sc.COL_TXN_HST_EXEMPT: 0,
+                sc.COL_TXN_GENERAL_OFFICE_EXPENSE: 1,
+                sc.COL_TXN_STATUS: "Void",
+                sc.COL_TXN_VOID_REASON: (
+                    f"Superseded by governed LIHDC settlement A/P bill {bill_id} "
+                    f"and set-off payment {payment_id}; no bank movement."
+                ),
+                sc.COL_TXN_NOTES: (
+                    f"Historic settlement expense superseded by {payment_id}. "
+                    "No bank movement; use the governed A/P settlement record."
+                ),
+                sc.COL_TXN_UPDATED_AT: _stamp(),
+            })
+            self._write_finance(wb, TBL_TRANSACTIONS_MASTER, transactions)
+            self.repo._safe_save(wb, path)
+            saved = True
+        finally:
+            if not saved:
+                self.repo._close_workbook(wb)
+        return {
+            "ok": True, "transactionId": legacy_transaction_id,
+            "message": "Superseded historic settlement expense was voided in favour of governed A/P evidence.",
+        }
 
     @with_db_lock
     def record(self, payload: Mapping[str, Any]) -> dict[str, Any]:

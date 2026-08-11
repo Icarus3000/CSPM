@@ -698,6 +698,7 @@ Item {
         var label = _safeText(labelText).trim().toLowerCase()
         if (label === "all statuses") return "all"
         if (label === "all (except merged)") return "all_except_merged"
+        if (label === "unbilled wip") return "unbilled_wip"
         if (label === "ready for billing") return "ready_for_billing"
         if (label === "draft") return "draft"
         if (label === "billed") return "billed"
@@ -708,6 +709,7 @@ Item {
         var value = _safeText(statusValue).trim().toLowerCase()
         if (value === "all" || value === "all_statuses") return "All Statuses"
         if (value === "all_except_merged") return "All (Except Merged)"
+        if (value === "unbilled_wip" || value === "unbilled_work") return "Unbilled WIP"
         if (value === "ready_for_billing" || value === "ready") return "Ready for Billing"
         if (value === "draft" || value === "draft_only" || value === "open" || value === "unbilled") return "Draft"
         if (value === "billed" || value === "billed_only") return "Billed"
@@ -833,6 +835,7 @@ Item {
         var incomingStatus = _safeText(state.statusModeText).trim()
         if (incomingStatus.length > 0) {
             if (incomingStatus.toLowerCase().indexOf("all") === 0
+                || incomingStatus.toLowerCase() === "unbilled wip"
                 || incomingStatus.toLowerCase() === "draft"
                 || incomingStatus.toLowerCase() === "ready for billing"
                 || incomingStatus.toLowerCase() === "billed") {
@@ -1025,7 +1028,7 @@ Item {
                 metrics: root.metrics
                 scaleRatios: root.compactComboRatios
                 label: "Status"
-                fullModel: ["All Statuses", "All (Except Merged)", "Draft", "Ready for Billing", "Billed"]
+                fullModel: ["All Statuses", "All (Except Merged)", "Unbilled WIP", "Draft", "Ready for Billing", "Billed"]
                 editText: "All Statuses"
                 width: Math.min(root.compactStatusWidth, compactFilterToolbar.safeControlMaxWidth)
                 height: root.compactToolbarHeight

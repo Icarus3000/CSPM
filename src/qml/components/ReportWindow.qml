@@ -29,6 +29,9 @@ Window {
     property string findText: ""
     property string statusText: "Ready"
     property bool busy: false
+    property string actionFeedbackText: ""
+    property bool actionFeedbackIsError: false
+    property string actionFeedbackPath: ""
     property var brandingProfiles: []
     property var brandingProfileNames: []
     property string selectedBrandingProfileId: ""
@@ -137,6 +140,24 @@ Window {
         var normalized = _safeText(pathText).trim()
         if (normalized.length <= 0) return ""
         return "file:///" + encodeURI(normalized.replace(/\\/g, "/"))
+    }
+
+    function _parentFolder(pathText) {
+        var normalized = _safeText(pathText).trim().replace(/\\/g, "/")
+        var slashIndex = normalized.lastIndexOf("/")
+        return slashIndex > 0 ? normalized.slice(0, slashIndex) : ""
+    }
+
+    function _folderLabel(pathText) {
+        return _parentFolder(pathText).replace(/\//g, "\\\\")
+    }
+
+    function showActionFeedback(message, isError, savedPath) {
+        actionFeedbackText = _safeText(message)
+        actionFeedbackIsError = Boolean(isError)
+        actionFeedbackPath = _safeText(savedPath)
+        actionFeedbackPopup.open()
+        if (!actionFeedbackIsError) actionFeedbackTimer.restart()
     }
 
     function _logoSource() {
@@ -499,20 +520,32 @@ Window {
     function exportCsv() {
         if (!appRef) {
             statusText = "Report backend unavailable."
+            showActionFeedback(statusText, true, "")
             return
         }
+        if (busy) return
         busy = true
-        var result = null
-        try {
-            if (appRef.exportReportCsv) result = appRef.exportReportCsv(_exportPayload())
-            else if (appRef.exportDocketActivityCsv) result = appRef.exportDocketActivityCsv(reportDocument.exportPayload || ({}))
-        } catch (e) {
-            result = { "ok": false, "message": String(e) }
-        }
-        busy = false
-        statusText = (result && result.ok)
-            ? (result.message ? String(result.message) : "CSV exported.")
-            : ("CSV failed: " + (result && result.message ? String(result.message) : "Unknown error"))
+        statusText = "Creating CSV…"
+        showActionFeedback("Creating CSV…", false, "")
+        // Yield once so the user sees immediate feedback before a synchronous
+        // exporter has a chance to occupy the UI thread.
+        Qt.callLater(function() {
+            var result = null
+            try {
+                if (appRef.exportReportCsv) result = appRef.exportReportCsv(_exportPayload())
+                else if (appRef.exportDocketActivityCsv) result = appRef.exportDocketActivityCsv(reportDocument.exportPayload || ({}))
+            } catch (e) {
+                result = { "ok": false, "message": String(e) }
+            }
+            busy = false
+            if (result && result.ok) {
+                statusText = result.message ? String(result.message) : "CSV exported."
+                showActionFeedback("CSV Exported. Saved here:", false, _safeText(result.path))
+            } else {
+                statusText = "CSV failed: " + (result && result.message ? String(result.message) : "Unknown error")
+                showActionFeedback(statusText, true, "")
+            }
+        })
     }
 
     function printReport() {
@@ -561,6 +594,66 @@ Window {
         root.recordActionRequested(action)
         if (managerRef && managerRef.routeReportRecordAction) {
             managerRef.routeReportRecordAction(action)
+        }
+    }
+
+    Timer {
+        id: actionFeedbackTimer
+        interval: 7000
+        repeat: false
+        onTriggered: actionFeedbackPopup.close()
+    }
+
+    Popup {
+        id: actionFeedbackPopup
+        parent: root.contentItem
+        x: Math.max(16, root.width - width - 20)
+        y: 58
+        width: Math.min(680, Math.max(390, feedbackContent.implicitWidth + 28))
+        height: feedbackContent.implicitHeight + 24
+        modal: false
+        focus: false
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        padding: 12
+
+        background: Rectangle {
+            radius: 6
+            color: root.actionFeedbackIsError ? "#FDECEC" : "#E9F7EF"
+            border.width: 1
+            border.color: root.actionFeedbackIsError ? "#C61A1A" : "#16824A"
+        }
+
+        contentItem: ColumnLayout {
+            id: feedbackContent
+            spacing: 5
+            Text {
+                Layout.fillWidth: true
+                Layout.maximumWidth: 620
+                text: root.actionFeedbackText
+                color: root.actionFeedbackIsError ? "#8D1212" : "#126339"
+                font.pixelSize: 13
+                font.bold: true
+                wrapMode: Text.WordWrap
+            }
+            Button {
+                visible: !root.actionFeedbackIsError && root._folderLabel(root.actionFeedbackPath).length > 0
+                Layout.fillWidth: true
+                implicitHeight: folderLink.implicitHeight + 2
+                leftPadding: 0
+                rightPadding: 0
+                topPadding: 0
+                bottomPadding: 0
+                background: Item { }
+                contentItem: Text {
+                    id: folderLink
+                    text: root._folderLabel(root.actionFeedbackPath)
+                    color: "#0A62B0"
+                    font.pixelSize: 12
+                    font.underline: true
+                    elide: Text.ElideMiddle
+                }
+                onClicked: Qt.openUrlExternally(root._fileUrl(root._parentFolder(root.actionFeedbackPath)))
+            }
         }
     }
 
@@ -643,7 +736,12 @@ Window {
                 Button { text: "Copy"; Layout.preferredWidth: 58; onClicked: root.copyReportText() }
                 Button { text: "Refresh"; Layout.preferredWidth: 76; onClicked: root.requestRefresh() }
                 Button { text: "Save"; Layout.preferredWidth: 58; onClicked: root.savePdf(false) }
-                Button { text: "CSV"; Layout.preferredWidth: 52; onClicked: root.exportCsv() }
+                Button {
+                    text: root.busy ? "Exporting…" : "Export CSV"
+                    Layout.preferredWidth: 84
+                    enabled: !root.busy
+                    onClicked: root.exportCsv()
+                }
                 Button { text: "Print"; Layout.preferredWidth: 58; onClicked: root.printReport() }
                 Item { Layout.fillWidth: true }
                 Button { text: "Close"; Layout.preferredWidth: 64; onClicked: root.close() }
@@ -652,7 +750,7 @@ Window {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 26
+            Layout.preferredHeight: 32
             color: SemanticTheme.surfacePanel(root.t, root.appStyle)
             Text {
                 anchors.fill: parent
@@ -660,8 +758,9 @@ Window {
                 anchors.rightMargin: 12
                 verticalAlignment: Text.AlignVCenter
                 text: root.statusText
-                color: root.mutedInk
-                font.pixelSize: 11
+                color: root.statusText.indexOf("failed:") >= 0 ? "#A01414" : root.mutedInk
+                font.pixelSize: 12
+                font.bold: root.statusText !== "Ready"
                 elide: Text.ElideRight
             }
         }

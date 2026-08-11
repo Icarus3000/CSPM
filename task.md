@@ -1,5 +1,126 @@
 # Phase 7: Statements of Account and Ledgers Task List
 
+## Matter Financial Safeguards and Visibility (2026-08-11)
+
+- [x] Prevent an existing matter from being moved to **On Hold**, **Closed**, or **Archived** while it has unbilled WIP or unpaid invoices; enforce the rule in the Excel repository, not only in the screen.
+- [x] Make permanent deletion a true last resort: block it server-side whenever the matter has linked records, with a specific financial explanation where WIP or unpaid invoices are present.
+- [x] Correct the Matter delete-confirmation buttons so both retain usable fixed dimensions, and keep the dialog open with an inline reason when deletion is refused.
+- [x] Add a live **WIP & unpaid invoices** panel to both Matter Profile 360 and the editable Matter screen, including a matter-filtered **Open WIP Ledger** tab and direct invoice links that open each invoice in a new Invoice Directory tab.
+- [x] Add regression coverage proving that the financial summary follows the work matter rather than the billing client, and that deletion is blocked by active WIP/A/R.
+- [x] Treat legacy Dockets matter rows as fallback-only in Statements of Account: when a current time/disbursement row already resolves an invoice's matter, do not append a stale reversed/pre-reissue legacy association.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `CC1BC203D975F0E3A0B0688BFA5E0D44C4CB473B75E319514FF988DC9FA0B149`); the prior release is recoverable at `to_delete/dist__replaced_release_20260811_155245/`.
+- [ ] Manual foreground verification: open a matter with WIP and unpaid invoices; confirm the card amounts/list, the WIP and invoice links, rejection of On Hold/Closed/Archived, and the corrected delete-dialog button sizing. Then resolve all work and confirm the status/deletion rules permit the appropriate next step.
+
+## Matter Rename Save Verification (2026-08-11)
+
+- [x] Prevent a dirty **Edit Matter** form from returning to Matter Profile 360 through **Cancel** without an explicit discard decision.
+- [x] Rename the edit action to **Save Matter & Return** and, before returning, re-read the saved matter by ID and verify its Matter Name and Display Name exactly match the submitted values.
+- [x] Keep the editor open with a clear error if the post-save verification cannot establish the saved name pair.
+- [x] Add regression coverage for the protected cancel and verified save/return contract.
+- [ ] Manual foreground verification: edit a test matter's Matter Name and Display Name, select **Save Matter & Return**, and confirm the profile heading, selector, and field values show the new names. Then make another edit, select **Cancel**, and confirm the discard confirmation offers **Keep Editing** and **Discard Changes**.
+
+## Tab Transition Performance Audit (2026-08-11)
+
+- [x] Measure the live Leviathan Statement path and identify the material cold-read costs: schema validation, CSPM workbook parsing, and an unnecessary legacy-Dockets fallback.
+- [x] Read Statement-related workbook tables in one opening, cache a verified schema for the unchanged workbook, and skip the legacy Dockets workbook when current records already resolve every requested invoice's matter.
+- [x] Move Statement client-list, open-invoice, and preview requests to existing QThreadPool workers; load the Statement component only when its D17 route is active; and remove redundant Option 3 state reapplications during routed workspace opens.
+- [x] Add runtime timing for all Option 3 workspace opens and Statement background requests, so the next manual run produces concrete route evidence in `logs/cspm.log`.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` after the performance repair (SHA-256 `9F90122E5B0E1EBDF420B22FF7F900B8804C2CFB2B56A80A636A8BDB6CC70391`); the preceding release is recoverable at `to_delete/dist__replaced_release_20260811_151733/`.
+- [ ] Manual foreground verification: open **Finance & Ledger → Statement of Account** from a cold launch. The tab shell must appear immediately with a loading state, remain responsive while choices/invoices load, and still generate the same 21 Leviathan open invoices. Then open several other modules and inspect new `[PERF] MainContent workspace-open-*` entries in `logs/cspm.log` before choosing the next screen-specific optimization.
+- [ ] Complete the application-wide transition audit one route at a time using those timings; prioritize the remaining large eager QML views and synchronous workbook calls. Do not migrate the production datastore until those UI and query baselines are recorded.
+
+## Statement-to-Record Navigation (2026-08-11)
+
+- [x] Make each Statement of Account invoice number a direct link that opens the selected invoice in its own Invoice Directory workspace, without replacing the statement tab.
+- [x] Preserve each resolved Matter_ID in the statement data contract and make the individual matter name within `Client & Matter` a direct Matter Profile 360 link; unresolved historic text remains non-clickable rather than guessing a record.
+- [x] Add regression coverage for the Matter_ID-bearing statement row contract and verify all 21 current Leviathan open invoices expose a resolvable matter link in a read-only live-workbook check.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `9A3181C405787F614DC3BDF45D53C8E36F73E854F95BD57EB197C7110F191484`); the preceding package is recoverable at `to_delete/CSPM__replaced_release_20260811_144319/`.
+- [ ] Manual foreground verification: from Statement of Account, select an invoice number and a matter name. Confirm the original statement remains open, the invoice opens in a distinct Invoice Directory tab, and the matter opens its correct Matter Profile 360 record where **Edit Matter** allows a rename.
+
+## Daily Operations A/R Metric Clarity (2026-08-11)
+
+- [x] Replace the ambiguous Daily Operations headline `Overdue A/R` with the authoritative total open A/R from the same Receivables-based authority as A/R Aging & Detail.
+- [x] Retain overdue exposure as the secondary line, including its dollar amount and invoice count, using the user's configured overdue grace period.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `487E3F85C38FF22EA78EA7FEFFDEEA2AB8AED6812FB4AA78AC0B6597F9659D17`); the prior release is recoverable at `to_delete/dist__replaced_release_20260811_125058/`.
+- [ ] Manual foreground verification: confirm Daily Operations now reads `Total A/R` with an `Overdue: $… · … invoices` secondary line, and that selecting it still opens A/R Aging & Detail.
+
+## WIP-to-Bill Performance and Responsiveness (2026-08-11)
+
+- [x] Eliminate the automatic 300 ms WIP-load delay and the repeated full reload triggered by workspace state restoration.
+- [x] Cache the WIP projection in memory for the current workbook signature; serve a tab re-entry from that cache and prevent concurrent duplicate loads.
+- [x] Read the five WIP lookup/data tables from one macro-workbook opening rather than opening and parsing it once per table.
+- [x] Keep the prior verified WIP list visible if a manual refresh fails, and show an inline `Loading` / `Ready` / cached status beside the explicit Refresh control.
+- [x] Add focused regression coverage for the one-snapshot read and signature-checked cache path.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` after this WIP responsiveness repair (SHA-256 `8EC1CF44EF6542351FAA0A182A5FE784E8B7CB42DE17573991C96135067F8AB8`); the prior release is recoverable at `to_delete/dist__replaced_release_20260811_121600/` and the validated build candidate remains at `to_delete/dist_staging_32820__unpromoted_build_20260811_121443/`.
+- [ ] Manual foreground verification: open WIP-to-Bill Workbench twice without changing data (the second opening should be effectively immediate and say `cached`); click Refresh once and confirm the screen remains responsive while it updates.
+
+## Invoice 26-0057 Reversal and Single-Docket Correction (2026-08-10)
+
+- [x] Repair the Invoice Reversal service/UI signature mismatch that caused reversals to fail before changing workbook data.
+- [x] Make a reversal return only its linked WIP to the canonical unbilled state, void its receivable, and retain one auditable `-V` contra record in Invoice Log, Ledger, and Transactions.
+- [x] Exclude void/reversal invoice lines from Client Ledger while retaining the returned WIP docket.
+- [x] With CSPM and Excel closed, create a verified candidate then promote the repair for only `T_e6d43292a1` (2026-05-05) from 965 Canada to AL ADVISOR / Tax Planning. The recoverable pre-repair backup is at `C:\Users\CorySchneider\AppData\Local\CSPM\backups\CSPM\al_advisor_may5_20260810_182534\CSPM.before-al-advisor-may5-repair.xlsm`.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` after the correction (SHA-256 `91291C6D0125C710E82E3DFED1B8EDBA00B9BD1CA923AF5C82F66FC93C0CF916`); the previous package is recoverable at `to_delete/CSPM__replaced_release_20260810_183823/`.
+- [ ] Manual foreground verification: in AL ADVISOR's Client Ledger, confirm the May 5 time entry is WIP and there are no active invoice lines for 26-0057; confirm no other 965 Canada docket moved.
+- [ ] Decide and perform the separate authoritative `Dockets.xlsm` correction before the next historic financial sync, otherwise that sync will restore the old historic 26-0057 state.
+
+## Correct and Reissue Invoice Workflow (2026-08-10)
+
+- [x] Add a supported **Correct & Reissue** path for an unpaid, uncredited invoice: return only its linked WIP, preserve the original/reversal as internal audit evidence, and carry the original invoice number as a suggested replacement.
+- [x] Let the returned WIP be reassigned before it is redrafted; keep the original number as an editable suggestion at finalization rather than a hard lock. Removing a docket from a correction draft releases the suggestion so it can be billed independently.
+- [x] Keep internal `-SUPERSEDED` and `-V` audit entries out of Client Ledger and recipient-facing statements.
+- [x] Add regression coverage for reversing, suggesting, reassigning/redrafting, choosing a different valid final number, and releasing removed WIP for separate billing.
+- [x] Let Finalize Invoice reclaim a previously voided, unpaid/uncredited number in-app: show clear guidance, archive the former record only at confirmed finalization, and then issue the corrected replacement under the original number.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `B29F723E80AD0EAF0B39FB681003C80090E00E09FB194F2C8E522D9CD0F0FDC4`); retain the prior package at `to_delete/dist__replaced_release_20260811_101916/`.
+- [x] Redesign the Correct / Reverse modal so its instructions scroll inside a responsive card while **Cancel**, **Correct & Reissue**, and **Reverse Only** remain visible at the bottom of the window.
+- [x] Make PDF handling genuinely optional: **Keep PDF** is the default, and Move/Delete require the user to select a real source PDF. Validate that selection before changing financial records; never overwrite an existing archived PDF.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` with the modal repair (SHA-256 `A6853F5CA92EC5A61511BA101141AAAAA8F8012303E22B3C8B7C9BAE342B5B00`); the prior package is recoverable at `to_delete/dist__replaced_release_20260811_181606/`.
+- [x] Move Invoice Directory list/detail reads and Correct & Reissue / Reverse workbook work to background workers so the QML event loop can paint and remain interactive throughout the operation.
+- [x] Make a statement-routed Invoice Directory selection refresh its detail card automatically once the invoice list arrives; show explicit loading state rather than temporary zero-dollar results.
+- [x] Replace the unreliable modal radio controls with direct, mutually exclusive PDF-action rows and a visible non-blocking working state.
+- [x] Move final-invoice number lookup, final HTML preparation, and post-finalization draft refreshes off the QML thread; present the active finalization phase while each background step completes.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` after the Invoice Directory and finalization responsiveness repairs (SHA-256 `5FF8C7112C90638F8C379A8AC453E4F38BD3DFF0F77C9DDA64DD6295AFF2C8B0`); the prior complete release is recoverable at `to_delete/dist__replaced_release_20260811_190908/`.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` after making correction numbers suggestions rather than locks and releasing the split Concierge Club 26-0092 docket (SHA-256 `A3C66B3AFFD0BA0D7FF1BA4E55E1E4F30F3A44C31B06E0EEC7566A475269211C`); the preceding package is recoverable at `to_delete/dist__replaced_release_20260811_192907/`.
+- [ ] Manually verify a full correction-and-reissue cycle in the real application.
+- [ ] Manual foreground verification: open an invoice link from Statement of Account and confirm the directory card populates without deselecting/reselecting. In Correct & Reissue, choose each PDF option once and confirm only that option is visibly selected. Choose **Delete selected PDF permanently** with a selected test PDF, select **Correct & Reissue**, and confirm the modal reports progress while the app remains responsive.
+- [ ] Manually verify a corrected draft prefills its former invoice number as a suggestion, accepts another unused number, and keeps a removed docket as ordinary WIP for a separate invoice.
+
+## Statement of Account Internal Adjustments (2026-08-10)
+
+- [x] Keep historic background CreditsAdj rounding/write-off entries out of the recipient-facing Paid / Credits column.
+- [x] Render the client-facing invoice total net of the internal adjustment, while preserving the original receivable, payment, and adjustment audit values in the workbook.
+- [x] Add a regression test for invoice 26-0055-style one-cent background adjustments.
+- [x] Rebuild and promote dist/CSPM/CSPM.exe (SHA-256 3050A8578A9BC65953072F8DBD7CA0715670DB839CF089BFA5B31B1D74AD7374); retain the replaced package at to_delete/CSPM__replaced_release_20260810_174719/.
+- [ ] Manually confirm invoice 26-0055 displays $2,361.70 / no payment credit / $2,361.70 and the Leviathan statement total is $53,474.49.
+
+## LIHDC Settlement Set-off Reconstruction (2026-08-10)
+
+- [x] Diagnose the six 2026-07-29 LIHDC settlement allocations incorrectly imported as CIBC Chequing → AMEX / Costco transfers.
+- [x] With user confirmation and CSPM closed, create recoverable local-workbook backups and reconstruct the governed A/R–A/P set-off payment, ledger evidence, A/P bill state, clearing-account transaction references, and voided duplicate settlement expense.
+- [x] Route Invoice Directory settlement links to a record-specific Accounts Payable set-off tab instead of Transactions Master.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` with the governed set-off detail workspace (SHA-256 `115D03EBA9800DF4B7E5B9F2C3DD4F0542909FC135C2509E610CF1680899238C`); retain the replaced package at `to_delete/CSPM__replaced_release_20260810_130505/`.
+- [ ] Manual foreground verification: open invoice `26-0069`, select the $2,649.44 settlement set-off, and confirm a new tab shows the LIHDC set-off, its six allocations, no bank account, and the reversal/replacement action.
+
+## Invoice Directory Card Density and Payment-Tab Handoff (2026-08-10)
+
+- [x] Increase the Invoice Directory summary cards symmetrically, make the invoice-status pill more noticeable, and tighten the Payment & Ledger card's internal hierarchy. User visually confirmed the revised presentation is better.
+- [/] Make payment IDs, amount/date links, and the Payment Entry action open record-specific payment work tabs without replacing the Invoice Directory tab.
+- [/] Add each linked matter's plain-English description as a compact, hover-expandable third line in the Invoice Directory sidebar.
+- [x] Rebuild and promote the complete runnable package at `dist/CSPM/CSPM.exe` after the Invoice Directory changes.
+- [ ] Manually confirm the matter-description line is readable and that payment ID, amount/date, and Payment Entry each route to the intended payment tab while the Invoice Directory remains open.
+
+## Native Splash Loader Refinement (2026-08-10)
+
+- [/] Replace the native splash's narrow, exponential pseudo-progress line with a visible zero-percent hold, elapsed-time progress, and a wider plasma-style loader.
+- [x] Anchor splash progress to the first post-startup paint rather than process startup, extend the zero hold, and slow the normal advance so the initial visible frame cannot be near full.
+- [ ] Manually launch CSPM and confirm the splash opens at a visible 0%, advances smoothly, reaches 100% during the main-window handoff, and reads clearly against the logo in the real app.
+
+## Data Folder Automatic Restart (2026-08-10)
+
+- [x] Replace the broken immediate relaunch after Data Folder Setup with a delayed restart that waits for the active CSPM process and its single-instance lock to exit first.
+- [x] Rebuild and promote the complete runnable package at `dist/CSPM/CSPM.exe` after the splash and auto-restart repairs.
+- [ ] Manually complete the final Data Folder Setup step and confirm CSPM closes and automatically reopens using the selected Shared Data Source and Local Working folders.
+
 ## Selectable Billing-Client Statements (2026-08-10)
 
 - [x] Add an explicit Billing Client selector that lists bill-to parties with open receivables.
@@ -7,7 +128,14 @@
 - [x] Let the user manually include/exclude invoices, select all/clear, and see the selected balance update before generation; the selection never changes A/R data.
 - [x] Replace the generic statement PDF path with a dedicated branded Statement of Account layout, including bill-to details, selected invoices, amount-due callout, and payment-contact note.
 - [x] Add focused regression coverage and promote the runnable package at `dist/cspm.exe` (SHA-256 `8B3F64D8C9072B5B94845DDAC21777D1A0B768E32788FD0B7C59CAB2452DD381`); the replaced package is recoverably retained under `to_delete/`.
-- [ ] Manual foreground verification: open **Reports → Statement of Account**, choose a billing client, deselect at least one unpaid invoice, generate, and confirm the PDF contains only the selected invoices and the matching amount due.
+- [x] Remove inherited generic placeholder controls from the live `D17` statement route, require an explicit billing-client selection, default the statement date to today, and use the Professional semantic input/button controls.
+- [x] Rebuild and promote the revised package at `dist/CSPM/CSPM.exe` (SHA-256 `18BD4913E9E69F185E8AC732CD9930841E8E87F0FE3A37FE41EA41EEAA765CFD`); the prior package is retained at `to_delete/CSPM__replaced_release_20260810_135556/`.
+- [x] Resolve every statement line to the actual client and plain-English matter receiving the work, including historical companion-docket evidence. Never substitute the billing client as the work recipient.
+- [x] Replace the ambiguous preview `Value` heading with `Details`, and make the primary action open the completed statement preview directly; the preview itself owns Save, CSV, and Print.
+- [x] Rebuild and promote the corrected full package at `dist/CSPM/CSPM.exe` (SHA-256 `35A16BAA2A48139EEDC38FAF34054B2EDAAE9C884BFB05CBDED3C0D0291F9085`); the replaced package is recoverable at `to_delete/CSPM__replaced_release_20260810_154508/`.
+- [x] Make report CSV export visibly acknowledge its start and outcome, including the exact `CSV Exported. Saved here:` message followed by the destination folder as an inline Explorer link, and a prominent failure notice.
+- [x] Rebuild and promote the CSV-feedback package at `dist/CSPM/CSPM.exe` (SHA-256 `5BE3DBA92D634966699417601468954BC1C5ACAF42B90BEF692A079C3A9431FA`); the replaced package is recoverable at `to_delete/CSPM__replaced_release_20260810_162444/`.
+- [ ] Manual foreground verification: open **Reports → Statement of Account**, choose a billing client, confirm each `Client & Matter` is the work recipient rather than the billing client, deselect at least one unpaid invoice, select **Preview Statement**, and confirm the preview's Save/CSV/Print actions contain only the selected invoices and matching amount due.
 
 ## Governed Historic Financial Synchronization (2026-08-06)
 
@@ -225,6 +353,8 @@
 - [x] Enforce all three invoice cards at the 25%-taller height, with balanced flexible top/bottom space rather than an advisory preferred height that the layout may ignore.
 - [x] Make the Unpaid status pill 25% more prominent and route it directly to Payment Entry for that invoice.
 - [x] Present ledger payments as aligned `Payment | Amount | Date` columns, and let the amount or date open that exact editable payment record; an update adjusts the existing payment rather than creating a second payment.
+- [x] Recognize explicitly recorded invoice-linked Transfer set-offs as `Settlement set-off` activity rather than claiming no payments are recorded; include the settlement note and open the editable Transaction Master record in a new tab.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` after the settlement-set-off correction (SHA-256 `0F69B493A3487812FD7F0C32297834128D9FCE5813C02871CB8D7AC823EAFF40`); retain the replaced package at `to_delete/CSPM__replaced_release_20260810_121803/`.
 - [x] Rebuild and promote `dist/cspm.exe` after the update (SHA-256 `7688024CF76F5B41F1E60B9BC91EF44BD155C524260217D06C45BF368671DBA7`); retain the replaced release at `to_delete/dist__replaced_release_20260810_092700/`.
-- [ ] Manual foreground verification: select invoice `26-0061` in Invoice Directory; confirm `Commercial Contracts Review`, the Jun 30, 2026 EFT payment, the aligned payment columns, and the taller balanced cards are visible. Confirm an Unpaid pill opens Payment Entry for its invoice, and that clicking a payment amount/date opens that payment for editing. Then post two partial payments against a test invoice and confirm both payment dates/amounts remain listed and one can be amended without duplication.
+- [ ] Manual foreground verification: select invoice `26-0061` in Invoice Directory; confirm `Commercial Contracts Review`, the Jun 30, 2026 EFT payment, the aligned payment columns, and the taller balanced cards are visible. Confirm an Unpaid pill opens Payment Entry for its invoice, and that clicking a payment amount/date opens that payment for editing. For invoice `26-0069`, confirm the card says `Settlement set-off — LIHDC settlement 2026-07-29` rather than `No payments recorded`; click it and confirm a new editable Transaction Master tab opens for `TXN_e0add4a5d6` while Invoice Directory remains open. Then post two partial payments against a test invoice and confirm both payment dates/amounts remain listed and one can be amended without duplication.
 

@@ -61,10 +61,17 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QSplashScreen
-from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath
-from PySide6.QtCore import Qt, QTimer, QVariantAnimation, Property, QEasingCurve, QPropertyAnimation
+from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QLinearGradient, QRadialGradient, QPen
+from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QTimer, QVariantAnimation, Property, QEasingCurve, QPropertyAnimation
 
 class CustomSplash(QSplashScreen):
+    """Native startup splash with a visible, time-based progress indicator."""
+
+    _PROGRESS_INITIAL_HOLD_MS = 700
+    _PROGRESS_READY_DURATION_MS = 6400
+    _PROGRESS_READY_VALUE = 0.86
+    _PROGRESS_COMPLETE_DURATION_MS = 900
+
     def __init__(self, pixmap_path):
         splash_flags = (
             Qt.Window
@@ -112,54 +119,153 @@ class CustomSplash(QSplashScreen):
         self.anim_in.setEasingCurve(QEasingCurve.InOutCubic)
 
         self.anim_out = QPropertyAnimation(self, b"windowOpacity", self)
-        self.anim_out.setDuration(520)
+        self.anim_out.setDuration(760)
         self.anim_out.setEndValue(0.0)
         self.anim_out.setEasingCurve(QEasingCurve.InOutCubic)
         self.anim_out.finished.connect(self._close_after_fade)
         self._is_fading_out = False
 
         self._progress = 0.0
+        self._progress_started = False
+        self._progress_at_fade_start = 0.0
+        self._progress_clock = QElapsedTimer()
+        self._fade_progress_clock = QElapsedTimer()
         self.progress_timer = QTimer(self)
         self.progress_timer.timeout.connect(self._update_progress)
-        self.progress_timer.start(30)
+
+    @staticmethod
+    def _ease_in_out(value: float) -> float:
+        """A quiet, readable curve: slow at both ends without a false jump."""
+        value = max(0.0, min(1.0, value))
+        return value * value * (3.0 - (2.0 * value))
 
     def _update_progress(self):
-        if not self._is_fading_out:
-            # Smoothly fake progress up to 90%
-            self._progress += (90.0 - self._progress) * 0.04
+        if not self._progress_started:
+            return
+
+        if self._is_fading_out:
+            elapsed_ms = max(0, self._fade_progress_clock.elapsed())
+            completion = min(1.0, elapsed_ms / self._PROGRESS_COMPLETE_DURATION_MS)
+            self._progress = self._progress_at_fade_start + (
+                (1.0 - self._progress_at_fade_start) * self._ease_in_out(completion)
+            )
         else:
-            # Swiftly complete to 100% when app appears
-            self._progress += (100.0 - self._progress) * 0.15
+            # The elapsed-time clock is deliberately not started until the
+            # splash has been visibly painted. Startup work before its first
+            # paint must never turn a zero-percent bar into a near-full bar.
+            if not self._progress_clock.isValid():
+                return
+            # Leave a genuine zero-percent state visible before the loader starts.
+            elapsed_ms = max(0, self._progress_clock.elapsed() - self._PROGRESS_INITIAL_HOLD_MS)
+            ready_ratio = min(1.0, elapsed_ms / self._PROGRESS_READY_DURATION_MS)
+            self._progress = self._PROGRESS_READY_VALUE * self._ease_in_out(ready_ratio)
         self.update()
+
+    def _start_progress_after_visible_paint(self):
+        """Begin elapsed progress only from the first startup paint."""
+        if (
+            not self._progress_started
+            or self._is_fading_out
+            or self._progress_clock.isValid()
+        ):
+            return
+        self._progress_clock.start()
+        if not self.progress_timer.isActive():
+            self.progress_timer.start(16)
 
     def paintEvent(self, event):
         super().paintEvent(event)
+        self._start_progress_after_visible_paint()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
         
         width = self.width()
         height = self.height()
-        
-        bar_width = width * 0.6
-        bar_height = 4
-        x = (width - bar_width) / 2
-        y = height - 40
-        
-        # Premium dark track background
+
+        # The previous 60%-wide, 4 px line looked more like a divider than a
+        # loader. This wider layered treatment reads as motion while staying
+        # entirely native (no ShaderEffect/WebEngine startup cost).
+        bar_width = min(width - 28.0, max(width * 0.84, 180.0))
+        bar_height = 10.0
+        x = (width - bar_width) / 2.0
+        y = height - 46.0
+        track = QRectF(x, y, bar_width, bar_height)
+        radius = bar_height / 2.0
+
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 30))
-        painter.drawRoundedRect(x, y, bar_width, bar_height, 2, 2)
-        
-        # Premium teal glow progress fill
-        fill_width = bar_width * (self._progress / 100.0)
-        if fill_width > 0:
-            painter.setBrush(QColor(0, 210, 255, 220))
-            painter.drawRoundedRect(x, y, fill_width, bar_height, 2, 2)
+        for inset, color in (
+            (8.0, QColor(34, 211, 238, 18)),
+            (5.0, QColor(59, 130, 246, 28)),
+            (2.0, QColor(99, 102, 241, 48)),
+        ):
+            glow_rect = track.adjusted(-inset, -inset / 2.0, inset, inset / 2.0)
+            painter.setBrush(color)
+            painter.drawRoundedRect(glow_rect, glow_rect.height() / 2.0, glow_rect.height() / 2.0)
+
+        track_gradient = QLinearGradient(track.left(), track.top(), track.left(), track.bottom())
+        track_gradient.setColorAt(0.0, QColor(18, 46, 74, 232))
+        track_gradient.setColorAt(0.48, QColor(7, 22, 44, 238))
+        track_gradient.setColorAt(1.0, QColor(3, 12, 29, 242))
+        painter.setPen(QPen(QColor(174, 225, 255, 148), 1.0))
+        painter.setBrush(track_gradient)
+        painter.drawRoundedRect(track, radius, radius)
+
+        inner = track.adjusted(1.25, 1.25, -1.25, -1.25)
+        fill_width = inner.width() * max(0.0, min(1.0, self._progress))
+        if fill_width > 0.25:
+            fill = QRectF(inner.left(), inner.top(), fill_width, inner.height())
+            fill_path = QPainterPath()
+            fill_path.addRoundedRect(fill, min(inner.height() / 2.0, fill.width() / 2.0), inner.height() / 2.0)
+
+            plasma_gradient = QLinearGradient(inner.left(), inner.top(), inner.right(), inner.top())
+            plasma_gradient.setColorAt(0.00, QColor(34, 211, 238))
+            plasma_gradient.setColorAt(0.30, QColor(56, 189, 248))
+            plasma_gradient.setColorAt(0.62, QColor(99, 102, 241))
+            plasma_gradient.setColorAt(1.00, QColor(192, 132, 252))
+            painter.setPen(Qt.NoPen)
+            painter.fillPath(fill_path, plasma_gradient)
+
+            # A moving white-cyan band makes the native fill feel energized
+            # without requiring a shader or an additional rendering process.
+            painter.save()
+            painter.setClipPath(fill_path)
+            elapsed_ms = self._progress_clock.elapsed() if self._progress_started else 0
+            shimmer_span = 46.0
+            shimmer_x = inner.left() + ((elapsed_ms % 1250) / 1250.0) * (inner.width() + shimmer_span) - shimmer_span
+            shimmer = QLinearGradient(shimmer_x - shimmer_span, inner.top(), shimmer_x + shimmer_span, inner.top())
+            shimmer.setColorAt(0.0, QColor(224, 247, 255, 0))
+            shimmer.setColorAt(0.5, QColor(239, 251, 255, 155))
+            shimmer.setColorAt(1.0, QColor(224, 247, 255, 0))
+            painter.fillRect(inner, shimmer)
+            painter.restore()
+
+            painter.setPen(QPen(QColor(240, 253, 255, 175), 0.85))
+            painter.drawLine(inner.left() + 1.0, inner.top() + 1.0, inner.left() + fill_width - 1.0, inner.top() + 1.0)
+
+            # The leading light is the visual cue that the loader is moving.
+            head_x = min(inner.right(), inner.left() + fill_width)
+            head_glow = QRadialGradient(head_x, inner.center().y(), 12.0)
+            head_glow.setColorAt(0.0, QColor(255, 255, 255, 248))
+            head_glow.setColorAt(0.22, QColor(207, 250, 254, 238))
+            head_glow.setColorAt(0.58, QColor(34, 211, 238, 176))
+            head_glow.setColorAt(1.0, QColor(99, 102, 241, 0))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(head_glow)
+            painter.drawEllipse(QRectF(head_x - 12.0, inner.center().y() - 8.0, 24.0, 16.0))
+            painter.setBrush(QColor(239, 253, 255, 245))
+            painter.drawEllipse(QRectF(head_x - 2.2, inner.center().y() - 2.2, 4.4, 4.4))
         painter.end()
 
     def start_fade_in(self):
         if self._is_fading_out:
             return
+        self._progress = 0.0
+        self._progress_at_fade_start = 0.0
+        self._progress_clock.invalidate()
+        self._fade_progress_clock.invalidate()
+        self._progress_started = True
+        self.update()
         self.anim_in.start()
 
     def start_fade_out(self):
@@ -172,6 +278,10 @@ class CustomSplash(QSplashScreen):
         if self._is_fading_out:
             return
         self._is_fading_out = True
+        self._progress_at_fade_start = self._progress
+        self._fade_progress_clock.start()
+        if not self.progress_timer.isActive():
+            self.progress_timer.start(16)
         self.anim_in.stop()
         self.anim_out.stop()
         self.anim_out.setStartValue(self.windowOpacity())
@@ -181,6 +291,7 @@ class CustomSplash(QSplashScreen):
         self.anim_out.start()
 
     def _close_after_fade(self):
+        self.progress_timer.stop()
         self.close()
 
 from PySide6.QtNetwork import QLocalServer, QLocalSocket

@@ -494,6 +494,7 @@ class ExcelRepo:
 
         self._row_cache.clear()
         self._row_cache_mtime = 0.0
+        self._ensured_schema_signature = ""
         self._invalidate_table_meta_cache()
 
     def _safe_save(self, workbook, filepath):
@@ -533,6 +534,7 @@ class ExcelRepo:
             # Invalidate memory cache so subsequent reads refetch
             self._row_cache.clear()
             self._row_cache_mtime = 0.0
+            self._ensured_schema_signature = ""
             self._invalidate_table_meta_cache()
             self._persist_table_meta_cache()
 
@@ -620,6 +622,12 @@ class ExcelRepo:
         self._time = time
         self._row_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._row_cache_mtime: float = 0.0
+        # ``ensure_schema`` is deliberately thorough because it protects the
+        # workbook on first access.  Re-running that full macro-workbook scan
+        # for every repository call, however, makes unrelated tab changes
+        # needlessly slow.  This in-process signature records a verified
+        # schema until CSPM.xlsm is changed or replaced.
+        self._ensured_schema_signature: str = ""
         self._table_meta_cache_path: Path = self.paths.excel_metadata_cache_path()
         self._table_meta_cache_loaded: bool = False
         self._table_meta_cache_signature: str = ""
@@ -629,6 +637,12 @@ class ExcelRepo:
         self._import_batch_active: bool = False
         self._import_batch_rows: Dict[str, List[Dict[str, Any]]] = {}
         self._import_batch_dirty_tables: Dict[str, TableRef] = {}
+        # Dockets.xlsm remains the authoritative historical source for some
+        # invoice-to-matter links that predate the normalized time table.
+        # Keep the small, read-only projection in memory so opening a
+        # statement does not re-open the legacy workbook for every refresh.
+        self._legacy_docket_rows_cache: List[Dict[str, Any]] = []
+        self._legacy_docket_rows_signature: str = ""
 
     def _close_workbook(self, workbook) -> None:
         if workbook is None:
@@ -1017,6 +1031,16 @@ class ExcelRepo:
         path = self.paths.workbook_path()
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        current_signature = self._workbook_signature(path)
+        if current_signature and current_signature == self._ensured_schema_signature:
+            return {
+                "createdWorkbook": False,
+                "changed": False,
+                "tableChanges": [],
+                "seedChanges": [],
+                "cached": True,
+            }
+
         created_workbook = False
         if not path.exists():
             wb = Workbook()
@@ -1049,6 +1073,11 @@ class ExcelRepo:
                 self._safe_save(wb, path)
         finally:
             self._close_workbook(wb)
+
+        # Use the post-save signature when a repair changed the workbook.
+        # A later external edit naturally has a different size/mtime
+        # signature and forces a fresh validation.
+        self._ensured_schema_signature = self._workbook_signature(path)
 
         return {
             "createdWorkbook": created_workbook,
@@ -2193,6 +2222,73 @@ class ExcelRepo:
             )
         return rows
 
+    def _list_ap_setoff_invoice_activity(self, invoice_ref: str) -> List[Dict[str, Any]]:
+        """Return governed A/P set-off evidence allocated to one receivable.
+
+        A set-off payment is an A/P record with multiple receivable
+        allocations, not a cash receipt. Reading it here keeps the Invoice
+        Directory from falling back to a historical transfer-row surrogate.
+        """
+
+        paths = getattr(self, "paths", None)
+        if not paths:
+            return []
+        target = _clean_text(invoice_ref).casefold()
+        if not target:
+            return []
+        try:
+            from repositories.ap_workbook_repository import APWorkbookRepository
+            payments = APWorkbookRepository(paths.workbook_path()).list_payments()
+        except Exception:
+            logger.exception("Invoice payment history could not read A/P set-off records")
+            return []
+
+        marker = "CSPM_SET_OFF_ALLOCATIONS_V1:"
+        activity: List[Dict[str, Any]] = []
+        for payment in payments:
+            if _clean_text(payment.get("Method")).casefold() != "set-off":
+                continue
+            if _clean_text(payment.get("Status")).casefold() in {"reversed", "reversal"}:
+                continue
+            allocations = []
+            for line in str(payment.get("Notes") or "").splitlines():
+                if line.startswith(marker):
+                    try:
+                        allocations = json.loads(line[len(marker):])
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        allocations = []
+                    break
+            for allocation in allocations:
+                allocation = dict(allocation or {})
+                invoice = _clean_text(allocation.get("invoice") or allocation.get("InvoiceID"))
+                if invoice.casefold() != target:
+                    continue
+                amount = self._money_round(allocation.get("amount", allocation.get("Amount")))
+                if amount <= 0:
+                    continue
+                payment_id = _clean_text(payment.get("APPaymentID"))
+                reference = _clean_text(payment.get("Reference"))
+                activity.append(
+                    {
+                        "date": self._date_iso(payment.get("PaymentDate")),
+                        "type": "Settlement set-off",
+                        "displayLabel": "Settlement set-off" + (f" — {reference}" if reference else ""),
+                        "paymentId": payment_id,
+                        "transactionId": "",
+                        "ledgerId": "",
+                        "editable": True,
+                        "reference": payment_id or reference,
+                        "method": "Accounts Receivable - Set-off",
+                        "amount": amount,
+                        "notes": _clean_text(payment.get("Notes")).split(marker, 1)[0].rstrip(),
+                        "source": "A/P Set-off",
+                        "openTarget": "ap_setoff",
+                        "apBillId": _clean_text(payment.get("APBillID")),
+                        "apPaymentId": payment_id,
+                    }
+                )
+        return activity
+
     def list_invoice_payment_history(self, invoice_ref: str) -> List[Dict[str, Any]]:
         """Return the dated payment activity recorded against one invoice.
 
@@ -2208,6 +2304,16 @@ class ExcelRepo:
             return []
         target_lc = target.lower()
         rows: List[Dict[str, Any]] = []
+        load_setoff_activity = getattr(self, "_list_ap_setoff_invoice_activity", None)
+        setoff_activity = load_setoff_activity(target) if callable(load_setoff_activity) else []
+        canonical_setoff_ids = {
+            _clean_text(item.get("paymentId")).casefold()
+            for item in setoff_activity if _clean_text(item.get("paymentId"))
+        }
+        canonical_setoff_signatures = {
+            (self._date_iso(item.get("date")), self._money_round(item.get("amount")))
+            for item in setoff_activity
+        }
         ledger_transaction_ids = set()
         for row in self._read_table_rows(TBL_LEDGER):
             if _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).lower() != target_lc:
@@ -2218,6 +2324,10 @@ class ExcelRepo:
                 continue
             transaction_id = _clean_text(row.get(sc.COL_LEDGER_TRX_ID))
             external_reference = _clean_text(row.get(sc.COL_LEDGER_EXTERNAL_REF_ID))
+            if transaction_id.casefold() in canonical_setoff_ids:
+                # The governed A/P record below owns the user-facing set-off
+                # detail; this ledger row remains its audit evidence.
+                continue
             if transaction_id:
                 ledger_transaction_ids.add(transaction_id.lower())
             # Older ledger rows sometimes stored the generated transaction ID
@@ -2244,8 +2354,9 @@ class ExcelRepo:
             )
 
         # Preserve genuinely historic payment transactions that predate the
-        # ledger workflow, but do not show invoice-creation revenue or a
-        # duplicate transaction that already has ledger evidence.
+        # ledger workflow, together with an explicitly recorded settlement
+        # set-off.  Do not show invoice-creation revenue or a duplicate
+        # transaction that already has ledger evidence.
         for row in self.list_transactions({"invoiceRef": target}):
             if _clean_text(row.get("invoiceRef")).lower() != target_lc:
                 continue
@@ -2260,15 +2371,43 @@ class ExcelRepo:
                 or "applied to invoice" in note_key
                 or "received from" in note_key
             )
-            if transaction_type != "income" or not is_payment_note:
+            is_settlement_set_off = (
+                transaction_type == "transfer"
+                and "set-off" in note_key
+            )
+            if not (
+                (transaction_type == "income" and is_payment_note)
+                or is_settlement_set_off
+            ):
                 continue
             amount = self._money_round(row.get("amount"))
             if amount <= 0:
                 continue
+            if is_settlement_set_off and (
+                self._date_iso(row.get("txnDate")), amount
+            ) in canonical_setoff_signatures:
+                # The reconstructed A/P payment is authoritative. Do not
+                # show its former legacy-transfer representation a second time.
+                continue
+            activity_type = "Settlement set-off" if is_settlement_set_off else "Payment"
+            display_label = activity_type
+            if is_settlement_set_off:
+                # The operational note normally identifies the settlement
+                # source in parentheses, for example "Set-off — LIHDC
+                # settlement".  Surface that useful context instead of an
+                # inaccurate blanket "No payments recorded" message.
+                set_off_detail = ""
+                marker = "set-off"
+                marker_index = note_key.find(marker)
+                if marker_index >= 0:
+                    set_off_detail = notes[marker_index + len(marker):].strip(" —:-()")
+                if set_off_detail:
+                    display_label = f"{activity_type} — {set_off_detail}"
             rows.append(
                 {
                     "date": _clean_text(row.get("txnDate")),
-                    "type": "Payment",
+                    "type": activity_type,
+                    "displayLabel": display_label,
                     "paymentId": transaction_id,
                     "transactionId": transaction_id,
                     "ledgerId": "",
@@ -2278,8 +2417,15 @@ class ExcelRepo:
                     "amount": amount,
                     "notes": notes,
                     "source": "Transactions",
+                    # Ledger-backed rows continue to open the Payment Editor.
+                    # A set-off is a transfer record, so it must open its
+                    # editable Transaction Master record instead.
+                    "openTarget": "transaction" if is_settlement_set_off else "payment",
+                    "transactionPayload": dict(row),
                 }
             )
+
+        rows.extend(setoff_activity)
 
         rows.sort(key=lambda item: (_clean_text(item.get("date")), _clean_text(item.get("reference"))), reverse=True)
         return rows
@@ -4503,6 +4649,13 @@ class ExcelRepo:
                 "overdueDeadlines": [],
                 "overdueBills": [],
                 "readyToBillMatters": [],
+                "arSummary": {
+                    "totalAr": 0.0,
+                    "openInvoiceCount": 0,
+                    "overdueAr": 0.0,
+                    "overdueInvoiceCount": 0,
+                    "overdueGraceDays": int(briefing_filters.get("overdueBillGraceDays", 30) or 30),
+                },
                 "summary": _empty_summary(),
                 "productivitySummary": {
                     "today": {"hours": 0.0, "gross": 0.0, "net": 0.0},
@@ -4715,8 +4868,16 @@ class ExcelRepo:
         ready_to_bill: List[Dict[str, Any]] = []
 
         overdue_bills: List[Dict[str, Any]] = []
+        ar_summary = {
+            "totalAr": 0.0,
+            "openInvoiceCount": 0,
+            "overdueAr": 0.0,
+            "overdueInvoiceCount": 0,
+            "overdueGraceDays": overdue_bill_days,
+        }
         try:
             ar_data = self.ar_aging_report({"excludedInvoices": briefing_filters.get("excludedInvoices", [])})
+            report_summary = ar_data.get("summary") if isinstance(ar_data.get("summary"), dict) else {}
             for row in ar_data.get("rows", []):
                 age_days = int(row.get("ageDays", 0))
                 if age_days >= overdue_bill_days:
@@ -4731,6 +4892,13 @@ class ExcelRepo:
                         "kind": "overdue-bill",
                     })
             overdue_bills.sort(key=lambda r: -r["daysOld"])
+            ar_summary = {
+                "totalAr": round(float(report_summary.get("totalAr", 0.0) or 0.0), 2),
+                "openInvoiceCount": max(0, int(report_summary.get("invoiceCount", 0) or 0)),
+                "overdueAr": round(sum(float(item.get("wipAmount", 0.0) or 0.0) for item in overdue_bills), 2),
+                "overdueInvoiceCount": len(overdue_bills),
+                "overdueGraceDays": overdue_bill_days,
+            }
         except Exception:
             pass
 
@@ -4782,6 +4950,7 @@ class ExcelRepo:
             "overdueDeadlines": overdue_deadlines[:20],
             "overdueBills": overdue_bills[:20],
             "readyToBillMatters": ready_to_bill[:20],
+            "arSummary": ar_summary,
             "summary": summary if isinstance(summary, dict) else _empty_summary(),
             "productivitySummary": prod,
             "filters": briefing_filters,
@@ -6194,6 +6363,8 @@ class ExcelRepo:
             inc_status = True
             if status_mode == "all": inc_status = True
             elif status_mode == "all_except_merged": inc_status = raw_status != "merged"
+            elif status_mode in ("unbilled_wip", "unbilled_work"):
+                inc_status = norm_status in {"Draft", "Ready for Billing"}
             elif status_mode in ("draft", "draft_only", "unbilled", "open"): inc_status = norm_status == "Draft"
             elif status_mode in ("ready", "ready_for_billing"): inc_status = norm_status == "Ready for Billing"
             elif status_mode in ("billed", "billed_only"): inc_status = norm_status == "Billed"
@@ -6617,6 +6788,36 @@ class ExcelRepo:
             matter_id = _clean_text(existing_row.get(sc.COL_MATTER_ID))
         if not matter_id:
             matter_id = self._new_id("M")
+
+        # A matter with open financial work must remain operational.  This is
+        # deliberately enforced here (rather than only in QML), so imports or
+        # future screens cannot archive/close/on-hold a file which still needs
+        # billing or collection work.
+        if existing_row is not None:
+            prior_status = _clean_text(existing_row.get(sc.COL_MATTER_STATUS)).casefold()
+            requested_status = _clean_text(normalized.get("status")).casefold()
+            protected_statuses = {"on hold", "closed", "archived"}
+            if requested_status in protected_statuses and requested_status != prior_status:
+                financial = self.get_matter_financial_summary(matter_id)
+                if financial.get("ok") and financial.get("hasFinancialBlockers"):
+                    return {
+                        "ok": False,
+                        "matterId": matter_id,
+                        "financialSummary": financial,
+                        "message": self._matter_financial_blocker_message(
+                            financial,
+                            action=f"set the matter status to {normalized.get('status')}",
+                        ),
+                    }
+                if not financial.get("ok"):
+                    return {
+                        "ok": False,
+                        "matterId": matter_id,
+                        "message": financial.get(
+                            "message",
+                            "Could not verify unbilled WIP and unpaid invoices. The status was not changed for safety.",
+                        ),
+                    }
 
         # Resolve entity_type from the client profile so individual-vs-company
         # naming rules work correctly.
@@ -7463,10 +7664,15 @@ class ExcelRepo:
                 rows.append(row)
         return headers, rows
 
-    def _read_raw_excel_table_rows(self, sheet_name: str, table_name: str = "") -> List[Dict[str, Any]]:
+    def _read_raw_excel_table_rows(
+        self,
+        sheet_name: str,
+        table_name: str = "",
+        workbook_path: Optional[Path] = None,
+    ) -> List[Dict[str, Any]]:
         """Read a non-schema worksheet/table without repairing or canonicalizing it."""
         _lazy_load_heavy_libs()
-        path = self.paths.workbook_path()
+        path = workbook_path or self.paths.workbook_path()
         if not path.exists():
             return []
 
@@ -7506,6 +7712,23 @@ class ExcelRepo:
             return []
         finally:
             self._close_workbook(wb)
+
+    def _read_legacy_docket_rows(self) -> List[Dict[str, Any]]:
+        """Return cached legacy docket rows used only to preserve invoice context.
+
+        Older invoices may have been finalized before their docket rows were
+        copied into ``tblTimeEntries``.  Their client/matter identity remains
+        in the companion Dockets workbook and is needed for a recipient-facing
+        statement; this method never writes to either workbook.
+        """
+        path = self.paths.dockets_workbook_path()
+        signature = self._workbook_signature(path)
+        if signature and signature == self._legacy_docket_rows_signature:
+            return self._legacy_docket_rows_cache
+        rows = self._read_raw_excel_table_rows("Dockets", workbook_path=path)
+        self._legacy_docket_rows_cache = rows
+        self._legacy_docket_rows_signature = signature
+        return rows
 
     def _canonicalize_row(self, tref: TableRef, row: Dict[str, Any]) -> Dict[str, Any]:
         table_name = tref.table
@@ -8869,6 +9092,144 @@ class ExcelRepo:
         finally:
             self._close_workbook(wb)
 
+    @with_db_lock
+    def _read_table_rows_bulk(
+        self,
+        table_refs: List[Union[TableRef, str]],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Read a related group of tables from a single workbook opening.
+
+        Cold ``_read_table_rows`` calls each parse the full macro workbook.
+        Screens that need a small related group of tables (such as WIP-to-Bill)
+        should use this read-only helper instead.  The normal row cache remains
+        authoritative, and no workbook content or formatting is modified.
+        """
+
+        normalized: List[TableRef] = []
+        for raw_ref in table_refs:
+            tref = raw_ref
+            if isinstance(tref, str):
+                tref = next((item for item in TABLES_IN_ORDER if item.table == tref), tref)
+            if not isinstance(tref, TableRef):
+                raise ValueError(f"Unknown workbook table reference: {raw_ref}")
+            if tref not in normalized:
+                normalized.append(tref)
+
+        if not normalized:
+            return {}
+        if self._import_batch_active:
+            return {
+                tref.table: [dict(row) for row in self._batch_table_rows(tref)]
+                for tref in normalized
+            }
+
+        _lazy_load_heavy_libs()
+        import time
+
+        path = self.paths.workbook_path()
+        if not path.exists():
+            logger.warning("[ExcelRepo] Workbook missing at %s; creating schema workbook.", path)
+            self.ensure_schema()
+
+        workbook_signature = ""
+        try:
+            stat_info = os.stat(str(path))
+            current_mtime = float(stat_info.st_mtime)
+            workbook_signature = f"{int(stat_info.st_size)}:{int(stat_info.st_mtime_ns)}"
+            if self._row_cache_mtime != current_mtime:
+                self._row_cache.clear()
+                self._row_cache_mtime = current_mtime
+        except Exception:
+            current_mtime = 0.0
+
+        results: Dict[str, List[Dict[str, Any]]] = {}
+        pending: List[TableRef] = []
+        for tref in normalized:
+            cached = self._row_cache.get(self._table_cache_key(tref))
+            if cached is not None and self._row_cache_mtime == current_mtime:
+                results[tref.table] = cached
+            else:
+                pending.append(tref)
+        if not pending:
+            return results
+
+        started = time.perf_counter()
+        fallback: List[TableRef] = []
+        wb = load_workbook(path, keep_vba=True)
+        try:
+            for tref in pending:
+                if tref.sheet not in wb.sheetnames:
+                    fallback.append(tref)
+                    continue
+
+                ws = wb[tref.sheet]
+                try:
+                    table_obj = ws.tables[tref.table] if hasattr(ws, "tables") and tref.table in ws.tables else None
+                except Exception:
+                    table_obj = None
+                if table_obj is None:
+                    fallback.append(tref)
+                    continue
+
+                min_col, min_row, _max_col, max_row = _safe_range_boundaries(table_obj.ref)
+                headers, raw_rows = self._rows_from_table(ws, table_obj)
+                header_to_col = {
+                    header: min_col + index
+                    for index, header in enumerate(headers)
+                    if header
+                }
+                expected_headers = TABLE_COLUMNS[tref.table]
+                column_for_header: Dict[str, int] = {}
+                rows: List[Dict[str, Any]] = []
+                for raw_row in raw_rows:
+                    row_data: Dict[str, Any] = {}
+                    has_data = False
+                    for header in expected_headers:
+                        if header not in column_for_header:
+                            if header in header_to_col:
+                                column_for_header[header] = int(header_to_col[header])
+                            else:
+                                for alias in TABLE_ALIASES.get(tref.table, {}).get(header, []):
+                                    if alias in header_to_col:
+                                        column_for_header[header] = int(header_to_col[alias])
+                                        break
+                        value = self._value_with_alias(tref.table, raw_row, header)
+                        row_data[header] = value
+                        if value not in (None, ""):
+                            has_data = True
+                    if has_data:
+                        rows.append(row_data)
+
+                self._row_cache[self._table_cache_key(tref)] = rows
+                self._set_cached_table_meta(
+                    tref,
+                    workbook_signature,
+                    {
+                        "headerRow": int(min_row),
+                        "lastDataRow": int(max_row),
+                        "tableRef": str(table_obj.ref),
+                        "columnForHeader": {
+                            key: int(value)
+                            for key, value in column_for_header.items()
+                        },
+                    },
+                )
+                results[tref.table] = rows
+        finally:
+            self._close_workbook(wb)
+
+        self._persist_table_meta_cache()
+        for tref in fallback:
+            results[tref.table] = self._read_table_rows(tref)
+
+        logger.info(
+            "[ExcelRepo] Bulk table read: %d table(s), %d cold table(s), %.3fs",
+            len(normalized),
+            len(pending),
+            time.perf_counter() - started,
+        )
+        return results
+
     def _append_row_to_table(self, tref: TableRef, row: Dict[str, Any]) -> None:
         if self._import_batch_active:
             self._batch_append_row(tref, row)
@@ -9225,10 +9586,30 @@ class ExcelRepo:
         return max_seq + 1
 
     def delete_matter_profile(self, matter_id: str) -> Dict[str, Any]:
+        """Permanently delete only a matter with no remaining dependencies.
+
+        The old editor exposed this destructive action directly.  A fresh
+        server-side check keeps it safe even if the confirmation dialog is
+        bypassed or a future UI calls this method directly.
+        """
+        dependencies = self.check_matter_dependencies(matter_id)
+        if not dependencies.get("ok"):
+            return {
+                "ok": False,
+                "message": dependencies.get("message", "Could not verify linked matter records."),
+                "dependencies": dependencies,
+            }
+        if not dependencies.get("canDelete"):
+            return {
+                "ok": False,
+                "message": self._matter_delete_blocker_message(dependencies),
+                "dependencies": dependencies,
+            }
         deleted = self._delete_row_by_key_hard(TBL_MATTERS, sc.COL_MATTER_ID, matter_id)
         return {
             "ok": deleted,
-            "message": "Matter permanently deleted." if deleted else "Matter not found."
+            "message": "Matter permanently deleted." if deleted else "Matter not found.",
+            "dependencies": dependencies,
         }
 
     def delete_archived_matter_profile(self, matter_id: str) -> Dict[str, Any]:
@@ -9253,7 +9634,7 @@ class ExcelRepo:
         if not dependencies.get("canDelete"):
             return {
                 "ok": False,
-                "message": "This archived matter still has linked records and cannot be deleted.",
+                "message": self._matter_delete_blocker_message(dependencies),
                 "dependencies": dependencies,
             }
 
@@ -9266,38 +9647,257 @@ class ExcelRepo:
 
     def check_matter_dependencies(self, matter_id: str) -> Dict[str, Any]:
         """
-        Checks if a matter has any remaining dependencies (time entries, disbursements, transactions, trademarks).
-        Used to safely determine if an archived matter can be permanently deleted.
+        Checks whether a matter can be permanently deleted and returns the
+        financial work that blocks archive/close/on-hold.  It reads the related
+        tables together so a single user action does not repeatedly open the
+        macro workbook.
         """
         self.ensure_schema()
         matter_id_lower = _clean_text(matter_id).lower()
         if not matter_id_lower:
             return {"ok": False, "message": "Invalid matter ID", "canDelete": False}
-        
-        matter_aliases = {matter_id_lower}
-        matter_profile = self.get_matter_profile(matter_id)
-        if bool(matter_profile.get("ok")):
-            matter = dict(matter_profile.get("matter") or {})
-            if matter.get("matterName"): matter_aliases.add(_clean_text(matter.get("matterName")).lower())
-            if matter.get("matterNumber"): matter_aliases.add(_clean_text(matter.get("matterNumber")).lower())
-        
-        time_count = sum(1 for r in self._read_table_rows(TBL_TIME) if _clean_text(r.get(sc.COL_TIME_MATTER_ID)).lower() == matter_id_lower)
-        disb_count = sum(1 for r in self._read_table_rows(TBL_DISBURSEMENTS) if _clean_text(r.get(sc.COL_DISB_MATTER_ID)).lower() == matter_id_lower)
-        txn_count = sum(1 for r in self._read_table_rows(TBL_TRANSACTIONS_MASTER) if _clean_text(r.get(sc.COL_TXN_MATTER)).lower() in matter_aliases)
-        tm_count = sum(1 for r in self._read_table_rows(TBL_TRADEMARKS) if _clean_text(r.get(sc.COL_TM_MATTER_NUMBER)).lower() in matter_aliases)
-        
+
+        tables = self._read_table_rows_bulk([
+            TBL_MATTERS,
+            TBL_TIME,
+            TBL_DISBURSEMENTS,
+            TBL_RECEIVABLES,
+            TBL_TRANSACTIONS_MASTER,
+            TBL_TRADEMARKS,
+        ])
+        matter_rows = [self._canonicalize_matter_row(row) for row in tables.get(TBL_MATTERS.table, [])]
+        matter = next(
+            (
+                row for row in matter_rows
+                if _clean_text(row.get(sc.COL_MATTER_ID)).casefold() == matter_id_lower
+            ),
+            None,
+        )
+        if matter is None:
+            return {"ok": False, "message": "Matter not found.", "canDelete": False}
+
+        matter_aliases = {
+            matter_id_lower,
+            _clean_text(matter.get(sc.COL_MATTER_NAME)).casefold(),
+            _clean_text(matter.get(sc.COL_MATTER_NUMBER)).casefold(),
+            _clean_text(matter.get(sc.COL_MATTER_DISPLAY_NAME)).casefold(),
+        }
+        matter_aliases.discard("")
+
+        time_rows = tables.get(TBL_TIME.table, [])
+        disbursement_rows = tables.get(TBL_DISBURSEMENTS.table, [])
+        financial = self._matter_financial_summary_from_rows(
+            matter_id,
+            time_rows,
+            disbursement_rows,
+            tables.get(TBL_RECEIVABLES.table, []),
+        )
+        time_count = sum(
+            1
+            for row in time_rows
+            if _clean_text(row.get(sc.COL_TIME_MATTER_ID)).casefold() == matter_id_lower
+        )
+        disb_count = sum(
+            1
+            for row in disbursement_rows
+            if _clean_text(row.get(sc.COL_DISB_MATTER_ID)).casefold() == matter_id_lower
+        )
+        txn_count = sum(
+            1
+            for row in tables.get(TBL_TRANSACTIONS_MASTER.table, [])
+            if _clean_text(row.get(sc.COL_TXN_MATTER)).casefold() in matter_aliases
+        )
+        tm_count = sum(
+            1
+            for row in tables.get(TBL_TRADEMARKS.table, [])
+            if _clean_text(row.get(sc.COL_TM_MATTER_NUMBER)).casefold() in matter_aliases
+        )
         total_dependencies = time_count + disb_count + txn_count + tm_count
-        
+
         return {
             "ok": True,
             "canDelete": total_dependencies == 0,
             "timeCount": time_count,
             "disbursementCount": disb_count,
             "transactionCount": txn_count,
-            "invoiceCount": 0,
+            "invoiceCount": int(financial.get("unpaidInvoiceCount", 0) or 0),
             "trademarkCount": tm_count,
-            "totalDependencies": total_dependencies
+            "totalDependencies": total_dependencies,
+            "financialSummary": financial,
+            "hasFinancialBlockers": bool(financial.get("hasFinancialBlockers")),
         }
+
+    def get_matter_financial_summary(self, matter_id: str) -> Dict[str, Any]:
+        """Return the live WIP and unpaid-A/R picture for one matter.
+
+        Receivables do not store MatterID themselves.  The authoritative link
+        is the docket/disbursement's invoice reference, so this derives the
+        invoice list from those underlying financial records rather than
+        accidentally treating the billing client as the work matter.
+        """
+        self.ensure_schema()
+        normalized_id = _clean_text(matter_id)
+        if not normalized_id:
+            return {"ok": False, "message": "Invalid matter ID."}
+
+        tables = self._read_table_rows_bulk([
+            TBL_MATTERS,
+            TBL_TIME,
+            TBL_DISBURSEMENTS,
+            TBL_RECEIVABLES,
+        ])
+        matter_exists = any(
+            _clean_text(row.get(sc.COL_MATTER_ID)).casefold() == normalized_id.casefold()
+            for row in tables.get(TBL_MATTERS.table, [])
+        )
+        if not matter_exists:
+            return {"ok": False, "message": "Matter not found.", "matterId": normalized_id}
+
+        return self._matter_financial_summary_from_rows(
+            normalized_id,
+            tables.get(TBL_TIME.table, []),
+            tables.get(TBL_DISBURSEMENTS.table, []),
+            tables.get(TBL_RECEIVABLES.table, []),
+        )
+
+    def _matter_financial_summary_from_rows(
+        self,
+        matter_id: str,
+        time_rows: List[Dict[str, Any]],
+        disbursement_rows: List[Dict[str, Any]],
+        receivable_rows: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Compute a matter-level financial summary from already loaded rows."""
+        matter_id_lower = _clean_text(matter_id).casefold()
+        billed_statuses = {
+            "billed", "posted", "invoiced", "finalized", "locked", "merged",
+            "void", "voided", "reversed", "cancelled", "canceled", "superseded",
+        }
+        closed_receivable_statuses = {
+            "paid", "void", "voided", "reversed", "cancelled", "canceled", "superseded",
+        }
+
+        def amount(value: Any) -> float:
+            return self._money_round(self._parse_float(value) or 0.0)
+
+        def docket_is_unbilled(row: Dict[str, Any]) -> bool:
+            status = _clean_text(row.get(sc.COL_TIME_STATUS)).casefold()
+            invoice_status = _clean_text(row.get(sc.COL_TIME_INVOICE_STATUS)).casefold()
+            invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+            if status in billed_statuses or invoice_status in billed_statuses:
+                return False
+            # A real invoice reference means that the docket has left WIP.
+            # Generic legacy markers ("Draft"/"WIP") still represent active,
+            # unbilled work and therefore keep the matter operational.
+            return invoice_ref in {"", "draft", "wip", "unbilled"}
+
+        unbilled_dockets: List[Dict[str, Any]] = []
+        unbilled_disbursements: List[Dict[str, Any]] = []
+        linked_invoices: set[str] = set()
+
+        for row in time_rows:
+            if _clean_text(row.get(sc.COL_TIME_MATTER_ID)).casefold() != matter_id_lower:
+                continue
+            invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
+            if docket_is_unbilled(row):
+                unbilled_dockets.append({
+                    "entryId": _clean_text(row.get(sc.COL_TIME_ENTRY_ID)),
+                    "date": _clean_text(row.get(sc.COL_TIME_DATE)),
+                    "description": _clean_text(row.get(sc.COL_TIME_DESC)),
+                    "status": _clean_text(row.get(sc.COL_TIME_STATUS)) or "Draft",
+                    "amount": amount(row.get(sc.COL_TIME_TOTAL)) or amount(row.get(sc.COL_TIME_GROSS)),
+                })
+            elif invoice_ref:
+                linked_invoices.add(invoice_ref.casefold())
+
+        for row in disbursement_rows:
+            if _clean_text(row.get(sc.COL_DISB_MATTER_ID)).casefold() != matter_id_lower:
+                continue
+            invoice_ref = _clean_text(row.get(sc.COL_DISB_INVOICE_REF))
+            if invoice_ref.casefold() in {"", "draft", "wip", "unbilled"}:
+                unbilled_disbursements.append({
+                    "entryId": _clean_text(row.get(sc.COL_DISB_ID)),
+                    "date": _clean_text(row.get(sc.COL_DISB_DATE)),
+                    "description": _clean_text(row.get(sc.COL_DISB_DESCRIPTION)) or "Disbursement",
+                    "status": "Unbilled",
+                    "amount": amount(row.get(sc.COL_DISB_AMOUNT)),
+                })
+            else:
+                linked_invoices.add(invoice_ref.casefold())
+
+        unpaid_invoices: List[Dict[str, Any]] = []
+        for row in receivable_rows:
+            invoice_num = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
+            if not invoice_num or invoice_num.casefold() not in linked_invoices:
+                continue
+            balance = amount(row.get(sc.COL_RECV_BALANCE_DUE))
+            status = _clean_text(row.get(sc.COL_RECV_STATUS))
+            if balance <= 0.004 or status.casefold() in closed_receivable_statuses:
+                continue
+            unpaid_invoices.append({
+                "invoiceNum": invoice_num,
+                "date": _clean_text(row.get(sc.COL_RECV_DATE)),
+                "status": status or "Open",
+                "client": _clean_text(row.get(sc.COL_RECV_CLIENT)),
+                "workClient": _clean_text(row.get(sc.COL_RECV_WORK_CLIENT)),
+                "invoiceTotal": amount(row.get(sc.COL_RECV_TOTAL_INVOICED)),
+                "amountDue": balance,
+            })
+
+        unbilled_dockets.sort(key=lambda item: (item["date"], item["entryId"]))
+        unbilled_disbursements.sort(key=lambda item: (item["date"], item["entryId"]))
+        unpaid_invoices.sort(key=lambda item: (item["date"], item["invoiceNum"]))
+        docket_total = self._money_round(sum(item["amount"] for item in unbilled_dockets))
+        disbursement_total = self._money_round(sum(item["amount"] for item in unbilled_disbursements))
+        wip_total = self._money_round(docket_total + disbursement_total)
+        unpaid_total = self._money_round(sum(item["amountDue"] for item in unpaid_invoices))
+        unbilled_count = len(unbilled_dockets) + len(unbilled_disbursements)
+
+        return {
+            "ok": True,
+            "matterId": _clean_text(matter_id),
+            "unbilledDocketCount": len(unbilled_dockets),
+            "unbilledDocketAmount": docket_total,
+            "unbilledDisbursementCount": len(unbilled_disbursements),
+            "unbilledDisbursementAmount": disbursement_total,
+            "unbilledWipCount": unbilled_count,
+            "unbilledWipAmount": wip_total,
+            "unbilledDockets": unbilled_dockets,
+            "unbilledDisbursements": unbilled_disbursements,
+            "unpaidInvoiceCount": len(unpaid_invoices),
+            "unpaidInvoiceAmount": unpaid_total,
+            "unpaidInvoices": unpaid_invoices,
+            "hasUnbilledWip": unbilled_count > 0,
+            "hasUnpaidInvoices": len(unpaid_invoices) > 0,
+            "hasFinancialBlockers": unbilled_count > 0 or len(unpaid_invoices) > 0,
+        }
+
+    def _matter_financial_blocker_message(self, summary: Dict[str, Any], *, action: str) -> str:
+        parts: List[str] = []
+        wip_count = int(summary.get("unbilledWipCount", 0) or 0)
+        if wip_count:
+            parts.append(
+                f"{wip_count} unbilled WIP item(s) (${float(summary.get('unbilledWipAmount', 0.0) or 0.0):,.2f})"
+            )
+        invoice_count = int(summary.get("unpaidInvoiceCount", 0) or 0)
+        if invoice_count:
+            parts.append(
+                f"{invoice_count} unpaid invoice(s) (${float(summary.get('unpaidInvoiceAmount', 0.0) or 0.0):,.2f})"
+            )
+        detail = " and ".join(parts) if parts else "open financial records"
+        return (
+            f"Cannot {action} because this matter has {detail}. "
+            "Bill, reassign, or settle the work first."
+        )
+
+    def _matter_delete_blocker_message(self, dependencies: Dict[str, Any]) -> str:
+        financial = dict(dependencies.get("financialSummary") or {})
+        if financial.get("hasFinancialBlockers"):
+            return self._matter_financial_blocker_message(financial, action="permanently delete this matter")
+        return (
+            "This matter still has linked records and cannot be permanently deleted. "
+            "Archive it instead, or remove/reassign the linked records first."
+        )
 
     def _build_matter_number(
         self,
@@ -10510,7 +11110,33 @@ class ExcelRepo:
             invoice_rows = self._read_table_rows(TBL_INVOICE_LOG)
             receivable_rows = self._read_table_rows(TBL_RECEIVABLES)
             
-            all_invoice_refs = { _clean_text(r.get(sc.COL_INV_INVOICE_NUM)).upper() for r in invoice_rows if _clean_text(r.get(sc.COL_INV_INVOICE_NUM)) }
+            voided_invoice_refs = set()
+            for row in receivable_rows:
+                invoice_ref = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
+                status = _clean_text(row.get(sc.COL_RECV_STATUS)).casefold()
+                if invoice_ref and status in {
+                    "void",
+                    "voided",
+                    "reversed",
+                    "cancelled",
+                    "canceled",
+                    "superseded",
+                }:
+                    voided_invoice_refs.add(invoice_ref.upper())
+            for row in invoice_rows:
+                invoice_ref = _clean_text(row.get(sc.COL_INV_INVOICE_NUM))
+                if invoice_ref.upper().endswith("-V"):
+                    voided_invoice_refs.add(invoice_ref[:-2].upper())
+                elif invoice_ref.upper().endswith("-SUPERSEDED"):
+                    voided_invoice_refs.add(invoice_ref.upper())
+
+            all_invoice_refs = {
+                _clean_text(r.get(sc.COL_INV_INVOICE_NUM)).upper()
+                for r in invoice_rows
+                if _clean_text(r.get(sc.COL_INV_INVOICE_NUM))
+                and _clean_text(r.get(sc.COL_INV_INVOICE_NUM)).upper() not in voided_invoice_refs
+                and not _clean_text(r.get(sc.COL_INV_INVOICE_NUM)).upper().endswith("-V")
+            }
 
             client_names: Dict[str, str] = {}
             client_parent: Dict[str, str] = {}
@@ -10622,11 +11248,11 @@ class ExcelRepo:
             wip_relieved_map: Dict[str, float] = collections.defaultdict(float)
             for row in time_rows:
                 inv_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
-                if inv_ref:
+                if inv_ref and inv_ref.upper() not in voided_invoice_refs:
                     wip_relieved_map[inv_ref.upper()] += amount(row.get(sc.COL_TIME_TOTAL)) or amount(row.get(sc.COL_TIME_GROSS))
             for row in disb_rows:
                 inv_ref = _clean_text(row.get(sc.COL_DISB_INVOICE_REF))
-                if inv_ref:
+                if inv_ref and inv_ref.upper() not in voided_invoice_refs:
                     wip_relieved_map[inv_ref.upper()] += amount(row.get(sc.COL_DISB_AMOUNT))
 
             if show_time or show_fees:
@@ -10679,7 +11305,11 @@ class ExcelRepo:
                         "billingParentName": parent_name,
                     })
                     
-                    if status.lower() in {"billed", "merged"} and (not invoice_ref or invoice_ref.upper() not in all_invoice_refs):
+                    if (
+                        status.lower() in {"billed", "merged"}
+                        and invoice_ref.upper() not in voided_invoice_refs
+                        and (not invoice_ref or invoice_ref.upper() not in all_invoice_refs)
+                    ):
                         add_entry({
                             "date": row.get(sc.COL_TIME_DATE),
                             "type": "Invoice",
@@ -10762,6 +11392,8 @@ class ExcelRepo:
                     if not date_matches(row.get(sc.COL_INV_INVOICE_DATE)):
                         continue
                     invoice_num = _clean_text(row.get(sc.COL_INV_INVOICE_NUM))
+                    if invoice_num.upper() in voided_invoice_refs or invoice_num.upper().endswith("-V"):
+                        continue
                     inv_total_fees = amount(row.get(sc.COL_INV_TOTAL_FEES))
                     inv_total_disb = amount(row.get(sc.COL_INV_TOTAL_DISBURSEMENTS))
                     inv_total_tax = amount(row.get(sc.COL_INV_TOTAL_TAX))
@@ -10841,6 +11473,8 @@ class ExcelRepo:
                 if not date_matches(row.get(sc.COL_RECV_DATE)):
                     continue
                 invoice_num = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
+                if invoice_num.upper() in voided_invoice_refs:
+                    continue
                 status = _clean_text(row.get(sc.COL_RECV_STATUS))
                 paid = amount(row.get(sc.COL_RECV_AMOUNT_PAID))
                 credits = amount(row.get(sc.COL_RECV_CREDITS_ADJ))
@@ -11831,12 +12465,43 @@ class ExcelRepo:
 
         try:
             self.ensure_schema()
-            receivable_rows = self._read_table_rows(TBL_RECEIVABLES)
-            ledger_rows = self._read_table_rows(TBL_LEDGER)
-            profile_rows = self._read_table_rows(TBL_CLIENT_PROFILES)
-            client_rows = self._read_table_rows(TBL_CLIENTS)
-            parent_rows = self._read_table_rows(TBL_PARENTS)
-            matter_rows = self._read_table_rows(TBL_MATTERS)
+            # A statement needs all of these related tables to build its
+            # canonical A/R stream.  Reading them one by one re-opened and
+            # parsed the entire macro workbook for every table on a cold
+            # cache, which freezes the QML UI while a report tab is opening.
+            # The bulk reader preserves the exact same row-cache semantics,
+            # but obtains every missing table from one read-only workbook
+            # opening instead.
+            statement_table_refs = [
+                TBL_RECEIVABLES,
+                TBL_LEDGER,
+                TBL_CLIENT_PROFILES,
+                TBL_CLIENTS,
+                TBL_PARENTS,
+                TBL_MATTERS,
+                TBL_TIME,
+                TBL_DISBURSEMENTS,
+                TBL_INVOICE_LOG,
+            ]
+            bulk_reader = getattr(self, "_read_table_rows_bulk", None)
+            if callable(bulk_reader):
+                statement_tables = bulk_reader(statement_table_refs)
+            else:
+                # Keep lightweight repository adapters and narrow unit-test
+                # doubles compatible with the original single-table contract.
+                statement_tables = {
+                    tref.table: self._read_table_rows(tref)
+                    for tref in statement_table_refs
+                }
+            receivable_rows = statement_tables.get(TBL_RECEIVABLES.table, [])
+            ledger_rows = statement_tables.get(TBL_LEDGER.table, [])
+            profile_rows = statement_tables.get(TBL_CLIENT_PROFILES.table, [])
+            client_rows = statement_tables.get(TBL_CLIENTS.table, [])
+            parent_rows = statement_tables.get(TBL_PARENTS.table, [])
+            matter_rows = statement_tables.get(TBL_MATTERS.table, [])
+            time_rows = statement_tables.get(TBL_TIME.table, [])
+            disbursement_rows = statement_tables.get(TBL_DISBURSEMENTS.table, [])
+            invoice_rows = statement_tables.get(TBL_INVOICE_LOG.table, [])
         except Exception as e:
             return {"ok": False, "message": f"Data load failed: {e}"}
 
@@ -11891,13 +12556,215 @@ class ExcelRepo:
                 return True
             return bool(_client_scope(row_billing_client, row_work_client))
 
-        matter_by_invoice = {}
+        client_name_by_id: Dict[str, str] = {}
+        for row in client_rows:
+            client_id = _clean_text(row.get(sc.COL_CLIENT_ID))
+            client_name = _clean_text(row.get(sc.COL_CLIENT_NAME))
+            if client_id and client_name:
+                client_name_by_id[client_id.casefold()] = client_name
+
+        invoice_date_by_key: Dict[str, Optional[date]] = {}
+        for row in receivable_rows:
+            invoice_key = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold()
+            if invoice_key:
+                invoice_date_by_key[invoice_key] = self._parse_date_value(row.get(sc.COL_RECV_DATE))
+
+        matter_context_by_id: Dict[str, Dict[str, str]] = {}
+        matter_contexts_by_client: Dict[str, List[Dict[str, Any]]] = collections.defaultdict(list)
+        for row in matter_rows:
+            matter_id = _clean_text(row.get(sc.COL_MATTER_ID))
+            if not matter_id:
+                continue
+            matter_client_id = _clean_text(row.get(sc.COL_MATTER_CLIENT_ID))
+            matter_client = _clean_text(row.get(sc.COL_MATTER_CLIENT_NAME))
+            if not matter_client and matter_client_id:
+                matter_client = client_name_by_id.get(matter_client_id.casefold(), matter_client_id)
+            # The Description is the user-facing, plain-English matter name.
+            # Legacy codes and internal names are intentionally last resorts.
+            matter_label = (
+                _clean_text(row.get(sc.COL_MATTER_DESCRIPTION))
+                or _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME))
+                or _clean_text(row.get(sc.COL_MATTER_NAME))
+                or _clean_text(row.get(sc.COL_MATTER_NUMBER))
+                or matter_id
+            )
+            context = {
+                "client": matter_client,
+                "matter": matter_label,
+                # Preserve the stable key as well as the plain-English label.
+                # Statement rows use this to open the exact Matter Profile 360
+                # record rather than attempting a name-based lookup.
+                "matterId": matter_id,
+            }
+            # Use the same deliberately conservative historic fallback as the
+            # Invoice Directory: only one non-legacy matter for the actual
+            # work client that was already open on the invoice date may fill a
+            # completely missing matter link.
+            if matter_client and "legacy" not in matter_label.casefold() and "unassigned" not in matter_label.casefold():
+                client_contexts = matter_contexts_by_client[matter_client.casefold()]
+                if not any(_clean_text(item.get("matter")) == matter_label for item in client_contexts):
+                    client_contexts.append(
+                        {
+                            "matter": matter_label,
+                            "matterId": matter_id,
+                            "opened": self._parse_date_value(row.get(sc.COL_MATTER_OPEN_DATE)),
+                        }
+                    )
+            # A legacy docket stores the human-facing MatterNumber, whereas
+            # current time rows store the UUID MatterID.  Index both (plus the
+            # older display/name forms) so a statement can resolve either
+            # generation of records to the same client and description.
+            for lookup_value in (
+                matter_id,
+                _clean_text(row.get(sc.COL_MATTER_NUMBER)),
+                _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME)),
+                _clean_text(row.get(sc.COL_MATTER_NAME)),
+            ):
+                lookup_key = _clean_text(lookup_value).casefold()
+                if lookup_key:
+                    matter_context_by_id.setdefault(lookup_key, context)
+
+        invoice_contexts: Dict[str, List[Dict[str, str]]] = {}
+
+        def _append_invoice_context(
+            invoice_ref: Any,
+            client_ref: Any = "",
+            matter_ref: Any = "",
+            matter_label: Any = "",
+        ) -> None:
+            invoice_key = _clean_text(invoice_ref).casefold()
+            if not invoice_key:
+                return
+            source_client = _clean_text(client_ref)
+            source_matter = _clean_text(matter_label)
+            resolved = matter_context_by_id.get(_clean_text(matter_ref).casefold(), {})
+            client_name = _clean_text(resolved.get("client")) or client_name_by_id.get(
+                source_client.casefold(), source_client
+            )
+            matter_name = _clean_text(resolved.get("matter")) or source_matter
+            if not client_name and not matter_name:
+                return
+            context = {
+                "client": client_name,
+                "matter": matter_name,
+                "matterId": _clean_text(resolved.get("matterId")),
+            }
+            contexts = invoice_contexts.setdefault(invoice_key, [])
+            for index, existing in enumerate(contexts):
+                if _clean_text(existing.get("client")).casefold() != client_name.casefold():
+                    continue
+                existing_matter = _clean_text(existing.get("matter"))
+                if existing_matter == matter_name:
+                    # Prefer a current structured lookup when the same
+                    # legacy/invoice-log label lacked its durable Matter_ID.
+                    if (not _clean_text(existing.get("matterId"))
+                            and _clean_text(context.get("matterId"))):
+                        contexts[index] = context
+                    return
+                if not existing_matter and matter_name:
+                    contexts[index] = context
+                    return
+                if existing_matter and not matter_name:
+                    return
+            if context not in contexts:
+                contexts.append(context)
+
+        # Prefer current structured sources.  These identify both the actual
+        # work client and its matter, whereas tblReceivables only identifies
+        # the bill-to party.
+        for row in time_rows:
+            _append_invoice_context(
+                row.get(sc.COL_TIME_INVOICE_REF),
+                row.get(sc.COL_TIME_CLIENT_ID),
+                row.get(sc.COL_TIME_MATTER_ID),
+            )
+        for row in disbursement_rows:
+            _append_invoice_context(
+                row.get(sc.COL_DISB_INVOICE_REF),
+                row.get(sc.COL_DISB_CLIENT_ID) or row.get(sc.COL_DISB_SUB_CLIENT) or row.get(sc.COL_DISB_CLIENT_NAME),
+                row.get(sc.COL_DISB_MATTER_ID),
+            )
+        # Invoice-log sub-client is a reliable secondary source when no work
+        # row was retained.  It is deliberately not replaced with the bill-to
+        # client below.
+        for row in invoice_rows:
+            _append_invoice_context(
+                row.get(sc.COL_INV_INVOICE_NUM),
+                row.get(sc.COL_INV_SUB_CLIENT) or row.get(sc.COL_INV_CLIENT_NAME),
+            )
+        # Preserve historical context stored only in the companion legacy
+        # docket workbook, but only when the requested account actually has
+        # an invoice whose modern records cannot identify a matter.  Opening
+        # that OneDrive workbook can take many seconds; doing so for every
+        # Statement or A/R tab made normal navigation appear frozen even when
+        # current CSPM records already supplied every label.
+        invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        requires_legacy_context = False
+        for row in receivable_rows:
+            invoice_key = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold()
+            if not invoice_key or not invoice_pattern.match(invoice_key.upper()):
+                continue
+            if not _row_matches_scope(
+                row.get(sc.COL_RECV_CLIENT),
+                row.get(sc.COL_RECV_WORK_CLIENT),
+            ):
+                continue
+            known_contexts = invoice_contexts.get(invoice_key, [])
+            if not any(_clean_text(context.get("matter")) for context in known_contexts):
+                requires_legacy_context = True
+                break
+
+        if requires_legacy_context:
+            for row in self._read_legacy_docket_rows():
+                legacy_invoice_ref = (
+                    row.get("Invoice") or row.get("InvoiceRef") or row.get("Invoice #")
+                )
+                legacy_invoice_key = _clean_text(legacy_invoice_ref).casefold()
+                # A legacy Dockets row is fallback-only.  It may describe an
+                # invoice that was subsequently reversed and reissued against
+                # a different current matter.  Never append that historical
+                # context when a live time/disbursement row has already
+                # resolved a matter for the same invoice.
+                existing_contexts = invoice_contexts.get(legacy_invoice_key, [])
+                if any(_clean_text(context.get("matter")) for context in existing_contexts):
+                    continue
+                _append_invoice_context(
+                    legacy_invoice_ref,
+                    row.get("Sub-Client") or row.get("SubClient") or row.get("Client"),
+                    row.get("Matter_ID") or row.get("MatterID") or row.get("Matter"),
+                )
+
+        for invoice_key, contexts in invoice_contexts.items():
+            invoice_date = invoice_date_by_key.get(invoice_key)
+            if not invoice_date:
+                continue
+            for index, context in enumerate(contexts):
+                if _clean_text(context.get("matter")):
+                    continue
+                client_name = _clean_text(context.get("client"))
+                if not client_name:
+                    continue
+                candidates = [
+                    item
+                    for item in matter_contexts_by_client.get(client_name.casefold(), [])
+                    if not item.get("opened") or item["opened"] <= invoice_date
+                ]
+                if len(candidates) == 1:
+                    contexts[index] = {
+                        "client": client_name,
+                        "matter": _clean_text(candidates[0].get("matter")),
+                        "matterId": _clean_text(candidates[0].get("matterId")),
+                    }
+
         client_by_invoice = {}
         for r in receivable_rows:
             inv = _clean_text(r.get(sc.COL_RECV_INVOICE_NUM))
             if inv:
-                # We do not strictly have matter directly on receivable unless we cross-reference, but we check if it matches client.
-                client_by_invoice[inv] = (r.get(sc.COL_RECV_CLIENT), r.get(sc.COL_RECV_WORK_CLIENT))
+                client_by_invoice[inv] = (
+                    r.get(sc.COL_RECV_CLIENT),
+                    r.get(sc.COL_RECV_WORK_CLIENT),
+                    invoice_contexts.get(inv.casefold(), []),
+                )
         
         # Build chronological events
         events = []
@@ -11924,6 +12791,31 @@ class ExcelRepo:
             amount = self._money_round(row.get(sc.COL_RECV_TOTAL_INVOICED))
             if amount <= 0:
                 continue
+
+            # Receivables is the authoritative source for the client-facing
+            # invoice balance.  ``CreditsAdj`` can contain a private legacy
+            # rounding/write-off adjustment (for example, a one-cent tidy-up),
+            # not a payment or a credit the billing client received.  Keep the
+            # gross amount in the internal AR event, but carry a separate
+            # statement view that absorbs that adjustment into the displayed
+            # invoice amount instead of exposing it in "Paid / Credits".
+            statement_values_available = all(
+                key in row
+                for key in (
+                    sc.COL_RECV_TOTAL_INVOICED,
+                    sc.COL_RECV_AMOUNT_PAID,
+                    sc.COL_RECV_CREDITS_ADJ,
+                    sc.COL_RECV_BALANCE_DUE,
+                )
+            )
+            statement_invoice_total = amount
+            statement_payment_amount = 0.0
+            statement_balance_due = amount
+            if statement_values_available:
+                adjustment = self._money_round(row.get(sc.COL_RECV_CREDITS_ADJ))
+                statement_invoice_total = self._money_round(max(0.0, amount - adjustment))
+                statement_payment_amount = self._money_round(row.get(sc.COL_RECV_AMOUNT_PAID))
+                statement_balance_due = self._money_round(row.get(sc.COL_RECV_BALANCE_DUE))
                 
             events.append({
                 "date": invoice_date or date.min,
@@ -11937,6 +12829,11 @@ class ExcelRepo:
                 "status": _clean_text(row.get(sc.COL_RECV_STATUS)),
                 "billingClient": billing_c,
                 "workClient": work_c,
+                "workContexts": invoice_contexts.get(invoice.casefold(), []),
+                "statementValuesAvailable": statement_values_available,
+                "statementInvoiceTotal": statement_invoice_total,
+                "statementPaymentAmount": statement_payment_amount,
+                "statementBalanceDue": statement_balance_due,
             })
             
         # 2. Credits (Payments & Adjustments)
@@ -11979,6 +12876,7 @@ class ExcelRepo:
                 "status": "Applied",
                 "billingClient": client_tuple[0],
                 "workClient": client_tuple[1],
+                "workContexts": client_tuple[2],
             })
             
         # 3. Sort chronologically
@@ -12066,6 +12964,19 @@ class ExcelRepo:
         if not ledger_res.get("ok"):
             return ledger_res
 
+        def _client_matter_label(context: Dict[str, Any]) -> str:
+            client_name = _clean_text(context.get("client") or context.get("workClient"))
+            matter_name = _clean_text(
+                context.get("matter")
+                or context.get("matterDescription")
+                or context.get("matterName")
+            )
+            if client_name and matter_name:
+                return f"{client_name} — {matter_name}"
+            if client_name:
+                return f"{client_name} — Matter not recorded"
+            return matter_name
+
         grouped: Dict[str, Dict[str, Any]] = {}
         closed_statuses = {"paid", "closed", "void", "voided", "cancelled", "canceled", "reversed"}
         for event in ledger_res.get("events", []):
@@ -12082,8 +12993,14 @@ class ExcelRepo:
                     "date": _clean_text(event.get("date")),
                     "invoiceTotal": 0.0,
                     "paidCredits": 0.0,
+                    "statementInvoiceTotal": 0.0,
+                    "statementPaymentAmount": 0.0,
+                    "statementBalanceDue": 0.0,
+                    "hasStatementValues": False,
                     "status": _clean_text(event.get("status")),
                     "workClients": [],
+                    "clientMatters": [],
+                    "matterLinks": [],
                 },
             )
             if not group["date"] and _clean_text(event.get("date")):
@@ -12091,24 +13008,119 @@ class ExcelRepo:
             if _clean_text(event.get("type")).lower() == "invoice":
                 group["invoiceTotal"] += self._money_round(event.get("debit"))
                 group["status"] = _clean_text(event.get("status")) or group["status"]
+                if event.get("statementValuesAvailable"):
+                    group["statementInvoiceTotal"] += self._money_round(event.get("statementInvoiceTotal"))
+                    group["statementPaymentAmount"] += self._money_round(event.get("statementPaymentAmount"))
+                    group["statementBalanceDue"] += self._money_round(event.get("statementBalanceDue"))
+                    group["hasStatementValues"] = True
             else:
                 group["paidCredits"] += self._money_round(event.get("credit"))
             work_client = _clean_text(event.get("workClient"))
             if work_client and work_client not in group["workClients"]:
                 group["workClients"].append(work_client)
+            raw_contexts = event.get("workContexts") or []
+            if isinstance(raw_contexts, dict):
+                raw_contexts = [raw_contexts]
+            for context in raw_contexts:
+                if not isinstance(context, dict):
+                    continue
+                context_client = _clean_text(context.get("client") or context.get("workClient"))
+                context_matter = _clean_text(
+                    context.get("matter")
+                    or context.get("matterDescription")
+                    or context.get("matterName")
+                )
+                if context_client.casefold() == billing_client.casefold() and not context_matter:
+                    # An invoice-log row that only repeats the bill-to party
+                    # adds no work-context information.
+                    continue
+                label = _client_matter_label(context)
+                if label and label not in group["clientMatters"]:
+                    group["clientMatters"].append(label)
+                if context_matter:
+                    detail = {
+                        "client": context_client,
+                        "matter": context_matter,
+                        "matterId": _clean_text(context.get("matterId")),
+                    }
+                    if not any(
+                        _clean_text(existing.get("client")).casefold() == context_client.casefold()
+                        and _clean_text(existing.get("matter")) == context_matter
+                        for existing in group["matterLinks"]
+                    ):
+                        group["matterLinks"].append(detail)
+            # Test fixtures and older callers may provide a work matter
+            # directly on the event.  Preserve it without requiring a new
+            # ledger contract everywhere at once.
+            if any(_clean_text(event.get(key)) for key in ("matter", "matterDescription", "matterName")):
+                direct_label = _client_matter_label(event)
+                if direct_label and direct_label not in group["clientMatters"]:
+                    group["clientMatters"].append(direct_label)
+                direct_client = _clean_text(event.get("client") or event.get("workClient"))
+                direct_matter = _clean_text(
+                    event.get("matter") or event.get("matterDescription") or event.get("matterName")
+                )
+                if direct_matter and not any(
+                    _clean_text(existing.get("client")).casefold() == direct_client.casefold()
+                    and _clean_text(existing.get("matter")) == direct_matter
+                    for existing in group["matterLinks"]
+                ):
+                    group["matterLinks"].append(
+                        {
+                            "client": direct_client,
+                            "matter": direct_matter,
+                            "matterId": _clean_text(event.get("matterId")),
+                        }
+                    )
 
         candidates: List[Dict[str, Any]] = []
         for group in grouped.values():
-            invoice_total = round(float(group["invoiceTotal"]), 2)
-            paid_credits = round(float(group["paidCredits"]), 2)
-            balance_due = round(invoice_total - paid_credits, 2)
+            if group["hasStatementValues"]:
+                invoice_total = round(float(group["statementInvoiceTotal"]), 2)
+                paid_credits = round(float(group["statementPaymentAmount"]), 2)
+                balance_due = round(float(group["statementBalanceDue"]), 2)
+            else:
+                invoice_total = round(float(group["invoiceTotal"]), 2)
+                paid_credits = round(float(group["paidCredits"]), 2)
+                balance_due = round(invoice_total - paid_credits, 2)
             if invoice_total <= 0 or balance_due <= 0.009:
                 continue
             status_key = _clean_text(group["status"]).casefold()
             if status_key in closed_statuses:
                 continue
-            work_clients = group["workClients"]
-            service_for = ", ".join(work_clients) if work_clients else billing_client
+            client_matters = group["clientMatters"]
+            # A later migration can leave both a literal "Legacy Matter …"
+            # marker and the resolved contemporary matter for one client.
+            # Show the resolved matter only; retain all genuinely distinct
+            # matters on a multi-matter invoice.
+            resolved_clients = {
+                label.split(" — ", 1)[0].casefold()
+                for label in client_matters
+                if "legacy matter" not in label.casefold()
+            }
+            client_matters = [
+                label
+                for label in client_matters
+                if "legacy matter" not in label.casefold()
+                or label.split(" — ", 1)[0].casefold() not in resolved_clients
+            ]
+            matter_links = [
+                link
+                for link in group["matterLinks"]
+                if "legacy matter" not in _clean_text(link.get("matter")).casefold()
+                or _clean_text(link.get("client")).casefold() not in resolved_clients
+            ]
+            if not client_matters:
+                # A bill-to party is not evidence of the matter receiving the
+                # work.  Never label a statement row as the billing client
+                # merely because historical context was unavailable.
+                work_clients = [
+                    name
+                    for name in group["workClients"]
+                    if _clean_text(name).casefold() != billing_client.casefold()
+                ]
+                client_matters = work_clients
+            service_for = ", ".join(client_matters) if client_matters else "Client matter not recorded"
             candidates.append(
                 {
                     "invoice": group["invoice"],
@@ -12116,6 +13128,17 @@ class ExcelRepo:
                     "date": group["date"],
                     "description": f"Legal services for {service_for}",
                     "serviceFor": service_for,
+                    # An unresolved historic label remains plain text in QML.
+                    # Only a stable Matter_ID is allowed to open an editable
+                    # Matter 360 record, preventing a name-based misroute.
+                    "matterLinks": [
+                        {
+                            "clientName": _clean_text(link.get("client")),
+                            "matterName": _clean_text(link.get("matter")),
+                            "matterId": _clean_text(link.get("matterId")),
+                        }
+                        for link in matter_links
+                    ],
                     "status": "Partially Paid" if paid_credits > 0.009 else "Unpaid",
                     "invoiceTotal": invoice_total,
                     "invoiceTotalFormatted": f"${invoice_total:,.2f}",
@@ -12141,10 +13164,27 @@ class ExcelRepo:
         """List bill-to parties with current open receivables for statement selection."""
         try:
             self.ensure_schema()
-            receivables = self._read_table_rows(TBL_RECEIVABLES)
-            profiles = self._read_table_rows(TBL_CLIENT_PROFILES)
-            clients = self._read_table_rows(TBL_CLIENTS)
-            parents = self._read_table_rows(TBL_PARENTS)
+            # Keep the first visible Statement screen responsive: all four
+            # lists live in CSPM.xlsm, so loading them independently needlessly
+            # reparses the same macro workbook four times.
+            statement_table_refs = [
+                TBL_RECEIVABLES,
+                TBL_CLIENT_PROFILES,
+                TBL_CLIENTS,
+                TBL_PARENTS,
+            ]
+            bulk_reader = getattr(self, "_read_table_rows_bulk", None)
+            if callable(bulk_reader):
+                statement_tables = bulk_reader(statement_table_refs)
+            else:
+                statement_tables = {
+                    tref.table: self._read_table_rows(tref)
+                    for tref in statement_table_refs
+                }
+            receivables = statement_tables.get(TBL_RECEIVABLES.table, [])
+            profiles = statement_tables.get(TBL_CLIENT_PROFILES.table, [])
+            clients = statement_tables.get(TBL_CLIENTS.table, [])
+            parents = statement_tables.get(TBL_PARENTS.table, [])
         except Exception:
             return []
 
@@ -12235,13 +13275,13 @@ class ExcelRepo:
             {"label": "Amount Due", "value": f"${selected_total:,.2f}"},
         ]
         summary_columns = [
-            {"key": "label", "label": "Statement Summary", "width": 180, "minWidth": 120},
-            {"key": "value", "label": "Value", "width": 420, "minWidth": 200},
+            {"key": "label", "label": "Item", "width": 180, "minWidth": 120},
+            {"key": "value", "label": "Details", "width": 420, "minWidth": 200},
         ]
         columns = [
             {"key": "date", "label": "Invoice Date", "width": 90, "minWidth": 80},
             {"key": "reference", "label": "Invoice", "width": 90, "minWidth": 80},
-            {"key": "serviceFor", "label": "Legal Services For", "width": 230, "minWidth": 140},
+            {"key": "serviceFor", "label": "Client & Matter", "width": 230, "minWidth": 140},
             {"key": "invoiceTotalFormatted", "label": "Invoice Total", "width": 105, "minWidth": 90, "align": "right"},
             {"key": "paidCreditsFormatted", "label": "Paid / Credits", "width": 105, "minWidth": 90, "align": "right"},
             {"key": "balanceDueFormatted", "label": "Amount Due", "width": 105, "minWidth": 90, "align": "right"},

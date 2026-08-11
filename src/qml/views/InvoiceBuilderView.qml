@@ -81,6 +81,7 @@ Item {
 
     // Finalize state
     property bool isFinalizingExport: false
+    property string finalizationStage: ""
     property string pendingFinalizeInvoiceNum: ""
     property string pendingFinalizePath: ""
     property bool isFinalized: false
@@ -225,9 +226,7 @@ Item {
     function _loadDrafts() {
         if (!billingBackend) return
         isLoading = true
-        var result = billingBackend.listDrafts()
-        draftsList = result || []
-        isLoading = false
+        billingBackend.loadDrafts()
     }
 
     function _selectDraft(draftNum) {
@@ -251,9 +250,22 @@ Item {
 
     function _finalizeDraft() {
         if (!billingBackend || !selectedDraftNum) return
-        finalizeInvoiceDialog.inputInvoiceNum = billingBackend.nextInvoiceNumber()
+        var reservedNumber = _reservedReissueInvoiceNumber()
         finalizeInvoiceDialog.validationError = ""
+        finalizeInvoiceDialog.numberGuidance = reservedNumber !== ""
+                ? "Suggested replacement number: " + reservedNumber + ". You may enter another unused invoice number."
+                : "Finding the next available invoice number…"
+        finalizeInvoiceDialog.preflightBusy = reservedNumber === ""
+        finalizeInvoiceDialog.inputInvoiceNum = reservedNumber
         finalizeInvoiceDialog.visible = true
+        if (reservedNumber === "") {
+            billingBackend.loadNextInvoiceNumber()
+        }
+    }
+
+    function _reservedReissueInvoiceNumber() {
+        if (!root.selectedDraftData) return ""
+        return String(root.selectedDraftData.ReissueInvoiceNum || "").trim()
     }
 
     function _deleteDraft() {
@@ -292,19 +304,21 @@ Item {
     }
 
     function _confirmFinalizeDraft() {
-        if (!billingBackend || !selectedDraftNum) return
+        if (!billingBackend || !selectedDraftNum || finalizeInvoiceDialog.preflightBusy) return
         var requestedNum = finalizeInvoiceDialog.inputInvoiceNum.trim()
         if (requestedNum === "") {
             finalizeInvoiceDialog.validationError = "Invoice number cannot be empty."
             return
         }
-        
-        var isUsed = billingBackend.isInvoiceNumberUsed(requestedNum)
-        if (isUsed) {
-            finalizeInvoiceDialog.validationError = "This invoice number has already been used!"
-            return
-        }
-        
+
+        finalizeInvoiceDialog.validationError = ""
+        finalizeInvoiceDialog.numberGuidance = "Checking that invoice number…"
+        finalizeInvoiceDialog.preflightBusy = true
+        root.pendingFinalizeInvoiceNum = requestedNum
+        billingBackend.loadInvoiceNumberReuseStatus(requestedNum)
+    }
+
+    function _openFinalizePdfSaveDialog(requestedNum) {
         finalizeInvoiceDialog.visible = false
         
         // Construct descriptive filename
@@ -340,18 +354,68 @@ Item {
             root.previewHtml = html
             root.isPreviewLoading = false
         }
+        function onDraftsLoaded(drafts) {
+            root.draftsList = drafts || []
+            root.isLoading = false
+        }
+        function onNextInvoiceNumberLoaded(invoiceNum) {
+            if (!finalizeInvoiceDialog.visible || root._reservedReissueInvoiceNumber() !== "") return
+            finalizeInvoiceDialog.preflightBusy = false
+            if (invoiceNum) {
+                finalizeInvoiceDialog.inputInvoiceNum = String(invoiceNum)
+                finalizeInvoiceDialog.numberGuidance = ""
+            } else {
+                finalizeInvoiceDialog.validationError = "Could not suggest an invoice number. Enter one manually."
+            }
+        }
+        function onInvoiceNumberReuseStatusLoaded(invoiceNum, status) {
+            if (String(invoiceNum) !== root.pendingFinalizeInvoiceNum) return
+            finalizeInvoiceDialog.preflightBusy = false
+            if (!status || status.canUse !== true) {
+                finalizeInvoiceDialog.validationError = status && status.message
+                        ? String(status.message) : "This invoice number has already been used!"
+                root.pendingFinalizeInvoiceNum = ""
+                return
+            }
+            root._openFinalizePdfSaveDialog(String(invoiceNum))
+        }
+        function onFinalizedInvoiceHtmlReady(draftNum, invoiceNum, html) {
+            if (!root.isFinalizingExport || draftNum !== root.selectedDraftNum
+                    || invoiceNum !== root.pendingFinalizeInvoiceNum) return
+            if (!html) {
+                root.isFinalizingExport = false
+                root.finalizationStage = ""
+                root.pendingFinalizeInvoiceNum = ""
+                root.pendingFinalizePath = ""
+                return
+            }
+            root.previewHtml = html
+            root.isPreviewLoading = false
+            root.finalizationStage = "Saving the finalized PDF…"
+            root.billingBackend.exportHtmlToPdf(html, root.pendingFinalizePath)
+        }
+        function onFinalizedInvoiceHtmlFailed(draftNum, invoiceNum, message) {
+            if (draftNum !== root.selectedDraftNum || invoiceNum !== root.pendingFinalizeInvoiceNum) return
+            root.isFinalizingExport = false
+            root.finalizationStage = ""
+            root.pendingFinalizeInvoiceNum = ""
+            root.pendingFinalizePath = ""
+        }
         function onDraftFinalized(result) {
+            if (!result || result.ok !== true) {
+                root.isFinalizingExport = false
+                root.finalizationStage = ""
+                return
+            }
+            root.finalInvoiceNum = String(result.invoiceNum || root.pendingFinalizeInvoiceNum)
+            root.finalizationStage = "Refreshing the workspace…"
             root.isFinalizingExport = false
             root.isFinalized = true
-            root.finalInvoiceNum = result
             root.zenModeOpen = false // Ensure Zen is closed
             root._loadDrafts()
-            
-            // Fetch clean finalized HTML directly from backend to clear draft watermarks and update numbers
-            var cleanHtml = root.billingBackend.getFinalizedHtml(root.selectedDraftNum, root.finalInvoiceNum);
-            if (cleanHtml) {
-                root.previewHtml = cleanHtml;
-            }
+            root.pendingFinalizeInvoiceNum = ""
+            root.pendingFinalizePath = ""
+            root.finalizationStage = ""
         }
         function onDraftUpdated(draft) {
             if (root.deletingDraftNum.length > 0) return
@@ -369,17 +433,18 @@ Item {
                 root.zenModeOpen = false
                 root.finalPdfPath = path
                 // Finalize in database (isFinalizingExport stays true as a loading indicator)
+                root.finalizationStage = "Updating the accounting records…"
                 root.billingBackend.finalizeDraft(root.selectedDraftNum, root.pendingFinalizeInvoiceNum, root.pendingFinalizePath)
-                root.pendingFinalizeInvoiceNum = ""
-                root.pendingFinalizePath = ""
             } else if (root.isFinalizingExport && !success) {
                 root.isFinalizingExport = false
+                root.finalizationStage = ""
                 root.pendingFinalizeInvoiceNum = ""
                 root.pendingFinalizePath = ""
             }
         }
         function onDraftFinalizationError(msg) {
             root.isFinalizingExport = false
+            root.finalizationStage = ""
         }
     }
 
@@ -1452,14 +1517,15 @@ Item {
             onAccepted: {
                 var path = finalizePdfFileDialog.selectedFile.toString().replace("file:///", "")
                 if (root.billingBackend) {
-                    var finalHtml = root.billingBackend.getFinalizedHtml(root.selectedDraftNum, root.pendingFinalizeInvoiceNum)
                     root.isFinalizingExport = true
+                    root.finalizationStage = "Preparing the finalized invoice…"
                     root.pendingFinalizePath = path
-                    root.billingBackend.exportHtmlToPdf(finalHtml, path)
+                    root.billingBackend.loadFinalizedInvoiceHtml(root.selectedDraftNum, root.pendingFinalizeInvoiceNum)
                 }
             }
             onRejected: {
                 root.pendingFinalizeInvoiceNum = ""
+                root.finalizationStage = ""
             }
         }
         
@@ -1535,7 +1601,7 @@ Item {
                 }
 
                 Text {
-                    text: "Finalizing Invoice..."
+                    text: root.finalizationStage !== "" ? root.finalizationStage : "Finalizing invoice…"
                     font.pixelSize: 22
                     font.weight: Font.DemiBold
                     font.family: "Inter"
@@ -1544,7 +1610,7 @@ Item {
                 }
 
                 Text {
-                    text: "Saving PDF and updating records"
+                    text: "CSPM is safely completing this step. Keep this window open."
                     font.pixelSize: 14
                     color: "#94A3B8"
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -1558,9 +1624,17 @@ Item {
         id: finalizeInvoiceDialog
         property string inputInvoiceNum: ""
         property string validationError: ""
+        property string numberGuidance: ""
+        property bool preflightBusy: false
+
+        function refreshNumberGuidance() {
+            if (root._reservedReissueInvoiceNumber() !== "") {
+                numberGuidance = "Suggested replacement number: " + root._reservedReissueInvoiceNumber() + ". You may enter another unused invoice number."
+            }
+        }
         
         width: 400
-        height: 240
+        height: 280
         flags: Qt.Dialog | Qt.FramelessWindowHint
         modality: Qt.ApplicationModal
         color: "transparent"
@@ -1576,14 +1650,16 @@ Item {
                 anchors.margins: 24
                 spacing: 16
                 Text {
-                    text: "Finalize Invoice"
+                    text: root._reservedReissueInvoiceNumber() !== "" ? "Finalize Corrected Invoice" : "Finalize Invoice"
                     font.family: "Inter"
                     font.pixelSize: 18
                     font.weight: Font.DemiBold
                     color: root.textColor
                 }
                 Text {
-                    text: "Enter the final invoice number to issue. The next standard number is suggested below."
+                    text: root._reservedReissueInvoiceNumber() !== ""
+                        ? "CSPM suggests reusing " + root._reservedReissueInvoiceNumber() + " for this corrected invoice. You may replace it with any unused invoice number."
+                        : "Enter the final invoice number to issue. The next standard number is suggested below."
                     font.family: "Inter"
                     font.pixelSize: 14
                     color: root.mutedColor
@@ -1596,7 +1672,19 @@ Item {
                     text: finalizeInvoiceDialog.inputInvoiceNum
                     font.family: "Inter"
                     font.pixelSize: 14
-                    onTextChanged: finalizeInvoiceDialog.inputInvoiceNum = text
+                    readOnly: false
+                    onTextChanged: {
+                        finalizeInvoiceDialog.inputInvoiceNum = text
+                    }
+                }
+                Text {
+                    text: finalizeInvoiceDialog.numberGuidance
+                    color: root.accentColor
+                    font.pixelSize: 12
+                    font.family: "Inter"
+                    visible: text !== ""
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                 }
                 Text {
                     text: finalizeInvoiceDialog.validationError
@@ -1613,16 +1701,17 @@ Item {
                     Layout.alignment: Qt.AlignRight
                     Button {
                         text: "Cancel"
+                        enabled: !finalizeInvoiceDialog.preflightBusy
                         onClicked: finalizeInvoiceDialog.visible = false
                     }
                     Rectangle {
                         width: 100
                         height: 36
                         radius: 6
-                        color: root.accentColor
+                        color: finalizeInvoiceDialog.preflightBusy ? root.borderColor : root.accentColor
                         Text {
                             anchors.centerIn: parent
-                            text: "Confirm"
+                            text: finalizeInvoiceDialog.preflightBusy ? "Checking…" : "Confirm"
                             color: SemanticTheme.surfacePanel(root.t, root.appStyle)
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
@@ -1630,8 +1719,10 @@ Item {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root._confirmFinalizeDraft()
+                            cursorShape: finalizeInvoiceDialog.preflightBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
+                            onClicked: {
+                                if (!finalizeInvoiceDialog.preflightBusy) root._confirmFinalizeDraft()
+                            }
                         }
                     }
                 }

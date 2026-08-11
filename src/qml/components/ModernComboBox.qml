@@ -36,6 +36,11 @@ ComboBox {
     property bool smartFilterEnabled: true
     property bool sortSmartFilterResults: true
     property bool preserveEditTextOnModelChanged: true
+    // Some historical records refer to master-data values that no longer
+    // exist in the current lookup list.  An editor can opt in to preserving
+    // those exact values (including an intentional blank) while the lookup
+    // list refreshes, instead of silently substituting the first option.
+    property bool preserveUnknownEditTextOnModelChanged: false
     property string emptyOptionLabel: "(none)"
     property var displayModel: []
     property bool _searchTypingActive: false
@@ -168,6 +173,17 @@ ComboBox {
         var preTxt = control ? String(control.editText || "") : ""
         refreshDisplayModel()
 
+        if (control && control.preserveUnknownEditTextOnModelChanged === true) {
+            Qt.callLater(function() {
+                if (!control || control.preserveUnknownEditTextOnModelChanged !== true) return
+                if (control.editText !== preTxt) {
+                    control.editText = preTxt
+                }
+                control._lastValidSelectedText = preTxt
+            })
+            return
+        }
+
         if (!control || control.preserveEditTextOnModelChanged !== true) {
             return
         }
@@ -217,7 +233,8 @@ ComboBox {
                         break;
                     }
                 }
-                if (!found && currentTxt !== control.emptyOptionLabel && currentTxt.length > 0) {
+                if (!found && control.preserveUnknownEditTextOnModelChanged !== true
+                        && currentTxt !== control.emptyOptionLabel && currentTxt.length > 0) {
                     control.editText = control._lastValidSelectedText;
                 } else {
                     control._lastValidSelectedText = control.editText;
