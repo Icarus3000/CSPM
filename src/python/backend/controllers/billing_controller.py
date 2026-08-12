@@ -554,6 +554,49 @@ class BillingController(QObject):
 
     def createDraftWithGrouping(self, client_id, client_name, time_entry_ids, grouping_pref):
         """Create a draft invoice from the selected WIP entry IDs with a specific grouping preference."""
+        self._create_draft_with_grouping(
+            client_id,
+            client_name,
+            time_entry_ids,
+            grouping_pref,
+            {},
+        )
+
+    @Slot(str, str, 'QVariantList', str, 'QVariantMap')
+    def createDraftWithGroupingAndBillTo(
+        self,
+        client_id,
+        client_name,
+        time_entry_ids,
+        grouping_pref,
+        billing_recipient,
+    ):
+        """Create a draft using an explicitly selected joint-matter bill-to client."""
+        self._create_draft_with_grouping(
+            client_id,
+            client_name,
+            time_entry_ids,
+            grouping_pref,
+            dict(billing_recipient or {}),
+        )
+
+    @Slot('QVariantList', result='QVariantList')
+    def invoiceBillToOptions(self, work_entry_ids):
+        """Return bill-to choices only for selected WIP on joint matters."""
+        try:
+            return list(self._excel_repo.list_invoice_bill_to_options([str(x) for x in work_entry_ids]))
+        except Exception as exc:
+            self.error.emit(f"Could not load invoice bill-to choices: {exc}")
+            return []
+
+    def _create_draft_with_grouping(
+        self,
+        client_id,
+        client_name,
+        time_entry_ids,
+        grouping_pref,
+        billing_recipient,
+    ):
         py_all_ids = [str(x) for x in time_entry_ids]
         if not py_all_ids:
             message = "Select at least one time docket, fee entry, or disbursement before creating a draft invoice."
@@ -580,6 +623,7 @@ class BillingController(QObject):
             time_ids,
             actual_disb_ids,
             str(grouping_pref),
+            dict(billing_recipient or {}),
             name="createDraft",
         )
 
@@ -1574,6 +1618,26 @@ class BillingController(QObject):
         ]
 
         addr_lines = [x for x in addr_lines if x]
+
+        # A joint-matter invoice records the selected recipient at draft time.
+        # Use the frozen name and address when rendering, including after the
+        # client directory has been edited later.
+        bill_to_snapshot = str(draft.get(sc.COL_DRAFT_BILL_TO_SNAPSHOT) or "").strip()
+        if bill_to_snapshot:
+            try:
+                import json
+                saved_bill_to = json.loads(bill_to_snapshot)
+            except (TypeError, ValueError):
+                saved_bill_to = {}
+            if isinstance(saved_bill_to, dict) and str(saved_bill_to.get("clientName") or "").strip():
+                billing_client_id = str(saved_bill_to.get("clientId") or billing_client_id).strip()
+                billing_client_name_snapshot = str(saved_bill_to.get("clientName") or "").strip()
+                address_snapshot = str(saved_bill_to.get("fullAddress") or "").strip()
+                billing_profile = dict(billing_profile)
+                billing_profile["displayName"] = billing_client_name_snapshot
+                billing_profile["clientName"] = billing_client_name_snapshot
+                billing_profile["principalName"] = ""
+                addr_lines = [line.strip() for line in address_snapshot.splitlines() if line.strip()]
 
         discount_type = str(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE) or "None")
 

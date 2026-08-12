@@ -117,9 +117,12 @@ Item {
                     MouseArea {
                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            root.isBuildingInvoice = true
-                            billingBackend.createDraftWithGrouping(billingGroupingPromptDialog.clientIdToDraft, billingGroupingPromptDialog.clientNameToDraft, billingGroupingPromptDialog.idsToDraft, "matter")
-                            if (root.isZenMode) root.isZenMode = false
+                            root._beginDraft(
+                                billingGroupingPromptDialog.clientIdToDraft,
+                                billingGroupingPromptDialog.clientNameToDraft,
+                                billingGroupingPromptDialog.idsToDraft,
+                                "matter"
+                            )
                             billingGroupingPromptDialog.close()
                         }
                     }
@@ -132,10 +135,117 @@ Item {
                     MouseArea {
                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            root.isBuildingInvoice = true
-                            billingBackend.createDraftWithGrouping(billingGroupingPromptDialog.clientIdToDraft, billingGroupingPromptDialog.clientNameToDraft, billingGroupingPromptDialog.idsToDraft, "client")
-                            if (root.isZenMode) root.isZenMode = false
+                            root._beginDraft(
+                                billingGroupingPromptDialog.clientIdToDraft,
+                                billingGroupingPromptDialog.clientNameToDraft,
+                                billingGroupingPromptDialog.idsToDraft,
+                                "client"
+                            )
                             billingGroupingPromptDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: jointBillToPromptDialog
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        width: 560
+        height: 330
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+
+        property var idsToDraft: []
+        property string clientIdToDraft: ""
+        property string clientNameToDraft: ""
+        property string groupingToDraft: "matter"
+        property var recipientOptions: []
+        property var selectedRecipient: ({})
+
+        background: Rectangle {
+            color: root.panelColor
+            border.color: root.borderColor
+            border.width: 1
+            radius: 8
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 12
+
+            Text {
+                text: "Select Invoice Recipient"
+                color: root.textColor
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+            }
+
+            Text {
+                text: "This work is on a matter with multiple designated invoice recipients. Choose the client and address for this invoice."
+                color: root.textColor
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
+            ComboBox {
+                id: jointBillToRecipientCombo
+                Layout.fillWidth: true
+                model: jointBillToPromptDialog.recipientOptions
+                textRole: "clientName"
+                onActivated: {
+                    jointBillToPromptDialog.selectedRecipient = jointBillToPromptDialog.recipientOptions[currentIndex] || ({})
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: String(jointBillToPromptDialog.selectedRecipient.fullAddress || "")
+                color: root.mutedColor
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+            }
+
+            Item { Layout.fillHeight: true }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+
+                Rectangle {
+                    Layout.preferredWidth: 100; Layout.preferredHeight: 36; radius: 4; border.color: root.borderColor; color: "transparent"
+                    border.width: 1
+                    Text { anchors.centerIn: parent; text: "Cancel"; color: root.textColor; font.pixelSize: 14 }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: jointBillToPromptDialog.close() }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Rectangle {
+                    Layout.preferredWidth: 150; Layout.preferredHeight: 36; radius: 4; color: root.accentColor
+                    Text { anchors.centerIn: parent; text: "Create Draft"; color: SemanticTheme.textOnAccent(root.t, root.appStyle); font.weight: Font.Medium; font.pixelSize: 14 }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            var recipient = jointBillToPromptDialog.selectedRecipient || ({})
+                            if (!recipient.clientId) return
+                            root.isBuildingInvoice = true
+                            root.billingBackend.createDraftWithGroupingAndBillTo(
+                                jointBillToPromptDialog.clientIdToDraft,
+                                jointBillToPromptDialog.clientNameToDraft,
+                                jointBillToPromptDialog.idsToDraft,
+                                jointBillToPromptDialog.groupingToDraft,
+                                recipient
+                            )
+                            if (root.isZenMode) root.isZenMode = false
+                            jointBillToPromptDialog.close()
                         }
                     }
                 }
@@ -644,6 +754,31 @@ Item {
         autoCheckFilterMatch()
     }
 
+    function _beginDraft(clientId, clientName, ids, grouping) {
+        var recipients = []
+        try {
+            recipients = billingBackend && billingBackend.invoiceBillToOptions
+                ? billingBackend.invoiceBillToOptions(ids) : []
+        } catch (e) {
+            appToast("Could not load the invoice recipient choices: " + String(e))
+            return
+        }
+        if (recipients && recipients.length > 1) {
+            jointBillToPromptDialog.idsToDraft = ids
+            jointBillToPromptDialog.clientIdToDraft = String(clientId || "")
+            jointBillToPromptDialog.clientNameToDraft = String(clientName || "")
+            jointBillToPromptDialog.groupingToDraft = String(grouping || "matter")
+            jointBillToPromptDialog.recipientOptions = recipients
+            jointBillToPromptDialog.selectedRecipient = recipients[0] || ({})
+            jointBillToRecipientCombo.currentIndex = 0
+            jointBillToPromptDialog.open()
+            return
+        }
+        root.isBuildingInvoice = true
+        billingBackend.createDraftWithGrouping(clientId, clientName, ids, grouping)
+        if (root.isZenMode) root.isZenMode = false
+    }
+
     function _createDraft() {
         if (isBuildingInvoice) return
         if (!billingBackend) {
@@ -711,17 +846,13 @@ Item {
         
         if (clientCount > 1) {
             // Group by client
-            root.isBuildingInvoice = true
-            billingBackend.createDraftWithGrouping(primaryParentId, primaryParentName, ids, "client")
-            if (root.isZenMode) root.isZenMode = false
+            root._beginDraft(primaryParentId, primaryParentName, ids, "client")
             return
         }
         
         // If billed to a third-party, default to client grouping
         if (primaryParentId && primaryParentId !== primaryClientId) {
-            root.isBuildingInvoice = true
-            billingBackend.createDraftWithGrouping(primaryClientId, primaryClientName, ids, "client")
-            if (root.isZenMode) root.isZenMode = false
+            root._beginDraft(primaryClientId, primaryClientName, ids, "client")
             return
         }
         
@@ -735,10 +866,8 @@ Item {
         }
         
         // Single matter, default behavior
-        root.isBuildingInvoice = true
         var defaultGrouping = (primaryParentId && primaryParentId !== primaryClientId) ? "client" : "matter"
-        billingBackend.createDraftWithGrouping(primaryClientId, primaryClientName, ids, defaultGrouping)
-        if (root.isZenMode) root.isZenMode = false
+        root._beginDraft(primaryClientId, primaryClientName, ids, defaultGrouping)
     }
     // Signal connections
     Connections {

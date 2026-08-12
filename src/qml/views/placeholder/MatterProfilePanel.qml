@@ -408,7 +408,10 @@ Rectangle {
                 spacing: root.ratioPx(0.0035, 2)
 
                 Repeater {
-                    model: root.matterProfileRowModel()
+                    // The parent explicitly refreshes this list only after a
+                    // complete Matter Profile payload is available. This avoids
+                    // retaining the legacy directory snapshot for joint matters.
+                    model: root.matterProfileRows
                     delegate: RowLayout {
                         required property var modelData
 

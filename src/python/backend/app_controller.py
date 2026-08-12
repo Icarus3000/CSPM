@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import unquote, urlparse
 
-from PySide6.QtCore import QObject, Property, QTimer, QUrl, Signal, Slot, QThreadPool
+from PySide6.QtCore import QObject, Property, QRect, QTimer, QUrl, Signal, Slot, QThreadPool
 from PySide6.QtGui import QCursor, QDesktopServices, QGuiApplication
 from backend.workers import Worker
 from services.paths import AppPaths
@@ -2556,7 +2556,7 @@ class AppController(QObject):
             cache_dir = self._report_branding_logo_cache_dir()
             cache_dir.mkdir(parents=True, exist_ok=True)
             stamp = str(svg_path.stat().st_mtime_ns)
-            cache_path = cache_dir / f"{self._safe_profile_id(profile_id)}_{stamp}.png"
+            cache_path = cache_dir / f"{self._safe_profile_id(profile_id)}_{stamp}_trimmed.png"
             if cache_path.exists():
                 return str(cache_path)
             image_format = getattr(QImage, "Format_ARGB32_Premultiplied", QImage.Format.Format_ARGB32_Premultiplied)
@@ -2567,6 +2567,17 @@ class AppController(QObject):
                 renderer.render(painter)
             finally:
                 painter.end()
+            left, top = width, height
+            right = bottom = -1
+            for y in range(height):
+                for x in range(width):
+                    if image.pixelColor(x, y).alpha() > 0:
+                        left = min(left, x)
+                        top = min(top, y)
+                        right = max(right, x)
+                        bottom = max(bottom, y)
+            if right >= left and bottom >= top:
+                image = image.copy(QRect(left, top, right - left + 1, bottom - top + 1))
             if image.save(str(cache_path), "PNG"):  # type: ignore
                 return str(cache_path)
         except Exception as exc:

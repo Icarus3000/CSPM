@@ -211,7 +211,9 @@ def _draw_header_footer(canvas, doc, config, logo_path):
     # Calculate exact contact block bounds for logo alignment
     contact_top = (top - 11) + 7.0  # Ascent of 7.0pt font is roughly 7.0
     contact_bottom = (top - 11) - (num_contact_lines - 1) * 8.5 - 2.0  # Descent
-    logo_h = contact_top - contact_bottom
+    contact_height = contact_top - contact_bottom
+    logo_h = max(contact_height, float(config.get("headerLogoMinHeight") or contact_height))
+    logo_w = logo_h
     logo_y = contact_bottom
 
     logo_drawn = False
@@ -219,20 +221,35 @@ def _draw_header_footer(canvas, doc, config, logo_path):
         ext = os.path.splitext(str(logo_path))[1].lower()
         if ext in {".png", ".jpg", ".jpeg"}:
             try:
+                requested_width = float(config.get("headerLogoWidth") or 0.0)
+                requested_height = float(config.get("headerLogoHeight") or 0.0)
+                if requested_width > 0 and requested_height > 0:
+                    logo_w = requested_width
+                    logo_h = requested_height
+                    if config.get("headerLogoBottomAligned"):
+                        logo_y = contact_bottom
+                    else:
+                        logo_y = top - logo_h + float(
+                            config.get("headerLogoVerticalOffset") or 3.0
+                        )
+                else:
+                    logo_h = max(contact_height, float(config.get("headerLogoMinHeight") or contact_height))
+                    logo_w = logo_h
+                    logo_y = contact_top - logo_h
                 canvas.drawImage(
                     str(logo_path),
                     left,
                     logo_y,
-                    width=logo_h,
+                    width=logo_w,
                     height=logo_h,
-                    preserveAspectRatio=True,
+                    preserveAspectRatio=False,
                     mask="auto",
                 )
                 logo_drawn = True
             except Exception:
                 logo_drawn = False
 
-    text_left = left + (logo_h + 10 if logo_drawn else 0)
+    text_left = left + (logo_w + 12 if logo_drawn else 0)
     canvas.setFillColor(colors.HexColor("#111827"))
     canvas.setFont("Helvetica-Bold", 12)
     canvas.drawString(text_left, top, _safe_text(config.get("firmName") or "Cory Schneider Law Office")[:80])
@@ -716,7 +733,20 @@ def generate_statement_of_account_pdf(payload, export_dir, logo_path):
     )
     story.append(payment_note)
 
-    draw_page = lambda canvas, document: _draw_header_footer(canvas, document, {**config, "title": "Statement of Account"}, logo_path)
+    draw_page = lambda canvas, document: _draw_header_footer(
+        canvas,
+        document,
+        {
+            **config,
+            "title": "Statement of Account",
+            # Statements are client-facing documents. Draw the cropped visible
+            # wordmark at the same visual scale as the invoice header.
+            "headerLogoWidth": 0.90 * inch,
+            "headerLogoHeight": 0.57 * inch,
+            "headerLogoBottomAligned": True,
+        },
+        logo_path,
+    )
     doc.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
     return filepath
 

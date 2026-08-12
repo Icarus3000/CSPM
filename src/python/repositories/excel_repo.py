@@ -128,6 +128,7 @@ TBL_PARENTS = TableRef(sc.SHEET_PARENTS, sc.TBL_PARENTS)
 TBL_CLIENTS = TableRef(sc.SHEET_CLIENTS, sc.TBL_CLIENTS)
 TBL_CLIENT_PROFILES = TableRef(sc.SHEET_CLIENT_PROFILES, sc.TBL_CLIENT_PROFILES)
 TBL_MATTERS = TableRef(sc.SHEET_MATTERS, sc.TBL_MATTERS)
+TBL_MATTER_PARTIES = TableRef(sc.SHEET_MATTER_PARTIES, sc.TBL_MATTER_PARTIES)
 TBL_TIME = TableRef(sc.SHEET_TIME, sc.TBL_TIME)
 TBL_TRADEMARKS = TableRef(sc.SHEET_TRADEMARKS, sc.TBL_TRADEMARKS)
 TBL_DISBURSEMENTS = TableRef(sc.SHEET_DISBURSEMENTS, sc.TBL_DISBURSEMENTS)
@@ -149,6 +150,7 @@ TABLES_IN_ORDER = [
     TBL_CLIENTS,
     TBL_CLIENT_PROFILES,
     TBL_MATTERS,
+    TBL_MATTER_PARTIES,
     TBL_TIME,
     TBL_TRADEMARKS,
     TBL_DISBURSEMENTS,
@@ -301,6 +303,10 @@ _MATTER_TYPE_CODES: Dict[str, str] = {
     "corporate": "CRP",
     "crp": "CRP",
     "corporation": "CRP",
+    "corporatereorganization": "CRP",
+    "incorporationorganization": "CRP",
+    "corporatemaintenanceannualreturns": "CRP",
+    "amalgamationdissolution": "CRP",
     "estate": "EST",
     "estates": "EST",
     "est": "EST",
@@ -1482,6 +1488,118 @@ class ExcelRepo:
                 names.append(name)
         return sorted(names)
 
+    def list_matter_parties(self, matter_id: str) -> List[Dict[str, Any]]:
+        """Return independent client records attached to one matter.
+
+        This relationship deliberately lives at the matter level.  It never
+        derives a family, household, or parent-client relationship between the
+        records in the Client Directory.
+        """
+        target_id = _clean_text(matter_id).casefold()
+        if not target_id:
+            return []
+        tables = self._read_table_rows_bulk([TBL_MATTER_PARTIES, TBL_CLIENT_PROFILES])
+        profiles = {
+            _clean_text(row.get(sc.COL_PROFILE_CLIENT_ID)).casefold(): self._canonicalize_client_profile_row(row)
+            for row in tables.get(TBL_CLIENT_PROFILES.table, [])
+            if _clean_text(row.get(sc.COL_PROFILE_CLIENT_ID))
+        }
+        parties: List[Dict[str, Any]] = []
+        for raw in tables.get(TBL_MATTER_PARTIES.table, []):
+            party = self._canonicalize_matter_party_row(raw)
+            if _clean_text(party.get(sc.COL_MATTER_PARTY_MATTER_ID)).casefold() != target_id:
+                continue
+            client_id = _clean_text(party.get(sc.COL_MATTER_PARTY_CLIENT_ID))
+            profile = profiles.get(client_id.casefold(), {})
+            display_name = (
+                _clean_text(profile.get(sc.COL_PROFILE_DISPLAY_NAME))
+                or _clean_text(profile.get(sc.COL_PROFILE_LEGAL_NAME))
+                or _clean_text(party.get(sc.COL_MATTER_PARTY_CLIENT_NAME))
+            )
+            full_address = _clean_text(profile.get(sc.COL_PROFILE_FULL_ADDRESS)) or self._format_full_address(
+                line1=_clean_text(profile.get(sc.COL_PROFILE_ADDR1)),
+                line2=_clean_text(profile.get(sc.COL_PROFILE_ADDR2)),
+                city=_clean_text(profile.get(sc.COL_PROFILE_CITY)),
+                state_province=_clean_text(profile.get(sc.COL_PROFILE_STATE)),
+                postal_code=_clean_text(profile.get(sc.COL_PROFILE_POSTAL)),
+                country=_clean_text(profile.get(sc.COL_PROFILE_COUNTRY)),
+            )
+            parties.append({
+                "matterPartyId": _clean_text(party.get(sc.COL_MATTER_PARTY_ID)),
+                "matterId": _clean_text(party.get(sc.COL_MATTER_PARTY_MATTER_ID)),
+                "clientId": client_id,
+                "clientName": display_name,
+                "role": _clean_text(party.get(sc.COL_MATTER_PARTY_ROLE)),
+                "isFileAnchor": self._to_bool_int(party.get(sc.COL_MATTER_PARTY_IS_FILE_ANCHOR), default=0),
+                "isBillingRecipient": self._to_bool_int(
+                    party.get(sc.COL_MATTER_PARTY_IS_BILLING_RECIPIENT), default=1
+                ),
+                "sortOrder": int(self._parse_int(party.get(sc.COL_MATTER_PARTY_SORT_ORDER)) or 0),
+                "notes": _clean_text(party.get(sc.COL_MATTER_PARTY_NOTES)),
+                "primaryEmail": _clean_text(profile.get(sc.COL_PROFILE_PRIMARY_EMAIL)),
+                "billingEmail": _clean_text(profile.get(sc.COL_PROFILE_BILLING_EMAIL)),
+                "fullAddress": full_address,
+            })
+        parties.sort(key=lambda party: (int(party.get("sortOrder", 0) or 0), party["clientName"].casefold()))
+        return parties
+
+    def list_invoice_bill_to_options(self, work_entry_ids: List[str]) -> List[Dict[str, Any]]:
+        """Return eligible bill-to clients when selected WIP includes a joint matter.
+
+        An empty result preserves the established single-client invoice flow.
+        The invoice service repeats this lookup before saving, so a caller
+        cannot bypass a required bill-to choice by calling the draft API.
+        """
+        selected_ids = {_clean_text(value) for value in list(work_entry_ids or []) if _clean_text(value)}
+        if not selected_ids:
+            return []
+        tables = self._read_table_rows_bulk([TBL_TIME, TBL_DISBURSEMENTS])
+        matter_ids: set[str] = set()
+        for row in tables.get(TBL_TIME.table, []):
+            if _clean_text(row.get(sc.COL_TIME_ENTRY_ID)) in selected_ids:
+                matter_id = _clean_text(row.get(sc.COL_TIME_MATTER_ID))
+                if matter_id:
+                    matter_ids.add(matter_id)
+        for row in tables.get(TBL_DISBURSEMENTS.table, []):
+            if _clean_text(row.get(sc.COL_DISB_ID)) in selected_ids:
+                matter_id = _clean_text(row.get(sc.COL_DISB_MATTER_ID))
+                if matter_id:
+                    matter_ids.add(matter_id)
+        if not matter_ids:
+            return []
+
+        common_recipient_ids: Optional[set[str]] = None
+        candidate_by_id: Dict[str, Dict[str, Any]] = {}
+        for matter_id in sorted(matter_ids):
+            parties = self.list_matter_parties(matter_id)
+            # Existing single-client matters and joint records which explicitly
+            # nominate one invoice recipient do not need a prompt.
+            eligible = [party for party in parties if int(party.get("isBillingRecipient", 0) or 0) == 1]
+            if len(eligible) <= 1:
+                continue
+            recipient_ids = {
+                _clean_text(party.get("clientId")).casefold()
+                for party in eligible
+                if _clean_text(party.get("clientId"))
+            }
+            if len(recipient_ids) <= 1:
+                continue
+            for party in eligible:
+                party_id = _clean_text(party.get("clientId")).casefold()
+                if party_id:
+                    candidate_by_id[party_id] = dict(party)
+            common_recipient_ids = recipient_ids if common_recipient_ids is None else common_recipient_ids & recipient_ids
+
+        if common_recipient_ids is None:
+            return []
+        if not common_recipient_ids:
+            raise ValueError(
+                "The selected joint matters have no common invoice recipient. Create separate drafts or update the matter parties."
+            )
+        result = [candidate_by_id[client_id] for client_id in common_recipient_ids if client_id in candidate_by_id]
+        result.sort(key=lambda party: (party.get("sortOrder", 0), party.get("clientName", "").casefold()))
+        return result
+
 
     def preview_matter_number(
         self,
@@ -1680,10 +1798,23 @@ class ExcelRepo:
             "referralFrom": _clean_text(selected.get(sc.COL_MATTER_REFERRAL_FROM)),
             "description": _clean_text(selected.get(sc.COL_MATTER_DESCRIPTION)),
             "notes": _clean_text(selected.get(sc.COL_MATTER_NOTES)),
+            "representationMode": _clean_text(selected.get(sc.COL_MATTER_REPRESENTATION_MODE)) or "Single Client",
+            "jointNoConfidentialityConfirmed": self._to_bool_int(
+                selected.get(sc.COL_MATTER_JOINT_NO_CONFIDENTIALITY_CONFIRMED), default=0
+            ),
+            "jointInstructionsRequireAll": self._to_bool_int(
+                selected.get(sc.COL_MATTER_JOINT_INSTRUCTIONS_REQUIRE_ALL), default=0
+            ),
+            "jointEngagementDocument": _clean_text(selected.get(sc.COL_MATTER_JOINT_ENGAGEMENT_DOCUMENT)),
+            "parties": self.list_matter_parties(_clean_text(selected.get(sc.COL_MATTER_ID))),
             "active": 1 if self._is_matter_row_active(selected) else 0,
             "createdAt": _clean_text(selected.get(sc.COL_MATTER_CREATED)),
             "updatedAt": _clean_text(selected.get(sc.COL_MATTER_UPDATED)),
         }
+        matter_payload["isJointRetainer"] = (
+            matter_payload["representationMode"].casefold() == "joint retainer"
+            or len(matter_payload["parties"]) > 1
+        )
         return {"ok": True, "message": "", "matter": matter_payload}
 
     def list_transaction_accounts(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
@@ -6808,10 +6939,77 @@ class ExcelRepo:
     def save_matter_profile(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         self.ensure_schema()
         normalized = self._normalize_matter_profile_payload(payload)
+        # Joint matter and party rows are a single logical record.  Use the
+        # repository batch path so a failed party validation never leaves a
+        # newly-created matter pointing at only its legacy file anchor.
+        if normalized["parties"] and not self._import_batch_active:
+            with self.import_batch():
+                return self.save_matter_profile(payload)
         force_duplicate = bool(normalized.get("forceDuplicate"))
 
         client_id = normalized["clientId"]
         client_name = normalized["clientName"]
+        resolved_parties: List[Dict[str, Any]] = []
+        if normalized["parties"]:
+            if normalized["parentId"] or normalized["parentName"]:
+                raise ValueError(
+                    "A joint retainer cannot use a Billing Client relationship. Select invoice recipients from the matter parties."
+                )
+            client_rows_for_parties = [
+                self._canonicalize_client_row(row) for row in self._read_table_rows(TBL_CLIENTS)
+            ]
+            client_by_id = {
+                _clean_text(row.get(sc.COL_CLIENT_ID)).casefold(): row
+                for row in client_rows_for_parties
+                if _clean_text(row.get(sc.COL_CLIENT_ID))
+            }
+            client_by_name = {
+                _clean_text(row.get(sc.COL_CLIENT_NAME)).casefold(): row
+                for row in client_rows_for_parties
+                if _clean_text(row.get(sc.COL_CLIENT_NAME))
+            }
+            seen_party_ids: set[str] = set()
+            for index, raw_party in enumerate(normalized["parties"], start=1):
+                requested_id = _clean_text(raw_party.get("clientId") or raw_party.get(sc.COL_MATTER_PARTY_CLIENT_ID))
+                requested_name = _clean_text(raw_party.get("clientName") or raw_party.get(sc.COL_MATTER_PARTY_CLIENT_NAME))
+                source_row = client_by_id.get(requested_id.casefold()) if requested_id else None
+                if source_row is None and requested_name:
+                    source_row = client_by_name.get(requested_name.casefold())
+                if source_row is None:
+                    raise ValueError(
+                        f"Matter party {index} must be an existing client. Create the client record first."
+                    )
+                resolved_id = _clean_text(source_row.get(sc.COL_CLIENT_ID))
+                resolved_name = _clean_text(source_row.get(sc.COL_CLIENT_NAME))
+                if resolved_id.casefold() in seen_party_ids:
+                    raise ValueError("A client can be listed only once on a matter.")
+                seen_party_ids.add(resolved_id.casefold())
+                resolved_parties.append({
+                    "clientId": resolved_id,
+                    "clientName": resolved_name,
+                    "role": _clean_text(raw_party.get("role") or raw_party.get(sc.COL_MATTER_PARTY_ROLE)) or "Client",
+                    "isFileAnchor": self._to_bool_int(
+                        raw_party.get("isFileAnchor", raw_party.get(sc.COL_MATTER_PARTY_IS_FILE_ANCHOR)),
+                        default=0,
+                    ),
+                    "isBillingRecipient": self._to_bool_int(
+                        raw_party.get(
+                            "isBillingRecipient",
+                            raw_party.get(sc.COL_MATTER_PARTY_IS_BILLING_RECIPIENT),
+                        ),
+                        default=1,
+                    ),
+                    "sortOrder": index,
+                    "notes": _clean_text(raw_party.get("notes") or raw_party.get(sc.COL_MATTER_PARTY_NOTES)),
+                })
+            anchors = [party for party in resolved_parties if party["isFileAnchor"] == 1]
+            if not anchors:
+                resolved_parties[0]["isFileAnchor"] = 1
+                anchors = [resolved_parties[0]]
+            if len(anchors) != 1:
+                raise ValueError("Select exactly one file anchor for the matter's legacy timekeeping link.")
+            client_id = anchors[0]["clientId"]
+            client_name = anchors[0]["clientName"]
         if client_id:
             client_rows = [self._canonicalize_client_row(r) for r in self._read_table_rows(TBL_CLIENTS)]
             for row in client_rows:
@@ -6961,13 +7159,52 @@ class ExcelRepo:
             sc.COL_MATTER_REFERRAL_FROM: normalized["referralFrom"],
             sc.COL_MATTER_DESCRIPTION: normalized["description"],
             sc.COL_MATTER_NOTES: normalized["notes"],
+            sc.COL_MATTER_REPRESENTATION_MODE: normalized["representationMode"],
+            sc.COL_MATTER_JOINT_NO_CONFIDENTIALITY_CONFIRMED: normalized["jointNoConfidentialityConfirmed"],
+            sc.COL_MATTER_JOINT_INSTRUCTIONS_REQUIRE_ALL: normalized["jointInstructionsRequireAll"],
+            sc.COL_MATTER_JOINT_ENGAGEMENT_DOCUMENT: normalized["jointEngagementDocument"],
             sc.COL_MATTER_CREATED: created_at,
             sc.COL_MATTER_UPDATED: now_stamp,
         }
 
         self._upsert_row_by_key(TBL_MATTERS, sc.COL_MATTER_ID, matter_id, matter_row)
-        persisted = self._find_matter_row(matter_id)
-        verified = self._compare_matter_profile_rows_loose(matter_row, persisted)
+        if resolved_parties:
+            existing_parties = [
+                self._canonicalize_matter_party_row(row)
+                for row in self._read_table_rows(TBL_MATTER_PARTIES)
+            ]
+            existing_by_client = {
+                _clean_text(row.get(sc.COL_MATTER_PARTY_CLIENT_ID)).casefold(): row
+                for row in existing_parties
+                if _clean_text(row.get(sc.COL_MATTER_PARTY_MATTER_ID)).casefold() == matter_id.casefold()
+            }
+            retained_parties = [
+                row
+                for row in existing_parties
+                if _clean_text(row.get(sc.COL_MATTER_PARTY_MATTER_ID)).casefold() != matter_id.casefold()
+            ]
+            for party in resolved_parties:
+                existing_party = existing_by_client.get(party["clientId"].casefold(), {})
+                retained_parties.append({
+                    sc.COL_MATTER_PARTY_ID: _clean_text(existing_party.get(sc.COL_MATTER_PARTY_ID)) or self._new_id("MP"),
+                    sc.COL_MATTER_PARTY_MATTER_ID: matter_id,
+                    sc.COL_MATTER_PARTY_CLIENT_ID: party["clientId"],
+                    sc.COL_MATTER_PARTY_CLIENT_NAME: party["clientName"],
+                    sc.COL_MATTER_PARTY_ROLE: party["role"],
+                    sc.COL_MATTER_PARTY_IS_FILE_ANCHOR: party["isFileAnchor"],
+                    sc.COL_MATTER_PARTY_IS_BILLING_RECIPIENT: party["isBillingRecipient"],
+                    sc.COL_MATTER_PARTY_SORT_ORDER: party["sortOrder"],
+                    sc.COL_MATTER_PARTY_NOTES: party["notes"],
+                    sc.COL_MATTER_PARTY_CREATED: _clean_text(existing_party.get(sc.COL_MATTER_PARTY_CREATED)) or now_stamp,
+                    sc.COL_MATTER_PARTY_UPDATED: now_stamp,
+                })
+            self._replace_table_rows(TBL_MATTER_PARTIES, retained_parties)
+
+        if self._import_batch_active:
+            verified = True
+        else:
+            persisted = self._find_matter_row(matter_id)
+            verified = self._compare_matter_profile_rows_loose(matter_row, persisted)
 
         return {
             "ok": bool(verified),
@@ -6975,6 +7212,7 @@ class ExcelRepo:
             "matterId": matter_id,
             "matterNumber": matter_number,
             "savedRow": matter_row,
+            "partyCount": len(resolved_parties),
             "message": "" if verified else "Matter profile verification failed.",
         }
 
@@ -7284,6 +7522,15 @@ class ExcelRepo:
         matter_rows = [self._canonicalize_matter_row(r) for r in self._read_table_rows(TBL_MATTERS)]
         time_rows = [self._canonicalize_time_row(r) for r in self._read_table_rows(TBL_TIME)]
         txn_rows = [self._canonicalize_transaction_row(r) for r in self._read_table_rows(TBL_TRANSACTIONS_MASTER)]
+        try:
+            matter_party_rows = [
+                self._canonicalize_matter_party_row(row)
+                for row in self._read_table_rows(TBL_MATTER_PARTIES)
+            ]
+        except Exception:
+            # Compatibility for pre-joint-retainer workbooks and lightweight
+            # repository adapters used by older integrations.
+            matter_party_rows = []
 
         counts = {"clients": 0, "profiles": 0, "matters": 0, "timeEntries": 0, "transactions": 0}
 
@@ -7346,11 +7593,25 @@ class ExcelRepo:
             row[sc.COL_TXN_NOTES] = self._append_note_line(row.get(sc.COL_TXN_NOTES), audit_note)
             counts["transactions"] += 1
 
+        matter_party_changed = False
+        for row in matter_party_rows:
+            if _clean_text(row.get(sc.COL_MATTER_PARTY_CLIENT_ID)).lower() != source_id.lower():
+                continue
+            row[sc.COL_MATTER_PARTY_CLIENT_ID] = target_id
+            row[sc.COL_MATTER_PARTY_CLIENT_NAME] = target_name
+            row[sc.COL_MATTER_PARTY_NOTES] = self._append_note_line(
+                row.get(sc.COL_MATTER_PARTY_NOTES), audit_note
+            )
+            row[sc.COL_MATTER_PARTY_UPDATED] = now_stamp
+            matter_party_changed = True
+
         self._replace_table_rows(TBL_CLIENTS, clients_rows)
         self._replace_table_rows(TBL_CLIENT_PROFILES, profile_rows)
         self._replace_table_rows(TBL_MATTERS, matter_rows)
         self._replace_table_rows(TBL_TIME, time_rows)
         self._replace_table_rows(TBL_TRANSACTIONS_MASTER, txn_rows)
+        if matter_party_changed:
+            self._replace_table_rows(TBL_MATTER_PARTIES, matter_party_rows)
 
         source_after = self.get_client_profile(source_id)
         target_after = self.get_client_profile(target_id)
@@ -7419,6 +7680,13 @@ class ExcelRepo:
         time_rows = [self._canonicalize_time_row(r) for r in self._read_table_rows(TBL_TIME)]
         disb_rows = [self._canonicalize_row(TBL_DISBURSEMENTS, r) for r in self._read_table_rows(TBL_DISBURSEMENTS)]
         txn_rows = [self._canonicalize_transaction_row(r) for r in self._read_table_rows(TBL_TRANSACTIONS_MASTER)]
+        try:
+            matter_party_rows = [
+                self._canonicalize_matter_party_row(row)
+                for row in self._read_table_rows(TBL_MATTER_PARTIES)
+            ]
+        except Exception:
+            matter_party_rows = []
         counts = {"matters": 0, "timeEntries": 0, "disbursements": 0, "transactions": 0}
 
         for row in matter_rows:
@@ -7460,10 +7728,35 @@ class ExcelRepo:
             row[sc.COL_TXN_NOTES] = self._append_note_line(row.get(sc.COL_TXN_NOTES), audit_note)
             counts["transactions"] += 1
 
+        target_party_client_ids = {
+            _clean_text(row.get(sc.COL_MATTER_PARTY_CLIENT_ID)).casefold()
+            for row in matter_party_rows
+            if _clean_text(row.get(sc.COL_MATTER_PARTY_MATTER_ID)).casefold() == target_id.casefold()
+        }
+        retained_party_rows: List[Dict[str, Any]] = []
+        matter_party_changed = False
+        for row in matter_party_rows:
+            if _clean_text(row.get(sc.COL_MATTER_PARTY_MATTER_ID)).casefold() != source_id.casefold():
+                retained_party_rows.append(row)
+                continue
+            matter_party_changed = True
+            client_key = _clean_text(row.get(sc.COL_MATTER_PARTY_CLIENT_ID)).casefold()
+            if client_key in target_party_client_ids:
+                continue
+            row[sc.COL_MATTER_PARTY_MATTER_ID] = target_id
+            row[sc.COL_MATTER_PARTY_NOTES] = self._append_note_line(
+                row.get(sc.COL_MATTER_PARTY_NOTES), audit_note
+            )
+            row[sc.COL_MATTER_PARTY_UPDATED] = now_stamp
+            retained_party_rows.append(row)
+            target_party_client_ids.add(client_key)
+
         self._replace_table_rows(TBL_MATTERS, matter_rows)
         self._replace_table_rows(TBL_TIME, time_rows)
         self._replace_table_rows(TBL_DISBURSEMENTS, disb_rows)
         self._replace_table_rows(TBL_TRANSACTIONS_MASTER, txn_rows)
+        if matter_party_changed:
+            self._replace_table_rows(TBL_MATTER_PARTIES, retained_party_rows)
 
         source_after = self.get_matter_profile(source_id)
         target_after = self.get_matter_profile(target_id)
@@ -7818,6 +8111,8 @@ class ExcelRepo:
             return self._canonicalize_client_profile_row(row)
         if table_name == TBL_MATTERS.table:
             return self._canonicalize_matter_row(row)
+        if table_name == TBL_MATTER_PARTIES.table:
+            return self._canonicalize_matter_party_row(row)
         if table_name == TBL_TIME.table:
             return self._canonicalize_time_row(row)
         if table_name == TBL_TRADEMARKS.table:
@@ -8175,8 +8470,81 @@ class ExcelRepo:
                 self._value_with_alias(TBL_MATTERS.table, row, sc.COL_MATTER_DESCRIPTION)
             ),
             sc.COL_MATTER_NOTES: _clean_text(self._value_with_alias(TBL_MATTERS.table, row, sc.COL_MATTER_NOTES)),
+            sc.COL_MATTER_REPRESENTATION_MODE: _clean_text(
+                self._value_with_alias(TBL_MATTERS.table, row, sc.COL_MATTER_REPRESENTATION_MODE)
+            ) or "Single Client",
+            sc.COL_MATTER_JOINT_NO_CONFIDENTIALITY_CONFIRMED: self._to_bool_int(
+                self._value_with_alias(
+                    TBL_MATTERS.table,
+                    row,
+                    sc.COL_MATTER_JOINT_NO_CONFIDENTIALITY_CONFIRMED,
+                ),
+                default=0,
+            ),
+            sc.COL_MATTER_JOINT_INSTRUCTIONS_REQUIRE_ALL: self._to_bool_int(
+                self._value_with_alias(
+                    TBL_MATTERS.table,
+                    row,
+                    sc.COL_MATTER_JOINT_INSTRUCTIONS_REQUIRE_ALL,
+                ),
+                default=0,
+            ),
+            sc.COL_MATTER_JOINT_ENGAGEMENT_DOCUMENT: _clean_text(
+                self._value_with_alias(TBL_MATTERS.table, row, sc.COL_MATTER_JOINT_ENGAGEMENT_DOCUMENT)
+            ),
             sc.COL_MATTER_CREATED: created_at,
             sc.COL_MATTER_UPDATED: updated_at,
+        }
+
+    def _canonicalize_matter_party_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        party_id = _clean_text(
+            self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_ID)
+        )
+        if not party_id:
+            party_id = self._new_id("MP")
+        created_at = _clean_text(
+            self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_CREATED)
+        ) or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        updated_at = _clean_text(
+            self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_UPDATED)
+        ) or created_at
+        return {
+            sc.COL_MATTER_PARTY_ID: party_id,
+            sc.COL_MATTER_PARTY_MATTER_ID: _clean_text(
+                self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_MATTER_ID)
+            ),
+            sc.COL_MATTER_PARTY_CLIENT_ID: _clean_text(
+                self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_CLIENT_ID)
+            ),
+            sc.COL_MATTER_PARTY_CLIENT_NAME: _clean_text(
+                self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_CLIENT_NAME)
+            ),
+            sc.COL_MATTER_PARTY_ROLE: _clean_text(
+                self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_ROLE)
+            ) or "Client",
+            sc.COL_MATTER_PARTY_IS_FILE_ANCHOR: self._to_bool_int(
+                self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_IS_FILE_ANCHOR),
+                default=0,
+            ),
+            sc.COL_MATTER_PARTY_IS_BILLING_RECIPIENT: self._to_bool_int(
+                self._value_with_alias(
+                    TBL_MATTER_PARTIES.table,
+                    row,
+                    sc.COL_MATTER_PARTY_IS_BILLING_RECIPIENT,
+                ),
+                default=1,
+            ),
+            sc.COL_MATTER_PARTY_SORT_ORDER: int(
+                self._parse_int(
+                    self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_SORT_ORDER)
+                )
+                or 0
+            ),
+            sc.COL_MATTER_PARTY_NOTES: _clean_text(
+                self._value_with_alias(TBL_MATTER_PARTIES.table, row, sc.COL_MATTER_PARTY_NOTES)
+            ),
+            sc.COL_MATTER_PARTY_CREATED: created_at,
+            sc.COL_MATTER_PARTY_UPDATED: updated_at,
         }
 
     def _canonicalize_time_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -9906,7 +10274,7 @@ class ExcelRepo:
                 "message": self._matter_delete_blocker_message(dependencies),
                 "dependencies": dependencies,
             }
-        deleted = self._delete_row_by_key_hard(TBL_MATTERS, sc.COL_MATTER_ID, matter_id)
+        deleted = ExcelRepo._delete_matter_with_parties(self, matter_id)
         return {
             "ok": deleted,
             "message": "Matter permanently deleted." if deleted else "Matter not found.",
@@ -9939,12 +10307,48 @@ class ExcelRepo:
                 "dependencies": dependencies,
             }
 
-        deleted = self._delete_row_by_key_hard(TBL_MATTERS, sc.COL_MATTER_ID, matter_id)
+        deleted = ExcelRepo._delete_matter_with_parties(self, matter_id)
         return {
             "ok": deleted,
             "message": "Archived matter permanently deleted." if deleted else "Matter not found.",
             "dependencies": dependencies,
         }
+
+    def _delete_matter_with_parties(self, matter_id: str) -> bool:
+        """Remove an otherwise-safe matter and its internal party rows together."""
+        target = _clean_text(matter_id).casefold()
+        try:
+            matter_rows = [self._canonicalize_matter_row(row) for row in self._read_table_rows(TBL_MATTERS)]
+            if not any(_clean_text(row.get(sc.COL_MATTER_ID)).casefold() == target for row in matter_rows):
+                return False
+            party_rows = [
+                self._canonicalize_matter_party_row(row)
+                for row in self._read_table_rows(TBL_MATTER_PARTIES)
+            ]
+        except Exception:
+            return self._delete_row_by_key_hard(TBL_MATTERS, sc.COL_MATTER_ID, matter_id)
+
+        related_party_rows = [
+            row
+            for row in party_rows
+            if _clean_text(row.get(sc.COL_MATTER_PARTY_MATTER_ID)).casefold() == target
+        ]
+        if not related_party_rows:
+            return self._delete_row_by_key_hard(TBL_MATTERS, sc.COL_MATTER_ID, matter_id)
+
+        remaining_matters = [
+            row for row in matter_rows if _clean_text(row.get(sc.COL_MATTER_ID)).casefold() != target
+        ]
+        remaining_parties = [
+            row
+            for row in party_rows
+            if _clean_text(row.get(sc.COL_MATTER_PARTY_MATTER_ID)).casefold() != target
+        ]
+        self._write_table_rows_bulk({
+            TBL_MATTERS: remaining_matters,
+            TBL_MATTER_PARTIES: remaining_parties,
+        })
+        return True
 
     def check_matter_dependencies(self, matter_id: str) -> Dict[str, Any]:
         """
@@ -10466,6 +10870,29 @@ class ExcelRepo:
         if date_closed and date_opened and date_closed < date_opened:
             raise ValueError("Date Closed cannot be earlier than Date Opened.")
 
+        representation_mode = self._pick_text(
+            payload,
+            ["representationMode", "retainerMode", sc.COL_MATTER_REPRESENTATION_MODE],
+        ) or "Single Client"
+        raw_parties = payload.get("parties", payload.get("matterParties", []))
+        if isinstance(raw_parties, str):
+            try:
+                raw_parties = json.loads(raw_parties)
+            except (TypeError, ValueError):
+                raise ValueError("Matter parties must be a list of client records.")
+        if raw_parties is None:
+            raw_parties = []
+        if not isinstance(raw_parties, list):
+            raise ValueError("Matter parties must be a list of client records.")
+        normalized_parties = [dict(item or {}) for item in raw_parties if isinstance(item, dict)]
+        if len(normalized_parties) != len(raw_parties):
+            raise ValueError("Each matter party must identify an existing client.")
+        is_joint_retainer = representation_mode.casefold() == "joint retainer" or len(normalized_parties) > 1
+        if is_joint_retainer and len(normalized_parties) < 2:
+            raise ValueError("A joint retainer requires at least two independent client records.")
+        if is_joint_retainer:
+            representation_mode = "Joint Retainer"
+
         return {
             "matterId": self._pick_text(payload, ["matterId", sc.COL_MATTER_ID]),
             "forceDuplicate": self._to_bool_int(
@@ -10504,6 +10931,26 @@ class ExcelRepo:
             "referralFrom": self._pick_text(payload, ["referralFrom", "referralSource", sc.COL_MATTER_REFERRAL_FROM]),
             "description": self._pick_text(payload, ["description", "summary", sc.COL_MATTER_DESCRIPTION]),
             "notes": self._pick_text(payload, ["notes", "notesText", sc.COL_MATTER_NOTES]),
+            "representationMode": representation_mode,
+            "jointNoConfidentialityConfirmed": self._to_bool_int(
+                self._pick_value(
+                    payload,
+                    ["jointNoConfidentialityConfirmed", sc.COL_MATTER_JOINT_NO_CONFIDENTIALITY_CONFIRMED],
+                ),
+                default=0,
+            ),
+            "jointInstructionsRequireAll": self._to_bool_int(
+                self._pick_value(
+                    payload,
+                    ["jointInstructionsRequireAll", sc.COL_MATTER_JOINT_INSTRUCTIONS_REQUIRE_ALL],
+                ),
+                default=0,
+            ),
+            "jointEngagementDocument": self._pick_text(
+                payload,
+                ["jointEngagementDocument", "engagementDocument", sc.COL_MATTER_JOINT_ENGAGEMENT_DOCUMENT],
+            ),
+            "parties": normalized_parties,
         }
 
     def _normalize_time_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:

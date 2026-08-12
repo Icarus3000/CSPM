@@ -69,6 +69,12 @@ Item {
     property string saveMessage: ""
     property var parentClientOptions: []
     property var matterClientOptions: []
+    property bool matterJointRetainer: false
+    property var matterParties: []
+    property bool matterJointNoConfidentialityConfirmed: false
+    property bool matterJointInstructionsRequireAll: true
+    property bool clientCreateForMatterParty: false
+    property var matterPartyRoleOptions: ["Joint client", "Client", "Represented corporation", "Authorized instructing representative"]
     property string newClientOptionLabel: "new client"
     property bool _autoFieldMutation: false
     property bool legalNameAutoSync: true
@@ -82,7 +88,7 @@ Item {
         "General": ["General Consultation", "Notary / Commissioning", "Other"],
         "Intellectual Property": ["Trademark Filings", "Patent Filings", "Copyright Filings", "IP Litigation", "Cease and Desist", "IP Management", "IP Licensing", "Trade Secrets"],
         "Tax": ["CRA Audit / Reassessment", "Tax Litigation", "Voluntary Disclosure (VDP)", "Section 85 Rollover / Reorganization", "Estate Freeze", "Tax Planning & Advisory", "Commodity Tax / HST", "Notice of Objection"],
-        "Corporate / Commercial": ["Incorporation / Organization", "Share Purchase / Sale", "Asset Purchase / Sale", "Unanimous Shareholder Agreement (USA)", "Contract Drafting & Review", "Corporate Maintenance / Annual Returns", "Financing / Secured Lending", "Amalgamation / Dissolution"],
+        "Corporate / Commercial": ["Incorporation / Organization", "Corporate Reorganization", "Share Purchase / Sale", "Asset Purchase / Sale", "Unanimous Shareholder Agreement (USA)", "Contract Drafting & Review", "Corporate Maintenance / Annual Returns", "Financing / Secured Lending", "Amalgamation / Dissolution"],
         "Real Estate": ["Residential Purchase", "Residential Sale", "Commercial Purchase", "Commercial Sale", "Refinance / Mortgage", "Commercial Leasing", "Title Transfer"],
         "Litigation & Dispute Resolution": ["Civil Litigation", "Commercial Litigation", "Small Claims", "Debt Recovery", "Breach of Contract", "Shareholder Dispute"],
         "Wills & Estates": ["Will Preparation", "Powers of Attorney", "Estate Administration / Probate", "Estate Litigation"],
@@ -126,6 +132,10 @@ Item {
     property string selectedMatterId: ""
     property string selectedMatterName: ""
     property var selectedMatterProfile: ({})
+    // Keep record-detail panels reactive after a synchronous profile lookup.
+    // A method-call binding against a dynamic `root` property can retain the
+    // initial directory-shaped row instead of the loaded full profile.
+    property var matterProfileRows: []
     property string matterProfileLookupMessage: ""
     // Loaded asynchronously so opening an editable matter does not stall while
     // its WIP and A/R are read from the workbook.
@@ -1287,6 +1297,93 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         return _isNewClientOption(clientName) ? "" : clientName
     }
 
+    function _matterPartyIndexByName(clientName) {
+        var wanted = String(clientName || "").trim().toLowerCase()
+        for (var i = 0; i < matterParties.length; i++) {
+            if (String(matterParties[i].clientName || "").trim().toLowerCase() === wanted) return i
+        }
+        return -1
+    }
+
+    function addMatterParty(clientName, fileAnchor) {
+        var name = String(clientName || "").trim()
+        if (name.length <= 0 || _isNewClientOption(name)) return false
+        var next = matterParties.slice(0)
+        var existing = _matterPartyIndexByName(name)
+        if (existing >= 0) {
+            if (fileAnchor) {
+                for (var i = 0; i < next.length; i++) next[i].isFileAnchor = i === existing
+                matterParties = next
+            }
+            return false
+        }
+        if (fileAnchor) {
+            for (var j = 0; j < next.length; j++) next[j].isFileAnchor = false
+        }
+        next.push({
+            "clientName": name,
+            "role": "Joint client",
+            "isFileAnchor": !!fileAnchor || next.length === 0,
+            "isBillingRecipient": true,
+            "notes": ""
+        })
+        matterParties = next
+        return true
+    }
+
+    function removeMatterParty(index) {
+        if (index < 0 || index >= matterParties.length) return
+        var next = matterParties.slice(0)
+        var removedWasAnchor = !!next[index].isFileAnchor
+        next.splice(index, 1)
+        if (removedWasAnchor && next.length > 0) next[0].isFileAnchor = true
+        matterParties = next
+        if (next.length > 0) {
+            for (var i = 0; i < next.length; i++) {
+                if (next[i].isFileAnchor) {
+                    _setComboBoxSilently(matterClientCombo, String(next[i].clientName || ""))
+                    break
+                }
+            }
+        }
+        if (!root._hydrating) root.dirty = true
+    }
+
+    function updateMatterParty(index, key, value) {
+        if (index < 0 || index >= matterParties.length) return
+        var next = matterParties.slice(0)
+        var row = Object.assign({}, next[index])
+        if (key === "isFileAnchor" && value) {
+            for (var i = 0; i < next.length; i++) {
+                next[i] = Object.assign({}, next[i])
+                next[i].isFileAnchor = i === index
+            }
+            _setComboBoxSilently(matterClientCombo, String(row.clientName || ""))
+        }
+        row[key] = value
+        next[index] = row
+        matterParties = next
+        if (!root._hydrating) root.dirty = true
+    }
+
+    function syncJointMatterAnchorFromClient() {
+        if (!matterJointRetainer) return
+        var anchorName = _matterWizardClientName()
+        if (anchorName.length > 0) addMatterParty(anchorName, true)
+    }
+
+    function setMatterJointRetainer(enabled) {
+        matterJointRetainer = !!enabled
+        if (matterJointRetainer) {
+            syncJointMatterAnchorFromClient()
+        } else {
+            matterParties = []
+            matterJointNoConfidentialityConfirmed = false
+            matterJointInstructionsRequireAll = true
+        }
+        if (!root._hydrating) root.dirty = true
+    }
+
     function refreshMatterDirectory(activeOnlyMode) {
         var rows = []
         try {
@@ -1381,6 +1478,15 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         _setTextFieldSilently(matterDisplayNameInput, "")
         _setComboBoxSilently(matterClientCombo, name)
         _setComboBoxSilently(matterParentCombo, "")
+        root.matterJointRetainer = false
+        root.matterParties = []
+        root.matterJointNoConfidentialityConfirmed = false
+        root.matterJointInstructionsRequireAll = true
+        root.clientCreateForMatterParty = false
+        matterJointRetainerCheck.checked = false
+        jointNoConfidentialityCheck.checked = false
+        jointInstructionsCheck.checked = true
+        _setTextFieldSilently(matterJointEngagementDocumentInput, "")
         _setComboBoxSilently(matterTypeCombo, "General")
         _setComboBoxSilently(matterStatusCombo, "Open")
         _setComboBoxSilently(matterPracticeAreaCombo, "General")
@@ -1495,6 +1601,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
         if (key.length <= 0) {
             selectedMatterProfile = ({})
+            refreshMatterProfileRows()
             matterFinancialSummary = ({ "ok": false })
             matterFinancialSummaryLoading = false
             matterProfileLookupMessage = "Select a matter to load profile details."
@@ -1503,6 +1610,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
         if (!appRef || !appRef.getMatterProfile) {
             selectedMatterProfile = ({})
+            refreshMatterProfileRows()
             matterProfileLookupMessage = "Matter profile lookup is unavailable."
             return
         }
@@ -1521,6 +1629,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             var loaded = result.matter || ({})
             var loadedRow = root.resolveMatterDirectoryRowByKey(String(loaded.matterId || loaded.matterNumber || lookupKey))
             selectedMatterProfile = loaded
+            refreshMatterProfileRows()
             selectedMatterId = String(loaded.matterId || selectedMatterId || "")
             selectedMatterName = root.matterDirectoryOptionLabel(
                 Object.keys(loadedRow).length > 0 ? loadedRow : loaded
@@ -1530,6 +1639,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             refreshMatterFinancialSummary(selectedMatterId)
         } else {
             selectedMatterProfile = ({})
+            refreshMatterProfileRows()
             matterFinancialSummary = ({ "ok": false })
             matterFinancialSummaryLoading = false
             matterProfileLookupMessage = result && result.message ? String(result.message) : ("Matter not found: " + key)
@@ -1720,6 +1830,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             return
         }
         root.dirty = true
+        root.syncJointMatterAnchorFromClient()
         applyMatterWizardAutoPopulate()
     }
 
@@ -1733,13 +1844,14 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         root.workspaceOpenRequested(root.tileIndex, targetNodeId, state)
     }
 
-    function startNewClientFromMatterWizard() {
+    function startNewClientFromMatterWizard(suggestedClientName, addAsMatterParty) {
         root.clientCreateFromMatterMode = true
+        root.clientCreateForMatterParty = !!addAsMatterParty
         root.clientEditMode = false
         root.editReturnNodeId = "A10"
         root.saveMessage = "Create and save the client, then you will return to Matter Wizard."
 
-        var suggestedName = String(matterClientCombo.editText || "").trim()
+        var suggestedName = String(suggestedClientName || matterClientCombo.editText || "").trim()
         if (_isNewClientOption(suggestedName)) suggestedName = ""
 
         _hydrating = true
@@ -1780,15 +1892,23 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         refreshMatterDirectory(false)
         refreshMatterWizardClientOptions()
         if (clientName.length > 0) {
-            _setComboBoxSilently(matterClientCombo, clientName)
+            if (root.clientCreateForMatterParty) {
+                root.addMatterParty(clientName, root.matterParties.length === 0)
+            } else {
+                _setComboBoxSilently(matterClientCombo, clientName)
+                root.syncJointMatterAnchorFromClient()
+            }
             root.dirty = true
         } else if (_isNewClientOption(matterClientCombo.editText)) {
             _setComboBoxSilently(matterClientCombo, "")
         }
         applyMatterWizardAutoPopulate()
         saveMessage = clientName.length > 0
-            ? ("New client linked to matter: " + clientName)
+            ? (root.clientCreateForMatterParty
+                ? ("New client added to matter parties: " + clientName)
+                : ("New client linked to matter: " + clientName))
             : "Returned to Matter Wizard."
+        root.clientCreateForMatterParty = false
         requestExternalWorkspaceFocus("A10")
     }
 
@@ -1823,6 +1943,15 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         _setTextFieldSilently(matterDisplayNameInput, String(profile.displayName || matterName))
         _setComboBoxSilently(matterClientCombo, String(profile.clientName || ""))
         _setComboBoxSilently(matterParentCombo, String(profile.parentName || ""))
+        root.matterJointRetainer = !!profile.isJointRetainer
+        root.matterParties = profile.parties && profile.parties.length !== undefined ? profile.parties : []
+        root.matterJointNoConfidentialityConfirmed = !!profile.jointNoConfidentialityConfirmed
+        root.matterJointInstructionsRequireAll = profile.jointInstructionsRequireAll !== undefined
+            ? !!profile.jointInstructionsRequireAll : true
+        matterJointRetainerCheck.checked = root.matterJointRetainer
+        jointNoConfidentialityCheck.checked = root.matterJointNoConfidentialityConfirmed
+        jointInstructionsCheck.checked = root.matterJointInstructionsRequireAll
+        _setTextFieldSilently(matterJointEngagementDocumentInput, String(profile.jointEngagementDocument || ""))
         _setComboBoxSilently(matterTypeCombo, String(profile.matterType || "General"))
         _setComboBoxSilently(matterStatusCombo, String(profile.status || "Open"))
         matterPersistedStatus = String(profile.status || "Open").trim()
@@ -1919,11 +2048,23 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function matterProfileOrderedModel() {
+        var joint = !!(selectedMatterProfile && selectedMatterProfile.isJointRetainer)
+        var partyRows = selectedMatterProfile && selectedMatterProfile.parties
+            ? selectedMatterProfile.parties : []
+        var partySummary = ""
+        for (var i = 0; i < partyRows.length; i++) {
+            var party = partyRows[i] || ({})
+            var label = String(party.clientName || "").trim()
+            var role = String(party.role || "").trim()
+            if (label.length > 0) partySummary += (partySummary.length > 0 ? "\n" : "") + label + (role.length > 0 ? " - " + role : "")
+        }
         return [
             { "label": "Matter Number", "value": _matterProfileDisplayText("matterNumber", "") },
             { "label": "Matter Name", "value": _matterProfileDisplayText("matterName", "") , "multiline": true, "wrap": true },
             { "label": "Display Name", "value": _matterProfileDisplayText("displayName", "") , "multiline": true, "wrap": true },
-            { "label": "Client", "value": _matterProfileDisplayText("clientName", "") },
+            { "label": joint ? "File Anchor" : "Client", "value": _matterProfileDisplayText("clientName", "") },
+            { "label": "Representation", "value": _matterProfileDisplayText("representationMode", "Single Client") },
+            { "label": "Matter Parties", "value": partySummary.length > 0 ? partySummary : "[blank]", "multiline": true, "wrap": true },
             { "label": "Billing Client", "value": _matterProfileDisplayText("parentName", "") },
             { "label": "Matter Type", "value": _matterProfileDisplayText("matterType", "") },
             { "label": "Matter Status", "value": _matterProfileDisplayText("status", "") },
@@ -1951,7 +2092,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         ]
     }
 
-    function matterProfileRowModel() {
+    function refreshMatterProfileRows() {
         var ordered = matterProfileOrderedModel()
         var rows = []
         for (var i = 0; i < ordered.length; i += 2) {
@@ -1960,6 +2101,12 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                 "right": (i + 1) < ordered.length ? ordered[i + 1] : null
             })
         }
+        matterProfileRows = rows
+    }
+
+    function matterProfileRowModel() {
+        var rows = matterProfileRows && matterProfileRows.length !== undefined
+            ? matterProfileRows : []
         return rows
     }
 
@@ -1977,7 +2124,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             "matterName": matterNameInput.text,
             "displayName": matterDisplayNameInput.text,
             "clientName": _matterWizardClientName(),
-            "parentName": String(matterParentCombo.editText || "").trim(),
+            "parentName": root.matterJointRetainer ? "" : String(matterParentCombo.editText || "").trim(),
             "matterType": matterTypeCombo.editText,
             "practiceArea": String(matterPracticeAreaCombo.editText || ""),
             "status": String(matterStatusCombo.editText || ""),
@@ -1995,7 +2142,12 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             "opposingParty": matterOpposingPartyInput.text,
             "referralFrom": matterReferralFromInput.text,
             "description": matterDescriptionInput.text,
-            "notes": notesInput.text
+            "notes": notesInput.text,
+            "representationMode": root.matterJointRetainer ? "Joint Retainer" : "Single Client",
+            "jointNoConfidentialityConfirmed": root.matterJointNoConfidentialityConfirmed,
+            "jointInstructionsRequireAll": root.matterJointInstructionsRequireAll,
+            "jointEngagementDocument": matterJointEngagementDocumentInput.text,
+            "parties": root.matterJointRetainer ? root.matterParties : []
         }
     }
 
@@ -2054,6 +2206,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             }
 
             selectedMatterProfile = verifiedMatter
+            refreshMatterProfileRows()
             selectedMatterId = String(verifiedMatter.matterId || lastSavedMatterId || selectedMatterId || "")
             selectedMatterName = root.matterDirectoryOptionLabel(verifiedMatter)
         }
@@ -2080,6 +2233,27 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function trySaveMatterProfile() {
+        if (root.matterJointRetainer) {
+            if (root.matterParties.length < 2) {
+                saveMessage = "Add at least two independent clients to a joint retainer."
+                root.dirty = true
+                return
+            }
+            if (!root.matterJointNoConfidentialityConfirmed) {
+                saveMessage = "Confirm the joint-retainer shared-information acknowledgement before saving."
+                root.dirty = true
+                return
+            }
+            var billingRecipients = 0
+            for (var i = 0; i < root.matterParties.length; i++) {
+                if (root.matterParties[i].isBillingRecipient) billingRecipients++
+            }
+            if (billingRecipients < 1) {
+                saveMessage = "Select at least one designated invoice recipient."
+                root.dirty = true
+                return
+            }
+        }
         if (!_looksLikeEmailAddress(matterBillingEmailInput.text)) {
             saveMessage = "Billing Email is not in a valid email format."
             root.dirty = true
@@ -5016,12 +5190,168 @@ Behavior on border.color {
                         onEditTextChanged: if (!root._hydrating) root.dirty = true
                     }
 
+                    CheckBox {
+                        id: matterJointRetainerCheck
+                        text: "Joint retainer / multiple independent clients"
+                        checked: false
+                        Layout.fillWidth: true
+                        Layout.columnSpan: root.formGridSpan(matterWizardGrid.columns, 2)
+                        onToggled: {
+                            if (!root._hydrating) root.setMatterJointRetainer(checked)
+                        }
+                    }
+
+                    ColumnLayout {
+                        visible: root.matterJointRetainer
+                        Layout.fillWidth: true
+                        Layout.columnSpan: matterWizardGrid.columns
+                        spacing: root.ratioPxH(0.005, 5)
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Matter parties"
+                            color: root._text
+                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            font.weight: Font.DemiBold
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: root.ratioPxW(0.008, 8)
+
+                            ModernComboBox {
+                                id: matterPartyAddCombo
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                label: "Add existing client"
+                                emptyOptionLabel: "Select a client..."
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                fullModel: root.matterClientOptions
+                                onActivated: {
+                                    var name = String(editText || "").trim()
+                                    if (root._isNewClientOption(name)) {
+                                        root.startNewClientFromMatterWizard("", true)
+                                    } else if (root.addMatterParty(name, false)) {
+                                        root.dirty = true
+                                    }
+                                    root._setComboBoxSilently(matterPartyAddCombo, "")
+                                }
+                            }
+
+                            PillButton {
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                sfxBus: root.sfxBus
+                                text: "New Client"
+                                primary: false
+                                Layout.preferredWidth: root.ratioPxW(0.112, 104)
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: root.startNewClientFromMatterWizard("", true)
+                            }
+                        }
+
+                        Repeater {
+                            model: root.matterParties
+                            delegate: Rectangle {
+                                id: matterPartyRow
+                                required property var modelData
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: partyRowLayout.implicitHeight + root.ratioPxH(0.010, 8)
+                                radius: root.sectionRadiusPx
+                                color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.58)
+                                border.width: 1
+                                border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+
+                                RowLayout {
+                                    id: partyRowLayout
+                                    anchors.fill: parent
+                                    anchors.margins: root.ratioPx(0.006, 6)
+                                    spacing: root.ratioPxW(0.006, 6)
+
+                                    RadioButton {
+                                        checked: !!matterPartyRow.modelData.isFileAnchor
+                                        text: "File anchor"
+                                        onToggled: if (checked) root.updateMatterParty(index, "isFileAnchor", true)
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: String(matterPartyRow.modelData.clientName || "")
+                                        color: root._text
+                                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                        elide: Text.ElideRight
+                                    }
+
+                                    ComboBox {
+                                        id: matterPartyRoleCombo
+                                        Layout.preferredWidth: root.ratioPxW(0.140, 140)
+                                        model: root.matterPartyRoleOptions
+                                        Component.onCompleted: {
+                                            var role = String(matterPartyRow.modelData.role || "Joint client")
+                                            var found = root.matterPartyRoleOptions.indexOf(role)
+                                            currentIndex = found >= 0 ? found : 0
+                                        }
+                                        onActivated: root.updateMatterParty(index, "role", currentText)
+                                    }
+
+                                    CheckBox {
+                                        checked: !!matterPartyRow.modelData.isBillingRecipient
+                                        text: "Bill to"
+                                        onToggled: root.updateMatterParty(index, "isBillingRecipient", checked)
+                                    }
+
+                                    ToolButton {
+                                        text: "Remove"
+                                        onClicked: root.removeMatterParty(index)
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "Remove this client from the matter"
+                                    }
+                                }
+                            }
+                        }
+
+                        CheckBox {
+                            id: jointNoConfidentialityCheck
+                            text: "Joint clients acknowledge that material information may be shared among them"
+                            checked: false
+                            Layout.fillWidth: true
+                            onToggled: if (!root._hydrating) {
+                                root.matterJointNoConfidentialityConfirmed = checked
+                                root.dirty = true
+                            }
+                        }
+
+                        CheckBox {
+                            id: jointInstructionsCheck
+                            text: "Material instructions and approvals require all joint clients"
+                            checked: true
+                            Layout.fillWidth: true
+                            onToggled: if (!root._hydrating) {
+                                root.matterJointInstructionsRequireAll = checked
+                                root.dirty = true
+                            }
+                        }
+
+                        ModernTextField {
+                            id: matterJointEngagementDocumentInput
+                            t: root.t
+                            metrics: root.responsiveMetrics
+                            label: "Joint engagement document"
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: root.fieldHeightPx
+                            text: ""
+                            onTextChanged: if (!root._hydrating) root.dirty = true
+                        }
+                    }
+
                     ModernComboBox {
                         id: matterParentCombo
                         t: root.t
                         metrics: root.responsiveMetrics
                         label: "Billing Client"
                         emptyOptionLabel: "No billing client"
+                        visible: !root.matterJointRetainer
                         Layout.fillWidth: true
                         Layout.columnSpan: 1
                         Layout.preferredHeight: root.fieldHeightPx

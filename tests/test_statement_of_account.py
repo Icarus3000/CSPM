@@ -370,3 +370,25 @@ def test_statement_pdf_is_rendered_from_selected_invoice_rows(tmp_path):
     pdf_path = tmp_path / output.split("\\")[-1]
     assert pdf_path.is_file()
     assert pdf_path.read_bytes().startswith(b"%PDF")
+
+
+def test_statement_pdf_uses_invoice_scale_header_logo(tmp_path, monkeypatch):
+    captured_config = {}
+
+    def capture_header(_canvas, _document, config, _logo_path):
+        captured_config.update(config)
+
+    monkeypatch.setattr("services.report_pdf_exporter._draw_header_footer", capture_header)
+    generate_statement_of_account_pdf(
+        {
+            "statement": {"billingClient": "Example Client"},
+            "sections": [],
+            "config": {"firmName": "Cory Schneider Law Office"},
+        },
+        str(tmp_path),
+        "",
+    )
+
+    assert captured_config["headerLogoWidth"] == 64.8
+    assert captured_config["headerLogoHeight"] == 41.04
+    assert captured_config["headerLogoBottomAligned"] is True

@@ -30,6 +30,19 @@ class InvoiceDraftService:
     def _text(value: Any) -> str:
         return str(value or "").strip()
 
+    @classmethod
+    def _bill_to_snapshot_client_name(cls, raw_snapshot: Any) -> str:
+        """Read the immutable bill-to identity without trusting live client data."""
+        text = cls._text(raw_snapshot)
+        if not text:
+            return ""
+        try:
+            import json
+            snapshot = json.loads(text)
+        except (TypeError, ValueError):
+            return ""
+        return cls._text(snapshot.get("clientName")) if isinstance(snapshot, dict) else ""
+
     def _write_tables_once(self, table_rows: Dict[Any, List[Dict[str, Any]]]) -> None:
         """Commit one financial command as one workbook replacement.
 
@@ -221,7 +234,15 @@ class InvoiceDraftService:
 
         return invoice_fee, tax
 
-    def create_draft(self, client_id: str, client_name: str, time_entry_ids: List[str], disb_ids: List[str] = None, grouping_pref: str = "matter") -> str:
+    def create_draft(
+        self,
+        client_id: str,
+        client_name: str,
+        time_entry_ids: List[str],
+        disb_ids: List[str] = None,
+        grouping_pref: str = "matter",
+        billing_recipient: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Creates a new draft invoice aggregating the specified time entries and disbursements.
         Assigns a temporary DRAFT-xxx invoice reference to them.
@@ -231,6 +252,36 @@ class InvoiceDraftService:
         if not time_entry_ids and not disb_ids:
             raise ValueError(
                 "Select at least one time docket, fee entry, or disbursement before creating a draft invoice."
+            )
+
+        bill_to_lookup = getattr(self.repo, "list_invoice_bill_to_options", None)
+        bill_to_options = bill_to_lookup(time_entry_ids + disb_ids) if callable(bill_to_lookup) else []
+        bill_to_snapshot = ""
+        if bill_to_options:
+            requested_client_id = self._text((billing_recipient or {}).get("clientId"))
+            selected = next(
+                (
+                    option
+                    for option in bill_to_options
+                    if self._text(option.get("clientId")).casefold() == requested_client_id.casefold()
+                ),
+                None,
+            )
+            if selected is None:
+                raise ValueError(
+                    "Select a bill-to client for this joint matter before creating the invoice draft."
+                )
+            import json
+            bill_to_snapshot = json.dumps(
+                {
+                    "clientId": self._text(selected.get("clientId")),
+                    "clientName": self._text(selected.get("clientName")),
+                    "fullAddress": self._text(selected.get("fullAddress")),
+                    "primaryEmail": self._text(selected.get("primaryEmail")),
+                    "billingEmail": self._text(selected.get("billingEmail")),
+                    "selectedAt": datetime.now().astimezone().isoformat(),
+                },
+                separators=(",", ":"),
             )
 
         draft_id = str(uuid.uuid4())
@@ -393,6 +444,7 @@ class InvoiceDraftService:
             sc.COL_DRAFT_RECONCILIATION_MODE: "backend_adjustment",
             sc.COL_DRAFT_SHOW_TOTAL_HOURS: "True",
             sc.COL_DRAFT_REISSUE_INVOICE_NUM: reissue_invoice_num,
+            sc.COL_DRAFT_BILL_TO_SNAPSHOT: bill_to_snapshot,
             sc.COL_DRAFT_CREATED_AT: now_str,
             sc.COL_DRAFT_UPDATED_AT: now_str,
         }
@@ -848,12 +900,17 @@ class InvoiceDraftService:
                 ):
                     item[sc.COL_DRAFT_REISSUE_INVOICE_NUM] = ""
         
+        bill_to_snapshot = self._text(draft.get(sc.COL_DRAFT_BILL_TO_SNAPSHOT))
+        bill_to_client_name = self._bill_to_snapshot_client_name(bill_to_snapshot) or self._text(
+            draft.get(sc.COL_DRAFT_CLIENT_NAME)
+        )
+
         # 3. Create Receivables entry
         receivables = table_rows[sc.TBL_RECEIVABLES]
         receivables.append({
             sc.COL_RECV_INVOICE_NUM: final_invoice_num,
             sc.COL_RECV_DATE: date_str,
-            sc.COL_RECV_CLIENT: draft.get(sc.COL_DRAFT_CLIENT_NAME),
+            sc.COL_RECV_CLIENT: bill_to_client_name,
             sc.COL_RECV_TOTAL_INVOICED: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_RECV_AMOUNT_PAID: "0",
             sc.COL_RECV_CREDITS_ADJ: "0",
@@ -864,18 +921,20 @@ class InvoiceDraftService:
         invoice_log = table_rows[sc.TBL_INVOICE_LOG]
         invoice_log.append({
             sc.COL_INV_INVOICE_NUM: final_invoice_num,
-            sc.COL_INV_CLIENT_NAME: draft.get(sc.COL_DRAFT_CLIENT_NAME),
+            sc.COL_INV_CLIENT_NAME: bill_to_client_name,
             sc.COL_INV_INVOICE_DATE: date_str,
             sc.COL_INV_TOTAL_FEES: draft.get(sc.COL_DRAFT_TOTAL_FEES),
             sc.COL_INV_TOTAL_TAX: draft.get(sc.COL_DRAFT_TOTAL_TAX),
-            sc.COL_INV_AGGREGATE_BILLED: draft.get(sc.COL_DRAFT_TOTAL_DUE)
+            sc.COL_INV_AGGREGATE_BILLED: draft.get(sc.COL_DRAFT_TOTAL_DUE),
+            sc.COL_INV_BILL_TO_CLIENT: bill_to_client_name,
+            sc.COL_INV_BILL_TO_SNAPSHOT: bill_to_snapshot,
         })
         # 4b. Create Ledger Entry for Revenue
         ledger = table_rows[sc.TBL_LEDGER]
         ledger.append({
             sc.COL_LEDGER_ID: self.repo._new_id("LED"),
             sc.COL_LEDGER_DATE: date_str,
-            sc.COL_LEDGER_CLIENT_VENDOR: draft.get(sc.COL_DRAFT_CLIENT_NAME),
+            sc.COL_LEDGER_CLIENT_VENDOR: bill_to_client_name,
             sc.COL_LEDGER_DESCRIPTION: f"Invoice {final_invoice_num}",
             sc.COL_LEDGER_CATEGORY: "Revenue",
             sc.COL_LEDGER_REFERENCE: final_invoice_num,
