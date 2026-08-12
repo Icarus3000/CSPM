@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import zipfile
 import threading
+from functools import wraps
 from urllib.parse import quote_plus
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 import collections
@@ -28,6 +29,43 @@ def with_db_lock(func):
                 gc.disable()
             try:
                 return func(self, *args, **kwargs)
+            finally:
+                if was_enabled:
+                    gc.enable()
+    return wrapper
+
+
+def with_financial_write_batch(func):
+    """Commit a multi-table financial mutation in one workbook replacement.
+
+    A payment touches the transactions, ledger, receivables, time, and
+    disbursements tables.  Persisting those tables one at a time made a single
+    payment perform several macro-workbook rewrites, leaving more chances for
+    a transient Windows/OneDrive lock and briefly exposing partial state.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # Lightweight repository doubles used by focused logic tests do not
+        # have an on-disk workbook.  Keep their existing in-memory behavior.
+        if not hasattr(self, "import_batch") or not hasattr(self, "_import_batch_active"):
+            return func(self, *args, **kwargs)
+
+        with _DB_LOCK:
+            was_enabled = gc.isenabled()
+            if was_enabled:
+                gc.disable()
+            try:
+                # A caller can already be coordinating a larger atomic batch.
+                if self._import_batch_active:
+                    return func(self, *args, **kwargs)
+                with self.import_batch() as metrics:
+                    result = func(self, *args, **kwargs)
+                logger.info(
+                    "[excel_repo] financial write committed in one save: tables=%s saveSeconds=%s",
+                    metrics.get("dirtyTables", 0),
+                    metrics.get("saveSeconds", 0.0),
+                )
+                return result
             finally:
                 if was_enabled:
                     gc.enable()
@@ -505,7 +543,11 @@ class ExcelRepo:
         import os
 
         target_path = Path(filepath)
-        temp_path = target_path.with_name(target_path.name + ".tmp")
+        # A unique sibling temp file prevents a stale/interrupted save from
+        # colliding with the next save attempt.  Keeping it beside the target
+        # preserves the atomic-replace guarantee because both files are on the
+        # same volume.
+        temp_path = target_path.with_name(f".{target_path.name}.{uuid4().hex}.tmp")
         try:
             # 1. Save to an isolated temp file (OneDrive ignores this)
             workbook.save(str(temp_path))
@@ -518,8 +560,9 @@ class ExcelRepo:
 
             # 2. Atomically overwrite the real file
             import time
-            max_retries = 10
-            for attempt in range(max_retries):
+            retry_delays = (0.10, 0.15, 0.20, 0.30, 0.45, 0.65, 0.85, 1.0, 1.0, 1.0)
+            last_error: Optional[BaseException] = None
+            for attempt in range(len(retry_delays) + 1):
                 try:
                     if os.path.exists(str(target_path)):
                         os.replace(str(temp_path), str(target_path))
@@ -527,9 +570,14 @@ class ExcelRepo:
                         os.rename(str(temp_path), str(target_path))
                     break
                 except (OSError, PermissionError) as e:
-                    if attempt == max_retries - 1:
-                        raise RuntimeError(f"Could not save file due to lock (OneDrive/Excel). Try closing the file. {e}")
-                    time.sleep(0.5)
+                    last_error = e
+                    if attempt == len(retry_delays):
+                        raise RuntimeError(
+                            "CSPM could not replace its data workbook after several retries. "
+                            "Close any copy of CSPM.xlsm open in Excel or another program, then retry the action. "
+                            f"The change was not saved. {e}"
+                        ) from e
+                    time.sleep(retry_delays[attempt])
             
             # Invalidate memory cache so subsequent reads refetch
             self._row_cache.clear()
@@ -798,14 +846,31 @@ class ExcelRepo:
             self._table_meta_cache_dirty = True
 
     def warm_startup_metadata_cache(self) -> Dict[str, Any]:
-        warmed = 0
-        failed = 0
-        for tref in (TBL_CLIENTS, TBL_MATTERS, TBL_TIME, TBL_PARENTS, TBL_CLIENT_PROFILES):
-            try:
-                self._read_table_rows(tref)
-                warmed += 1
-            except Exception:
-                failed += 1
+        """Warm the data used by the first client, WIP, and invoice screens.
+
+        This used to open the macro workbook once *per* table.  A user who
+        opened Invoice Builder while that background task was running could
+        therefore wait behind several full Excel parses.  The bulk reader
+        takes one immutable snapshot instead, which also leaves a useful
+        in-memory cache for the first preview.
+        """
+        tables = (
+            TBL_CLIENTS,
+            TBL_CLIENT_PROFILES,
+            TBL_MATTERS,
+            TBL_PARENTS,
+            TBL_TIME,
+            TBL_DRAFT_INVOICES,
+            TBL_INVOICE_LOG,
+        )
+        try:
+            rows_by_table = self._read_table_rows_bulk(list(tables))
+        except Exception:
+            logger.exception("Could not warm startup workbook tables.")
+            return {"ok": False, "tablesWarmed": 0, "tablesFailed": len(tables)}
+
+        warmed = sum(1 for tref in tables if tref.table in rows_by_table)
+        failed = len(tables) - warmed
         return {"ok": failed == 0, "tablesWarmed": warmed, "tablesFailed": failed}
 
     @contextmanager
@@ -2538,6 +2603,7 @@ class ExcelRepo:
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
 
+    @with_financial_write_batch
     def update_invoice_payment(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Amend one recorded payment and keep A/R, ledger, and WIP in sync."""
 
@@ -2740,6 +2806,7 @@ class ExcelRepo:
             "message": f"Payment for invoice {invoice} updated.",
         }
 
+    @with_financial_write_batch
     def post_invoice_payment(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Post a payment or write-off against one open receivable invoice."""
 
@@ -8897,6 +8964,142 @@ class ExcelRepo:
         finally:
             self._close_workbook(wb)
 
+    def _read_table_rows_read_only(
+        self,
+        table_refs: List[TableRef],
+        workbook_signature: str,
+    ) -> Optional[Dict[str, List[Dict[str, Any]]]]:
+        """Read table rows from one streaming workbook snapshot.
+
+        ``openpyxl`` cannot expose Excel ``Table`` objects in read-only mode,
+        but CSPM already records each table's headers and bounds in its
+        signature-validated metadata cache.  Reading through that information
+        avoids parsing the complete VBA workbook object graph for read-only
+        screen transitions.  If a workbook is unfamiliar or malformed, the
+        caller falls back to the existing full-fidelity reader.
+        """
+        if not table_refs:
+            return {}
+
+        _lazy_load_heavy_libs()
+        path = self.paths.workbook_path()
+        workbook = None
+        try:
+            workbook = load_workbook(
+                path,
+                read_only=True,
+                data_only=False,
+                keep_vba=False,
+            )
+            results: Dict[str, List[Dict[str, Any]]] = {}
+
+            for tref in table_refs:
+                if tref.sheet not in workbook.sheetnames:
+                    return None
+
+                worksheet = workbook[tref.sheet]
+                expected_headers = TABLE_COLUMNS[tref.table]
+                cached_meta = self._get_cached_table_meta(tref, workbook_signature) or {}
+                try:
+                    header_row = int(cached_meta.get("headerRow", 0) or 0)
+                except (TypeError, ValueError):
+                    header_row = 0
+
+                # A missing cache is expected after an upgrade or for a newly
+                # added table.  Locate a likely header in the first rows rather
+                # than giving up the fast path for every other table.
+                if header_row <= 0:
+                    scan_limit = min(max(int(worksheet.max_row or 1), 1), 40)
+                    for row_index, values in enumerate(
+                        worksheet.iter_rows(
+                            min_row=1,
+                            max_row=scan_limit,
+                            values_only=True,
+                        ),
+                        start=1,
+                    ):
+                        labels = {_clean_text(value) for value in values if _clean_text(value)}
+                        matches = 0
+                        for expected in expected_headers:
+                            aliases = TABLE_ALIASES.get(tref.table, {}).get(expected, [])
+                            if expected in labels or any(alias in labels for alias in aliases):
+                                matches += 1
+                        if matches >= min(2, len(expected_headers)):
+                            header_row = row_index
+                            break
+                if header_row <= 0:
+                    return None
+
+                try:
+                    last_data_row = int(cached_meta.get("lastDataRow", 0) or 0)
+                except (TypeError, ValueError):
+                    last_data_row = 0
+                if last_data_row <= header_row:
+                    last_data_row = int(worksheet.max_row or header_row)
+                if last_data_row < header_row:
+                    last_data_row = header_row
+
+                values_iter = worksheet.iter_rows(
+                    min_row=header_row,
+                    max_row=last_data_row,
+                    values_only=True,
+                )
+                source_headers = next(values_iter, None)
+                if source_headers is None:
+                    return None
+                source_index = {
+                    _clean_text(header): index
+                    for index, header in enumerate(source_headers)
+                    if _clean_text(header)
+                }
+                column_for_header: Dict[str, int] = {}
+                for expected in expected_headers:
+                    candidates = [expected, *TABLE_ALIASES.get(tref.table, {}).get(expected, [])]
+                    index = next((source_index[item] for item in candidates if item in source_index), None)
+                    if index is not None:
+                        column_for_header[expected] = int(index)
+
+                # A table with no recognizable columns needs the legacy reader
+                # to diagnose or repair it rather than silently returning an
+                # empty result.
+                if not column_for_header:
+                    return None
+
+                rows: List[Dict[str, Any]] = []
+                for source_row in values_iter:
+                    row_data: Dict[str, Any] = {}
+                    has_data = False
+                    for header in expected_headers:
+                        index = column_for_header.get(header)
+                        value = source_row[index] if index is not None and index < len(source_row) else None
+                        row_data[header] = value
+                        if value not in (None, ""):
+                            has_data = True
+                    if has_data:
+                        rows.append(row_data)
+
+                self._row_cache[self._table_cache_key(tref)] = rows
+                self._set_cached_table_meta(
+                    tref,
+                    workbook_signature,
+                    {
+                        "headerRow": int(header_row),
+                        "lastDataRow": int(last_data_row),
+                        "columnForHeader": {
+                            header: int(index + 1)
+                            for header, index in column_for_header.items()
+                        },
+                    },
+                )
+                results[tref.table] = rows
+
+            return results
+        except Exception:
+            logger.debug("Read-only table snapshot unavailable; using full workbook reader.", exc_info=True)
+            return None
+        finally:
+            self._close_workbook(workbook)
+
     @with_db_lock
     def _read_table_rows(self, tref: Union[TableRef, str]) -> List[Dict[str, Any]]:
         if isinstance(tref, str):
@@ -8929,6 +9132,17 @@ class ExcelRepo:
                 self._row_cache_mtime = current_mtime
         except Exception:
             current_mtime = 0.0
+
+        fast_rows = self._read_table_rows_read_only([tref], workbook_signature)
+        if fast_rows is not None and tref.table in fast_rows:
+            self._persist_table_meta_cache()
+            logger.debug(
+                "[ExcelRepo] Streaming read recovered %d rows from %s in %.3fs",
+                len(fast_rows[tref.table]),
+                tref.sheet,
+                time.perf_counter() - t_start,
+            )
+            return fast_rows[tref.table]
 
         cached_meta = self._get_cached_table_meta(tref, workbook_signature)
         wb = load_workbook(path, keep_vba=True)
@@ -9154,6 +9368,18 @@ class ExcelRepo:
             return results
 
         started = time.perf_counter()
+        fast_rows = self._read_table_rows_read_only(pending, workbook_signature)
+        if fast_rows is not None:
+            results.update(fast_rows)
+            self._persist_table_meta_cache()
+            logger.info(
+                "[ExcelRepo] Streaming bulk table read: %d table(s), %d cold table(s), %.3fs",
+                len(normalized),
+                len(pending),
+                time.perf_counter() - started,
+            )
+            return results
+
         fallback: List[TableRef] = []
         wb = load_workbook(path, keep_vba=True)
         try:
@@ -9229,6 +9455,70 @@ class ExcelRepo:
             time.perf_counter() - started,
         )
         return results
+
+    @with_db_lock
+    def _write_table_rows_bulk(
+        self,
+        table_rows: Dict[Union[TableRef, str], List[Dict[str, Any]]],
+    ) -> None:
+        """Replace several workbook tables in one durable save.
+
+        Financial commands often alter several related tables at the same time.
+        Saving each table separately reparses and rewrites the full macro
+        workbook for every table, which is both slow and exposes short-lived
+        partially-updated states.  This helper applies all supplied table
+        snapshots to one workbook object and performs the existing atomic
+        save protocol once.
+        """
+        if not table_rows:
+            return
+
+        normalized: List[Tuple[TableRef, List[Dict[str, Any]]]] = []
+        seen_tables = set()
+        for raw_ref, rows in table_rows.items():
+            tref = raw_ref
+            if isinstance(tref, str):
+                tref = next((item for item in TABLES_IN_ORDER if item.table == tref), tref)
+            if not isinstance(tref, TableRef):
+                raise ValueError(f"Unknown workbook table reference: {raw_ref}")
+            if tref.table in seen_tables:
+                raise ValueError(f"Table {tref.table} was supplied more than once.")
+            seen_tables.add(tref.table)
+            normalized.append((tref, list(rows or [])))
+
+        # Preserve the canonical workbook table order.  It makes a financial
+        # save deterministic and keeps related source sheets stable for users
+        # who inspect the workbook directly in Excel.
+        table_order = {item.table: index for index, item in enumerate(TABLES_IN_ORDER)}
+        normalized.sort(key=lambda item: table_order.get(item[0].table, len(table_order)))
+
+        self.ensure_schema()
+        _lazy_load_heavy_libs()
+        wb = load_workbook(self.paths.workbook_path(), keep_vba=True)
+        try:
+            for tref, rows in normalized:
+                if tref.sheet not in wb.sheetnames:
+                    raise ValueError(f"Worksheet for table {tref.table} was not found: {tref.sheet}")
+                ws = wb[tref.sheet]
+                existing_table = None
+                if hasattr(ws, "tables") and tref.table in ws.tables:
+                    existing_table = ws.tables[tref.table]
+                self._write_table(
+                    ws,
+                    existing_table,
+                    tref.table,
+                    TABLE_COLUMNS[tref.table],
+                    rows,
+                    None,
+                )
+
+            # _safe_save atomically replaces the workbook and invalidates all
+            # row/meta caches only after every table is in the new snapshot.
+            self._safe_save(wb, self.paths.workbook_path())
+        finally:
+            self._close_workbook(wb)
+
+        self._persist_table_meta_cache()
 
     def _append_row_to_table(self, tref: TableRef, row: Dict[str, Any]) -> None:
         if self._import_batch_active:

@@ -234,18 +234,21 @@ Item {
         root.finalInvoiceNum = ""
         if (!billingBackend) return
         selectedDraftNum = draftNum
-        selectedDraftData = billingBackend.getDraft(draftNum)
-        draftLineItems = billingBackend.getDraftLineItems(draftNum) || []
-        
-        // Try to use cached preview HTML (pre-built by WIP tab) to avoid blank screen
+        // Never synchronously read CSPM.xlsm from QML.  A cold workbook read
+        // used to leave this screen unresponsive before the preview worker had
+        // even begun.  The backend now returns the draft, line items, and HTML
+        // together from one background snapshot.
+        selectedDraftData = null
+        draftLineItems = []
+        previewHtml = ""
+        isPreviewLoading = true
+
+        // A pre-built preview can still paint immediately when available.
         var cachedHtml = billingBackend.getCachedPreviewHtml(draftNum)
         if (cachedHtml) {
             root.previewHtml = cachedHtml
-            root.isPreviewLoading = false
-        } else {
-            root.isPreviewLoading = true
-            billingBackend.previewInvoiceHtml(draftNum, root.selectedConcept)
         }
+        billingBackend.loadDraftWorkspace(draftNum, root.selectedConcept)
     }
 
     function _finalizeDraft() {
@@ -354,6 +357,19 @@ Item {
             root.previewHtml = html
             root.isPreviewLoading = false
         }
+        function onDraftWorkspaceLoaded(draftNum, workspace) {
+            if (String(draftNum) !== root.selectedDraftNum) return
+            var loaded = workspace || {}
+            root.selectedDraftData = loaded.draft || null
+            root.draftLineItems = loaded.lineItems || []
+            root.previewHtml = String(loaded.html || root.previewHtml || "")
+            root.isPreviewLoading = false
+        }
+        function onDraftWorkspaceLoadFailed(draftNum, message) {
+            if (String(draftNum) !== root.selectedDraftNum) return
+            root.isPreviewLoading = false
+            appToast(message || "Could not load the selected draft.")
+        }
         function onDraftsLoaded(drafts) {
             root.draftsList = drafts || []
             root.isLoading = false
@@ -392,7 +408,9 @@ Item {
             root.previewHtml = html
             root.isPreviewLoading = false
             root.finalizationStage = "Saving the finalized PDF…"
-            root.billingBackend.exportHtmlToPdf(html, root.pendingFinalizePath)
+            // Finalization has an explicit “Open Final PDF” control.  Keep
+            // focus in CSPM while its accounting commit completes.
+            root.billingBackend.exportHtmlToPdf(html, root.pendingFinalizePath, false)
         }
         function onFinalizedInvoiceHtmlFailed(draftNum, invoiceNum, message) {
             if (draftNum !== root.selectedDraftNum || invoiceNum !== root.pendingFinalizeInvoiceNum) return
@@ -422,10 +440,8 @@ Item {
             if (!root.selectedDraftNum || !root.billingBackend) return
             var updatedDraftNum = draft ? (draft.InvoiceNum || draft.draftNum) : ""
             if (updatedDraftNum && String(updatedDraftNum) !== root.selectedDraftNum) return
-            root.selectedDraftData = root.billingBackend.getDraft(root.selectedDraftNum) || draft || null
-            root.draftLineItems = root.billingBackend.getDraftLineItems(root.selectedDraftNum) || []
             root.isPreviewLoading = true
-            root.billingBackend.previewInvoiceHtml(root.selectedDraftNum, root.selectedConcept)
+            root.billingBackend.loadDraftWorkspace(root.selectedDraftNum, root.selectedConcept)
         }
         function onPdfExportFinished(path, success) {
             if (root.isFinalizingExport && success && path === root.pendingFinalizePath) {

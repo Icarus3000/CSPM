@@ -88,6 +88,13 @@ class BillingController(QObject):
 
     draftsLoaded = Signal('QVariantList')
 
+    # Invoice Builder receives its selected draft as one background workspace
+    # payload.  Keeping the draft, its line items, and its HTML together avoids
+    # several synchronous workbook reads when the user clicks a draft.
+    draftWorkspaceLoaded = Signal(str, 'QVariantMap')
+
+    draftWorkspaceLoadFailed = Signal(str, str)
+
     finalizedInvoiceHtmlReady = Signal(str, str, str)
 
     finalizedInvoiceHtmlFailed = Signal(str, str, str)
@@ -158,6 +165,7 @@ class BillingController(QObject):
         self._wip_load_in_progress = False
         self._finalized_invoice_load_in_progress = False
         self._invoice_directory_detail_requests = set()
+        self._draft_workspace_requests = set()
         self._invoice_reversal_in_progress = False
 
     # ── Worker helpers ───────────────────────────────────────────────────────
@@ -727,8 +735,6 @@ class BillingController(QObject):
 
             self.draftUpdated.emit({})
 
-            self.previewInvoiceHtml(str(draft_num), "Concept_A2")
-
             self.toast.emit("Docket updated")
 
         except Exception as exc:
@@ -746,8 +752,6 @@ class BillingController(QObject):
 
             self.draftUpdated.emit({})
 
-            self.previewInvoiceHtml(str(draft_num), "Concept_A2")
-
             self.toast.emit("Docket removed")
 
         except Exception as exc:
@@ -764,8 +768,6 @@ class BillingController(QObject):
             self._draft_svc.add_line_item(str(draft_num), data)
 
             self.draftUpdated.emit({})
-
-            self.previewInvoiceHtml(str(draft_num), "Concept_A2")
 
             self.toast.emit("Docket added")
 
@@ -818,8 +820,6 @@ class BillingController(QObject):
 
                 self.draftUpdated.emit(dict(draft) if draft else {})
 
-                self.previewInvoiceHtml(str(draft_num), "Concept_A2")
-
             else:
 
                 self.error.emit(f"Draft {draft_num} was not found.")
@@ -847,7 +847,6 @@ class BillingController(QObject):
                 draft = self._draft_svc.get_draft(str(draft_num))
                 self.toast.emit(f"Draft grouping updated to {grouping_pref}")
                 self.draftUpdated.emit(dict(draft) if draft else {})
-                self.previewInvoiceHtml(str(draft_num), "Concept_A2")
         except Exception as e:
             self.toast.emit(f"Failed to update grouping: {str(e)}")
 
@@ -880,7 +879,6 @@ class BillingController(QObject):
             self._excel_repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
             refreshed_draft = self._draft_svc.get_draft(str(draft_num))
             self.draftUpdated.emit(dict(refreshed_draft) if refreshed_draft else {})
-            self.previewInvoiceHtml(str(draft_num), "Concept_A2")
         except (KeyError, TypeError, ValueError) as exc:
             self.error.emit(f"Could not save reconciliation mode: {exc}")
         except Exception as exc:
@@ -911,7 +909,6 @@ class BillingController(QObject):
             self._excel_repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
             refreshed_draft = self._draft_svc.get_draft(str(draft_num))
             self.draftUpdated.emit(dict(refreshed_draft) if refreshed_draft else {})
-            self.previewInvoiceHtml(str(draft_num), "Concept_A2")
         except (KeyError, TypeError, ValueError) as exc:
             self.error.emit(f"Could not save docket display mode: {exc}")
         except Exception as exc:
@@ -932,7 +929,6 @@ class BillingController(QObject):
             if updated:
                 self._excel_repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
                 self.draftUpdated.emit({})
-                self.previewInvoiceHtml(str(draft_num), "Concept_A2")
         except Exception as e:
             self.error.emit(f"Failed to update sort order: {str(e)}")
 
@@ -966,7 +962,6 @@ class BillingController(QObject):
             if updated:
                 self._excel_repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
                 self.draftUpdated.emit({})
-                self.previewInvoiceHtml(str(draft_num), "Concept_A2")
         except (KeyError, TypeError, ValueError) as e:
             self.error.emit(f"Failed to update draft metadata: {e}")
         except Exception as e:
@@ -2124,7 +2119,13 @@ class BillingController(QObject):
             self._release_worker(worker)
 
     @Slot(str, str)
-    def exportHtmlToPdf(self, html_content: str, output_path: str):
+    @Slot(str, str, bool)
+    def exportHtmlToPdf(
+        self,
+        html_content: str,
+        output_path: str,
+        open_after_export: bool = True,
+    ):
         """Generates a PDF explicitly sized as Letter."""
         try:
             from PySide6.QtWebEngineCore import QWebEnginePage
@@ -2134,7 +2135,11 @@ class BillingController(QObject):
             import os
             
             temp_dir = tempfile.gettempdir()
-            pass1_path = os.path.join(temp_dir, "pass1.pdf")
+            # A fixed temp filename made simultaneous exports compete with one
+            # another.  Keep the WebEngine render isolated per export.
+            fd, pass1_path = tempfile.mkstemp(prefix="cspm_invoice_", suffix=".pdf")
+            os.close(fd)
+            os.remove(pass1_path)
             
             self.pdf_page = QWebEnginePage()
             
@@ -2144,7 +2149,7 @@ class BillingController(QObject):
                 QMarginsF(0, 0, 0, 0)
             )
             
-            def finalize_merge():
+            def _legacy_finalize_merge():
                 try:
                     from pypdf import PdfReader, PdfWriter
                     from reportlab.pdfgen import canvas
@@ -2231,6 +2236,17 @@ class BillingController(QObject):
                         try: os.remove(pass1_path)
                         except: pass
 
+            def finalize_merge():
+                # Chromium must print on the GUI thread, but pypdf/reportlab
+                # page decoration is CPU and I/O heavy.  Do that work in the
+                # shared worker pool so finalization never freezes the window.
+                self._start_pdf_merge_worker(
+                    pass1_path,
+                    output_path,
+                    html_content,
+                    bool(open_after_export),
+                )
+
             def on_pdf1_printed(filepath, success):
                 if success:
                     finalize_merge()
@@ -2243,6 +2259,12 @@ class BillingController(QObject):
                     self.pdf_page.printToPdf(pass1_path, layout)
                 else: 
                     self.error.emit("Failed to load HTML for PDF")
+                    self.pdfExportFinished.emit(output_path, False)
+                    if os.path.exists(pass1_path):
+                        try:
+                            os.remove(pass1_path)
+                        except OSError:
+                            pass
                     
             self.pdf_page.pdfPrintingFinished.connect(on_pdf1_printed)
             self.pdf_page.loadFinished.connect(on_load1_finished)
@@ -2250,6 +2272,138 @@ class BillingController(QObject):
             
         except Exception as exc:
             self.error.emit(f"Could not initialize PDF export: {exc}")
+            self.pdfExportFinished.emit(output_path, False)
+
+    @staticmethod
+    def _merge_pdf_export_impl(pass1_path: str, output_path: str, html_content: str) -> Dict[str, Any]:
+        """Add CSPM's page treatment without occupying the GUI thread."""
+        import os
+        import re
+        import tempfile
+
+        from pypdf import PdfReader, PdfWriter
+        from reportlab.lib.colors import Color
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+
+        started = time.perf_counter()
+        overlay_paths: List[str] = []
+        try:
+            reader = PdfReader(pass1_path)
+            writer = PdfWriter()
+            total_pages = len(reader.pages)
+
+            client_match = re.search(r'data-client="([^"]+)"', html_content)
+            invoice_match = re.search(r'data-invoice="([^"]+)"', html_content)
+            date_match = re.search(r'data-date="([^"]+)"', html_content)
+            client_name = client_match.group(1).upper() if client_match else ""
+            invoice_num = invoice_match.group(1).upper() if invoice_match else ""
+            date_str = date_match.group(1).upper() if date_match else ""
+
+            color_gray = Color(148 / 255.0, 163 / 255.0, 184 / 255.0)
+            color_navy = Color(15 / 255.0, 23 / 255.0, 42 / 255.0)
+            for index, rendered_page in enumerate(reader.pages):
+                fd, overlay_path = tempfile.mkstemp(prefix="cspm_invoice_page_", suffix=".pdf")
+                os.close(fd)
+                overlay_paths.append(overlay_path)
+
+                overlay = canvas.Canvas(overlay_path, pagesize=letter)
+                page_label = f"PAGE {index + 1} OF {total_pages}"
+                overlay.setFont("Helvetica", 8)
+                overlay.setFillColor(color_gray)
+                overlay.drawString(
+                    554.4 - overlay.stringWidth(page_label, "Helvetica", 8),
+                    34,
+                    page_label,
+                )
+                if index > 0:
+                    office_label = "CORY SCHNEIDER LAW OFFICE   "
+                    invoice_label = f"INVOICE {invoice_num} • {date_str}"
+                    overlay.setFont("Helvetica-Bold", 8.5)
+                    overlay.setFillColor(color_navy)
+                    overlay.drawString(57.6, 756, office_label)
+                    office_width = overlay.stringWidth(office_label, "Helvetica-Bold", 8.5)
+                    overlay.setFillColor(color_gray)
+                    overlay.drawString(57.6 + office_width, 756, client_name)
+                    overlay.setFillColor(color_navy)
+                    overlay.drawString(
+                        554.4 - overlay.stringWidth(invoice_label, "Helvetica-Bold", 8.5),
+                        756,
+                        invoice_label,
+                    )
+                overlay.save()
+                rendered_page.merge_page(PdfReader(overlay_path).pages[0])
+                writer.add_page(rendered_page)
+
+            with open(output_path, "wb") as output_file:
+                writer.write(output_file)
+            logger.info(
+                "[PERF] Invoice PDF post-processing: %d page(s), %.3fs",
+                total_pages,
+                time.perf_counter() - started,
+            )
+            return {"path": output_path, "pages": total_pages}
+        finally:
+            for overlay_path in overlay_paths:
+                try:
+                    os.remove(overlay_path)
+                except OSError:
+                    pass
+            try:
+                os.remove(pass1_path)
+            except OSError:
+                pass
+
+    def _start_pdf_merge_worker(
+        self,
+        pass1_path: str,
+        output_path: str,
+        html_content: str,
+        open_after_export: bool,
+    ) -> None:
+        worker = Worker(
+            self._merge_pdf_export_impl,
+            pass1_path,
+            output_path,
+            html_content,
+            name="mergeInvoicePdf",
+        )
+        worker.signals.result.connect(
+            partial(self._on_pdf_merge_ready, worker, output_path, open_after_export)
+        )
+        worker.signals.error.connect(partial(self._on_pdf_merge_failed, worker, output_path))
+        self._start_worker(worker)
+
+    def _on_pdf_merge_ready(
+        self,
+        worker: Worker,
+        output_path: str,
+        open_after_export: bool,
+        result: Any,
+    ) -> None:
+        try:
+            saved_path = str((result or {}).get("path") or output_path)
+            self.toast.emit(f"Exported to {saved_path}")
+            self.pdfExportFinished.emit(saved_path, True)
+            # Finalization provides an explicit “Open Final PDF” action. Do
+            # not take focus to an external reader while the accounting
+            # commit and success handoff are under way.
+            if open_after_export:
+                try:
+                    import os
+                    os.startfile(os.path.normpath(saved_path))
+                except Exception as exc:
+                    logger.warning("Could not auto-open exported PDF: %s", exc)
+        finally:
+            self._release_worker(worker)
+
+    def _on_pdf_merge_failed(self, worker: Worker, output_path: str, err_tuple: tuple) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            self.error.emit(f"Failed to save PDF: {value}")
+            self.pdfExportFinished.emit(output_path, False)
+        finally:
+            self._release_worker(worker)
 
     # ── List Drafts ──────────────────────────────────────────────────────────
 
@@ -2270,6 +2424,110 @@ class BillingController(QObject):
         except Exception as exc:
             self.error.emit(f"Could not list drafts: {exc}")
             return []
+
+    @Slot(str, str)
+    def loadDraftWorkspace(self, draft_num, template_name="Concept_A2"):
+        """Load the selected Invoice Builder draft without blocking QML.
+
+        The old QML flow synchronously asked for the draft, then every time
+        entry, then started the preview.  Each request could parse CSPM.xlsm
+        independently.  This grouped version warms all preview tables once in
+        a worker and returns the complete screen payload atomically.
+        """
+        normalized_draft_num = str(draft_num or "").strip()
+        if not normalized_draft_num:
+            return
+        if normalized_draft_num in self._draft_workspace_requests:
+            return
+
+        self._draft_workspace_requests.add(normalized_draft_num)
+        worker = Worker(
+            self._load_draft_workspace_impl,
+            normalized_draft_num,
+            str(template_name or "Concept_A2"),
+            name="loadDraftWorkspace",
+        )
+        worker.signals.result.connect(
+            partial(self._on_draft_workspace_loaded, worker, normalized_draft_num)
+        )
+        worker.signals.error.connect(
+            partial(self._on_draft_workspace_load_failed, worker, normalized_draft_num)
+        )
+        self._start_worker(worker)
+
+    def _load_draft_workspace_impl(self, draft_num: str, template_name: str) -> Dict[str, Any]:
+        started = time.perf_counter()
+        from repositories.excel_repo import (
+            TBL_CLIENTS,
+            TBL_CLIENT_PROFILES,
+            TBL_DRAFT_INVOICES,
+            TBL_INVOICE_LOG,
+            TBL_MATTERS,
+            TBL_PARENTS,
+            TBL_TIME,
+        )
+
+        # One snapshot seeds every table used by the draft list, item list,
+        # contact/matter labels, and the preview number.  Subsequent helpers
+        # use ExcelRepo's in-memory rows instead of reopening the macro file.
+        self._excel_repo._read_table_rows_bulk([
+            TBL_DRAFT_INVOICES,
+            TBL_TIME,
+            TBL_CLIENTS,
+            TBL_CLIENT_PROFILES,
+            TBL_MATTERS,
+            TBL_PARENTS,
+            TBL_INVOICE_LOG,
+        ])
+        draft = self._draft_svc.get_draft(draft_num)
+        if not draft:
+            raise ValueError(f"Draft {draft_num} was not found.")
+
+        line_items = self.getDraftLineItems(draft_num)
+        html = self._generate_preview_impl(draft_num, template_name)
+        logger.info(
+            "[PERF] Invoice Builder workspace %s: %.3fs (%d line item(s), %d HTML chars)",
+            draft_num,
+            time.perf_counter() - started,
+            len(line_items or []),
+            len(str(html or "")),
+        )
+        return {
+            "draft": dict(draft),
+            "lineItems": list(line_items or []),
+            "html": str(html or ""),
+        }
+
+    def _on_draft_workspace_loaded(
+        self,
+        worker: Worker,
+        draft_num: str,
+        result: Any,
+    ) -> None:
+        try:
+            payload = dict(result or {})
+            html = str(payload.get("html") or "")
+            self._last_preview_draft_num = draft_num
+            self._last_preview_html = html
+            self.draftWorkspaceLoaded.emit(draft_num, payload)
+        finally:
+            self._draft_workspace_requests.discard(draft_num)
+            self._release_worker(worker)
+
+    def _on_draft_workspace_load_failed(
+        self,
+        worker: Worker,
+        draft_num: str,
+        err_tuple: tuple,
+    ) -> None:
+        try:
+            _exception_type, value, _traceback = err_tuple
+            message = f"Could not load draft {draft_num}: {value}"
+            self.error.emit(message)
+            self.draftWorkspaceLoadFailed.emit(draft_num, message)
+        finally:
+            self._draft_workspace_requests.discard(draft_num)
+            self._release_worker(worker)
 
     @Slot()
     def loadDrafts(self):

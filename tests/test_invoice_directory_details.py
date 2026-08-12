@@ -1,4 +1,5 @@
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -18,6 +19,7 @@ from repositories.excel_repo import (
     TBL_RECEIVABLES,
     TBL_TIME,
     TBL_TRANSACTIONS_MASTER,
+    with_financial_write_batch,
 )
 from backend.controllers.billing_controller import BillingController
 
@@ -213,6 +215,36 @@ class _PaymentEditRepo:
 
     def _replace_table_rows(self, table, rows):
         self.tables[table.table] = [dict(row) for row in rows]
+
+
+class _FinancialBatchProbe:
+    def __init__(self):
+        self._import_batch_active = False
+        self.batch_count = 0
+        self.was_batched = False
+
+    @contextmanager
+    def import_batch(self):
+        self.batch_count += 1
+        self._import_batch_active = True
+        metrics = {"dirtyTables": 3, "saveSeconds": 0.01}
+        try:
+            yield metrics
+        finally:
+            self._import_batch_active = False
+
+    @with_financial_write_batch
+    def post(self):
+        self.was_batched = self._import_batch_active
+        return {"ok": True}
+
+
+def test_financial_mutation_uses_one_outer_workbook_batch():
+    repo = _FinancialBatchProbe()
+
+    assert repo.post() == {"ok": True}
+    assert repo.was_batched is True
+    assert repo.batch_count == 1
 
 
 def test_saved_payment_can_be_loaded_and_amended_without_creating_a_second_payment():

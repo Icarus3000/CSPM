@@ -37,6 +37,7 @@ class _InvoiceReversalRepo:
 
     def __init__(self):
         self._next_id = 0
+        self.bulk_writes = []
         self.tables = {
             TBL_PARENTS.table: [{sc.COL_PARENT_ID: "LEVI", sc.COL_PARENT_NAME: "Leviathan Private Network"}],
             TBL_CLIENTS.table: [{sc.COL_CLIENT_ID: "ALXX", sc.COL_CLIENT_NAME: "AL ADVISOR"}],
@@ -119,6 +120,15 @@ class _InvoiceReversalRepo:
     def _write_table_rows(self, table, rows):
         table_key = getattr(table, "table", table)
         self.tables[table_key] = [dict(row) for row in rows]
+
+    def _write_table_rows_bulk(self, table_rows):
+        snapshot = {}
+        for table, rows in table_rows.items():
+            table_key = getattr(table, "table", table)
+            copied_rows = [dict(row) for row in rows]
+            self.tables[table_key] = copied_rows
+            snapshot[table_key] = copied_rows
+        self.bulk_writes.append(snapshot)
 
     def _new_id(self, prefix):
         self._next_id += 1
@@ -244,6 +254,26 @@ def test_finalize_can_reclaim_a_previously_voided_unpaid_invoice_number():
     assert repo.tables[TBL_RECEIVABLES.table][0][sc.COL_RECV_INVOICE_NUM] == "26-0057-SUPERSEDED"
     assert repo.tables[TBL_RECEIVABLES.table][-1][sc.COL_RECV_INVOICE_NUM] == "26-0057"
     assert repo.tables[TBL_RECEIVABLES.table][-1][sc.COL_RECV_STATUS] == "Unpaid"
+
+
+def test_finalization_commits_all_financial_tables_in_one_bulk_write():
+    repo = _InvoiceReversalRepo()
+    service = InvoiceDraftService(repo)
+
+    draft_num = service.create_draft("ALXX", "AL ADVISOR", ["TIME-1"])
+    repo.bulk_writes.clear()
+
+    assert service.finalize_draft(draft_num, "26-0058", "") is True
+
+    assert len(repo.bulk_writes) == 1
+    assert set(repo.bulk_writes[0]) == {
+        TBL_TIME.table,
+        TBL_DISBURSEMENTS.table,
+        TBL_RECEIVABLES.table,
+        TBL_INVOICE_LOG.table,
+        TBL_LEDGER.table,
+        TBL_DRAFT_INVOICES.table,
+    }
 
 
 def test_paid_or_credited_void_number_cannot_be_reclaimed():

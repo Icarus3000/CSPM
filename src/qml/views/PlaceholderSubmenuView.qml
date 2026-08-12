@@ -3076,6 +3076,14 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             for (var k in wipState) {
                 baseState[k] = wipState[k]
             }
+        } else if (paymentEntryView && typeof paymentEntryView.snapshotState === "function") {
+            // Payment Entry is a live financial form.  Preserve its selected
+            // invoice and in-progress values whenever the work-tab shell
+            // checkpoints or restores state.
+            var paymentState = paymentEntryView.snapshotState()
+            for (var paymentKey in paymentState) {
+                baseState[paymentKey] = paymentState[paymentKey]
+            }
         } else if (root._pendingStateForLoader && typeof root._pendingStateForLoader === "object") {
             for (var k2 in root._pendingStateForLoader) {
                 if (k2 === "selectedClientFilter" || k2 === "selectedBillingClientFilter" || k2 === "clientIdToDraft" || k2 === "matterId") {

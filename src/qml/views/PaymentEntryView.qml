@@ -38,6 +38,10 @@ Item {
     property var sortedInvoiceRows: root._sortedInvoiceRows()
     property var historyRows: []
     property var selectedInvoice: ({})
+    // Keep the selection separate from the row object.  A table refresh
+    // replaces row objects, but must never make the user lose the invoice
+    // they are actively posting against.
+    property string selectedInvoiceKey: ""
     property int selectedInvoiceIndex: -1
     property var modeOptions: ["Payment", "Write-off / Adjustment"]
     property var methodOptions: ["e-Transfer", "EFT", "Cheque", "Credit Card", "Cash", "Wire", "Other"]
@@ -58,7 +62,7 @@ Item {
     property color _input: SemanticTheme.surfaceInput(root.t, root.appStyle)
     property color _border: SemanticTheme.borderSubtle(root.t, root.appStyle)
     property int fieldHeightPx: root.isProMode
-        ? Math.max(42, Math.round(((metrics && metrics.contentH) ? metrics.contentH : height) * 0.052))
+        ? Math.max(38, Math.round(((metrics && metrics.contentH) ? metrics.contentH : height) * 0.048))
         : Math.max(40, Math.round(((metrics && metrics.contentH) ? metrics.contentH : height) * 0.056))
     property int panelRadiusPx: root.isProMode ? visualRules.radiusPanel : 12
 
@@ -153,7 +157,8 @@ Item {
     }
 
     function selectedInvoiceNumber() {
-        return _clean(selectedValue("invoice", ""))
+        var retained = _clean(selectedInvoiceKey)
+        return retained.length > 0 ? retained : _clean(selectedValue("invoice", ""))
     }
 
     function isSelectedInvoice(row) {
@@ -214,8 +219,11 @@ Item {
             rows = []
         }
         if (!rows || rows.length === undefined) rows = []
-        invoiceRows = rows
+        // Capture the scalar key before replacing the list/model.  In
+        // particular, do not reset amountInput here: a refresh can arrive
+        // while the user is changing a partial-payment amount.
         var selectedNumber = selectedInvoiceNumber()
+        invoiceRows = rows
         if (selectedNumber.length > 0) {
             var nextSelectedIndex = sortedInvoiceIndex(selectedNumber)
             if (nextSelectedIndex >= 0) {
@@ -223,16 +231,13 @@ Item {
                 var rowsProxy = sortedInvoiceRows || []
                 if (nextSelectedIndex < rowsProxy.length) {
                     selectedInvoice = rowsProxy[nextSelectedIndex]
-                    amountInput.text = selectedInvoice && selectedInvoice.balance !== undefined
-                        ? Number(selectedInvoice.balance || 0).toFixed(2)
-                        : ""
+                    selectedInvoiceKey = _clean(selectedInvoice.invoice)
                 }
             } else {
-                if (!editingPaymentId) {
-                    selectedInvoiceIndex = -1
-                    selectedInvoice = ({})
-                    historyRows = []
-                }
+                // A search or a background refresh may temporarily omit the
+                // selected invoice.  Preserve its last known details and the
+                // user's in-progress payment rather than clearing the form.
+                selectedInvoiceIndex = -1
             }
         }
     }
@@ -261,6 +266,7 @@ Item {
         editingOriginalPaymentAmount = Number(result.amount || 0)
         editingOriginalAdjustmentAmount = Number(result.adjustmentAmount || 0)
         selectedInvoice = result.invoiceRow || { "invoice": _clean(result.invoice) }
+        selectedInvoiceKey = _clean(result.invoice || selectedInvoice.invoice)
         selectedInvoiceIndex = sortedInvoiceIndex(_clean(result.invoice))
         searchInput.text = _clean(result.invoice)
         dateInput.text = _clean(result.date)
@@ -300,6 +306,7 @@ Item {
         editingOriginalPaymentAmount = 0
         editingOriginalAdjustmentAmount = 0
         selectedInvoice = row || ({})
+        selectedInvoiceKey = _clean(selectedInvoice.invoice)
         selectedInvoiceIndex = index
         amountInput.text = selectedInvoice && selectedInvoice.balance !== undefined
             ? Number(selectedInvoice.balance || 0).toFixed(2)
@@ -421,6 +428,7 @@ Item {
         return {
             "searchText": _clean(searchInput.text),
             "selectedInvoice": selectedInvoice,
+            "selectedInvoiceNum": selectedInvoiceNumber(),
             "selectedInvoiceIndex": selectedInvoiceIndex,
             "invoiceSortKey": invoiceSortKey,
             "invoiceSortAscending": invoiceSortAscending,
@@ -439,10 +447,14 @@ Item {
         var searchVal = String(state.invoiceNum || state.searchText || "")
         searchInput.text = _clean(searchVal)
         selectedInvoice = state.selectedInvoice || ({})
-        if (state.invoiceNum) {
-            selectedInvoice = { "invoice": String(state.invoiceNum) }
+        var restoredInvoice = _clean(state.invoiceNum || state.selectedInvoiceNum || selectedInvoice.invoice)
+        if (restoredInvoice.length > 0 && (!selectedInvoice || _clean(selectedInvoice.invoice).length <= 0)) {
+            selectedInvoice = { "invoice": restoredInvoice }
         }
-        selectedInvoiceIndex = Number(state.selectedInvoiceIndex || -1)
+        selectedInvoiceKey = restoredInvoice
+        selectedInvoiceIndex = state.selectedInvoiceIndex !== undefined
+            ? Number(state.selectedInvoiceIndex)
+            : -1
         invoiceSortKey = _clean(state.invoiceSortKey) || "client"
         invoiceSortAscending = state.invoiceSortAscending !== undefined ? !!state.invoiceSortAscending : true
         var payload = state.payload || ({})
@@ -455,6 +467,8 @@ Item {
         methodCombo.editText = _clean(payload.method) || "EFT"
         referenceInput.text = _clean(payload.reference)
         amountInput.text = payload.amount !== undefined ? String(payload.amount) : ""
+        adjustmentAmountInput.text = payload.adjustmentAmount !== undefined ? String(payload.adjustmentAmount) : ""
+        adjustmentReasonInput.text = _clean(payload.adjustmentReason)
         notesInput.text = _clean(payload.notes)
         saveMessage = _clean(state.saveMessage)
         lastSavedPaymentId = _clean(state.lastSavedPaymentId)
@@ -495,6 +509,7 @@ Item {
                 root.dirty = false
                 if (result && result.invoiceRow) {
                     root.selectedInvoice = result.invoiceRow
+                    root.selectedInvoiceKey = root._clean(result.invoiceRow.invoice)
                 }
                 if (root.editingPaymentId) {
                     root.editingPaymentId = root._clean((result && result.paymentId) || root.editingPaymentId)
@@ -719,7 +734,7 @@ Item {
 
                 Flickable {
                     anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.margins: 10
                     contentWidth: width
                     contentHeight: detailColumn.implicitHeight
                     boundsBehavior: Flickable.StopAtBounds
@@ -728,7 +743,7 @@ Item {
                     ColumnLayout {
                         id: detailColumn
                         width: parent.width
-                        spacing: 10
+                        spacing: 7
 
                         Text {
                             Layout.fillWidth: true
@@ -746,7 +761,7 @@ Item {
                             Layout.fillWidth: true
                             columns: 2
                             columnSpacing: 8
-                            rowSpacing: 6
+                            rowSpacing: 5
 
                             Repeater {
                                 model: [
@@ -759,14 +774,14 @@ Item {
                                 ]
                                 delegate: Rectangle {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 42
+                                    Layout.preferredHeight: 39
                                     radius: root.isProMode ? 4 : 9
                                     color: root._input
                                     border.width: 1
                                     border.color: root._border
                                     Column {
                                         anchors.fill: parent
-                                        anchors.margins: 6
+                                        anchors.margins: 5
                                         spacing: 1
                                         Text { width: parent.width; text: modelData.label; color: root._mutedText; font.family: "Segoe UI"; font.pixelSize: 10; elide: Text.ElideRight }
                                         Text { width: parent.width; text: root._clean(modelData.value); color: root._text; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
@@ -779,7 +794,7 @@ Item {
                             Layout.fillWidth: true
                             columns: root.width > 980 ? 2 : 1
                             columnSpacing: 8
-                            rowSpacing: 8
+                            rowSpacing: 6
 
                             ModernTextField {
                                 id: dateInput
@@ -859,7 +874,7 @@ Item {
                         TextArea {
                             id: notesInput
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 82
+                            Layout.preferredHeight: 76
                             color: root._text
                             placeholderText: "Notes"
                             placeholderTextColor: root._mutedText
@@ -877,15 +892,15 @@ Item {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 46
+                            Layout.preferredHeight: 42
                             radius: root.isProMode ? 4 : 9
                             color: SemanticTheme.hoverOverlay(root.t, root.appStyle)
                             border.width: 1
                             border.color: SemanticTheme.destructiveHover(root.t, root.appStyle)
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 10
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
                                 spacing: 8
                                 Text {
                                     Layout.fillWidth: true

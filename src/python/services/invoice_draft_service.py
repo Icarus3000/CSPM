@@ -1,4 +1,6 @@
 import uuid
+import logging
+import time
 from datetime import datetime, UTC
 from typing import Dict, List, Optional, Any
 from decimal import Decimal, ROUND_HALF_UP
@@ -6,6 +8,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from domain.money import calc_amounts
 from domain import schema_constants as sc
 from repositories.excel_repo import ExcelRepo
+
+
+logger = logging.getLogger(__name__)
 
 class InvoiceDraftService:
     def __init__(self, repo: ExcelRepo):
@@ -24,6 +29,66 @@ class InvoiceDraftService:
     @staticmethod
     def _text(value: Any) -> str:
         return str(value or "").strip()
+
+    def _write_tables_once(self, table_rows: Dict[Any, List[Dict[str, Any]]]) -> None:
+        """Commit one financial command as one workbook replacement.
+
+        Older lightweight test repositories intentionally only implement the
+        single-table writer, so keep that compatible fallback.  The production
+        Excel repository implements ``_write_table_rows_bulk`` and persists
+        every supplied table through one atomic macro-workbook save.
+        """
+        write_bulk = getattr(self.repo, "_write_table_rows_bulk", None)
+        if callable(write_bulk):
+            write_bulk(table_rows)
+            return
+        for table, rows in table_rows.items():
+            self.repo._write_table_rows(table, rows)
+
+    def _recalculate_draft_totals_in_memory(
+        self,
+        draft: Dict[str, Any],
+        time_entries: List[Dict[str, Any]],
+        disb_entries: List[Dict[str, Any]],
+    ) -> None:
+        """Refresh a draft's totals without forcing an intermediate save."""
+        draft_num = self._text(draft.get(sc.COL_DRAFT_INVOICE_NUM))
+        fees = Decimal("0.0")
+        tax = Decimal("0.0")
+        for row in time_entries:
+            if self._text(row.get(sc.COL_TIME_INVOICE_REF)) == draft_num:
+                entry_net, entry_tax = self._entry_invoice_amounts(row)
+                fees += entry_net
+                tax += entry_tax
+
+        disb_total = Decimal("0.0")
+        for row in disb_entries:
+            if self._text(row.get(sc.COL_DISB_INVOICE_REF)) == draft_num:
+                disb_total += Decimal(str(row.get(sc.COL_DISB_AMOUNT) or 0))
+
+        is_flat_fee = self._text(draft.get(sc.COL_DRAFT_IS_FLAT_FEE)).lower() == "true"
+        flat_fee_amt = Decimal(str(draft.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT) or 0))
+        fees_to_use = flat_fee_amt if is_flat_fee else fees
+        draft[sc.COL_DRAFT_TOTAL_FEES] = str(self._money(fees_to_use + disb_total))
+
+        discount_type = self._text(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE)) or "None"
+        discount_value = Decimal(str(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
+        agency_split_percent = Decimal(str(draft.get(sc.COL_DRAFT_AGENCY_SPLIT_PERCENT) or 0))
+        total_base = fees_to_use + disb_total
+        if discount_type == "Percentage":
+            discount_amt = total_base * (discount_value / Decimal("100.0"))
+        elif discount_type == "Flat":
+            discount_amt = discount_value
+        else:
+            discount_amt = Decimal("0.0")
+
+        subtotal = max(Decimal("0.0"), total_base - discount_amt)
+        agency_split_amt = subtotal * (agency_split_percent / Decimal("100.0"))
+        new_fees = max(Decimal("0.0"), subtotal - agency_split_amt)
+        final_tax = new_fees * Decimal("0.13") if (is_flat_fee or agency_split_percent > 0) else tax
+        draft[sc.COL_DRAFT_TOTAL_TAX] = str(self._money(final_tax))
+        draft[sc.COL_DRAFT_TOTAL_DUE] = str(self._money(new_fees + final_tax))
+        draft[sc.COL_DRAFT_UPDATED_AT] = datetime.now().astimezone().isoformat()
 
     def _assert_invoice_number_available(self, invoice_num: str) -> None:
         """Reject a final number already used by a live financial record.
@@ -432,61 +497,9 @@ class InvoiceDraftService:
         drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
         time_entries = self.repo._read_table_rows(sc.TBL_TIME)
         disb_entries = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
-        
-        fees = Decimal('0.0')
-        tax = Decimal('0.0') # Initial raw tax
-        for r in time_entries:
-            if str(r.get(sc.COL_TIME_INVOICE_REF) or "").strip() == draft_num:
-                entry_net, entry_tax = self._entry_invoice_amounts(r)
-                fees += entry_net
-                tax += entry_tax
-                
-        disb_total = Decimal('0.0')
-        for r in disb_entries:
-            if str(r.get(sc.COL_DISB_INVOICE_REF) or "").strip() == draft_num:
-                disb_total += Decimal(str(r.get(sc.COL_DISB_AMOUNT) or 0))
-                
         for row in drafts:
             if row.get(sc.COL_DRAFT_INVOICE_NUM) == draft_num:
-                is_flat_fee = str(row.get(sc.COL_DRAFT_IS_FLAT_FEE) or "False").lower() == "true"
-                flat_fee_amt = Decimal(str(row.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT) or 0))
-                fees_to_use = flat_fee_amt if is_flat_fee else fees
-                row[sc.COL_DRAFT_TOTAL_FEES] = str(self._money(fees_to_use + disb_total))
-                
-                discount_type = str(row.get(sc.COL_DRAFT_DISCOUNT_TYPE) or "None")
-                discount_value = Decimal(str(row.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
-                agency_split_percent = Decimal(str(row.get(sc.COL_DRAFT_AGENCY_SPLIT_PERCENT) or 0))
-                
-                total_base = fees_to_use + disb_total
-                
-                # Standard discount calculation
-                if discount_type == "Percentage":
-                    discount_amt = total_base * (discount_value / Decimal('100.0'))
-                elif discount_type == "Flat":
-                    discount_amt = discount_value
-                else:
-                    discount_amt = Decimal('0.0')
-                    
-                subtotal = max(Decimal('0.0'), total_base - discount_amt)
-                
-                # Agency Split calculation
-                agency_split_amt = subtotal * (agency_split_percent / Decimal('100.0'))
-                new_fees = max(Decimal('0.0'), subtotal - agency_split_amt)
-                
-                # If there's an agency split, we recalculate tax based on the post-split subtotal 
-                # (Assuming 13% HST, but we only apply it to fees, not disbursements? 
-                # For simplicity, if there is an agency split, we just recalculate the total tax at 13% of the new fees,
-                # minus whatever was originally tax, or just use 13%)
-                # Let's match billing_controller logic:
-                if is_flat_fee or agency_split_percent > 0:
-                     final_tax = new_fees * Decimal("0.13")
-                else:
-                     final_tax = tax
-                     
-                final_tax = self._money(final_tax)
-                row[sc.COL_DRAFT_TOTAL_TAX] = str(final_tax)
-                row[sc.COL_DRAFT_TOTAL_DUE] = str(self._money(new_fees + final_tax))
-                row[sc.COL_DRAFT_UPDATED_AT] = datetime.now().astimezone().isoformat()
+                self._recalculate_draft_totals_in_memory(row, time_entries, disb_entries)
                 break
                 
         self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
@@ -680,6 +693,7 @@ class InvoiceDraftService:
         Locks the draft, updates docket statuses, creates Receivable and InvoiceLog rows.
         Moves generated PDFs into the sorted directories.
         """
+        started = time.perf_counter()
         import os
         import shutil
         from decimal import Decimal
@@ -702,19 +716,51 @@ class InvoiceDraftService:
         else:
             self._assert_invoice_number_available(final_invoice_num)
 
-        # Never finalize from stale draft totals.  This also recovers legacy
-        # direct-fee rows that have GrossToClient populated but net/HST blank.
-        self.recalculate_draft_totals(draft_num)
-        draft = self.get_draft(draft_num)
+        # Read every table that finalization changes from one snapshot.  The
+        # prior implementation re-opened the macro workbook for each table,
+        # recalculated the draft with an intermediate save, then saved six
+        # more times.  Work from this single snapshot and persist it once.
+        finalization_tables = [
+            sc.TBL_DRAFT_INVOICES,
+            sc.TBL_TIME,
+            sc.TBL_DISBURSEMENTS,
+            sc.TBL_RECEIVABLES,
+            sc.TBL_INVOICE_LOG,
+            sc.TBL_LEDGER,
+        ]
+        read_bulk = getattr(self.repo, "_read_table_rows_bulk", None)
+        if callable(read_bulk):
+            table_rows = read_bulk(finalization_tables)
+        else:
+            table_rows = {
+                table: self.repo._read_table_rows(table)
+                for table in finalization_tables
+            }
+
+        drafts = table_rows[sc.TBL_DRAFT_INVOICES]
+        draft = next(
+            (
+                row
+                for row in drafts
+                if self._text(row.get(sc.COL_DRAFT_INVOICE_NUM)) == self._text(draft_num)
+            ),
+            None,
+        )
         if not draft:
             raise ValueError(f"Draft {draft_num} disappeared during finalization")
+
+        # Never finalize from stale draft totals.  This also recovers legacy
+        # direct-fee rows that have GrossToClient populated but net/HST blank,
+        # without saving a transient draft state first.
+        time_entries = table_rows[sc.TBL_TIME]
+        disb_entries = table_rows[sc.TBL_DISBURSEMENTS]
+        self._recalculate_draft_totals_in_memory(draft, time_entries, disb_entries)
         final_invoice_total = self._money(draft.get(sc.COL_DRAFT_TOTAL_DUE))
             
         now_str = datetime.now().astimezone().isoformat()
         date_str = draft.get(sc.COL_DRAFT_DATE) or now_str
         
         # 1. Update Time Entries
-        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
         for row in time_entries:
             if row.get(sc.COL_TIME_INVOICE_REF) == draft_num:
                 self._entry_invoice_amounts(row, normalize_fee=True)
@@ -770,22 +816,16 @@ class InvoiceDraftService:
         except Exception as e:
             print("Failed to apply WIP adjustment:", e)
 
-        self.repo._write_table_rows(sc.TBL_TIME, time_entries)
-        
         # 2. Update Disbursements
-        disb_entries = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
         for row in disb_entries:
             if row.get(sc.COL_DISB_INVOICE_REF) == draft_num:
                 row[sc.COL_DISB_INVOICE_REF] = final_invoice_num
                 row[sc.COL_DISB_REISSUE_INVOICE_NUM] = ""
-        self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
-
         # A correction can be split deliberately.  Work moved into another
         # draft must become ordinary WIP once this correction is finalized;
         # it is not part of the replacement and must not keep its old-number
         # suggestion.
         if suggested_reissue_num:
-            released_residual_wip = False
             for row in time_entries:
                 if (
                     self._text(row.get(sc.COL_TIME_REISSUE_INVOICE_NUM)).casefold()
@@ -793,7 +833,6 @@ class InvoiceDraftService:
                     and self._text(row.get(sc.COL_TIME_INVOICE_REF)) != final_invoice_num
                 ):
                     row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
-                    released_residual_wip = True
             for row in disb_entries:
                 if (
                     self._text(row.get(sc.COL_DISB_REISSUE_INVOICE_NUM)).casefold()
@@ -801,26 +840,16 @@ class InvoiceDraftService:
                     and self._text(row.get(sc.COL_DISB_INVOICE_REF)) != final_invoice_num
                 ):
                     row[sc.COL_DISB_REISSUE_INVOICE_NUM] = ""
-                    released_residual_wip = True
-            if released_residual_wip:
-                self.repo._write_table_rows(sc.TBL_TIME, time_entries)
-                self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
-
-            residual_drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
-            changed_residual_drafts = False
-            for item in residual_drafts:
+            for item in drafts:
                 if (
                     self._text(item.get(sc.COL_DRAFT_INVOICE_NUM)) != draft_num
                     and self._text(item.get(sc.COL_DRAFT_REISSUE_INVOICE_NUM)).casefold()
                     == suggested_reissue_num.casefold()
                 ):
                     item[sc.COL_DRAFT_REISSUE_INVOICE_NUM] = ""
-                    changed_residual_drafts = True
-            if changed_residual_drafts:
-                self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, residual_drafts)
         
         # 3. Create Receivables entry
-        receivables = self.repo._read_table_rows(sc.TBL_RECEIVABLES)
+        receivables = table_rows[sc.TBL_RECEIVABLES]
         receivables.append({
             sc.COL_RECV_INVOICE_NUM: final_invoice_num,
             sc.COL_RECV_DATE: date_str,
@@ -831,10 +860,8 @@ class InvoiceDraftService:
             sc.COL_RECV_BALANCE_DUE: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_RECV_STATUS: "Unpaid"
         })
-        self.repo._write_table_rows(sc.TBL_RECEIVABLES, receivables)
-        
         # 4. Create Invoice Log entry
-        invoice_log = self.repo._read_table_rows(sc.TBL_INVOICE_LOG)
+        invoice_log = table_rows[sc.TBL_INVOICE_LOG]
         invoice_log.append({
             sc.COL_INV_INVOICE_NUM: final_invoice_num,
             sc.COL_INV_CLIENT_NAME: draft.get(sc.COL_DRAFT_CLIENT_NAME),
@@ -843,10 +870,8 @@ class InvoiceDraftService:
             sc.COL_INV_TOTAL_TAX: draft.get(sc.COL_DRAFT_TOTAL_TAX),
             sc.COL_INV_AGGREGATE_BILLED: draft.get(sc.COL_DRAFT_TOTAL_DUE)
         })
-        self.repo._write_table_rows(sc.TBL_INVOICE_LOG, invoice_log)
-        
         # 4b. Create Ledger Entry for Revenue
-        ledger = self.repo._read_table_rows(sc.TBL_LEDGER)
+        ledger = table_rows[sc.TBL_LEDGER]
         ledger.append({
             sc.COL_LEDGER_ID: self.repo._new_id("LED"),
             sc.COL_LEDGER_DATE: date_str,
@@ -859,12 +884,22 @@ class InvoiceDraftService:
             sc.COL_LEDGER_RECEIVABLE: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_LEDGER_CREATED_AT: now_str
         })
-        self.repo._write_table_rows(sc.TBL_LEDGER, ledger)
-        
         # 5. Remove Draft
-        drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
         drafts = [d for d in drafts if d.get(sc.COL_DRAFT_INVOICE_NUM) != draft_num]
-        self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
+        self._write_tables_once({
+            sc.TBL_TIME: time_entries,
+            sc.TBL_DISBURSEMENTS: disb_entries,
+            sc.TBL_RECEIVABLES: receivables,
+            sc.TBL_INVOICE_LOG: invoice_log,
+            sc.TBL_LEDGER: ledger,
+            sc.TBL_DRAFT_INVOICES: drafts,
+        })
+        logger.info(
+            "[PERF] Invoice finalization %s from %s completed in %.3fs with one workbook save.",
+            final_invoice_num,
+            draft_num,
+            time.perf_counter() - started,
+        )
         
         return True
 
@@ -1338,10 +1373,12 @@ class InvoiceDraftService:
                         f"{notes} Superseded before reissue.".strip()
                     )
 
-        self.repo._write_table_rows(sc.TBL_INVOICE_LOG, invoice_log)
-        self.repo._write_table_rows(sc.TBL_RECEIVABLES, receivables)
-        self.repo._write_table_rows(sc.TBL_LEDGER, ledger)
-        self.repo._write_table_rows(sc.TBL_TRANSACTIONS_MASTER, transactions)
+        self._write_tables_once({
+            sc.TBL_INVOICE_LOG: invoice_log,
+            sc.TBL_RECEIVABLES: receivables,
+            sc.TBL_LEDGER: ledger,
+            sc.TBL_TRANSACTIONS_MASTER: transactions,
+        })
 
     def correct_invoice_for_reissue(
         self,

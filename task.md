@@ -1,5 +1,25 @@
 # Phase 7: Statements of Account and Ledgers Task List
 
+## Payment Entry Selection Stability and Form Fit (2026-08-11)
+
+- [x] Preserve the selected invoice as a scalar invoice key across payment-list refreshes, rather than relying on a replaceable table-row object.
+- [x] Prevent automatic payment-list refreshes from clearing the active invoice, history, or in-progress partial-payment amount.
+- [x] Include the complete Payment Entry state in the parent work-tab checkpoint/restore contract, including selection, payment amount, adjustment amount, and adjustment reason.
+- [x] Compact the right-side form slightly so its evidence/status wording remains visible in the normal Professional window without making the fields cramped.
+- [x] Commit a payment or payment amendment as one atomic macro-workbook replacement, rather than separately rewriting Transactions, Ledger, Receivables, Time, and Disbursements.
+- [x] Use an isolated, unique temporary workbook and bounded retry schedule for a transient Windows file lock; a final lock error now confirms that the attempted change was not saved.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `8D1D7F5F759B2E41D0197478A7829AC4159DB1C318AE61F8573CFEE094636128`); the prior release is recoverable at `to_delete/dist__replaced_release_20260811_203452/`. The promoted executable has no `Zone.Identifier` downloaded-file marker.
+- [ ] Manually choose an invoice, enter a partial payment, wait through any background refresh, and confirm the selection and entered values remain intact. Confirm the lower status/evidence wording is visible without vertical scrolling at the normal window size. Post a test payment with Excel closed and confirm the worker completes promptly; if an external lock is deliberately held, confirm the retry ends with the clear no-save error and no duplicate payment.
+
+## Invoice Finalization Throughput and UI Responsiveness (2026-08-11)
+
+- [x] Eliminate the serial full-workbook save chain during invoice finalization: calculate the final totals in memory and commit Time, Disbursements, Receivables, Invoice Log, Ledger, and Drafts as one atomic macro-workbook replacement.
+- [x] Apply the same one-commit rule when reclaiming a voided invoice number for a correction/reissue, so the internal supersession records cannot cause another multi-save pause.
+- [x] Keep Chromium's required PDF render on its GUI thread, but move page-number/header post-processing to the worker pool and give every export its own temporary PDF path.
+- [x] Keep CSPM in the foreground during finalization; the success view has its own **Open Final PDF** action, so finalization no longer auto-launches an external reader mid-handoff.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `32A907A81614326AF36F256CF95458D75F5D4362293C9A5C7881A5E2BAAB4B3D`); the prior release is recoverable at `to_delete/dist__replaced_release_20260811_202431/`. The promoted executable has no `Zone.Identifier` downloaded-file marker.
+- [ ] Manually finalize one ordinary invoice and one correction/reissue invoice from the real package. Confirm the active stage remains visible, Windows never reports CSPM as not responding, the success/check view appears promptly, and **Return to WIP** works after each.
+
 ## Matter Financial Safeguards and Visibility (2026-08-11)
 
 - [x] Prevent an existing matter from being moved to **On Hold**, **Closed**, or **Archived** while it has unbilled WIP or unpaid invoices; enforce the rule in the Excel repository, not only in the screen.
@@ -28,6 +48,14 @@
 - [x] Rebuild and promote `dist/CSPM/CSPM.exe` after the performance repair (SHA-256 `9F90122E5B0E1EBDF420B22FF7F900B8804C2CFB2B56A80A636A8BDB6CC70391`); the preceding release is recoverable at `to_delete/dist__replaced_release_20260811_151733/`.
 - [ ] Manual foreground verification: open **Finance & Ledger → Statement of Account** from a cold launch. The tab shell must appear immediately with a loading state, remain responsive while choices/invoices load, and still generate the same 21 Leviathan open invoices. Then open several other modules and inspect new `[PERF] MainContent workspace-open-*` entries in `logs/cspm.log` before choosing the next screen-specific optimization.
 - [ ] Complete the application-wide transition audit one route at a time using those timings; prioritize the remaining large eager QML views and synchronous workbook calls. Do not migrate the production datastore until those UI and query baselines are recorded.
+
+## Invoice Builder Preview Responsiveness (2026-08-11)
+
+- [x] Profile the live draft-preview path and identify the actual cold-read cost: synchronous draft selection and repeated macro-workbook parsing, rather than HTML rendering.
+- [x] Add a signature-validated streaming read path for cached workbook table layouts; warm the seven tables required by Invoice Builder from one immutable snapshot.
+- [x] Move Invoice Builder draft selection to one background workspace request that returns the draft, its line items, and rendered preview together.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` after the preview responsiveness repair (SHA-256 `35030BD17EB952C7AE95089BE83B4A397483596AAEB1AD1BB6D60E13B4A93D34`); the preceding release is recoverable at `to_delete/dist__replaced_release_20260811_195859/`.
+- [ ] Manual foreground verification: from a cold launch, open WIP-to-Bill then Invoice Builder, select a draft, and confirm the shell remains interactive while a preview is prepared; reselect the same draft and confirm it paints essentially immediately.
 
 ## Statement-to-Record Navigation (2026-08-11)
 
