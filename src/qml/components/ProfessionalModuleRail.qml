@@ -68,6 +68,10 @@ Rectangle {
                 readonly property bool active: moduleId === root.activeModuleId
                 readonly property bool flyoutActive: moduleId === root.flyoutModuleId
                 readonly property bool hovered: railHover.containsMouse
+                // Qt renders ToolTip popups above the flyout. Once this icon
+                // is pressed, suppress its hover hint immediately and keep it
+                // suppressed until the pointer leaves the icon.
+                property bool tooltipSuppressed: false
 
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: 40
@@ -108,16 +112,23 @@ Rectangle {
                     hoverEnabled: root.interactive
                     cursorShape: root.interactive ? Qt.PointingHandCursor : Qt.ArrowCursor
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onPressed: function(mouse) {
+                        if (root.interactive && mouse.button !== Qt.RightButton)
+                            railButton.tooltipSuppressed = true
+                    }
                     onClicked: function(mouse) {
                         if (!root.interactive) return
                         if (mouse.button !== Qt.RightButton) {
                             root.moduleRequested(railButton.modelData)
                         }
                     }
+                    onExited: railButton.tooltipSuppressed = false
                 }
 
                 ToolTip {
                     visible: railHover.containsMouse
+                        && !railButton.tooltipSuppressed
+                        && !railButton.flyoutActive
                     delay: 260
                     text: String(railButton.modelData.title || railButton.modelData.label || "")
                     x: railButton.width + 8

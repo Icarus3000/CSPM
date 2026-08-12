@@ -15,7 +15,7 @@ import zipfile
 import threading
 from functools import wraps
 from urllib.parse import quote_plus
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 import collections
 
 _DB_LOCK = threading.RLock()
@@ -542,6 +542,8 @@ class ExcelRepo:
         """
         import os
 
+        self._assert_write_permitted()
+
         target_path = Path(filepath)
         # A unique sibling temp file prevents a stale/interrupted save from
         # colliding with the next save attempt.  Keeping it beside the target
@@ -663,8 +665,11 @@ class ExcelRepo:
     TM_JURISDICTION_OPTIONS = ["CIPO", "USPTO", "Other"]
     TM_MARK_TYPE_OPTIONS = ["Standard Character", "Design", "3D", "Sound", "Color", "Other"]
 
-    def __init__(self, paths: AppPaths):
+    def __init__(self, paths: AppPaths, write_guard: Optional[Callable[[], None]] = None):
         self.paths = paths
+        # The application controller supplies this for shared-cloud sessions.
+        # Isolated repair/candidate repositories intentionally leave it unset.
+        self._write_guard = write_guard
         self._missing_tables = set()  # Priority 5: Cache missing table warnings
         import time
         self._time = time
@@ -691,6 +696,10 @@ class ExcelRepo:
         # statement does not re-open the legacy workbook for every refresh.
         self._legacy_docket_rows_cache: List[Dict[str, Any]] = []
         self._legacy_docket_rows_signature: str = ""
+
+    def _assert_write_permitted(self) -> None:
+        if self._write_guard is not None:
+            self._write_guard()
 
     def _close_workbook(self, workbook) -> None:
         if workbook is None:
@@ -2594,6 +2603,7 @@ class ExcelRepo:
                 "mode": "Write-off / Adjustment" if write_off > 0 else "Payment",
                 "method": _clean_text(ledger_row.get(sc.COL_LEDGER_CATEGORY))
                 or _clean_text(transaction_row.get(sc.COL_TXN_FROM_ACCOUNT)),
+                "depositAccount": _clean_text(transaction_row.get(sc.COL_TXN_FROM_ACCOUNT)),
                 "reference": reference,
                 "amount": collected,
                 "adjustmentAmount": write_off,
@@ -2667,6 +2677,7 @@ class ExcelRepo:
             next_balance = 0.0
 
         method = _clean_text(data.get("method"))
+        deposit_account = _clean_text(data.get("depositAccount") or data.get("account"))
         reference = _clean_text(data.get("reference"))
         notes = _clean_text(data.get("notes"))
         adjustment_reason = _clean_text(data.get("adjustmentReason"))
@@ -2680,7 +2691,7 @@ class ExcelRepo:
                 updated_transaction = dict(transaction_rows[transaction_index])
                 updated_transaction[sc.COL_TXN_DATE] = payment_date
                 updated_transaction[sc.COL_TXN_TYPE] = "Income"
-                updated_transaction[sc.COL_TXN_FROM_ACCOUNT] = method or _clean_text(
+                updated_transaction[sc.COL_TXN_FROM_ACCOUNT] = deposit_account or method or _clean_text(
                     updated_transaction.get(sc.COL_TXN_FROM_ACCOUNT)
                 )
                 updated_transaction[sc.COL_TXN_AMOUNT] = payment_amount
@@ -2697,7 +2708,7 @@ class ExcelRepo:
                         "class": "Business",
                         "businessUnit": "Legal Practice",
                         "type": "Income",
-                        "fromAccount": method or "Operating Account",
+                        "fromAccount": deposit_account or method or "Operating Account",
                         "payee": _clean_text(receivable.get(sc.COL_RECV_CLIENT)),
                         "client": _clean_text(receivable.get(sc.COL_RECV_WORK_CLIENT))
                         or _clean_text(receivable.get(sc.COL_RECV_CLIENT)),
@@ -9596,7 +9607,7 @@ class ExcelRepo:
                         from openpyxl.utils import get_column_letter
                         table_obj.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
                 
-                wb.save(self.paths.workbook_path())
+                self._safe_save(wb, self.paths.workbook_path())
                 return True
             return False
         finally:
@@ -13227,6 +13238,141 @@ class ExcelRepo:
             "closingBalanceFormatted": f"${running_balance:,.2f}",
             "events": final_events,
             "client": requested_client
+        }
+
+    @with_db_lock
+    def repair_rogue_vendor_receivables(
+        self,
+        vendor_name: str,
+        *,
+        apply: bool = False,
+    ) -> Dict[str, Any]:
+        """Remove imported expense artifacts that were incorrectly staged as A/R.
+
+        An imported expense can occasionally create matching Receivables and
+        Invoice Log rows under its vendor.  Those rows make a vendor appear as
+        a statement recipient.  This repair is intentionally conservative:
+        a candidate must be both a vendor-named receivable and linked to an
+        expense transaction with the same reference.  It never removes the
+        expense transaction, disbursement, or normal vendor ledger expense.
+
+        ``apply=False`` is a read-only plan.  ``apply=True`` writes only the
+        affected table snapshots in one atomic workbook replacement.
+        """
+        vendor = _clean_text(vendor_name)
+        if not vendor:
+            return {"ok": False, "message": "A vendor name is required."}
+        vendor_key = vendor.casefold()
+
+        if apply:
+            self.ensure_schema()
+
+        tables = self._read_table_rows_bulk(
+            [
+                TBL_RECEIVABLES,
+                TBL_INVOICE_LOG,
+                TBL_TRANSACTIONS_MASTER,
+                TBL_LEDGER,
+            ]
+        )
+        receivables = [dict(row) for row in tables.get(TBL_RECEIVABLES.table, [])]
+        invoice_log = [dict(row) for row in tables.get(TBL_INVOICE_LOG.table, [])]
+        transactions = [dict(row) for row in tables.get(TBL_TRANSACTIONS_MASTER.table, [])]
+        ledger = [dict(row) for row in tables.get(TBL_LEDGER.table, [])]
+
+        def _matches_vendor(value: Any) -> bool:
+            return _clean_text(value).casefold() == vendor_key
+
+        expense_refs = {
+            _clean_text(row.get(sc.COL_TXN_INVOICE_REF)).casefold()
+            for row in transactions
+            if _clean_text(row.get(sc.COL_TXN_TYPE)).casefold() == "expense"
+            and _matches_vendor(row.get(sc.COL_TXN_CLIENT))
+            and _clean_text(row.get(sc.COL_TXN_INVOICE_REF))
+        }
+
+        rogue_ref_keys = {
+            _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold()
+            for row in receivables
+            if _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() in expense_refs
+            and (
+                _matches_vendor(row.get(sc.COL_RECV_CLIENT))
+                or _matches_vendor(row.get(sc.COL_RECV_WORK_CLIENT))
+            )
+        }
+        rogue_refs = sorted(
+            {
+                _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
+                for row in receivables
+                if _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() in rogue_ref_keys
+            },
+            key=str.casefold,
+        )
+
+        def _is_rogue_receivable(row: Dict[str, Any]) -> bool:
+            return (
+                _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() in rogue_ref_keys
+                and (
+                    _matches_vendor(row.get(sc.COL_RECV_CLIENT))
+                    or _matches_vendor(row.get(sc.COL_RECV_WORK_CLIENT))
+                )
+            )
+
+        def _is_rogue_invoice_log(row: Dict[str, Any]) -> bool:
+            return (
+                _clean_text(row.get(sc.COL_INV_INVOICE_NUM)).casefold() in rogue_ref_keys
+                and any(
+                    _matches_vendor(value)
+                    for value in (
+                        row.get(sc.COL_INV_CLIENT_NAME),
+                        row.get(sc.COL_INV_SUB_CLIENT),
+                        row.get(sc.COL_INV_BILL_TO_CLIENT),
+                    )
+                )
+            )
+
+        def _is_cleanup_ledger_artifact(row: Dict[str, Any]) -> bool:
+            if _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).casefold() not in rogue_ref_keys:
+                return False
+            if not (
+                _matches_vendor(row.get(sc.COL_LEDGER_CLIENT_VENDOR))
+                or _matches_vendor(row.get(sc.COL_LEDGER_WORK_CLIENT))
+            ):
+                return False
+            return "rogue vendor row" in _clean_text(row.get(sc.COL_LEDGER_DESCRIPTION)).casefold()
+
+        remaining_receivables = [row for row in receivables if not _is_rogue_receivable(row)]
+        remaining_invoice_log = [row for row in invoice_log if not _is_rogue_invoice_log(row)]
+        remaining_ledger = [row for row in ledger if not _is_cleanup_ledger_artifact(row)]
+        removed = {
+            "receivables": len(receivables) - len(remaining_receivables),
+            "invoiceLog": len(invoice_log) - len(remaining_invoice_log),
+            "ledgerCleanupArtifacts": len(ledger) - len(remaining_ledger),
+            "transactions": 0,
+            "disbursements": 0,
+        }
+        changed = any(value > 0 for key, value in removed.items() if key not in {"transactions", "disbursements"})
+
+        if apply and changed:
+            self._write_table_rows_bulk(
+                {
+                    TBL_LEDGER: remaining_ledger,
+                    TBL_RECEIVABLES: remaining_receivables,
+                    TBL_INVOICE_LOG: remaining_invoice_log,
+                }
+            )
+
+        return {
+            "ok": True,
+            "applied": bool(apply and changed),
+            "vendor": vendor,
+            "rogueInvoiceRefs": rogue_refs,
+            "removed": removed,
+            "message": (
+                f"Removed {removed['receivables']} rogue {vendor} receivable row(s)."
+                if apply and changed
+                else f"Identified {removed['receivables']} rogue {vendor} receivable row(s)."
+            ),
         }
 
     def _statement_open_invoice_candidates(self, payload: dict) -> dict:

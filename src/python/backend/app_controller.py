@@ -346,6 +346,7 @@ class AppController(QObject):
         startup_logger.info("%s AppController creating snapshot service", _elapsed())
         self._snapshot_service = ProjectSnapshotService(self._paths)
         self._sync_service = SyncService(self._paths)
+        self._shutdown_sync_complete = False
         
         self._app_version = self._load_app_version()
         
@@ -353,7 +354,10 @@ class AppController(QObject):
         self._backup_service = BackupService(self._paths, app_version=self._app_version)
         
         startup_logger.info("%s AppController creating excel repo", _elapsed())
-        self._excel_repo = LazyRepoFacade(self._paths)
+        self._excel_repo = LazyRepoFacade(
+            self._paths,
+            write_guard=self._sync_service.assert_write_lease,
+        )
         self._telemetry = TelemetryLogger(self._paths.data_dir())
         self._is_booted = False
         
@@ -2619,6 +2623,21 @@ class AppController(QObject):
         payload_dict["brandingProfileId"] = branding["id"]
         return payload_dict, profile
 
+    def _checkout_shared_data(self, phase: str) -> None:
+        """Acquire the cloud writer checkout before enabling workbook writes."""
+        try:
+            result = self._sync_service.pull_from_master()
+        except Exception as exc:
+            logging.exception("Shared-data checkout crashed during %s", phase)
+            self.toast.emit("Shared data opened read-only: cloud checkout failed.")
+            return
+        if result.get("ok"):
+            logging.info("Shared-data checkout %s during %s: %s", result.get("status"), phase, result.get("message"))
+            return
+        message = str(result.get("message", "Cloud checkout was not acquired."))
+        logging.error("Shared-data checkout blocked during %s: %s", phase, message)
+        self.toast.emit(f"Shared data opened read-only: {message}")
+
     def load_settings(self, *, emit_theme_signal: bool = False):
         self._settings_load_started = True
         payload = self._collect_settings_payload(
@@ -2627,10 +2646,7 @@ class AppController(QObject):
             self._prefs_settings_path,
         )
         self._apply_settings_payload(payload, emit_theme_signal=emit_theme_signal)
-        try:
-            self._sync_service.pull_from_master()
-        except Exception as e:
-            logging.error(f"Failed to pull from master during startup settings load: {e}")
+        self._checkout_shared_data("startup settings load")
         self._settings_load_complete = True
         self._settings_load_started = False
 
@@ -2665,10 +2681,7 @@ class AppController(QObject):
 
         def _on_loaded(payload: Dict[str, Any]) -> None:
             self._apply_settings_payload(payload, emit_theme_signal=True)
-            try:
-                self._sync_service.pull_from_master()
-            except Exception as e:
-                logging.error(f"Failed to pull from master during settings load: {e}")
+            self._checkout_shared_data("deferred settings load")
             self._settings_load_complete = True
             self._settings_load_started = False
             self._trace_startup_backend_step("settings_load_deferred complete")
@@ -2700,7 +2713,6 @@ class AppController(QObject):
                                        QMessageBox, QLineEdit, QGroupBox, QApplication)
         from PySide6.QtCore import Qt
         import os
-        import shutil
         import sys
         import subprocess
 
@@ -2710,10 +2722,12 @@ class AppController(QObject):
         
         layout = QVBoxLayout(dialog)
         
-        # --- Baseline Source ---
-        baseline_group = QGroupBox("1. True Baseline Source")
+        # --- One-time seed source ---
+        baseline_group = QGroupBox("1. One-time Seed Source (only if cloud is empty)")
         baseline_layout = QVBoxLayout()
-        baseline_lbl = QLabel("Select the folder containing your TRUE source of truth CSPM.xlsm and Dockets.xlsm.")
+        baseline_lbl = QLabel(
+            "Optional. Used only to initialize an empty shared folder. It never replaces data already in the cloud."
+        )
         baseline_lbl.setWordWrap(True)
         baseline_layout.addWidget(baseline_lbl)
         
@@ -2732,9 +2746,9 @@ class AppController(QObject):
         baseline_btn.clicked.connect(pick_baseline)
 
         # --- Shared Data Source ---
-        shared_group = QGroupBox("2. Shared Data Source (Cloud)")
+        shared_group = QGroupBox("2. Shared Data Source (Cloud — Canonical)")
         shared_layout = QVBoxLayout()
-        shared_lbl = QLabel("Select the central folder (e.g., OneDrive) where data will be shared.")
+        shared_lbl = QLabel("This is the single source of truth. Existing cloud data is never overwritten by setup.")
         shared_layout.addWidget(shared_lbl)
         
         shared_row = QHBoxLayout()
@@ -2752,9 +2766,9 @@ class AppController(QObject):
         shared_btn.clicked.connect(pick_shared)
 
         # --- Local Data Folder ---
-        local_group = QGroupBox("3. Local Working Folder")
+        local_group = QGroupBox("3. Local Working Folder (Replica)")
         local_layout = QVBoxLayout()
-        local_lbl = QLabel("Select the fast local folder where you will work on this machine.")
+        local_lbl = QLabel("This machine works from a checked-out replica. Existing differences are blocked as a conflict, never copied over automatically.")
         local_layout.addWidget(local_lbl)
         
         local_row = QHBoxLayout()
@@ -2788,65 +2802,43 @@ class AppController(QObject):
             s_dir = shared_edit.text().strip()
             l_dir = local_edit.text().strip()
             
-            if not b_dir or not s_dir or not l_dir:
-                QMessageBox.warning(dialog, "Validation Error", "All three folders must be specified.")
+            if not s_dir or not l_dir:
+                QMessageBox.warning(dialog, "Validation Error", "Shared Cloud and Local Working folders must be specified.")
                 return
-                
-            b_cspm = os.path.join(b_dir, "CSPM.xlsm")
-            b_dockets = os.path.join(b_dir, "Dockets.xlsm")
-            
-            if not os.path.isfile(b_cspm) or not os.path.isfile(b_dockets):
-                QMessageBox.warning(dialog, "Invalid Baseline", "The baseline folder must contain both CSPM.xlsm and Dockets.xlsm.")
-                return
-                
-            # Copy to Shared
+
+            configured_paths = AppPaths(
+                root=self._paths.root,
+                override_data_dir=Path(l_dir),
+                override_master_dir=Path(s_dir),
+            )
+            configured_sync = SyncService(configured_paths)
+            seed_dir = Path(b_dir) if b_dir else None
             try:
                 QApplication.setOverrideCursor(Qt.WaitCursor)
-                s_cspm = os.path.join(s_dir, "CSPM.xlsm")
-                s_dockets = os.path.join(s_dir, "Dockets.xlsm")
-                if b_dir != s_dir:
-                    shutil.copy2(b_cspm, s_cspm)
-                    shutil.copy2(b_dockets, s_dockets)
-                    
-                l_cspm = os.path.join(l_dir, "CSPM.xlsm")
-                l_dockets = os.path.join(l_dir, "Dockets.xlsm")
-                if b_dir != l_dir:
-                    shutil.copy2(b_cspm, l_cspm)
-                    shutil.copy2(b_dockets, l_dockets)
+                sync_result = configured_sync.initialize_shared_source(seed_dir)
             except Exception as e:
                 QApplication.restoreOverrideCursor()
-                QMessageBox.critical(dialog, "Copy Failed", f"Failed to initialize directories:\n{e}")
+                QMessageBox.critical(dialog, "Setup Failed", f"Could not validate the data package:\n{e}")
                 return
-            
             QApplication.restoreOverrideCursor()
-            
-            # Verify they are identical via sizes (basic sanity check)
-            try:
-                b_sz_c = os.path.getsize(b_cspm)
-                b_sz_d = os.path.getsize(b_dockets)
-                s_sz_c = os.path.getsize(s_cspm)
-                s_sz_d = os.path.getsize(s_dockets)
-                l_sz_c = os.path.getsize(l_cspm)
-                l_sz_d = os.path.getsize(l_dockets)
-                
-                if not (b_sz_c == s_sz_c == l_sz_c) or not (b_sz_d == s_sz_d == l_sz_d):
-                    raise ValueError("File sizes do not match after copying.")
-            except Exception as e:
-                QMessageBox.critical(dialog, "Verification Failed", f"Verification failed:\n{e}")
+            if not sync_result.get("ok"):
+                QMessageBox.critical(
+                    dialog,
+                    "Data Synchronization Not Applied",
+                    f"{sync_result.get('message', 'Cloud setup was blocked.')}\n\n"
+                    "No cloud or local workbook was overwritten.",
+                )
                 return
-                
+
             msg = (
-                "Verification SUCCESS. Files are identically seeded.\n\n"
+                "Cloud-canonical setup completed safely.\n\n"
                 f"Shared Source: {s_dir}\n"
                 f"Local Working: {l_dir}\n\n"
-                "CSPM will now close and reopen automatically to apply these folders."
+                "CSPM will now restart and check out the shared package before allowing edits."
             )
             QMessageBox.information(dialog, "Setup Complete", msg)
             
             # Save settings
-            if hasattr(self, "_sync_service") and self._sync_service:
-                self._sync_service.push_to_master = lambda *args: None
-            
             self._master_data_dir = s_dir
             self._local_data_dir = l_dir
             self._settings_data["masterDataDir"] = s_dir
@@ -2925,9 +2917,16 @@ class AppController(QObject):
             self.save_settings()
 
     def shutdown(self):
+        if self._shutdown_sync_complete:
+            return
+        self._shutdown_sync_complete = True
         try:
             if hasattr(self, "_sync_service"):
-                self._sync_service.push_to_master()
+                result = self._sync_service.push_to_master()
+                if result.get("ok"):
+                    logging.info("Shared-data publish on shutdown: %s", result.get("message"))
+                else:
+                    logging.error("Shared-data publish was not completed: %s", result.get("message"))
         except Exception as e:
             logging.error(f"Error during shutdown sync push: {e}")
 

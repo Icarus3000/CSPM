@@ -1637,6 +1637,14 @@ def main() -> None:
         global _startup_input_notify_callback
         # Do NOT delete the engine here and do NOT call os._exit().
         try:
+            if controller is not None and hasattr(controller, "shutdown"):
+                # A checked-out CSPM session publishes a verified cloud release
+                # (or reports a safe conflict) before its normal exit releases
+                # the exclusive write lease.
+                controller.shutdown()
+        except Exception as exc:
+            _report_nonfatal_startup_failure("aboutToQuit.publishSharedData", exc)
+        try:
             if controller is not None and hasattr(controller, "markExpectedShutdown"):
                 controller.markExpectedShutdown(True)
         except Exception as exc:

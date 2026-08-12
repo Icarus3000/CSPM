@@ -254,6 +254,7 @@ def test_saved_payment_can_be_loaded_and_amended_without_creating_a_second_payme
     assert loaded["ok"] is True
     assert loaded["invoice"] == "26-0102"
     assert loaded["amount"] == 100.0
+    assert loaded["depositAccount"] == "EFT"
 
     updated = repo.update_invoice_payment(
         {
@@ -261,6 +262,7 @@ def test_saved_payment_can_be_loaded_and_amended_without_creating_a_second_payme
             "date": "2026-06-04",
             "amount": 60.0,
             "method": "Cheque",
+            "depositAccount": "CIBC_CHEQUING",
             "reference": "CHQ-77",
             "notes": "Corrected amount",
         }
@@ -273,6 +275,7 @@ def test_saved_payment_can_be_loaded_and_amended_without_creating_a_second_payme
     assert repo.tables[TBL_LEDGER.table][0][sc.COL_LEDGER_COLLECTED] == 60.0
     assert repo.tables[TBL_LEDGER.table][0][sc.COL_LEDGER_DATE] == "2026-06-04"
     assert repo.tables[TBL_TRANSACTIONS_MASTER.table][0][sc.COL_TXN_AMOUNT] == 60.0
+    assert repo.tables[TBL_TRANSACTIONS_MASTER.table][0][sc.COL_TXN_FROM_ACCOUNT] == "CIBC_CHEQUING"
     assert repo.tables[TBL_RECEIVABLES.table][0][sc.COL_RECV_STATUS] == "Partial"
 
 

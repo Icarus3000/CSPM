@@ -24,6 +24,15 @@ def test_payment_entry_restores_every_in_progress_financial_field():
     assert "adjustmentReasonInput.text = _clean(payload.adjustmentReason)" in PAYMENT_VIEW
 
 
+def test_routed_payment_prefills_the_resolved_balance_and_includes_deposit_account():
+    assert 'property string _pendingFullAmountInvoiceKey: ""' in PAYMENT_VIEW
+    assert "function _applyPendingFullAmountIfResolved()" in PAYMENT_VIEW
+    assert "_applyPendingFullAmountIfResolved()" in PAYMENT_VIEW
+    assert '"depositAccount": _clean(depositAccountCode)' in PAYMENT_VIEW
+    assert 'label: "Deposit account"' in PAYMENT_VIEW
+    assert "root.loadDepositAccounts()" in PAYMENT_VIEW
+
+
 def test_payment_entry_state_is_preserved_by_its_parent_workspace():
     assert 'paymentEntryView && typeof paymentEntryView.snapshotState === "function"' in HOST_VIEW
     assert "var paymentState = paymentEntryView.snapshotState()" in HOST_VIEW

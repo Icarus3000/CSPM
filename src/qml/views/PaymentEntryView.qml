@@ -45,6 +45,15 @@ Item {
     property int selectedInvoiceIndex: -1
     property var modeOptions: ["Payment", "Write-off / Adjustment"]
     property var methodOptions: ["e-Transfer", "EFT", "Cheque", "Credit Card", "Cash", "Wire", "Other"]
+    // The payment method describes how the client paid; this is the actual
+    // business account receiving the money and is posted as FromAccount.
+    property var depositAccountRows: []
+    property var depositAccountOptions: []
+    property string depositAccountCode: ""
+    // A routed Invoice Directory -> Payment Entry tab begins with only an
+    // invoice number. Wait until its live invoice row resolves, then apply
+    // the balance once. Later refreshes must preserve a user's partial amount.
+    property string _pendingFullAmountInvoiceKey: ""
 
     signal formDirtyChanged(bool dirty)
     signal saveFinished(bool ok, string message, string paymentId)
@@ -207,6 +216,100 @@ Item {
         return null
     }
 
+    function _accountDisplay(row) {
+        var account = row || ({})
+        var code = _clean(account.accountCode)
+        var name = _clean(account.accountName)
+        if (code.length > 0 && name.length > 0 && code.toLowerCase() !== name.toLowerCase())
+            return name + " (" + code + ")"
+        return name || code
+    }
+
+    function _accountRowForStoredValue(value) {
+        var needle = _clean(value).toLowerCase()
+        if (needle.length <= 0) return null
+        var rows = depositAccountRows || []
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i] || ({})
+            if (_clean(row.accountCode).toLowerCase() === needle
+                    || _clean(row.accountName).toLowerCase() === needle
+                    || _accountDisplay(row).toLowerCase() === needle) {
+                return row
+            }
+        }
+        return null
+    }
+
+    function _depositAccountCodeForDisplay(value) {
+        var row = _accountRowForStoredValue(value)
+        return row ? _clean(row.accountCode || row.accountName) : _clean(value)
+    }
+
+    function _displayForDepositAccount(value) {
+        var row = _accountRowForStoredValue(value)
+        return row ? _accountDisplay(row) : _clean(value)
+    }
+
+    function _defaultDepositAccountRow() {
+        var rows = depositAccountRows || []
+        var preferredCodes = ["CIBC_CHEQUING", "SIMPLII_CHEQUING", "OPERATING"]
+        for (var p = 0; p < preferredCodes.length; p++) {
+            for (var i = 0; i < rows.length; i++) {
+                if (_clean(rows[i] && rows[i].accountCode).toUpperCase() === preferredCodes[p])
+                    return rows[i]
+            }
+        }
+        return rows.length > 0 ? rows[0] : null
+    }
+
+    function _setDepositAccount(value) {
+        var stored = _clean(value)
+        depositAccountCode = _depositAccountCodeForDisplay(stored)
+        if (depositAccountCombo)
+            depositAccountCombo.editText = _displayForDepositAccount(stored)
+    }
+
+    function loadDepositAccounts() {
+        if (!backendReady() || !root.appRef || !root.appRef.listTransactionAccounts) return
+        var rows = []
+        try {
+            rows = root.appRef.listTransactionAccounts()
+        } catch (e) {
+            rows = []
+        }
+        if (!rows || rows.length === undefined) rows = []
+
+        var normalized = []
+        var options = []
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i] || ({})
+            if (_clean(row.accountCode).length <= 0 && _clean(row.accountName).length <= 0) continue
+            normalized.push(row)
+            options.push(_accountDisplay(row))
+        }
+
+        _hydrating = true
+        depositAccountRows = normalized
+        depositAccountOptions = options
+        if (_clean(depositAccountCode).length > 0) {
+            _setDepositAccount(depositAccountCode)
+        } else {
+            var fallback = _defaultDepositAccountRow()
+            if (fallback) _setDepositAccount(_clean(fallback.accountCode || fallback.accountName))
+        }
+        _hydrating = false
+    }
+
+    function _applyPendingFullAmountIfResolved() {
+        var pending = _clean(_pendingFullAmountInvoiceKey)
+        if (pending.length <= 0 || selectedInvoiceNumber().toLowerCase() !== pending.toLowerCase()) return
+        if (!selectedInvoice || selectedInvoice.balance === undefined) return
+        _hydrating = true
+        amountInput.text = Number(selectedInvoice.balance || 0).toFixed(2)
+        _hydrating = false
+        _pendingFullAmountInvoiceKey = ""
+    }
+
     function refreshInvoices() {
         if (!backendReady() || !root.appRef || !root.appRef.listOpenPaymentInvoices) {
             invoiceRows = []
@@ -232,6 +335,7 @@ Item {
                 if (nextSelectedIndex < rowsProxy.length) {
                     selectedInvoice = rowsProxy[nextSelectedIndex]
                     selectedInvoiceKey = _clean(selectedInvoice.invoice)
+                    _applyPendingFullAmountIfResolved()
                 }
             } else {
                 // A search or a background refresh may temporarily omit the
@@ -272,6 +376,7 @@ Item {
         dateInput.text = _clean(result.date)
         modeCombo.editText = _clean(result.mode) || "Payment"
         methodCombo.editText = _clean(result.method) || "EFT"
+        _setDepositAccount(_clean(result.depositAccount))
         referenceInput.text = _clean(result.reference)
         amountInput.text = Number(result.amount || 0).toFixed(2)
         adjustmentAmountInput.text = Number(result.adjustmentAmount || 0).toFixed(2)
@@ -308,6 +413,7 @@ Item {
         selectedInvoice = row || ({})
         selectedInvoiceKey = _clean(selectedInvoice.invoice)
         selectedInvoiceIndex = index
+        _pendingFullAmountInvoiceKey = ""
         amountInput.text = selectedInvoice && selectedInvoice.balance !== undefined
             ? Number(selectedInvoice.balance || 0).toFixed(2)
             : ""
@@ -369,6 +475,7 @@ Item {
             "date": _clean(dateInput.text),
             "mode": _clean(modeCombo.editText),
             "method": _clean(methodCombo.editText),
+            "depositAccount": _clean(depositAccountCode) || _depositAccountCodeForDisplay(depositAccountCombo.editText),
             "reference": _clean(referenceInput.text),
             "paymentId": editingPaymentId,
             "amount": _num(amountInput.text, 0.0),
@@ -388,6 +495,7 @@ Item {
         var balance = Number(selectedValue("balance", 0) || 0)
         if (!editingPaymentId && totalApplied - balance > 0.01) return "Total amount exceeds the selected invoice balance."
         if (paymentAmt > 0 && _clean(payload.mode).toLowerCase().indexOf("payment") >= 0 && !_clean(payload.method)) return "Payment method is required."
+        if (paymentAmt > 0 && _clean(payload.mode).toLowerCase().indexOf("payment") >= 0 && !_clean(payload.depositAccount)) return "Select the account receiving this payment."
         if (adjAmt > 0 && !_clean(payload.adjustmentReason)) return "Adjustment reason is required if an adjustment amount is entered."
         return ""
     }
@@ -465,6 +573,8 @@ Item {
         }
         modeCombo.editText = _clean(payload.mode) || defaultMode
         methodCombo.editText = _clean(payload.method) || "EFT"
+        if (_clean(payload.depositAccount).length > 0)
+            _setDepositAccount(_clean(payload.depositAccount))
         referenceInput.text = _clean(payload.reference)
         amountInput.text = payload.amount !== undefined ? String(payload.amount) : ""
         adjustmentAmountInput.text = payload.adjustmentAmount !== undefined ? String(payload.adjustmentAmount) : ""
@@ -472,6 +582,9 @@ Item {
         notesInput.text = _clean(payload.notes)
         saveMessage = _clean(state.saveMessage)
         lastSavedPaymentId = _clean(state.lastSavedPaymentId)
+        _pendingFullAmountInvoiceKey = (!paymentId && restoredInvoice.length > 0 && payload.amount === undefined)
+            ? restoredInvoice
+            : ""
         if (!paymentId) {
             editingPaymentId = ""
             editingOriginalPaymentAmount = 0
@@ -536,7 +649,10 @@ Item {
         target: root.appRef
         ignoreUnknownSignals: true
         function onBackendBootChanged() {
-            if (root.visible && root.backendReady()) root.refreshInvoices()
+            if (root.visible && root.backendReady()) {
+                root.loadDepositAccounts()
+                root.refreshInvoices()
+            }
         }
         function onTransactionDataChanged() {
             if (root.visible && root.backendReady() && !root.saveInProgress) root.refreshInvoices()
@@ -859,6 +975,25 @@ Item {
                                 Layout.preferredHeight: root.fieldHeightPx
                                 onEditTextChanged: root._markDirty()
                             }
+                            ModernComboBox {
+                                id: depositAccountCombo
+                                t: root.t
+                                metrics: root.metrics
+                                appStyle: root.appStyle
+                                label: "Deposit account"
+                                fullModel: root.depositAccountOptions
+                                preserveUnknownEditTextOnModelChanged: true
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onActivated: {
+                                    root.depositAccountCode = root._depositAccountCodeForDisplay(editText)
+                                    root._markDirty()
+                                }
+                                onEditTextChanged: {
+                                    root.depositAccountCode = root._depositAccountCodeForDisplay(editText)
+                                    root._markDirty()
+                                }
+                            }
                             ModernTextField {
                                 id: referenceInput
                                 t: root.t
@@ -1011,11 +1146,17 @@ Item {
     }
 
     onVisibleChanged: {
-        if (visible && backendReady()) refreshInvoices()
+        if (visible && backendReady()) {
+            loadDepositAccounts()
+            refreshInvoices()
+        }
     }
 
     Component.onCompleted: {
         resetDraft()
-        if (backendReady()) refreshInvoices()
+        if (backendReady()) {
+            loadDepositAccounts()
+            refreshInvoices()
+        }
     }
 }

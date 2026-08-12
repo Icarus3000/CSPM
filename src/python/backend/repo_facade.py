@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 from services.paths import AppPaths
 
 
 class LazyRepoFacade:
     """Lazy repository wiring so controller startup does not hydrate Excel immediately."""
 
-    def __init__(self, paths: AppPaths):
+    def __init__(self, paths: AppPaths, write_guard: Optional[Callable[[], None]] = None):
         self._paths = paths
+        self._write_guard = write_guard
         self._db = None
         self._client = None
         self._finance = None
@@ -22,7 +25,7 @@ class LazyRepoFacade:
             from repositories.docket_repo import DocketRepo
             from repositories.ip_repo import IPRepo
 
-            self._db = ExcelRepo(self._paths)
+            self._db = ExcelRepo(self._paths, write_guard=self._write_guard)
             self._client = ClientRepo(self._db)
             self._finance = FinanceRepo(self._db)
             self._docket = DocketRepo(self._db)

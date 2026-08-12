@@ -16,6 +16,12 @@ Item {
     property var metrics: null
     property string appStyle: (root.appRef && root.appRef.appStyle) ? String(root.appRef.appStyle) : "Professional"
     readonly property bool isProMode: appStyle === "Professional"
+    // Qt RichText gives <a> elements its own default link colour, rather than
+    // inheriting the label's semantic ink.  That default is too dark on the
+    // Professional dark statement rows.  Keep light mode's existing link
+    // treatment and only override the dark-mode matter link colour.
+    readonly property bool darkTheme: SemanticTheme.isDarkMode(root.t)
+    readonly property string darkMatterLinkColor: "#93C5FD"
 
     // An explicit context route may prefill the bill-to party. Opening this
     // report from Finance must begin with a deliberate client choice, rather
@@ -98,7 +104,10 @@ Item {
             var matterMarkup = root.escapeHtml(matterName)
             if (matterId.length > 0) {
                 matterMarkup = "<a href=\"matter:" + encodeURIComponent(matterId) + "\">"
-                    + matterMarkup + "</a>"
+                    + (root.darkTheme ? "<font color=\"" + root.darkMatterLinkColor + "\">" : "")
+                    + matterMarkup
+                    + (root.darkTheme ? "</font>" : "")
+                    + "</a>"
             }
             parts.push(prefix + matterMarkup)
         }
