@@ -8,7 +8,7 @@
 - [x] Compact the right-side form slightly so its evidence/status wording remains visible in the normal Professional window without making the fields cramped.
 - [x] Commit a payment or payment amendment as one atomic macro-workbook replacement, rather than separately rewriting Transactions, Ledger, Receivables, Time, and Disbursements.
 - [x] Use an isolated, unique temporary workbook and bounded retry schedule for a transient Windows file lock; a final lock error now confirms that the attempted change was not saved.
-- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `8D1D7F5F759B2E41D0197478A7829AC4159DB1C318AE61F8573CFEE094636128`); the prior release is recoverable at `to_delete/dist__replaced_release_20260811_203452/`. The promoted executable has no `Zone.Identifier` downloaded-file marker.
+- [x] Rebuild and promote `dist/CSPM/CSPM.exe` (SHA-256 `38CBA00E2D1F7E48517BA0D16D20BF2FB8837B41A730A29C82F8B82A048DE087`); the prior release is recoverable at `to_delete/dist__replaced_release_20260811_204651/`. The promoted executable has no `Zone.Identifier` downloaded-file marker.
 - [ ] Manually choose an invoice, enter a partial payment, wait through any background refresh, and confirm the selection and entered values remain intact. Confirm the lower status/evidence wording is visible without vertical scrolling at the normal window size. Post a test payment with Excel closed and confirm the worker completes promptly; if an external lock is deliberately held, confirm the retry ends with the clear no-save error and no duplicate payment.
 
 ## Invoice Finalization Throughput and UI Responsiveness (2026-08-11)
