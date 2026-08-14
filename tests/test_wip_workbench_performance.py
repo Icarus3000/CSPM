@@ -97,6 +97,42 @@ def test_wip_loader_uses_one_bulk_snapshot_and_preserves_wip_identity():
     assert row["matterName"] == "Tax Planning - 26-0057"
 
 
+def test_wip_loader_excludes_reconciled_entries_and_archived_matters():
+    repo = _WipRepo()
+    repo.tables[TBL_MATTERS.table].append({
+        sc.COL_MATTER_ID: "MAT-ARCHIVED",
+        sc.COL_MATTER_NAME: "Historical Wills",
+        sc.COL_MATTER_NUMBER: "MAT-26-0032",
+        sc.COL_MATTER_STATUS: "Archived",
+    })
+    repo.tables[TBL_TIME.table].extend([
+        {
+            sc.COL_TIME_ENTRY_ID: "TIME-RECONCILED",
+            sc.COL_TIME_DATE: "2026-05-06",
+            sc.COL_TIME_CLIENT_ID: "CLIENT-1",
+            sc.COL_TIME_MATTER_ID: "MAT-1",
+            sc.COL_TIME_NET: 10,
+            sc.COL_TIME_HOURS: 0,
+            sc.COL_TIME_STATUS: "Reconciled",
+            sc.COL_TIME_INVOICE_STATUS: "Reconciled",
+        },
+        {
+            sc.COL_TIME_ENTRY_ID: "TIME-ARCHIVED",
+            sc.COL_TIME_DATE: "2026-05-07",
+            sc.COL_TIME_CLIENT_ID: "CLIENT-1",
+            sc.COL_TIME_MATTER_ID: "MAT-ARCHIVED",
+            sc.COL_TIME_NET: 20,
+            sc.COL_TIME_HOURS: 0,
+            sc.COL_TIME_STATUS: "Draft",
+            sc.COL_TIME_INVOICE_STATUS: "Unbilled",
+        },
+    ])
+
+    payload = _controller(repo)._load_unbilled_wip_impl(repo.signature)
+
+    assert [row["entryId"] for row in payload["rows"]] == ["TIME-1"]
+
+
 def test_wip_cache_avoids_a_second_worker_until_forced_refresh():
     repo = _WipRepo()
     controller = _controller(repo)

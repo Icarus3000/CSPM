@@ -257,13 +257,19 @@ ComboBox {
     leftPadding: ratioPx(scaleRatios.padLeftPct, 4)
     rightPadding: ratioPx(scaleRatios.padRightPct, 8)
     
+    // Unlabelled combos are commonly used as compact search/select fields.
+    // Screen-relative padding made their text area smaller than the font at
+    // normal desktop sizes, which visibly cropped both the selected value and
+    // text being typed.  Keep their padding proportional to the actual field.
     topPadding: control.hasLabel
         ? Math.max(
             ratioPx(scaleRatios.padTopPct, 4),
             comboLabel.font.pixelSize + ratioPx(0.0040, 2)
         )
-        : ratioPx(scaleRatios.padTopPct, 4)
-    bottomPadding: ratioPx(scaleRatios.padBottomPct, 2)
+        : Math.max(2, Math.min(ratioPx(scaleRatios.padTopPct, 4), Math.round(control.height * 0.24)))
+    bottomPadding: control.hasLabel
+        ? ratioPx(scaleRatios.padBottomPct, 2)
+        : Math.max(2, Math.min(ratioPx(scaleRatios.padBottomPct, 2), Math.round(control.height * 0.20)))
 
     TextMetrics {
         id: displayMetrics

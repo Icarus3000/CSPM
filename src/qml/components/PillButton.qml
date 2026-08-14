@@ -11,6 +11,9 @@ Button {
     property var metrics
     property var sfxBus: null
     property bool primary: false
+    // Opt-in scale for dense action strips.  Views use this together with a
+    // smaller control footprint so the label remains proportionate.
+    property real textScale: 1.0
     property string iconSource: ""
     property string tooltipText: ""
     text: "Button"
@@ -135,7 +138,10 @@ Button {
             // TEXT
             Text {
                 text: control.text
-                font.pixelSize: control.ratioPx(control.scaleRatios.textSizePct, control.metricFloor("fontFloorBodyPx", 9))
+                font.pixelSize: Math.max(
+                    control.metricFloor("fontFloorLabelPx", 8),
+                    Math.round(control.ratioPx(control.scaleRatios.textSizePct, control.metricFloor("fontFloorBodyPx", 9)) * control.textScale)
+                )
                 font.weight: Font.Bold
                 color: control.isProMode
                     ? (control.primary ? SemanticTheme.readableInk(control.proAccent) : control.proInk)

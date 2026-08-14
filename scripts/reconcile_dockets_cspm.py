@@ -92,6 +92,19 @@ def dec(value, places: str = "0.01") -> Decimal:
         return Decimal("0").quantize(quant)
 
 
+def percent_key(value) -> Decimal:
+    """Normalize decimal and whole-number percentage encodings for matching.
+
+    Legacy Dockets.xlsm stores common percentages as fractions (for example,
+    ``0.70``), while CSPM's legacy projection stores the equivalent as ``70``.
+    Both describe the same commercial value and must compare as equal.
+    """
+    percentage = dec(value)
+    if percentage != 0 and abs(percentage) <= 1:
+        return percentage * 100
+    return percentage
+
+
 def money(value) -> str:
     return f"${dec(value):,.2f}"
 
@@ -175,7 +188,7 @@ def docket_source_sig(row, include_invoice=False):
         desc(row.get("Description")),
         dec(row.get("Time (in hrs)")),
         dec(row.get("Hourly Rate/Flat Fee")),
-        dec(row.get("Percentage")),
+        percent_key(row.get("Percentage")),
         dec(row.get("Amount to CS")),
     )
     return sig + ((clean(row.get("Invoice")),) if include_invoice else ())
@@ -187,7 +200,7 @@ def docket_target_sig(row, include_invoice=False):
         desc(row.get("Description")),
         dec(row.get("Time (in hrs) or Units")),
         dec(row.get("Hourly Rate/Flat Rate")),
-        dec(row.get("Percentage")),
+        percent_key(row.get("Percentage")),
         dec(row.get("Amount to CS")),
     )
     return sig + ((clean(row.get("Invoice #")),) if include_invoice else ())

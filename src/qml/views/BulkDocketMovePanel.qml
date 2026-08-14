@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import "../components"
 
 Item {
@@ -29,6 +30,15 @@ Item {
     property string statusMessage: "Choose the source matter and date range, then review the dockets before moving them."
     property bool statusIsError: false
     property int blockedCount: 0
+    property string datePickerTarget: ""
+    property string lastPreviewFromDate: ""
+    property string lastPreviewToDate: ""
+
+    SelectionRemovalNoticeDialog {
+        id: selectionRemovalNotice
+        t: root.t
+        appStyle: root.appRef && root.appRef.appStyle ? String(root.appRef.appStyle) : "Professional"
+    }
 
     readonly property int selectedCount: {
         var count = 0
@@ -45,6 +55,48 @@ Item {
     function firstDayOfMonthText() {
         var now = new Date()
         return Qt.formatDate(new Date(now.getFullYear(), now.getMonth(), 1), "yyyy-MM-dd")
+    }
+
+    function parseIsoDateOrToday(textValue) {
+        var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(textValue || "").trim())
+        if (match) {
+            var year = Number(match[1])
+            var monthIndex = Number(match[2]) - 1
+            var day = Number(match[3])
+            var candidate = new Date(year, monthIndex, day)
+            if (candidate.getFullYear() === year
+                    && candidate.getMonth() === monthIndex
+                    && candidate.getDate() === day) {
+                return candidate
+            }
+        }
+        return new Date()
+    }
+
+    function openDatePicker(targetKey, anchorItem, px, py) {
+        datePickerTarget = String(targetKey || "")
+        bulkMoveCalendarLoader.active = true
+        Qt.callLater(function() {
+            var calendar = bulkMoveCalendarLoader.item
+            if (!calendar) return
+            var field = datePickerTarget === "from" ? fromDateField : toDateField
+            calendar.selectedDate = root.parseIsoDateOrToday(field.text)
+            // JellyCalendar resolves this global point to its containing
+            // monitor and centres its own window on that monitor.
+            if (typeof calendar.openAt === "function") calendar.openAt(px, py)
+            else if (typeof calendar.open === "function") calendar.open()
+            else calendar.visible = true
+        })
+    }
+
+    function clearPreviewForChangedDateRange() {
+        if (root.candidates.length <= 0 && root.selectedCount <= 0) return
+        if (root.lastPreviewFromDate === fromDateField.text
+                && root.lastPreviewToDate === toDateField.text) return
+        root.clearPreview(
+            "Choose a date range and find eligible dockets.",
+            "You changed the date range, so the previous candidate selection no longer applies."
+        )
     }
 
     function matterLabelForId(matterId) {
@@ -107,13 +159,24 @@ Item {
         matterLabels = labels
     }
 
-    function clearPreview(message) {
+    function clearPreview(message, selectionReason) {
+        var removedCount = 0
+        for (var entryId in selectedEntryIds) {
+            if (selectedEntryIds[entryId]) removedCount++
+        }
         candidates = []
         selectedEntryIds = ({})
         blockedCount = 0
         if (message !== undefined) {
             statusMessage = String(message)
             statusIsError = false
+        }
+        if (removedCount > 0) {
+            selectionRemovalNotice.showRemoval(
+                removedCount,
+                "docket",
+                String(selectionReason || "The candidate worklist was reset, so those dockets no longer belong to the current selection.")
+            )
         }
     }
 
@@ -206,9 +269,34 @@ Item {
                 root.statusIsError = true
                 return
             }
+            var priorSelection = root.selectedEntryIds
+            var hadPreviousPreview = root.candidates.length > 0
             root.candidates = response.candidates || []
             root.blockedCount = Number(response.blockedCount || 0)
-            root.selectAll(true)
+            root.lastPreviewFromDate = fromDateField.text
+            root.lastPreviewToDate = toDateField.text
+            if (!hadPreviousPreview) {
+                root.selectAll(true)
+            } else {
+                var available = ({})
+                var preserved = ({})
+                var removedCount = 0
+                for (var candidateIndex = 0; candidateIndex < root.candidates.length; ++candidateIndex)
+                    available[String(root.candidates[candidateIndex].entryId)] = true
+                for (var selectedId in priorSelection) {
+                    if (!priorSelection[selectedId]) continue
+                    if (available[selectedId]) preserved[selectedId] = true
+                    else removedCount++
+                }
+                root.selectedEntryIds = preserved
+                if (removedCount > 0) {
+                    selectionRemovalNotice.showRemoval(
+                        removedCount,
+                        "docket",
+                        "The candidate worklist was refreshed and these dockets are no longer eligible to move."
+                    )
+                }
+            }
             var matched = Number(response.matchedCount || 0)
             root.statusIsError = false
             if (root.candidates.length > 0) {
@@ -234,6 +322,9 @@ Item {
             root.statusIsError = false
             root.statusMessage = "Moved " + Number(response.movedCount || 0) + " docket"
                 + (Number(response.movedCount || 0) === 1 ? "" : "s") + " to the destination matter."
+            moveSuccessPopup.movedCount = Number(response.movedCount || 0)
+            moveSuccessPopup.destinationLabel = root.matterLabelForId(root.targetMatterId)
+            moveSuccessPopup.open()
             root.selectAll(false)
             root.loadPreview()
         }
@@ -244,6 +335,27 @@ Item {
         ignoreUnknownSignals: true
         function onClientDataChanged() { root.refreshMatterOptions() }
         function onBackendBootChanged() { root.refreshMatterOptions() }
+    }
+
+    Loader {
+        id: bulkMoveCalendarLoader
+        active: false
+        sourceComponent: Component {
+            JellyCalendar {
+                visible: false
+                t: root.t
+                hostWindow: root.Window.window
+                onDatePicked: function(dateValue) {
+                    var field = root.datePickerTarget === "from" ? fromDateField : toDateField
+                    var nextText = Qt.formatDate(dateValue, "yyyy-MM-dd")
+                    var changed = field.text !== nextText
+                    field.text = nextText
+                    root.datePickerTarget = ""
+                    bulkMoveCalendarLoader.active = false
+                    if (changed) root.clearPreviewForChangedDateRange()
+                }
+            }
+        }
     }
 
     ColumnLayout {
@@ -302,40 +414,69 @@ Item {
                 appStyle: root.appRef && root.appRef.appStyle ? String(root.appRef.appStyle) : "Professional"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 250
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: 42
                 fullModel: root.matterLabels
                 editText: root.matterLabelForId(root.sourceMatterId)
                 emptyOptionLabel: "Select a matter..."
                 onActivated: {
                     root.sourceMatterId = root.matterIdForLabel(editText)
-                    root.clearPreview("Choose a date range and find eligible dockets.")
+                    root.clearPreview(
+                        "Choose a date range and find eligible dockets.",
+                        "You changed the source matter, so the previous candidate selection no longer applies."
+                    )
                 }
             }
 
             TextField {
                 id: fromDateField
                 Layout.preferredWidth: 124
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: 42
                 text: root.firstDayOfMonthText()
                 placeholderText: "YYYY-MM-DD"
                 placeholderTextColor: root.mutedColor
                 color: root.textColor
                 font.pixelSize: 12
+                verticalAlignment: TextInput.AlignVCenter
+                leftPadding: 9
+                rightPadding: 9
                 background: Rectangle { color: root.inputColor; border.color: root.borderColor; border.width: 1; radius: 4 }
-                onEditingFinished: root.clearPreview("Choose a date range and find eligible dockets.")
+                onEditingFinished: root.clearPreviewForChangedDateRange()
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    propagateComposedEvents: true
+                    onDoubleClicked: function(mouse) {
+                        var point = mapToGlobal(mouse.x, mouse.y)
+                        root.openDatePicker("from", fromDateField, point.x, point.y)
+                    }
+                    onPressed: function(mouse) { mouse.accepted = false }
+                }
             }
 
             TextField {
                 id: toDateField
                 Layout.preferredWidth: 124
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: 42
                 text: root.todayText()
                 placeholderText: "YYYY-MM-DD"
                 placeholderTextColor: root.mutedColor
                 color: root.textColor
                 font.pixelSize: 12
+                verticalAlignment: TextInput.AlignVCenter
+                leftPadding: 9
+                rightPadding: 9
                 background: Rectangle { color: root.inputColor; border.color: root.borderColor; border.width: 1; radius: 4 }
-                onEditingFinished: root.clearPreview("Choose a date range and find eligible dockets.")
+                onEditingFinished: root.clearPreviewForChangedDateRange()
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    propagateComposedEvents: true
+                    onDoubleClicked: function(mouse) {
+                        var point = mapToGlobal(mouse.x, mouse.y)
+                        root.openDatePicker("to", toDateField, point.x, point.y)
+                    }
+                    onPressed: function(mouse) { mouse.accepted = false }
+                }
             }
 
             PillButton {
@@ -344,7 +485,7 @@ Item {
                 primary: true
                 enabled: !root.previewBusy && !root.moveBusy
                 Layout.preferredWidth: 164
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: 42
                 onClicked: root.loadPreview()
             }
         }
@@ -447,7 +588,7 @@ Item {
                     appStyle: root.appRef && root.appRef.appStyle ? String(root.appRef.appStyle) : "Professional"
                     Layout.fillWidth: true
                     Layout.minimumWidth: 280
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: 42
                     fullModel: root.matterLabels
                     editText: root.matterLabelForId(root.targetMatterId)
                     emptyOptionLabel: "Select a matter..."
@@ -459,7 +600,7 @@ Item {
                     primary: true
                     enabled: root.selectedCount > 0 && root.targetMatterId.length > 0 && !root.previewBusy && !root.moveBusy
                     Layout.preferredWidth: 138
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: 42
                     onClicked: root.requestMove()
                 }
             }
@@ -491,6 +632,86 @@ Item {
                 Item { Layout.fillWidth: true }
                 PillButton { t: root.t; text: "Cancel"; primary: false; Layout.preferredWidth: 88; Layout.preferredHeight: 34; onClicked: confirmationPopup.close() }
                 PillButton { t: root.t; text: "Move dockets"; primary: true; Layout.preferredWidth: 120; Layout.preferredHeight: 34; onClicked: { confirmationPopup.close(); root.moveSelected() } }
+            }
+        }
+    }
+
+    Popup {
+        id: moveSuccessPopup
+        property int movedCount: 0
+        property string destinationLabel: ""
+        modal: true
+        focus: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(560, root.width - 40)
+        padding: 22
+        closePolicy: Popup.NoAutoClose
+        background: Rectangle {
+            color: root.surfaceColor
+            border.color: "#16835a"
+            border.width: 2
+            radius: 8
+        }
+        contentItem: ColumnLayout {
+            spacing: 14
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Rectangle {
+                    Layout.preferredWidth: 38
+                    Layout.preferredHeight: 38
+                    radius: 19
+                    color: "#16835a"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✓"
+                        color: "white"
+                        font.pixelSize: 23
+                        font.weight: Font.DemiBold
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Dockets moved successfully"
+                    color: root.textColor
+                    font.pixelSize: 20
+                    font.weight: Font.DemiBold
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                text: moveSuccessPopup.movedCount + " selected unbilled docket"
+                    + (moveSuccessPopup.movedCount === 1 ? " was" : "s were")
+                    + " moved to the destination matter."
+                color: root.textColor
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                Layout.fillWidth: true
+                text: "Destination: " + moveSuccessPopup.destinationLabel
+                color: root.mutedColor
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                Layout.fillWidth: true
+                text: "The source worklist has been refreshed. An audit note was recorded for the move."
+                color: root.mutedColor
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                PillButton {
+                    t: root.t
+                    text: "OK"
+                    primary: true
+                    Layout.preferredWidth: 104
+                    Layout.preferredHeight: 38
+                    onClicked: moveSuccessPopup.close()
+                }
             }
         }
     }

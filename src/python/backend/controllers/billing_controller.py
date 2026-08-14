@@ -290,6 +290,7 @@ class BillingController(QObject):
         matters = table_rows.get(TBL_MATTERS.table, [])
 
         matter_map = {}
+        non_operational_matter_ids = set()
 
         for m in matters:
 
@@ -336,6 +337,9 @@ class BillingController(QObject):
             if m_id:
 
                 matter_map[m_id] = display or m_id
+                matter_status = str(m.get(sc.COL_MATTER_STATUS) or "").strip().lower()
+                if matter_status in ("inactive", "closed", "archived"):
+                    non_operational_matter_ids.add(m_id.casefold())
 
         rows = table_rows.get(TBL_TIME.table, [])
 
@@ -355,11 +359,11 @@ class BillingController(QObject):
 
             # but we still exclude them if they are actually finalized/billed.
 
-            if invoice_status in ("billed", "finalized"):
+            if invoice_status in ("billed", "finalized", "reconciled"):
 
                 continue
 
-            if status == "billed":
+            if status in ("billed", "reconciled", "merged"):
 
                 continue
 
@@ -394,6 +398,11 @@ class BillingController(QObject):
             matter_id_raw = str(row.get(sc.COL_TIME_MATTER_ID) or "")
 
             matter_id = matter_id_raw.split(',')[0].strip() if ',' in matter_id_raw else matter_id_raw.strip()
+
+            # Archived / closed matters are historical files.  They must not
+            # be offered for billing even if a legacy row retained Draft.
+            if matter_id.casefold() in non_operational_matter_ids:
+                continue
 
             time_parent_id_raw = str(row.get(sc.COL_TIME_PARENT_ID) or "").strip()
 
@@ -1099,6 +1108,35 @@ class BillingController(QObject):
             return {"ok": True, "message": message}
         except Exception as exc:
             self.error.emit(f"Could not delete drafts: {exc}")
+            return {"ok": False, "message": str(exc)}
+
+    @Slot('QVariantList', str, str, bool, result='QVariantMap')
+    def reconcileWipEntries(self, entry_ids, destination_reference, reason, allow_nonzero_total=False):
+        """Close residual WIP to an existing reconciliation reference.
+
+        This intentionally does not create, delete, or change an invoice.  It
+        only records the user's confirmed reconciliation on the selected
+        time/fee rows so they are no longer offered to the billing workbench.
+        """
+        try:
+            result = dict(
+                self._excel_repo.reconcile_wip_entries(
+                    list(entry_ids or []),
+                    str(destination_reference or ""),
+                    str(reason or ""),
+                    bool(allow_nonzero_total),
+                )
+                or {}
+            )
+            if result.get("ok"):
+                self._wip_cache = []
+                self._wip_cache_signature = ""
+                self.toast.emit(result.get("message", "WIP reconciliation recorded."))
+            else:
+                self.error.emit(result.get("message", "WIP reconciliation failed."))
+            return result
+        except Exception as exc:
+            self.error.emit(f"Could not reconcile WIP: {exc}")
             return {"ok": False, "message": str(exc)}
 
     @Slot(str, result='QVariantMap')

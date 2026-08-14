@@ -2071,6 +2071,21 @@ class ExcelRepo:
 
         txn_id = _clean_text(normalized.get("transactionId"))
         existing_row: Optional[Dict[str, Any]] = self._find_transaction_row(txn_id) if txn_id else None
+
+        # A client-matter expense is a docketing action just as much as a time
+        # or fee entry.  Do not let a stale AP tab (or a direct caller) create
+        # new work against an archived matter merely because the active-matter
+        # selector has already been bypassed.
+        requested_matter_key = _clean_text(normalized.get("matter"))
+        if requested_matter_key:
+            requested_matter = self._find_matter_row(requested_matter_key)
+            existing_matter_key = _clean_text((existing_row or {}).get(sc.COL_TXN_MATTER))
+            existing_matter = self._find_matter_row(existing_matter_key) if existing_matter_key else None
+            requested_matter_id = _clean_text((requested_matter or {}).get(sc.COL_MATTER_ID))
+            existing_matter_id = _clean_text((existing_matter or {}).get(sc.COL_MATTER_ID))
+            if requested_matter is not None and requested_matter_id.casefold() != existing_matter_id.casefold():
+                self._ensure_matter_is_open_for_new_entry(requested_matter, "disbursement")
+
         self._validate_transaction_status_transition(
             old_status=_clean_text((existing_row or {}).get(sc.COL_TXN_STATUS)),
             new_status=_clean_text(normalized.get("status")),
@@ -4833,6 +4848,172 @@ class ExcelRepo:
             "rawTime": raw_time
         }
 
+    def productivity_report(self, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Build the native Productivity Report without mutating the workbooks.
+
+        This is deliberately based on the legacy Dockets.xlsm report workflow:
+        production is time value, adjusted to the billings recorded against an
+        invoice when that invoice was written down; forecast uses its 336-day
+        planning year; and the two charts are anchored to the selected end date.
+        Keeping the calculation here makes the QML view and PDF export consume
+        one audited payload rather than each reinventing financial logic.
+        """
+        raw_filters = dict(filters or {})
+        today = date.today()
+        start_date = self._parse_date_value(raw_filters.get("startDate")) or (today - timedelta(days=30))
+        end_date = self._parse_date_value(raw_filters.get("endDate")) or today
+        if end_date < start_date:
+            return {
+                "ok": False,
+                "message": "End Date must be on or after Start Date.",
+                "startDate": start_date.isoformat(),
+                "endDate": end_date.isoformat(),
+            }
+
+        annual_target = self._parse_float(raw_filters.get("annualTarget"))
+        if annual_target is None:
+            annual_target = 350000.0
+        if annual_target <= 0:
+            return {"ok": False, "message": "Annual Target must be greater than zero."}
+
+        annual_basis_value = self._parse_float(raw_filters.get("annualBasisDays"))
+        if annual_basis_value is None:
+            annual_basis_days = 336
+        elif annual_basis_value != round(annual_basis_value):
+            return {"ok": False, "message": "Forecast basis must be a whole number of days."}
+        else:
+            annual_basis_days = int(annual_basis_value)
+        if not 1 <= annual_basis_days <= 366:
+            return {"ok": False, "message": "Forecast basis must be between 1 and 366 days."}
+
+        try:
+            time_rows = [self._canonicalize_time_row(row) for row in self._read_table_rows(TBL_TIME)]
+            ledger_rows = self._read_table_rows(TBL_LEDGER)
+            client_rows = [self._canonicalize_client_row(row) for row in self._read_table_rows(TBL_CLIENTS)]
+        except Exception as exc:
+            logger.exception("Could not read productivity report data")
+            return {"ok": False, "message": f"Could not read productivity data: {exc}"}
+
+        # The legacy report first calculated the docket value for every
+        # invoice, then scaled that invoice's docket value to its booked
+        # billings.  This preserves realization/write-downs while leaving
+        # unbilled time at its production value.
+        invoice_base: Dict[str, float] = collections.defaultdict(float)
+        for row in time_rows:
+            invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+            if invoice_ref:
+                invoice_base[invoice_ref] += float(self._parse_float(row.get(sc.COL_TIME_GROSS)) or 0.0)
+
+        invoice_billings: Dict[str, float] = collections.defaultdict(float)
+        for row in ledger_rows:
+            invoice_ref = _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).casefold()
+            if invoice_ref:
+                billed_amount = float(self._parse_float(row.get(sc.COL_LEDGER_BILLINGS_EXCL_HST)) or 0.0)
+                # Payment rows use the same invoice reference but have no
+                # billing value.  The legacy macro ignored those zero rows.
+                if abs(billed_amount) > 0.000001:
+                    invoice_billings[invoice_ref] += billed_amount
+
+        realization_factor: Dict[str, float] = {}
+        for invoice_ref, base_amount in invoice_base.items():
+            booked_amount = invoice_billings.get(invoice_ref)
+            if base_amount and booked_amount is not None:
+                realization_factor[invoice_ref] = booked_amount / base_amount
+
+        client_names = {
+            _clean_text(row.get(sc.COL_CLIENT_ID)).casefold(): _clean_text(row.get(sc.COL_CLIENT_NAME))
+            for row in client_rows
+            if _clean_text(row.get(sc.COL_CLIENT_ID))
+        }
+
+        def _month_start(value: date) -> date:
+            return value.replace(day=1)
+
+        def _prior_month(value: date, count: int) -> date:
+            year = value.year
+            month = value.month - count
+            while month <= 0:
+                year -= 1
+                month += 12
+            return date(year, month, 1)
+
+        month_starts = [_prior_month(_month_start(end_date), offset) for offset in range(3, -1, -1)]
+        monthly_values: Dict[date, float] = {month: 0.0 for month in month_starts}
+        daily_starts = [end_date - timedelta(days=offset) for offset in range(6, -1, -1)]
+        daily_values: Dict[date, float] = {day: 0.0 for day in daily_starts}
+
+        total_production = 0.0
+        total_hours = 0.0
+        included_entries = 0
+        client_production: Dict[str, float] = collections.defaultdict(float)
+
+        for row in time_rows:
+            entry_date = self._parse_date_value(row.get(sc.COL_TIME_DATE))
+            if not entry_date or entry_date > end_date:
+                continue
+            invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+            gross = float(self._parse_float(row.get(sc.COL_TIME_GROSS)) or 0.0)
+            realized_amount = gross * realization_factor.get(invoice_ref, 1.0)
+
+            # Trend windows are independently anchored to the chosen end date,
+            # exactly as the legacy worksheet's last-four-month and last-seven-
+            # day charts were.
+            entry_month = _month_start(entry_date)
+            if entry_month in monthly_values:
+                monthly_values[entry_month] += realized_amount
+            if entry_date in daily_values:
+                daily_values[entry_date] += realized_amount
+
+            if not (start_date <= entry_date <= end_date):
+                continue
+            total_production += realized_amount
+            total_hours += float(self._parse_float(row.get(sc.COL_TIME_HOURS)) or 0.0)
+            included_entries += 1
+            client_ref = _clean_text(row.get(sc.COL_TIME_CLIENT_ID))
+            client_label = client_names.get(client_ref.casefold()) or client_ref or "Unassigned client"
+            client_production[client_label] += realized_amount
+
+        range_days = (end_date - start_date).days + 1
+        daily_pace = total_production / range_days if range_days else 0.0
+        annual_projection = daily_pace * annual_basis_days
+        percent_to_target = ((annual_projection / annual_target) - 1.0) if annual_target else 0.0
+        top_clients = sorted(client_production.items(), key=lambda item: item[1], reverse=True)[:5]
+
+        return {
+            "ok": True,
+            "reportId": "productivity_report",
+            "title": "Productivity Report",
+            "startDate": start_date.isoformat(),
+            "endDate": end_date.isoformat(),
+            "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "methodology": "Realized production (time value adjusted to booked invoice billings).",
+            "summary": {
+                "totalProduction": round(total_production, 2),
+                "billableHours": round(total_hours, 2),
+                "realizedRate": round(total_production / total_hours, 2) if total_hours else 0.0,
+                "entryCount": included_entries,
+            },
+            "forecast": {
+                "annualTarget": round(annual_target, 2),
+                "dailyPace": round(daily_pace, 2),
+                "annualBasisDays": annual_basis_days,
+                "annualProjection": round(annual_projection, 2),
+                "percentToTarget": round(percent_to_target * 100.0, 1),
+                "rangeDays": range_days,
+            },
+            "topClients": [
+                {"name": name, "amount": round(amount, 2)} for name, amount in top_clients
+            ],
+            "monthlyProduction": [
+                {"date": month.isoformat(), "label": month.strftime("%b"), "amount": round(monthly_values[month], 2)}
+                for month in month_starts
+            ],
+            "dailyProduction": [
+                {"date": day.isoformat(), "label": day.strftime("%d-%b"), "amount": round(daily_values[day], 2)}
+                for day in daily_starts
+            ],
+        }
+
 
     def practice_briefing(self, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         briefing_filters = self._sanitize_practice_briefing_filters(filters)
@@ -5227,6 +5408,224 @@ class ExcelRepo:
         return "entrytype:fee" in marker
 
 
+    def _ensure_matter_is_open_for_new_entry(
+        self,
+        matter_row: Dict[str, Any],
+        entry_kind: str,
+    ) -> None:
+        """Refuse a new financial entry on a non-operational matter.
+
+        The UI normally removes archived matters from its pickers, but this
+        repository guard is authoritative: a stale tab, a deep link, or a
+        future caller cannot silently attach time, fees, or client expenses to
+        a closed file.  Re-opening is intentionally a separate, auditable
+        command rather than an incidental side effect of saving a docket.
+        """
+        if self._is_matter_row_active(matter_row):
+            return
+
+        matter_id = _clean_text(matter_row.get(sc.COL_MATTER_ID))
+        matter_number = _clean_text(matter_row.get(sc.COL_MATTER_NUMBER)) or matter_id
+        matter_name = _clean_text(matter_row.get(sc.COL_MATTER_NAME))
+        status = _clean_text(matter_row.get(sc.COL_MATTER_STATUS)) or "Inactive"
+        label = f"{matter_number} — {matter_name}" if matter_name else matter_number
+        kind = _clean_text(entry_kind) or "financial"
+        raise ValueError(
+            f"{label} is {status}. No {kind} entry was saved. "
+            "Use the protected re-open confirmation before adding new work."
+        )
+
+
+    def reopen_matter_for_docketing(
+        self,
+        matter_id: str,
+        entry_kind: str,
+        confirmation_phrase: str,
+    ) -> Dict[str, Any]:
+        """Re-open an archived matter only after an explicit typed confirmation.
+
+        This command is deliberately narrow.  It makes no time, fee, or
+        disbursement entry itself; the user must still explicitly confirm the
+        entry after the file has been reopened.  The status change and the
+        reason are retained in the matter notes as durable audit evidence.
+        """
+        self.ensure_schema()
+        requested_id = _clean_text(matter_id)
+        if not requested_id:
+            return {"ok": False, "message": "Archived matter ID is required."}
+
+        normalized_kind = _clean_text(entry_kind).casefold()
+        allowed_kinds = {"time", "fee", "disbursement"}
+        if normalized_kind not in allowed_kinds:
+            return {"ok": False, "message": "Choose time, fee, or disbursement before reopening a matter."}
+
+        matter_rows = [
+            self._canonicalize_matter_row(row)
+            for row in self._read_table_rows(TBL_MATTERS)
+        ]
+        target: Optional[Dict[str, Any]] = None
+        for row in matter_rows:
+            if _clean_text(row.get(sc.COL_MATTER_ID)).casefold() == requested_id.casefold():
+                target = row
+                break
+        if target is None:
+            return {"ok": False, "message": "Matter not found."}
+
+        status = _clean_text(target.get(sc.COL_MATTER_STATUS)).casefold()
+        matter_number = _clean_text(target.get(sc.COL_MATTER_NUMBER)) or requested_id
+        expected_phrase = f"REOPEN {matter_number}".upper()
+        if _clean_text(confirmation_phrase).upper() != expected_phrase:
+            return {
+                "ok": False,
+                "message": f"Type exactly {expected_phrase} to re-open this archived matter.",
+                "expectedConfirmation": expected_phrase,
+            }
+        if status != "archived":
+            return {
+                "ok": False,
+                "message": "This safeguard can re-open archived matters only. Reload the matter and try again.",
+            }
+
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        target[sc.COL_MATTER_STATUS] = "Open"
+        target[sc.COL_MATTER_UPDATED] = now_stamp
+        target[sc.COL_MATTER_NOTES] = self._append_note_line(
+            target.get(sc.COL_MATTER_NOTES),
+            f"[{now_stamp}] Re-opened for a new {normalized_kind} entry after protected confirmation.",
+        )
+        self._write_table_rows_bulk({TBL_MATTERS: matter_rows})
+
+        persisted = self._find_matter_row(requested_id) or {}
+        verified = _clean_text(persisted.get(sc.COL_MATTER_STATUS)).casefold() == "open"
+        return {
+            "ok": bool(verified),
+            "verifiedExact": bool(verified),
+            "matterId": requested_id,
+            "matterNumber": matter_number,
+            "status": "Open" if verified else _clean_text(persisted.get(sc.COL_MATTER_STATUS)),
+            "message": "Matter re-opened. Confirm the new entry separately." if verified else "Matter re-open could not be verified.",
+        }
+
+
+    def reconcile_wip_entries(
+        self,
+        entry_ids: List[Any],
+        destination_reference: str,
+        reason: str,
+        allow_nonzero_total: bool = False,
+    ) -> Dict[str, Any]:
+        """Mark selected residual WIP entries as reconciled without touching billing.
+
+        This is for historical transfers or off-system billing where the work
+        must remain in the audit trail but must no longer be offered for
+        billing.  It does not create, alter, reverse, or pay an invoice.
+        """
+        self.ensure_schema()
+        selected_ids = {
+            _clean_text(value)
+            for value in list(entry_ids or [])
+            if _clean_text(value)
+        }
+        if not selected_ids:
+            return {"ok": False, "message": "Select one or more WIP entries to reconcile."}
+
+        reference = _clean_text(destination_reference)
+        note = _clean_text(reason)
+        if not reference:
+            return {"ok": False, "message": "Destination invoice or reconciliation reference is required."}
+        if not note:
+            return {"ok": False, "message": "A reconciliation reason is required."}
+
+        time_rows = [self._canonicalize_time_row(row) for row in self._read_table_rows(TBL_TIME)]
+        matched = [
+            row for row in time_rows
+            if _clean_text(row.get(sc.COL_TIME_ENTRY_ID)) in selected_ids
+        ]
+        found_ids = {_clean_text(row.get(sc.COL_TIME_ENTRY_ID)) for row in matched}
+        missing_ids = sorted(selected_ids - found_ids)
+        if missing_ids:
+            return {
+                "ok": False,
+                "message": "One or more selected WIP entries no longer exist. Refresh the workbench and try again.",
+                "missingEntryIds": missing_ids,
+            }
+
+        selected_total = self._money_round(
+            sum(self._parse_float(row.get(sc.COL_TIME_NET)) or 0.0 for row in matched)
+        )
+        if abs(selected_total) >= 0.005 and not bool(allow_nonzero_total):
+            return {
+                "ok": False,
+                "requiresNonzeroConfirmation": True,
+                "selectedTotal": selected_total,
+                "message": (
+                    f"The selected WIP total is ${selected_total:,.2f}, not $0.00. "
+                    "Confirm the non-zero reconciliation explicitly before CSPM removes it from WIP."
+                ),
+            }
+
+        draft_numbers = {
+            _clean_text(row.get(sc.COL_DRAFT_INVOICE_NUM)).casefold()
+            for row in self._read_table_rows(sc.TBL_DRAFT_INVOICES)
+            if _clean_text(row.get(sc.COL_DRAFT_INVOICE_NUM))
+        }
+        finalized_statuses = {"billed", "posted", "invoiced", "finalized", "locked", "merged"}
+        already_reconciled: List[str] = []
+        for row in matched:
+            entry_id = _clean_text(row.get(sc.COL_TIME_ENTRY_ID))
+            status = _clean_text(row.get(sc.COL_TIME_STATUS)).casefold()
+            invoice_status = _clean_text(row.get(sc.COL_TIME_INVOICE_STATUS)).casefold()
+            current_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
+            if status == "reconciled" or invoice_status == "reconciled":
+                already_reconciled.append(entry_id)
+                continue
+            if status in finalized_statuses or invoice_status in finalized_statuses:
+                return {"ok": False, "message": f"{entry_id} is finalized and cannot be reconciled as residual WIP."}
+            if current_ref.casefold() in draft_numbers:
+                return {
+                    "ok": False,
+                    "message": f"{entry_id} is attached to Draft Invoice {current_ref}. Delete or finalize that draft first.",
+                }
+
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        audit_line = f"[{now_stamp}] WIP reconciled to {reference}: {note}"
+        reconciled_ids: List[str] = []
+        for row in matched:
+            entry_id = _clean_text(row.get(sc.COL_TIME_ENTRY_ID))
+            if entry_id in already_reconciled:
+                continue
+            row[sc.COL_TIME_STATUS] = "Reconciled"
+            row[sc.COL_TIME_INVOICE_STATUS] = "Reconciled"
+            row[sc.COL_TIME_INVOICE_REF] = reference
+            row[sc.COL_TIME_LOCK_AUDIT] = self._append_note_line(
+                row.get(sc.COL_TIME_LOCK_AUDIT), audit_line,
+            )
+            reconciled_ids.append(entry_id)
+
+        if reconciled_ids:
+            self._write_table_rows_bulk({TBL_TIME: time_rows})
+            verified_rows = {
+                _clean_text(row.get(sc.COL_TIME_ENTRY_ID)): row
+                for row in self._read_table_rows(TBL_TIME)
+            }
+            if any(
+                _clean_text(verified_rows.get(entry_id, {}).get(sc.COL_TIME_STATUS)).casefold() != "reconciled"
+                or _clean_text(verified_rows.get(entry_id, {}).get(sc.COL_TIME_INVOICE_REF)) != reference
+                for entry_id in reconciled_ids
+            ):
+                return {"ok": False, "message": "Reconciliation write verification failed."}
+
+        return {
+            "ok": True,
+            "verifiedExact": True,
+            "reconciledEntryIds": reconciled_ids,
+            "alreadyReconciledEntryIds": already_reconciled,
+            "reference": reference,
+            "selectedTotal": selected_total,
+            "message": f"Reconciled {len(reconciled_ids)} WIP entr{'y' if len(reconciled_ids) == 1 else 'ies'} without changing any invoice.",
+        }
+
+
 
     def add_time_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         self.ensure_schema()
@@ -5253,6 +5652,7 @@ class ExcelRepo:
                     break
 
         if matter_row is not None:
+            self._ensure_matter_is_open_for_new_entry(matter_row, "time")
             matter_client_id = _clean_text(matter_row.get(sc.COL_MATTER_CLIENT_ID))
             if matter_client_id:
                 client_id = matter_client_id
@@ -5267,6 +5667,10 @@ class ExcelRepo:
                 default_rate=normalized["clientRate"],
                 default_share_pct=normalized["sharePct"],
             )
+            # _get_or_create_matter also resolves historical, archived matters
+            # by name.  Keep this second check here so a manually typed matter
+            # name cannot bypass the protected archived-file guard.
+            self._ensure_matter_is_open_for_new_entry(matter_row, "time")
             matter_id = _clean_text(matter_row.get(sc.COL_MATTER_ID))
             if not parent_id:
                 parent_id = _clean_text(matter_row.get(sc.COL_MATTER_PARENT_ID))
@@ -5285,12 +5689,32 @@ class ExcelRepo:
                     requested_row = row
                     break
 
+        if requested_row is not None and (
+            _clean_text(requested_row.get(sc.COL_TIME_STATUS)).casefold() == "reconciled"
+            or _clean_text(requested_row.get(sc.COL_TIME_INVOICE_STATUS)).casefold() == "reconciled"
+        ):
+            return {
+                "ok": False,
+                "verifiedExact": False,
+                "entryId": requested_entry_id,
+                "savedRow": {},
+                "message": "This time entry was reconciled as historical WIP and is read-only.",
+            }
+
         matching_rows: List[Dict[str, Any]] = []
         if requested_row is not None:
             matching_rows = [requested_row]
         elif not force_duplicate:
             for row in rows:
                 if self._is_fee_entry(row):
+                    continue
+                if (
+                    _clean_text(row.get(sc.COL_TIME_STATUS)).casefold() == "reconciled"
+                    or _clean_text(row.get(sc.COL_TIME_INVOICE_STATUS)).casefold() == "reconciled"
+                ):
+                    # A new docket on a subsequently re-opened matter must
+                    # never merge into historical work that has been settled
+                    # outside CSPM.
                     continue
                 if _clean_text(row.get(sc.COL_TIME_DATE)) != normalized["date"]:
                     continue
@@ -5529,6 +5953,8 @@ class ExcelRepo:
 
         if matter_row is None:
             raise ValueError("Select an existing matter for the fee entry.")
+
+        self._ensure_matter_is_open_for_new_entry(matter_row, "fee")
 
         matter_id = _clean_text(matter_row.get(sc.COL_MATTER_ID))
         client_id = _clean_text(matter_row.get(sc.COL_MATTER_CLIENT_ID))
@@ -7072,6 +7498,15 @@ class ExcelRepo:
         if existing_row is not None:
             prior_status = _clean_text(existing_row.get(sc.COL_MATTER_STATUS)).casefold()
             requested_status = _clean_text(normalized.get("status")).casefold()
+            if prior_status == "archived" and requested_status != "archived":
+                return {
+                    "ok": False,
+                    "matterId": matter_id,
+                    "message": (
+                        "Archived matters must be re-opened through the protected docketing confirmation "
+                        "before they can become operational again."
+                    ),
+                }
             protected_statuses = {"on hold", "closed", "archived"}
             if requested_status in protected_statuses and requested_status != prior_status:
                 financial = self.get_matter_financial_summary(matter_id)
@@ -8583,6 +9018,10 @@ class ExcelRepo:
         status_raw = _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_STATUS))
         if status_raw.lower() == "merged":
             status = "Merged"
+        elif status_raw.lower() == "reconciled":
+            # Reconciled WIP is a durable, read-only historical state.  Do
+            # not normalize it back to Draft during a later table rewrite.
+            status = "Reconciled"
         else:
             status = self._normalize_time_status(status_raw)
 
@@ -10369,6 +10808,7 @@ class ExcelRepo:
             TBL_RECEIVABLES,
             TBL_TRANSACTIONS_MASTER,
             TBL_TRADEMARKS,
+            TBL_DRAFT_INVOICES,
         ])
         matter_rows = [self._canonicalize_matter_row(row) for row in tables.get(TBL_MATTERS.table, [])]
         matter = next(
@@ -10396,6 +10836,7 @@ class ExcelRepo:
             time_rows,
             disbursement_rows,
             tables.get(TBL_RECEIVABLES.table, []),
+            tables.get(TBL_DRAFT_INVOICES.table, []),
         )
         time_count = sum(
             1
@@ -10450,6 +10891,7 @@ class ExcelRepo:
             TBL_TIME,
             TBL_DISBURSEMENTS,
             TBL_RECEIVABLES,
+            TBL_DRAFT_INVOICES,
         ])
         matter_exists = any(
             _clean_text(row.get(sc.COL_MATTER_ID)).casefold() == normalized_id.casefold()
@@ -10463,6 +10905,7 @@ class ExcelRepo:
             tables.get(TBL_TIME.table, []),
             tables.get(TBL_DISBURSEMENTS.table, []),
             tables.get(TBL_RECEIVABLES.table, []),
+            tables.get(TBL_DRAFT_INVOICES.table, []),
         )
 
     def _matter_financial_summary_from_rows(
@@ -10471,6 +10914,7 @@ class ExcelRepo:
         time_rows: List[Dict[str, Any]],
         disbursement_rows: List[Dict[str, Any]],
         receivable_rows: List[Dict[str, Any]],
+        draft_rows: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Compute a matter-level financial summary from already loaded rows."""
         matter_id_lower = _clean_text(matter_id).casefold()
@@ -10480,6 +10924,11 @@ class ExcelRepo:
         }
         closed_receivable_statuses = {
             "paid", "void", "voided", "reversed", "cancelled", "canceled", "superseded",
+        }
+        draft_numbers = {
+            _clean_text(row.get(sc.COL_DRAFT_INVOICE_NUM)).casefold(): _clean_text(row.get(sc.COL_DRAFT_INVOICE_NUM))
+            for row in list(draft_rows or [])
+            if _clean_text(row.get(sc.COL_DRAFT_INVOICE_NUM))
         }
 
         def amount(value: Any) -> float:
@@ -10499,11 +10948,14 @@ class ExcelRepo:
         unbilled_dockets: List[Dict[str, Any]] = []
         unbilled_disbursements: List[Dict[str, Any]] = []
         linked_invoices: set[str] = set()
+        linked_draft_numbers: set[str] = set()
 
         for row in time_rows:
             if _clean_text(row.get(sc.COL_TIME_MATTER_ID)).casefold() != matter_id_lower:
                 continue
             invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
+            if invoice_ref.casefold() in draft_numbers:
+                linked_draft_numbers.add(draft_numbers[invoice_ref.casefold()])
             if docket_is_unbilled(row):
                 unbilled_dockets.append({
                     "entryId": _clean_text(row.get(sc.COL_TIME_ENTRY_ID)),
@@ -10519,6 +10971,8 @@ class ExcelRepo:
             if _clean_text(row.get(sc.COL_DISB_MATTER_ID)).casefold() != matter_id_lower:
                 continue
             invoice_ref = _clean_text(row.get(sc.COL_DISB_INVOICE_REF))
+            if invoice_ref.casefold() in draft_numbers:
+                linked_draft_numbers.add(draft_numbers[invoice_ref.casefold()])
             if invoice_ref.casefold() in {"", "draft", "wip", "unbilled"}:
                 unbilled_disbursements.append({
                     "entryId": _clean_text(row.get(sc.COL_DISB_ID)),
@@ -10557,6 +11011,7 @@ class ExcelRepo:
         wip_total = self._money_round(docket_total + disbursement_total)
         unpaid_total = self._money_round(sum(item["amountDue"] for item in unpaid_invoices))
         unbilled_count = len(unbilled_dockets) + len(unbilled_disbursements)
+        draft_invoices = sorted(linked_draft_numbers, key=str.casefold)
 
         return {
             "ok": True,
@@ -10572,13 +11027,21 @@ class ExcelRepo:
             "unpaidInvoiceCount": len(unpaid_invoices),
             "unpaidInvoiceAmount": unpaid_total,
             "unpaidInvoices": unpaid_invoices,
+            "draftInvoiceCount": len(draft_invoices),
+            "draftInvoices": draft_invoices,
             "hasUnbilledWip": unbilled_count > 0,
             "hasUnpaidInvoices": len(unpaid_invoices) > 0,
-            "hasFinancialBlockers": unbilled_count > 0 or len(unpaid_invoices) > 0,
+            "hasDraftInvoices": len(draft_invoices) > 0,
+            "hasFinancialBlockers": unbilled_count > 0 or len(unpaid_invoices) > 0 or len(draft_invoices) > 0,
         }
 
     def _matter_financial_blocker_message(self, summary: Dict[str, Any], *, action: str) -> str:
         parts: List[str] = []
+        draft_count = int(summary.get("draftInvoiceCount", 0) or 0)
+        if draft_count:
+            drafts = ", ".join(str(value) for value in list(summary.get("draftInvoices") or [])[:3])
+            suffix = f" ({drafts})" if drafts else ""
+            parts.append(f"{draft_count} draft invoice(s){suffix}")
         wip_count = int(summary.get("unbilledWipCount", 0) or 0)
         if wip_count:
             parts.append(
@@ -11069,6 +11532,8 @@ class ExcelRepo:
             return "Ready for Billing"
         if value in ("billed", "posted", "invoiced", "finalized", "locked"):
             return "Billed"
+        if value in ("reconciled", "settled elsewhere", "settled_elsewhere"):
+            return "Reconciled"
         return "Draft"
 
     def _normalize_transaction_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -149,6 +149,26 @@ Window {
         }
     }
 
+    // The calendar's visual centre must match the centre of the monitor on
+    // which the user initiated it.  availableGeometry intentionally excludes
+    // taskbars, so it is useful for clamping regular windows but not for this
+    // centring contract.
+    function _screenGeometryRect(screenObj) {
+        if (screenObj && screenObj.geometry
+            && typeof screenObj.geometry.x === "number"
+            && typeof screenObj.geometry.y === "number"
+            && typeof screenObj.geometry.width === "number"
+            && typeof screenObj.geometry.height === "number") {
+            return {
+                "x": Math.round(screenObj.geometry.x),
+                "y": Math.round(screenObj.geometry.y),
+                "w": Math.max(1, Math.round(screenObj.geometry.width)),
+                "h": Math.max(1, Math.round(screenObj.geometry.height))
+            }
+        }
+        return _screenRect(screenObj)
+    }
+
     function _screenContainsPoint(screenObj, px, py) {
         var rect = _screenRect(screenObj)
         return px >= rect.x && px < (rect.x + rect.w) && py >= rect.y && py < (rect.y + rect.h)
@@ -200,6 +220,9 @@ Window {
         grid.month = pendingDate.getMonth()
         grid.year = pendingDate.getFullYear()
         var hasPoint = (px !== undefined && py !== undefined && px !== -1 && py !== -1)
+        // Resolve once from the field's global point.  Do not fall back to the
+        // host window after showing the dialog: a maximised window can span
+        // screens, while the initiating field belongs to exactly one monitor.
         var targetScreen = _preferredScreen(px, py)
         if (targetScreen) {
             cal.screen = targetScreen
@@ -223,25 +246,12 @@ Window {
         cal.width = popupW
         cal.height = popupH
 
-        var rect = _screenRect(targetScreen)
-        // Centre over the *screen* geometry (matching the working
-        // SearchSelector.recenterWindow pattern).  Using the host Window's
-        // frame coordinates is unreliable on Windows because maximised
-        // windows report negative x/y and inflated width/height due to
-        // invisible resize borders.
-        var scrHost = {
-            x: cal.screen ? cal.screen.virtualX : rect.x,
-            y: cal.screen ? cal.screen.virtualY : rect.y,
-            width: cal.screen ? cal.screen.width : rect.w,
-            height: cal.screen ? cal.screen.height : rect.h
-        }
-        var destX = Math.round(scrHost.x + ((scrHost.width  - popupW) / 2.0))
-        var destY = Math.round(scrHost.y + ((scrHost.height - popupH) / 2.0))
-
-        var maxX = Math.max(rect.x, rect.x + rect.w - popupW)
-        var maxY = Math.max(rect.y, rect.y + rect.h - popupH)
-        cal.x = Math.min(Math.max(destX, rect.x), maxX)
-        cal.y = Math.min(Math.max(destY, rect.y), maxY)
+        var targetGeometry = _screenGeometryRect(targetScreen)
+        // Centre over the *target monitor* geometry, not the host window or
+        // its work area.  The calendar is deliberately smaller than a screen,
+        // so this produces an exact centre without an offset from a taskbar.
+        cal.x = Math.round(targetGeometry.x + ((targetGeometry.w - popupW) / 2.0))
+        cal.y = Math.round(targetGeometry.y + ((targetGeometry.h - popupH) / 2.0))
         if (!hasPoint && !targetScreen) {
             centerWindow()
         }
@@ -251,20 +261,13 @@ Window {
         cal.requestActivate()
         
         Qt.callLater(function() {
-            // Re-centre using screen geometry to guarantee correct placement.
-            var liveScrHost = {
-                x: cal.screen ? cal.screen.virtualX : 0,
-                y: cal.screen ? cal.screen.virtualY : 0,
-                width: cal.screen ? cal.screen.width : 1920,
-                height: cal.screen ? cal.screen.height : 1080
-            }
-            var liveDestX = Math.round(liveScrHost.x + ((liveScrHost.width  - popupW) / 2.0))
-            var liveDestY = Math.round(liveScrHost.y + ((liveScrHost.height - popupH) / 2.0))
-            var liveRect = _screenRect(targetScreen)
-            var liveMaxX = Math.max(liveRect.x, liveRect.x + liveRect.w - popupW)
-            var liveMaxY = Math.max(liveRect.y, liveRect.y + liveRect.h - popupH)
-            cal.x = Math.min(Math.max(liveDestX, liveRect.x), liveMaxX)
-            cal.y = Math.min(Math.max(liveDestY, liveRect.y), liveMaxY)
+            // Keep the original target monitor through native-window creation
+            // and any delayed DPI negotiation.  Reading cal.screen here can
+            // reintroduce a cross-monitor jump on Windows.
+            if (targetScreen) cal.screen = targetScreen
+            var liveGeometry = _screenGeometryRect(targetScreen)
+            cal.x = Math.round(liveGeometry.x + ((liveGeometry.w - cal.width) / 2.0))
+            cal.y = Math.round(liveGeometry.y + ((liveGeometry.h - cal.height) / 2.0))
             cal.raise()
             cal.requestActivate()
         })

@@ -40,6 +40,8 @@ Window {
     property var rowsData: []
     property var importView: null
     property var selectedMap: ({})
+    property string selectionHint: "Review and select rows manually, or use the safe docket update for missing time entries only."
+    property var safeSelectionSummary: ({ "applied": false })
 
     ListModel {
         id: columnsModel
@@ -65,11 +67,111 @@ Window {
     property int metricSkipped: 0
 
     onAnalysisResultChanged: {
+        safeSelectionSummary = ({ "applied": false })
         refreshMetrics()
         refreshRows()
     }
     property bool metricHasSelected: false
     property bool metricAllSelected: false
+
+    function sourceText(rowData, key) {
+        var payload = rowData && rowData.payload ? rowData.payload : ({})
+        var value = payload[key]
+        return value === undefined || value === null ? "" : String(value).trim()
+    }
+
+    function sourceNumber(rowData, key) {
+        var payload = rowData && rowData.payload ? rowData.payload : ({})
+        var value = payload[key]
+        if (value === undefined || value === null || value === "") return 0
+        var parsed = Number(String(value).replace(/[$,]/g, ""))
+        return isNaN(parsed) ? 0 : parsed
+    }
+
+    function displayMoney(value) {
+        var amount = Number(value || 0)
+        var fixed = amount.toFixed(2)
+        return "$" + fixed.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+    }
+
+    function displayHours(value) {
+        var tenths = Math.round(Number(value || 0) * 10)
+        var prefix = tenths < 0 ? "-" : ""
+        tenths = Math.abs(tenths)
+        return prefix + String(Math.floor(tenths / 10)) + "." + String(tenths % 10)
+    }
+
+    function selectSafeDocketUpdate() {
+        // This deliberately selects only newly identified docket rows and the
+        // new client/matter setup they require. It never selects legacy ledger,
+        // A/R, invoice-log, disbursement, or unrelated directory rows.
+        var rows = analysisResult && analysisResult.rows ? analysisResult.rows : []
+        var selected = ({})
+        var requiredMatterIds = ({})
+        var requiredClientIds = ({})
+        var selectedDockets = 0
+        var selectedMatters = 0
+        var selectedClients = 0
+        var selectedHours = 0
+        var selectedAmount = 0
+
+        function selectRow(rowData) {
+            var sheet = String(rowData.sheet || "")
+            var rowNumber = String(rowData.row || "")
+            if (!sheet || !rowNumber) return
+            if (!selected[sheet]) selected[sheet] = ({})
+            selected[sheet][rowNumber] = true
+        }
+
+        for (var i = 0; i < rows.length; i++) {
+            var docket = rows[i]
+            if (String(docket.sheet || "") !== "Dockets"
+                    || String(docket.action || "") !== "add"
+                    || docket.safeDocketCandidate !== true) continue
+            selectRow(docket)
+            selectedDockets += 1
+            selectedHours += Number(docket.safeDocketHours || sourceNumber(docket, "Time (in hrs)") || 0)
+            selectedAmount += Number(docket.safeDocketAmount || sourceNumber(docket, "Amount to CS") || 0)
+            var matterId = sourceText(docket, "Matter_ID").toLowerCase()
+            if (matterId) requiredMatterIds[matterId] = true
+        }
+
+        for (var j = 0; j < rows.length; j++) {
+            var matter = rows[j]
+            if (String(matter.sheet || "") !== "Matters" || String(matter.action || "") !== "add") continue
+            var sourceMatterId = sourceText(matter, "Matter_ID").toLowerCase()
+            if (!requiredMatterIds[sourceMatterId]) continue
+            selectRow(matter)
+            selectedMatters += 1
+            var clientId = sourceText(matter, "Client_ID").toLowerCase()
+            if (clientId) requiredClientIds[clientId] = true
+        }
+
+        for (var k = 0; k < rows.length; k++) {
+            var client = rows[k]
+            if (String(client.sheet || "") !== "Clients" || String(client.action || "") !== "add") continue
+            var sourceClientId = sourceText(client, "Client_ID").toLowerCase()
+            if (!requiredClientIds[sourceClientId]) continue
+            selectRow(client)
+            selectedClients += 1
+        }
+
+        selectedMap = selected
+        selectedMapChanged()
+        refreshRows()
+        safeSelectionSummary = {
+            "applied": true,
+            "dockets": selectedDockets,
+            "matters": selectedMatters,
+            "clients": selectedClients,
+            "hours": selectedHours,
+            "amount": selectedAmount
+        }
+        selectionHint = "Safe selection ready: " + selectedDockets + " new docket(s), "
+                + selectedMatters + " required matter(s), and " + selectedClients
+                + " required client(s). " + displayHours(selectedHours) + " hours and "
+                + displayMoney(selectedAmount) + " of WIP are selected. No financial or unrelated legacy rows are selected."
+    }
 
     function refreshMetrics() {
         if (!analysisResult || !analysisResult.rows) return
@@ -152,6 +254,14 @@ Window {
                 Layout.fillWidth: true
             }
 
+            Button {
+                text: "Select Safe Docket Update"
+                Layout.preferredHeight: 36
+                enabled: gridWindow.analysisResult && gridWindow.analysisResult.rows
+                onClicked: gridWindow.selectSafeDocketUpdate()
+                ToolTip.visible: hovered
+                ToolTip.text: "Select new dockets and only the new client/matter records they require. Ledger, A/R, invoices, disbursements, and unrelated records remain unselected."
+            }
 
 
             Button {
@@ -202,6 +312,72 @@ Window {
                 text: "Close"
                 Layout.preferredHeight: 36
                 onClicked: gridWindow.close()
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            text: gridWindow.selectionHint
+            wrapMode: Text.WordWrap
+            font.pixelSize: 12
+            color: gridWindow.isProMode ? SemanticTheme.inkMuted(gridWindow.t, gridWindow.appStyle) : "#6E6E7A"
+        }
+
+        Rectangle {
+            visible: Boolean(gridWindow.safeSelectionSummary && gridWindow.safeSelectionSummary.applied)
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? 76 : 0
+            color: gridWindow.isProMode
+                ? SemanticTheme.surfaceRaised(gridWindow.t, gridWindow.appStyle)
+                : "#EEF6FF"
+            border.color: gridWindow.isProMode
+                ? SemanticTheme.accentPrimary(gridWindow.t, gridWindow.appStyle)
+                : "#8DB8E8"
+            border.width: 1
+            radius: gridWindow.isProMode ? (gridWindow.visualRules ? gridWindow.visualRules.radiusPanel : defaultVisualRules.radiusPanel) : 6
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 26
+
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: "SAFE DOCKET UPDATE READY"
+                        font.pixelSize: 12
+                        font.weight: Font.Bold
+                        color: gridWindow.isProMode ? SemanticTheme.inkPrimary(gridWindow.t, gridWindow.appStyle) : "#16355D"
+                    }
+                    Text {
+                        text: "Only reconciliation-confirmed missing dockets and their required setup are selected."
+                        font.pixelSize: 11
+                        color: gridWindow.isProMode ? SemanticTheme.inkMuted(gridWindow.t, gridWindow.appStyle) : "#46688F"
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                ColumnLayout {
+                    spacing: 2
+                    Text { text: "DOCKETS"; font.pixelSize: 10; font.weight: Font.DemiBold; color: gridWindow.isProMode ? SemanticTheme.inkMuted(gridWindow.t, gridWindow.appStyle) : "#46688F" }
+                    Text { text: String(gridWindow.safeSelectionSummary.dockets || 0); font.pixelSize: 18; font.weight: Font.Bold; color: gridWindow.isProMode ? SemanticTheme.tone(gridWindow.t, "success", gridWindow.appStyle) : "#16764A" }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Text { text: "HOURS"; font.pixelSize: 10; font.weight: Font.DemiBold; color: gridWindow.isProMode ? SemanticTheme.inkMuted(gridWindow.t, gridWindow.appStyle) : "#46688F" }
+                    Text { text: gridWindow.displayHours(gridWindow.safeSelectionSummary.hours); font.pixelSize: 18; font.weight: Font.Bold; color: gridWindow.isProMode ? SemanticTheme.inkPrimary(gridWindow.t, gridWindow.appStyle) : "#16355D" }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Text { text: "WIP"; font.pixelSize: 10; font.weight: Font.DemiBold; color: gridWindow.isProMode ? SemanticTheme.inkMuted(gridWindow.t, gridWindow.appStyle) : "#46688F" }
+                    Text { text: gridWindow.displayMoney(gridWindow.safeSelectionSummary.amount); font.pixelSize: 18; font.weight: Font.Bold; color: gridWindow.isProMode ? SemanticTheme.inkPrimary(gridWindow.t, gridWindow.appStyle) : "#16355D" }
+                }
+                ColumnLayout {
+                    spacing: 2
+                    Text { text: "SETUP"; font.pixelSize: 10; font.weight: Font.DemiBold; color: gridWindow.isProMode ? SemanticTheme.inkMuted(gridWindow.t, gridWindow.appStyle) : "#46688F" }
+                    Text { text: String(gridWindow.safeSelectionSummary.clients || 0) + " client · " + String(gridWindow.safeSelectionSummary.matters || 0) + " matter"; font.pixelSize: 12; font.weight: Font.DemiBold; color: gridWindow.isProMode ? SemanticTheme.inkPrimary(gridWindow.t, gridWindow.appStyle) : "#16355D" }
+                }
             }
         }
 

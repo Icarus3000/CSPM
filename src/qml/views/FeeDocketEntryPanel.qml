@@ -22,6 +22,14 @@ Rectangle {
 
     signal saved(var result)
 
+    ArchivedMatterEntryGuardDialog {
+        id: archivedMatterFeeGuard
+        t: root.t
+        appRef: root.appRef
+        entryKind: "fee"
+        onEntryConfirmed: root.saveFeeEntry(true)
+    }
+
     readonly property string appStyle: (root.appRef && root.appRef.appStyle)
         ? String(root.appRef.appStyle)
         : "Professional"
@@ -153,15 +161,21 @@ Rectangle {
         root.feedbackText = ""
     }
 
-    function saveFeeEntry() {
+    function saveFeeEntry(skipArchivedGuard) {
         var selectedMatter = findMatter(matterCombo.editText)
         if (!selectedMatter || !String(selectedMatter.matterId || "").trim().length) {
             setFeedback("Select an existing matter before saving a fee entry.", true)
             return false
         }
+        var matterStatus = normalized(selectedMatter.status)
         if (selectedMatter.active === 0 || selectedMatter.active === false
-                || normalized(selectedMatter.status) === "closed") {
-            setFeedback("The selected matter is closed or inactive.", true)
+                || matterStatus === "closed" || matterStatus === "archived") {
+            if (matterStatus === "archived" && !skipArchivedGuard) {
+                archivedMatterFeeGuard.openFor(selectedMatter)
+                setFeedback("Matter is archived. No fee entry was saved.", true)
+            } else {
+                setFeedback("The selected matter is closed or inactive.", true)
+            }
             return false
         }
 

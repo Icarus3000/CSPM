@@ -7,6 +7,8 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 def build_html(payload):
@@ -748,6 +750,185 @@ def generate_statement_of_account_pdf(payload, export_dir, logo_path):
         logo_path,
     )
     doc.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
+    return filepath
+
+
+def generate_productivity_report_pdf(payload, export_dir, logo_path):
+    """Render the one-page executive Productivity Report.
+
+    Unlike the generic tabular report exporter, this keeps the report's KPI,
+    forecast, client ranking and trend charts together on one letter-sized
+    page—the same decision flow as the legacy workbook, with a native CSPM
+    presentation appropriate for sharing or printing.
+    """
+    os.makedirs(export_dir, exist_ok=True)
+    payload = dict(payload or {})
+    config = dict(payload.get("config", {}) or {})
+    summary = dict(payload.get("summary", {}) or {})
+    forecast = dict(payload.get("forecast", {}) or {})
+    top_clients = [row for row in (payload.get("topClients", []) or []) if isinstance(row, dict)]
+    monthly = [row for row in (payload.get("monthlyProduction", []) or []) if isinstance(row, dict)]
+    daily = [row for row in (payload.get("dailyProduction", []) or []) if isinstance(row, dict)]
+
+    start_date = _safe_text(payload.get("startDate")) or datetime.now().strftime("%Y-%m-%d")
+    end_date = _safe_text(payload.get("endDate")) or start_date
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filepath = os.path.join(export_dir, f"ProductivityReport_{start_date}_to_{end_date}_{stamp}.pdf")
+
+    page_width, page_height = letter
+    document = canvas.Canvas(filepath, pagesize=letter)
+    document.setTitle("Productivity Report")
+    document.setAuthor(_safe_text(config.get("firmName") or "Cory Schneider Law Office"))
+
+    navy = colors.HexColor("#192840")
+    blue = colors.HexColor("#278ED0")
+    ink = colors.HexColor("#102A43")
+    muted = colors.HexColor("#5B6B80")
+    border = colors.HexColor("#D7E0EA")
+    pale = colors.HexColor("#F6F9FC")
+    soft_blue = colors.HexColor("#EAF4FC")
+    red = colors.HexColor("#C23B3B")
+    left, right = 34.0, page_width - 34.0
+    content_width = right - left
+
+    def amount(value):
+        try:
+            return f"${float(value or 0.0):,.0f}"
+        except (TypeError, ValueError):
+            return "$0"
+
+    def draw_card(x, y, width, height, fill=colors.white):
+        document.setFillColor(fill)
+        document.setStrokeColor(border)
+        document.roundRect(x, y, width, height, 6, fill=1, stroke=1)
+
+    def clipped_text(text, maximum_width, font_name="Helvetica", font_size=8.0):
+        text = _safe_text(text)
+        if stringWidth(text, font_name, font_size) <= maximum_width:
+            return text
+        suffix = "…"
+        while text and stringWidth(text + suffix, font_name, font_size) > maximum_width:
+            text = text[:-1]
+        return text + suffix
+
+    def draw_bar_chart(title, rows, x, y, width, height, color):
+        draw_card(x, y, width, height, pale)
+        document.setFillColor(ink)
+        document.setFont("Helvetica-Bold", 8)
+        document.drawString(x + 12, y + height - 17, title.upper())
+        chart_left, chart_right = x + 18, x + width - 12
+        chart_bottom, chart_top = y + 29, y + height - 34
+        document.setStrokeColor(colors.HexColor("#B6C3D1"))
+        document.setLineWidth(0.6)
+        document.line(chart_left, chart_bottom, chart_right, chart_bottom)
+        values = [max(0.0, float(row.get("amount", 0.0) or 0.0)) for row in rows]
+        max_value = max(values) if values else 0.0
+        count = max(1, len(rows))
+        slot = (chart_right - chart_left) / count
+        bar_width = min(34.0, max(9.0, slot * 0.50))
+        for index, row in enumerate(rows):
+            value = values[index]
+            centre = chart_left + (index + 0.5) * slot
+            bar_height = ((chart_top - chart_bottom) * value / max_value) if max_value else 1.5
+            document.setFillColor(color)
+            document.roundRect(centre - (bar_width / 2), chart_bottom, bar_width, max(1.5, bar_height), 2, fill=1, stroke=0)
+            document.setFillColor(ink)
+            document.setFont("Helvetica", 6.8)
+            document.drawCentredString(centre, chart_bottom - 11, clipped_text(row.get("label", ""), slot - 2, "Helvetica", 6.8))
+            if value > 0:
+                document.setFont("Helvetica-Bold", 6.5)
+                document.drawCentredString(centre, min(chart_top + 3, chart_bottom + bar_height + 4), amount(value))
+
+    # Branded title strip.
+    header_y, header_h = 716.0, 48.0
+    document.setFillColor(navy)
+    document.rect(left, header_y, content_width, header_h, fill=1, stroke=0)
+    logo_drawn = False
+    if logo_path and os.path.exists(logo_path):
+        try:
+            document.drawImage(logo_path, left + 12, header_y + 10, width=32, height=28, preserveAspectRatio=True, mask="auto")
+            logo_drawn = True
+        except Exception:
+            logo_drawn = False
+    title_x = left + (54 if logo_drawn else 16)
+    document.setFillColor(colors.white)
+    document.setFont("Helvetica-Bold", 15)
+    document.drawString(title_x, header_y + 27, "PRODUCTIVITY REPORT")
+    document.setFont("Helvetica", 7.4)
+    document.drawString(title_x, header_y + 14, clipped_text(config.get("firmName") or "Cory Schneider Law Office", 250, "Helvetica", 7.4))
+    document.setFont("Helvetica-Bold", 7.5)
+    document.drawRightString(right - 16, header_y + 24, f"{start_date}  —  {end_date}")
+
+    # Executive metrics.
+    metric_y, metric_h = 636.0, 58.0
+    metric_width = (content_width - 16) / 3
+    metrics = [
+        ("TOTAL PRODUCTION", amount(summary.get("totalProduction"))),
+        ("BILLABLE HOURS", f"{float(summary.get('billableHours', 0.0) or 0.0):,.1f}"),
+        ("REALIZED RATE", _money(summary.get("realizedRate"))),
+    ]
+    for index, (label, value) in enumerate(metrics):
+        x = left + index * (metric_width + 8)
+        draw_card(x, metric_y, metric_width, metric_h)
+        document.setFillColor(muted)
+        document.setFont("Helvetica-Bold", 6.7)
+        document.drawString(x + 12, metric_y + 41, label)
+        document.setFillColor(ink)
+        document.setFont("Helvetica", 17)
+        document.drawString(x + 12, metric_y + 17, value)
+
+    # Annual forecast and top-client ranking.
+    forecast_x, forecast_y, forecast_w, forecast_h = left, 498.0, 248.0, 116.0
+    clients_x, clients_y, clients_w, clients_h = forecast_x + forecast_w + 14, forecast_y, content_width - forecast_w - 14, forecast_h
+    draw_card(forecast_x, forecast_y, forecast_w, forecast_h, colors.white)
+    document.setFillColor(blue)
+    document.setFont("Helvetica-Bold", 8)
+    document.drawString(forecast_x + 13, forecast_y + forecast_h - 18, "ANNUAL FORECAST")
+    document.setFillColor(muted)
+    document.setFont("Helvetica", 7)
+    document.drawString(forecast_x + 13, forecast_y + 76, "Current pace")
+    document.drawRightString(forecast_x + forecast_w - 13, forecast_y + 76, f"{_money(forecast.get('dailyPace'))} / day")
+    document.drawString(forecast_x + 13, forecast_y + 63, "Basis")
+    document.drawRightString(forecast_x + forecast_w - 13, forecast_y + 63, f"{int(forecast.get('annualBasisDays', 336) or 336)} days")
+    document.drawString(forecast_x + 13, forecast_y + 50, "Target")
+    document.drawRightString(forecast_x + forecast_w - 13, forecast_y + 50, _money(forecast.get("annualTarget")))
+    document.setFillColor(ink)
+    document.setFont("Helvetica", 23)
+    document.drawString(forecast_x + 13, forecast_y + 20, amount(forecast.get("annualProjection")))
+    percentage = float(forecast.get("percentToTarget", 0.0) or 0.0)
+    document.setFillColor(red if percentage < 0 else colors.HexColor("#278A58"))
+    document.setFont("Helvetica-Bold", 7.5)
+    document.drawString(forecast_x + 14, forecast_y + 9, f"{percentage:+.1f}% vs target")
+
+    draw_card(clients_x, clients_y, clients_w, clients_h, colors.white)
+    document.setFillColor(blue)
+    document.setFont("Helvetica-Bold", 8)
+    document.drawString(clients_x + 13, clients_y + clients_h - 18, "TOP CLIENTS")
+    client_max = max([float(row.get("amount", 0.0) or 0.0) for row in top_clients] or [0.0])
+    if not top_clients:
+        document.setFillColor(muted)
+        document.setFont("Helvetica-Oblique", 8)
+        document.drawString(clients_x + 13, clients_y + 54, "No production in the selected period.")
+    for index, row in enumerate(top_clients[:5]):
+        y = clients_y + 80 - index * 15
+        value = float(row.get("amount", 0.0) or 0.0)
+        document.setFillColor(ink)
+        document.setFont("Helvetica", 7.2)
+        document.drawString(clients_x + 13, y, clipped_text(row.get("name", ""), 126, "Helvetica", 7.2))
+        document.drawRightString(clients_x + 184, y, amount(value))
+        bar_width = (clients_w - 207) * value / client_max if client_max else 0
+        document.setFillColor(blue)
+        document.rect(clients_x + 191, y - 3, max(1, bar_width), 8, fill=1, stroke=0)
+
+    draw_bar_chart("Monthly production trend · last 4 months", monthly, left, 292.0, content_width, 184.0, navy)
+    draw_bar_chart("Daily production · last 7 days", daily, left, 86.0, content_width, 184.0, blue)
+
+    document.setFillColor(muted)
+    document.setFont("Helvetica", 6.5)
+    basis_days = int(forecast.get("annualBasisDays", 336) or 336)
+    document.drawString(left, 56, f"Production is time value adjusted to booked invoice billings. Forecast uses a {basis_days}-day planning year.")
+    document.drawRightString(right, 56, f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    document.save()
     return filepath
 
 

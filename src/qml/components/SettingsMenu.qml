@@ -21,6 +21,7 @@ Popup {
     signal themeRequested()
     signal soundChanged(bool enabled)
     signal reportBrandingRequested()
+    signal productivitySettingsRequested()
     signal backupRecoveryRequested()
 
     property color menuSurface: SemanticTheme.surface(root.t, "popup", "neutral", root.appStyle)
@@ -131,7 +132,7 @@ Popup {
     }
 
     width: 320
-    height: 732
+    height: 780
 
     modal: true
     focus: true
@@ -408,6 +409,53 @@ Popup {
                     if (root.openExpertPreview()) {
                         root.close()
                     }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 40
+            radius: root.radiusFor(height)
+            color: productivitySettingsMouse.containsMouse ? root.hoverFill : root.inactiveFill
+            border.width: 1
+            border.color: productivitySettingsMouse.containsMouse ? root.menuBorder : SemanticTheme.alpha(root.menuInk, 0.18)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+
+                Text {
+                    text: "Productivity Forecast"
+                    color: root.menuInk
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                    Layout.fillWidth: true
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    text: ">"
+                    color: root.menuInk
+                    font.pixelSize: 14
+                    font.weight: Font.Bold
+                    Layout.preferredWidth: 12
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            MouseArea {
+                id: productivitySettingsMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    root.close()
+                    root.productivitySettingsRequested()
                 }
             }
         }

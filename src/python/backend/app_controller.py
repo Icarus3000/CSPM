@@ -52,6 +52,21 @@ MAX_AUTO_BACKUP_MINUTES = 240
 HOME_SUMMARY_CACHE_KEY = "homeDashboardSummaryCache"
 PRACTICE_BRIEFING_FILTERS_KEY = "practiceBriefingFilters"
 MAIN_WINDOW_LAYOUT_KEY = "mainWindowLayout"
+PRODUCTIVITY_FORECAST_BASIS_KEY = "productivityForecastBasisDays"
+PRODUCTIVITY_FORECAST_WORK_DAYS_KEY = "productivityForecastWorkDaysPerWeek"
+PRODUCTIVITY_FORECAST_VACATION_DAYS_KEY = "productivityForecastVacationDays"
+PRODUCTIVITY_FORECAST_HOLIDAY_DAYS_KEY = "productivityForecastHolidayDays"
+PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS_KEY = "productivityForecastOtherUnavailableDays"
+PRODUCTIVITY_FORECAST_MANUAL_OVERRIDE_KEY = "productivityForecastManualOverrideEnabled"
+PRODUCTIVITY_FORECAST_MANUAL_BASIS_KEY = "productivityForecastManualBasisDays"
+DEFAULT_PRODUCTIVITY_FORECAST_BASIS_DAYS = 336
+MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS = 1
+MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS = 366
+PRODUCTIVITY_FORECAST_WEEKS_PER_YEAR = 52
+DEFAULT_PRODUCTIVITY_FORECAST_WORK_DAYS = 5
+DEFAULT_PRODUCTIVITY_FORECAST_VACATION_DAYS = 0
+DEFAULT_PRODUCTIVITY_FORECAST_HOLIDAY_DAYS = 0
+DEFAULT_PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS = 0
 VALID_APP_STYLES = ("Professional",)
 DEFAULT_APP_STYLE = "Professional"
 AR_AGING_REPORT_IDS = {"ar_aging", "ar_aging_report", "accounts_receivable"}
@@ -1024,6 +1039,22 @@ class AppController(QObject):
         except Exception as e:
             return json.dumps({"ok": False, "message": str(e)})
 
+    @Slot("QVariantMap", result=dict)
+    def getProductivityReport(self, payload) -> Dict[str, Any]:
+        """Return the native, legacy-compatible Productivity Report payload."""
+        try:
+            request = payload.toVariant() if hasattr(payload, "toVariant") else payload
+            request = dict(request or {})
+            request.setdefault("annualBasisDays", self.productivityForecastBasisDays)
+            return self._excel_repo.productivity_report(request)
+        except Exception as exc:
+            self._report_failure(
+                "Failed to generate Productivity Report",
+                context="app.report.productivity.failed",
+                exc=exc,
+            )
+            return {"ok": False, "message": str(exc)}
+
     @Slot(result=dict)
     def getHomeDashboardSummary(self) -> Dict[str, Any]:
         """Provides summary metrics (active clients/matters, queue, etc.) for the dashboard."""
@@ -1785,6 +1816,245 @@ class AppController(QObject):
         self._settings_data["option3Favorites"] = str(val)
         self.save_settings()
         self.settingsChanged.emit()
+
+    @staticmethod
+    def _bounded_productivity_setting(
+        value: Any,
+        default: int,
+        minimum: int,
+        maximum: int,
+    ) -> int:
+        """Return an integer setting only when it is safe for annualization."""
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            return default
+        return normalized if minimum <= normalized <= maximum else default
+
+    @staticmethod
+    def _productivity_bool_setting(value: Any, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"true", "1", "yes", "on"}:
+                return True
+            if text in {"false", "0", "no", "off"}:
+                return False
+        if value is None:
+            return default
+        return bool(value)
+
+    def _productivity_forecast_settings_payload(self) -> Dict[str, Any]:
+        """Build the complete, backwards-compatible productivity planning model.
+
+        Vacation, holiday, and unavailable time are deliberately expressed as
+        *scheduled workdays*.  A person's ordinary day off is therefore never
+        deducted a second time from the annual planning basis.
+        """
+        work_days = self._bounded_productivity_setting(
+            self._settings_data.get(
+                PRODUCTIVITY_FORECAST_WORK_DAYS_KEY,
+                DEFAULT_PRODUCTIVITY_FORECAST_WORK_DAYS,
+            ),
+            DEFAULT_PRODUCTIVITY_FORECAST_WORK_DAYS,
+            1,
+            7,
+        )
+        vacation_days = self._bounded_productivity_setting(
+            self._settings_data.get(
+                PRODUCTIVITY_FORECAST_VACATION_DAYS_KEY,
+                DEFAULT_PRODUCTIVITY_FORECAST_VACATION_DAYS,
+            ),
+            DEFAULT_PRODUCTIVITY_FORECAST_VACATION_DAYS,
+            0,
+            MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+        )
+        holiday_days = self._bounded_productivity_setting(
+            self._settings_data.get(
+                PRODUCTIVITY_FORECAST_HOLIDAY_DAYS_KEY,
+                DEFAULT_PRODUCTIVITY_FORECAST_HOLIDAY_DAYS,
+            ),
+            DEFAULT_PRODUCTIVITY_FORECAST_HOLIDAY_DAYS,
+            0,
+            MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+        )
+        other_unavailable_days = self._bounded_productivity_setting(
+            self._settings_data.get(
+                PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS_KEY,
+                DEFAULT_PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS,
+            ),
+            DEFAULT_PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS,
+            0,
+            MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+        )
+        manual_basis_days = self._bounded_productivity_setting(
+            self._settings_data.get(
+                PRODUCTIVITY_FORECAST_MANUAL_BASIS_KEY,
+                self._settings_data.get(
+                    PRODUCTIVITY_FORECAST_BASIS_KEY,
+                    DEFAULT_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+                ),
+            ),
+            DEFAULT_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+            MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+            MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+        )
+        # Existing installations keep their established 336-day basis until a
+        # user expressly elects to use the schedule calculation.
+        manual_override_enabled = self._productivity_bool_setting(
+            self._settings_data.get(PRODUCTIVITY_FORECAST_MANUAL_OVERRIDE_KEY),
+            True,
+        )
+        calculated_basis_days = (
+            PRODUCTIVITY_FORECAST_WEEKS_PER_YEAR * work_days
+            - vacation_days
+            - holiday_days
+            - other_unavailable_days
+        )
+        effective_basis_days = manual_basis_days if manual_override_enabled else calculated_basis_days
+        return {
+            "weeksPerYear": PRODUCTIVITY_FORECAST_WEEKS_PER_YEAR,
+            "workDaysPerWeek": work_days,
+            "vacationDays": vacation_days,
+            "holidayDays": holiday_days,
+            "otherUnavailableDays": other_unavailable_days,
+            "manualOverrideEnabled": manual_override_enabled,
+            "manualBasisDays": manual_basis_days,
+            "calculatedBasisDays": calculated_basis_days,
+            "effectiveBasisDays": effective_basis_days,
+        }
+
+    @Property(int, notify=settingsChanged)
+    def productivityForecastBasisDays(self) -> int:
+        """The effective safe annual planning days used by the report/PDF."""
+        settings = self._productivity_forecast_settings_payload()
+        basis_days = int(settings["effectiveBasisDays"])
+        if not (MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS <= basis_days <= MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS):
+            return DEFAULT_PRODUCTIVITY_FORECAST_BASIS_DAYS
+        return basis_days
+
+    @Slot(result=dict)
+    def getProductivityForecastSettings(self) -> Dict[str, Any]:
+        """Return the full schedule and override inputs behind forecast basis."""
+        if not self._settings_load_complete:
+            self.load_settings()
+        return {"ok": True, **self._productivity_forecast_settings_payload()}
+
+    @Slot("QVariantMap", result=dict)
+    def setProductivityForecastSettings(self, value: Any) -> Dict[str, Any]:
+        """Persist schedule-based productivity planning assumptions safely."""
+        try:
+            payload = value.toVariant() if hasattr(value, "toVariant") else value
+            payload = dict(payload or {})
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "Productivity settings must be a valid settings record."}
+
+        if not self._settings_load_complete:
+            self.load_settings()
+        current = self._productivity_forecast_settings_payload()
+
+        def requested_int(key: str, default: int, minimum: int, maximum: int) -> int:
+            raw = payload.get(key, default)
+            try:
+                candidate = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} must be a whole number.") from exc
+            if not minimum <= candidate <= maximum:
+                raise ValueError(f"{key} must be between {minimum} and {maximum}.")
+            return candidate
+
+        try:
+            work_days = requested_int("workDaysPerWeek", current["workDaysPerWeek"], 1, 7)
+            vacation_days = requested_int("vacationDays", current["vacationDays"], 0, MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS)
+            holiday_days = requested_int("holidayDays", current["holidayDays"], 0, MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS)
+            other_unavailable_days = requested_int(
+                "otherUnavailableDays",
+                current["otherUnavailableDays"],
+                0,
+                MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+            )
+            manual_basis_days = requested_int(
+                "manualBasisDays",
+                current["manualBasisDays"],
+                MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+                MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
+            )
+        except ValueError as exc:
+            return {"ok": False, "message": str(exc)}
+
+        manual_override_enabled = self._productivity_bool_setting(
+            payload.get("manualOverrideEnabled"),
+            bool(current["manualOverrideEnabled"]),
+        )
+        calculated_basis_days = (
+            PRODUCTIVITY_FORECAST_WEEKS_PER_YEAR * work_days
+            - vacation_days
+            - holiday_days
+            - other_unavailable_days
+        )
+        if not (MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS <= calculated_basis_days <= MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS):
+            return {
+                "ok": False,
+                "message": (
+                    "The scheduled workdays calculation must produce between "
+                    f"{MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS} and {MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS} days."
+                ),
+            }
+
+        effective_basis_days = manual_basis_days if manual_override_enabled else calculated_basis_days
+        self._settings_data.update({
+            PRODUCTIVITY_FORECAST_WORK_DAYS_KEY: work_days,
+            PRODUCTIVITY_FORECAST_VACATION_DAYS_KEY: vacation_days,
+            PRODUCTIVITY_FORECAST_HOLIDAY_DAYS_KEY: holiday_days,
+            PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS_KEY: other_unavailable_days,
+            PRODUCTIVITY_FORECAST_MANUAL_OVERRIDE_KEY: manual_override_enabled,
+            PRODUCTIVITY_FORECAST_MANUAL_BASIS_KEY: manual_basis_days,
+            # Retain the historic field as the current effective value for all
+            # older callers while preserving the manual value independently.
+            PRODUCTIVITY_FORECAST_BASIS_KEY: effective_basis_days,
+        })
+        try:
+            self.save_settings()
+            self.settingsChanged.emit()
+            return {
+                "ok": True,
+                **self._productivity_forecast_settings_payload(),
+                "message": f"Productivity forecast basis saved: {effective_basis_days} days.",
+            }
+        except Exception as exc:
+            self._report_failure(
+                "Productivity forecast settings could not be saved.",
+                context="settings.productivity_forecast_basis",
+                exc=exc,
+                emit_signal=False,
+            )
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(int, result=dict)
+    def setProductivityForecastBasisDays(self, value: int) -> Dict[str, Any]:
+        """Compatibility API: explicitly set and enable a manual basis."""
+        try:
+            basis_days = int(value)
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "Forecast basis must be a whole number of days."}
+        if not (MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS <= basis_days <= MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS):
+            return {
+                "ok": False,
+                "message": f"Forecast basis must be between {MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS} and {MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS} days.",
+            }
+        current = self._productivity_forecast_settings_payload()
+        result = self.setProductivityForecastSettings({
+            "workDaysPerWeek": current["workDaysPerWeek"],
+            "vacationDays": current["vacationDays"],
+            "holidayDays": current["holidayDays"],
+            "otherUnavailableDays": current["otherUnavailableDays"],
+            "manualOverrideEnabled": True,
+            "manualBasisDays": basis_days,
+        })
+        if result.get("ok"):
+            result["basisDays"] = basis_days
+        return result
 
     @Property(list, constant=True)
     def appStyles(self):
@@ -3603,6 +3873,30 @@ class AppController(QObject):
             self._report_failure("Could not save time entry", context="repo.time.save_entry", exc=exc)
             return {"ok": False, "entryId": "", "message": str(exc)}
 
+    @Slot(str, str, str, result=dict)
+    def reopenMatterForDocketing(self, matter_id, entry_kind, confirmation_phrase):
+        """Perform the explicit, audited re-open used by docket entry guards."""
+        try:
+            result = dict(
+                self._excel_repo.reopen_matter_for_docketing(
+                    str(matter_id or ""),
+                    str(entry_kind or ""),
+                    str(confirmation_phrase or ""),
+                )
+                or {}
+            )
+            if result.get("ok"):
+                self.toast.emit(result.get("message", "Matter re-opened."))
+                self.clientDataChanged.emit()
+            else:
+                message = str(result.get("message", "Matter re-open failed.") or "").strip()
+                if message:
+                    self.error.emit(message)
+            return result
+        except Exception as exc:
+            self._report_failure("Could not re-open archived matter", context="matter.docket_reopen", exc=exc)
+            return {"ok": False, "matterId": str(matter_id or ""), "message": str(exc)}
+
     @Slot("QVariantMap", result=dict)
     def saveFeeDocketEntry(self, payload):
         """Save a direct, matter-linked fee line into invoiceable WIP."""
@@ -4599,6 +4893,50 @@ class AppController(QObject):
             if not isinstance(export_payload, dict):
                 export_payload = payload_dict
             return self.exportDocketActivityPdf(export_payload)
+        if report_id in {"productivity", "productivity_report"}:
+            try:
+                from services.report_pdf_exporter import generate_productivity_report_pdf
+
+                export_payload = payload_dict.get("exportPayload")
+                if not isinstance(export_payload, dict):
+                    export_payload = payload_dict
+                export_payload, branding_profile = self._apply_report_branding_to_payload(export_payload)
+                logo_path = self._logo_path_for_pdf(branding_profile)
+                candidate_dirs = [
+                    self._paths.exports_dir(),
+                    self._paths.data_dir() / "exports",
+                    self._paths.root / "outputs",
+                ]
+                filepath = ""
+                last_error = None
+                for export_dir in candidate_dirs:
+                    try:
+                        export_dir.mkdir(parents=True, exist_ok=True)
+                        filepath = generate_productivity_report_pdf(export_payload, str(export_dir), str(logo_path))
+                        if filepath:
+                            break
+                    except Exception as exc:
+                        last_error = exc
+                        continue
+                if not filepath:
+                    raise RuntimeError(f"PDF export failed for all output locations: {last_error}")
+                filepath = os.path.abspath(filepath)
+                if not os.path.exists(filepath):
+                    raise RuntimeError(f"PDF exporter returned a non-existent path: {filepath}")
+                return {
+                    "ok": True,
+                    "path": filepath,
+                    "filename": os.path.basename(filepath),
+                    "message": f"PDF exported: {os.path.basename(filepath)} | Saved to: {os.path.dirname(filepath)}",
+                }
+            except Exception as exc:
+                self._report_failure(
+                    "Could not export Productivity Report PDF",
+                    context="report.productivity.export_pdf",
+                    exc=exc,
+                )
+                logging.getLogger("cspm.pdf").exception("Productivity Report PDF export failed")
+                return {"ok": False, "message": str(exc), "path": "", "filename": ""}
         if report_id in {"ar_aging", "ar_aging_report", "accounts_receivable", "statement_of_account"} or report_id.startswith("ar_aging_"):
             try:
                 from services.report_pdf_exporter import (

@@ -5,6 +5,7 @@ import time
 import os
 import shutil
 import tempfile
+from collections import Counter
 from contextlib import nullcontext
 from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -73,6 +74,11 @@ class DocketsImportService:
         self._client_name_cache: Dict[str, str] = {}
         self._parent_name_cache: Dict[str, str] = {}
         self._duplicate_maps: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        # Exact client/matter display labels evolved during the CSPM migration.
+        # Keep an occurrence-aware, commercial-field index for the read-only
+        # import review so existing historical dockets are not re-offered just
+        # because their client/matter labels were normalized differently.
+        self._time_core_duplicate_counts: Counter = Counter()
         self._duplicate_policy_all: str = ""
         self._legacy_client_id_to_cspm_id: Dict[str, str] = {}
         self._legacy_matter_map: Dict[str, Dict[str, str]] = {}
@@ -561,6 +567,29 @@ class DocketsImportService:
             self._numeric_key(payload.get("clientRate") or payload.get("rate"), 2),
         )
 
+    def _normalise_share_percent(self, value: Any) -> float:
+        """Treat legacy fractional and CSPM whole-number shares as equivalent."""
+        share = self._safe_float(value)
+        if share != 0 and abs(share) <= 1:
+            return share * 100.0
+        return share
+
+    def _time_core_duplicate_key(self, payload: Dict[str, Any]) -> str:
+        """Return a client/matter-independent commercial signature for a docket.
+
+        This is deliberately restricted to the immutable time/fee economics.
+        It is used only for review-safe duplicate detection; it does not replace
+        CSPM's normal, more detailed entry-creation duplicate policy.
+        """
+        return self._duplicate_key(
+            payload.get("date"),
+            payload.get("description"),
+            self._numeric_key(payload.get("hours"), 4),
+            self._numeric_key(payload.get("clientRate") or payload.get("rate"), 2),
+            self._numeric_key(self._normalise_share_percent(payload.get("sharePct")), 4),
+            self._numeric_key(payload.get("amountToYou"), 2),
+        )
+
     def _transaction_duplicate_key(self, payload: Dict[str, Any]) -> str:
         return self._duplicate_key(
             payload.get("txnDate") or payload.get("date"),
@@ -663,6 +692,7 @@ class DocketsImportService:
             "time": {},
             "transaction": {},
         }
+        self._time_core_duplicate_counts = Counter()
         self._duplicate_policy_all = ""
         self._legacy_client_id_to_cspm_id = {}
         self._legacy_matter_map = {}
@@ -749,6 +779,8 @@ class DocketsImportService:
                 "hours": row.get(sc.COL_TIME_HOURS),
                 "rawSeconds": row.get(sc.COL_TIME_SECONDS),
                 "clientRate": row.get(sc.COL_TIME_RATE),
+                "sharePct": row.get(sc.COL_TIME_SHARE_PCT),
+                "amountToYou": row.get(sc.COL_TIME_NET),
             }
             key = self._time_duplicate_key(payload)
             if key:
@@ -761,6 +793,9 @@ class DocketsImportService:
                         "summary": self._duplicate_summary("time", payload),
                     },
                 )
+            core_key = self._time_core_duplicate_key(payload)
+            if core_key:
+                self._time_core_duplicate_counts[core_key] += 1
 
         # 4. Ledger
         for row in self._read_repo_table(TBL_TRANSACTIONS_MASTER):
@@ -1486,20 +1521,35 @@ class DocketsImportService:
                     "hours": hours,
                     "rawSeconds": raw_seconds,
                     "clientRate": self._safe_float(row.get("Hourly Rate/Flat Fee")),
+                    "sharePct": self._safe_float(row.get("Percentage")),
+                    "amountToYou": self._safe_float(row.get("Amount to CS")),
                 }
                 key = self._time_duplicate_key(payload)
                 existing = self._duplicate_maps.get("time", {}).get(key)
-                action = "skip" if existing else "add"
+                core_key = self._time_core_duplicate_key(payload)
+                core_match_count = int(self._time_core_duplicate_counts.get(core_key, 0))
+                core_match = core_match_count > 0
+                if core_match:
+                    # Consume one target occurrence. This preserves genuine
+                    # repeated entries: a second identical legacy row remains
+                    # importable if CSPM has only one matching occurrence.
+                    self._time_core_duplicate_counts[core_key] -= 1
+                action = "skip" if (existing or core_match) else "add"
                 
                 rows.append({
                     "sheet": "Dockets",
                     "row": i + 2,
                     "action": action,
                     "title": self._clean(row.get("Description")) or f"Docket for {raw_name}",
-                    "details": "Duplicate docket" if existing else f"Date: {self._format_date(docket_date)}",
+                    "details": "Duplicate docket" if (existing or core_match) else f"Date: {self._format_date(docket_date)}",
                     "payload": dict(row),
                     "client": cspm_client,
-                    "matter": matter_name
+                    "matter": matter_name,
+                    # The QML safe-selection action may select only rows that
+                    # have passed this occurrence-aware core reconciliation.
+                    "safeDocketCandidate": not core_match and not existing,
+                    "safeDocketHours": hours,
+                    "safeDocketAmount": self._safe_float(row.get("Amount to CS")),
                 })
             except Exception as e:
                 warnings.append(f"Dockets row {i+2} error: {e}")

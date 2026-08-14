@@ -95,6 +95,13 @@ Item {
     readonly property real setoffAllocationTotal: root.totalSetoffAllocationAmount()
     readonly property real setoffAllocationDifference: root.apNumber(paymentAmountField.text) - root.setoffAllocationTotal
 
+    ArchivedMatterEntryGuardDialog {
+        id: archivedMatterDisbursementGuard
+        t: root.t
+        appRef: root.appRef
+        entryKind: "disbursement"
+        onEntryConfirmed: root.saveBill(true)
+    }
 
     Timer {
         id: operationTimeout
@@ -158,17 +165,21 @@ Item {
             var matterName = root.firstValue(row, ["MatterName", "matterName", "matter_name", "Name", "name", "Description", "description"], matterId)
             var clientId = root.firstValue(row, ["ClientID", "clientId", "client_id", "ClientKey", "clientKey"], "")
             var clientName = root.firstValue(row, ["ClientName", "clientName", "client_name", "Client", "client"], "")
+            var status = root.firstValue(row, ["Status", "status", "MatterStatus", "matterStatus"], "")
             if (!matterId && !matterName)
                 continue
             var label = clientName ? clientName + " | " + matterName : matterName
             if (matterId && label.indexOf(matterId) < 0)
                 label += " • " + matterId
+            if (String(status).trim().toLowerCase() === "archived")
+                label += " [Archived]"
             output.push({
                 "id": matterId || matterName,
                 "label": label,
                 "matterName": matterName,
                 "clientId": clientId,
                 "clientName": clientName,
+                "status": status,
                 "search": (clientName + " " + matterName + " " + matterId).toLowerCase()
             })
         }
@@ -212,7 +223,12 @@ Item {
         if (!root.appRef)
             return
         try {
-            if (root.appRef.listActiveMatterDirectory)
+            // Keep archived matters visible but unmistakably labelled so an
+            // intentional client disbursement enters the same guarded,
+            // multi-confirmation re-open flow as time and fee docketing.
+            if (root.appRef.listMatterDirectory)
+                root.matterOptions = root.normalizeMatterRows(root.appRef.listMatterDirectory())
+            else if (root.appRef.listActiveMatterDirectory)
                 root.matterOptions = root.normalizeMatterRows(root.appRef.listActiveMatterDirectory())
         } catch (matterError) {
             console.warn("AP matter lookup failed", matterError)
@@ -394,7 +410,7 @@ Item {
         root.apController.loadAPInvoices()
     }
 
-    function validateBill() {
+    function validateBill(skipArchivedGuard) {
         if (!vendorField.text.trim()) {
             root.statusMessage = "Enter a vendor or supplier."
             return false
@@ -414,6 +430,26 @@ Item {
         if (root.selectedTreatmentId === "matter" && !root.selectedMatterId) {
             root.statusMessage = "Select a client matter for a client matter expense."
             return false
+        }
+        if (root.selectedTreatmentId === "matter" && root.selectedMatterId && root.appRef
+                && root.appRef.getMatterProfile) {
+            try {
+                var profileResult = root.appRef.getMatterProfile(root.selectedMatterId) || ({})
+                var profile = profileResult.matter || profileResult
+                var status = String(profile.status || "").trim().toLowerCase()
+                if (status === "archived" && !skipArchivedGuard) {
+                    archivedMatterDisbursementGuard.openFor(profile)
+                    root.statusMessage = "Matter is archived. No client disbursement was saved."
+                    return false
+                }
+                if (status === "closed" || status === "inactive") {
+                    root.statusMessage = "The selected matter is closed or inactive. Re-open it in Matter Profile before saving a client disbursement."
+                    return false
+                }
+            } catch (matterLookupError) {
+                root.statusMessage = "Could not verify the selected matter before saving this client disbursement."
+                return false
+            }
         }
         if (root.selectedTreatmentId !== "matter")
             root.clearMatterSelection()
@@ -502,8 +538,8 @@ Item {
         }
     }
 
-    function saveBill() {
-        if (!root.validateBill()) {
+    function saveBill(skipArchivedGuard) {
+        if (!root.validateBill(skipArchivedGuard)) {
             root.errorState = true
             return
         }

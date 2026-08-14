@@ -352,6 +352,18 @@ function textOnAccent(theme, appStyle) { return readableInk(accentPrimary(theme,
 function tableHeaderBackground(theme, appStyle) { return surfaceRaised(theme, appStyle) }
 function tableRowBackground(theme, appStyle) { return surfacePanel(theme, appStyle) }
 function tableAlternateRowBackground(theme, appStyle) { return surfaceInput(theme, appStyle) }
+// Keep selection legible on both theme modes.  This is intentionally opaque:
+// rows sit inside detached Zen windows as well as the primary application
+// window, so an alpha-only overlay can blend unpredictably with the host
+// surface.  The dark-mode blend preserves light text contrast; the light-mode
+// blend preserves dark text contrast while remaining visibly selected.
+function tableSelectedBackground(theme, appStyle) {
+    return mix(
+        tableRowBackground(theme, appStyle),
+        accentPrimary(theme, appStyle),
+        isDarkMode(theme) ? 0.30 : 0.18
+    )
+}
 function tableRowHover(theme, appStyle) { return alpha(inkPrimary(theme, appStyle), 0.04) }
 
 // States

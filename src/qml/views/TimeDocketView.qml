@@ -494,6 +494,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     property string lastSavedEntryId: ""
     property int lastPersistedSeconds: 0
     property string persistedBucketKey: ""
+    property string _inactiveMatterId: ""
+    property var _inactiveMatterRow: ({})
     property var pendingSaveOptions: ({})
     property string pendingSaveReason: ""
     property bool autoPostOnStop: true
@@ -507,6 +509,16 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     property var pendingDocketReportState: null
     property var recentDocketsModel: []
     property string docketStatusText: "Draft"
+
+    ArchivedMatterEntryGuardDialog {
+        id: inactiveMatterPopup
+        t: root.t
+        appRef: root.appRef
+        entryKind: "time"
+        onEntryConfirmed: {
+            root.continuePendingSave({ "skipInactivePrompt": true })
+        }
+    }
 
     Popup {
         id: recentDocketsPopup
@@ -3438,16 +3450,23 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
         var isInactive = false
         var matterIdToReopen = ""
+        var inactiveMatterStatus = ""
+        var inactiveMatterRow = ({})
         if (!options.skipInactivePrompt && matterText.length > 0) {
             for (var i = 0; i < root._rawMatterDirectory.length; i++) {
                 var mrow = root._rawMatterDirectory[i]
                 var mname = String(mrow.matterName || mrow.displayName || "")
                 if (mname === matterText || String(mrow.matterId || "") === matterText || String(mrow.matterNumber || "") === matterText) {
                     matterIdToReopen = String(mrow.matterId || "")
+                    inactiveMatterRow = mrow
+                    inactiveMatterStatus = String(mrow.status || "").trim().toLowerCase()
+                    if (inactiveMatterStatus === "archived") {
+                        isInactive = true
+                    }
                     if (mrow.active === 0 || mrow.active === false || mrow.active === "false" || String(mrow.active).toLowerCase() === "inactive") {
                         isInactive = true
                     }
-                    if (mrow.status !== undefined && String(mrow.status).toLowerCase() === "closed") {
+                    if (inactiveMatterStatus === "closed") {
                         isInactive = true
                     }
                     break
@@ -3459,10 +3478,16 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             root.pendingSaveReason = String(reasonTag || "manual-save")
             root.pendingSaveOptions = cloneOptions(options)
             root._inactiveMatterId = matterIdToReopen
-            inactiveMatterPopup.open()
+            root._inactiveMatterRow = inactiveMatterRow
             var inactiveResult = { "ok": false, "message": "Matter is closed or inactive." }
-            root.timerLockNotice = "Matter is inactive. Re-open to save."
-            root.showSaveFeedback("Matter is closed or inactive.", true)
+            if (inactiveMatterStatus === "archived") {
+                inactiveMatterPopup.openFor(inactiveMatterRow)
+                root.timerLockNotice = "Matter is archived. Complete the protected re-open flow before saving."
+                root.showSaveFeedback("Matter is archived. No time entry was saved.", true)
+            } else {
+                root.timerLockNotice = "Matter is closed or inactive. Re-open it in Matter Profile before saving."
+                root.showSaveFeedback("Matter is closed or inactive.", true)
+            }
             return inactiveResult
         }
 

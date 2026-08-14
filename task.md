@@ -17,6 +17,101 @@
 - [x] Build and promote the joint-retainer C-drive release from source. The full 4,344-file package was hash-verified before and after promotion; the prior release is retained at `to_delete\dist__manual_replaced_release_20260812_170937`. The single real startup check passed: `dist\CSPM\CSPM.exe` (SHA-256 `10F3BC13B00B9AD6FACA712C8E044AA821A94FF5B7ECC05C030CDACEF05A9EB0`) is responsive as `CSPM - Main Menu` and holds this computer's matching writable cloud checkout.
 - [/] Repair Matter Profile 360's stale details model: the repository returns the Britton matter's `Joint Retainer` payload and all four parties, but the visible card grid can retain the earlier directory-row snapshot. The UI now receives an explicit refreshed row model. Sandbox-safe QML parsing, Python compilation, and focused joint-retainer/matter-merge tests passed; the hash-verified C-drive release was promoted at `dist\CSPM\CSPM.exe`. Real-app confirmation is still required before moving to the requested Matter/Client Zen and PDF-report commands.
 
+## Native Productivity Report (2026-08-13)
+
+- [x] Replace the `D10` **Productivity & Utilization** generic placeholder with a native CSPM Productivity Report: start/end dates, editable annual target, the seven legacy quick presets **plus Today**, realized-production KPIs, annual forecast, top clients, and four-month/seven-day trends.
+- [x] Preserve the legacy calculation contract: docket value is adjusted to booked invoice billings where an invoice was written down; forecast defaults to the legacy 336-day planning basis but now uses the user-editable **Settings → Productivity Forecast** value; trend windows are anchored to the selected end date. The report is read-only against the active workbook package.
+- [x] Add a branded, one-page native PDF export from the exact displayed report payload, plus focused realization/date-range/PDF regression coverage.
+- [x] With CSPM closed, build and verify the complete runnable package at `dist\CSPM\CSPM.exe` without touching active cloud data. The final 4,312-file release tree was hash-verified before and after copy-promotion (tree SHA-256 `81C6FB0A03C2EBF3AADD4BC711512DE046EA6C4B9B4D2FF473856406222C9C06`); `CSPM.exe` SHA-256 is `A287DDF24934034F8AA9D4825EB710D530E6883AC5D609E5E3BED5D8613836A6`. The replaced package is recoverable at `to_delete\dist__manual_replaced_release_20260812_220219`, with the promotion audit at `to_delete\release_promotion_20260812_220219.json`.
+- [x] Correct the first runtime D10 failure: the packaged report loader rejected fractional `font.pixelSize` values (`int expected`) and the generic form remained visible beneath it. Font sizes are now valid integers and D10 is explicitly excluded from the generic fallback form. The corrected 4,312-file package at `dist\CSPM\CSPM.exe` was hash-verified with tree SHA-256 `C8E482910AB409B258D0B83C87E36C996497CF07A3CB26AEEA74862E7F2CD5C4`; `CSPM.exe` SHA-256 is `851536B9B9A7562F1693519F49E3E1DF20E563812F453FCECD781D86122BED4A`. The preceding package is recoverable at `to_delete\dist__manual_replaced_release_20260813_064704`, with audit `to_delete\release_promotion_20260813_064704.json`.
+- [x] Make the full **My productivity** card on the no-tabs Daily Operations home an explicit click target for D10. It now has an all-card `MouseArea`, pointer cursor, and hover treatment; clicking anywhere opens the single-instance **Productivity & Utilization** workspace tab. Source-level interaction coverage passes; packaging is deferred until CSPM is closed.
+- [x] Redesign native D10 around a fixed no-scroll report canvas: a narrow left **Report Parameters** rail contains dates, annual target, a full-width **Generate Report** action, and quick ranges; the wider right canvas contains the executive report, KPIs, forecast, clients, and charts. Add a **Zen View** action that reparents the same live panel into a maximized report window, and make the informational **Live Data · Read Only** status explain its no-write guarantee on hover. With CSPM closed, the complete 4,312-file package was hash-verified before and after promotion at `dist\CSPM\CSPM.exe` (tree SHA-256 `90C30953A4D2E18C086789E080A2A0F5D91FA5B24E74AF9D709BCAFA6DF93D15`; EXE SHA-256 `01397905B0CF4B9EB0FEC5C5B72D5DC7B5473F7535F80869C3BE0B3EB94CA531`). Packaged QML parses and instantiates; the preceding release is recoverable at `to_delete\dist__manual_replaced_release_20260813_070957`, with audit `to_delete\release_promotion_20260813_070957.json`.
+- [x] Increase D10’s Start Date, End Date, and Annual Target entry fields from 46px to 56px so their stacked labels and values do not clip in the narrow parameter rail. With CSPM closed, the complete 4,312-file package was hash-verified before and after promotion at `dist\CSPM\CSPM.exe` (tree SHA-256 `62090FD081AD575ED3D0CE7FF8280C3600BBF0359108E908BDAC8F876719791A`; EXE SHA-256 `B1F449854BD6D807AC327FECCB41D79B034CDE8851FAB85585ED6CCF7AE1B786`). Packaged QML parses and instantiates; the preceding release is recoverable at `to_delete\dist__manual_replaced_release_20260813_072500`, with audit `to_delete\release_promotion_20260813_072500.json`.
+- [x] Expand **Settings → Productivity Forecast** from one opaque annual-basis input into a schedule model: scheduled workdays per week; vacation, public holidays, and other unavailable time expressed only as scheduled workdays; calculated 52-week basis; and an explicit manual override. Existing 336-day forecasts remain unchanged until the calculated basis is deliberately enabled.
+- [x] Remove the illegal Zen View cross-window reparenting that generated render-thread warnings; Zen now opens a separate read-only presentation from the same displayed report snapshot.
+- [x] Improve Professional title-bar responsiveness without removing transition graphics: make minimize/maximize/close hover and press states explicit; begin the existing close motion immediately rather than waiting for a full-frame capture; and use a live, read-only minimize overlay to avoid that capture delay.
+- [x] With CSPM closed, build and hash-verify the complete Productivity/settings/window-motion release at `dist\CSPM\CSPM.exe`. The 4,313-file promoted tree matches the isolated build candidate byte-for-byte; EXE SHA-256 `FC000EC08EEAFE3E3875EB0C8DC1E5C9D10FDC57E679499614EB7A65A2231A5C`. The preceding release is recoverable at `to_delete\dist__manual_replaced_release_20260813_080600`.
+- [ ] Manual foreground verification: open `D10`, test every preset and an edited annual target, compare a selected period to the legacy report, then export and review the PDF in both light and dark themes.
+- [x] Remove the redundant D10 **Generate Report** button. The report now regenerates on a committed Start Date, End Date, or Annual Target edit, as well as after calendar selection and every quick range. Source changed only; packaging is deliberately deferred while CSPM is open.
+- [x] Repair the Legacy Dockets Import review’s safe selection: it now compares docket commercial fields with occurrence-aware matching so migrated client/matter labels do not cause historical entries to be selected again. After the explicit safe-selection click, show a visible summary card with dockets, hours, WIP, and required client/matter setup. With CSPM closed, the full 4,315-file package was hash-verified and copy-promoted to `dist\CSPM\CSPM.exe` (tree SHA-256 `257B9DCD03802DBB874E9C5A1C031A18A7CE4C8ECB892C0933EFF85284FE2967`; EXE SHA-256 `1F173F0C0827B7EE35318F68337D680643E709A8DA542FF2E5F0867F191A3C0A`). The prior release is recoverable at `to_delete\dist__manual_replaced_release_20260813_180636`.
+
+## Matter WIP Reconciliation and Archived-File Safeguards (2026-08-13)
+
+- [x] Add an audited **Reconcile Selected** action to the WIP workbench. It records an entered destination invoice/reconciliation reference and reason, changes only the selected residual time/fee entries to read-only `Reconciled`, and never creates, alters, reverses, or pays an invoice.
+- [x] Keep reconciled entries out of WIP permanently, preserve their audit trail on subsequent table writes, and prevent future time entries from merging into reconciled historical entries.
+- [x] Treat an associated real Draft Invoice as a financial blocker: the user must use Invoice Builder’s existing **Delete Draft** (or finalize it) before reconciliation or archiving. Matter status validation now reports the linked draft number(s) rather than silently archiving the file.
+- [x] Ensure archived/closed matters never appear in WIP. Add an authoritative repository guard for new time, direct-fee, and client-disbursement entries; stale UI state or direct calls cannot bypass it.
+- [x] For an Archived matter only, require the three-stage protected re-open flow: archived warning → exact typed `REOPEN <Matter Number>` → distinct final **Confirm and save** of the actual time/fee/client-disbursement entry. The re-open is recorded in Matter Notes; it does not itself create a financial entry.
+- [x] Diagnose the Borkowsky WIP discrepancy without changing financial data: fourteen historical Borkowsky/Suffolk rows total `$7,362.50` and the transfer row is `-$7,362.50`; the separate `$148.75` row is a PLC Group Inc. docket misfiled against Borkowsky and must be moved to its proper PLC matter rather than reconciled to Suffolk.
+- [x] Preserve selection through WIP tab-state restores, filtering, sorting, and ordinary list refreshes. A reusable blocking **Selection changed** dialog now explains any removal caused by a docket actually leaving the worklist; the Bulk Docket Move screen follows the same contract when its query changes or candidates become ineligible.
+- [x] Make non-zero WIP reconciliation deliberate: the dialog displays the selected total, requires a second explicit acknowledgement when it is not `$0.00`, and the repository independently rejects a non-zero reconciliation unless that confirmation is passed.
+- [x] Repair the B05 matter selectors' vertical text layout, add double-click Jelly Calendar access for both date fields, and lock its placement to the exact centre of the monitor containing the initiating date field. The destination selector uses the same corrected field geometry.
+- [x] Add a blocking, prominent **Dockets moved successfully** confirmation after a completed B05 move; use **OK** (not Cancel) for the non-reversible Selection changed acknowledgement.
+- [x] Reduce the Matter Profile 360 top action-strip footprint, enlarge its Statement of Account action, make the Joint Retainer selector visible in light and dark themes, and add a confirmed **Archive Matter** action to the editor. Archiving retains all records and invokes the existing financial-blocker and protected re-open safeguards.
+- [x] Build and hash-verify the complete runnable release at `dist\CSPM\CSPM.exe` without opening or changing live CSPM data. The 4,314-file package manifest is `BCB21CB79FE1B2D18745824E03BF13B0D5D6E5F402E57254DE56C47EADEC529F`; EXE SHA-256 is `29282AD0BAC6DE1598975F513C69580A37477619F30BE984F9640D07FDFA747A`. The replaced package is recoverable at `to_delete\dist__manual_replaced_release_20260813_105635`, with promotion audit `to_delete\release_promotion_20260813_105635.json`.
+- [x] With CSPM closed, build and hash-verify the selection-retention/non-zero-reconciliation release at `dist\CSPM\CSPM.exe` without changing live data. The 4,315-file promoted tree matches the candidate (manifest SHA-256 `344E11B5ACB8A9815932ED833C10BCD15922BEDA4357472E052B1053C8B71F73`); EXE SHA-256 is `A78BBEB09CC5F0A93393371C0773CE100B19FF6B381B521F709B89D562C17F2B`. The immediately preceding release is recoverable at `to_delete\dist__manual_replaced_release_20260813_112156`, with promotion audit `to_delete\release_promotion_20260813_112156.json`.
+- [x] With CSPM closed, build and hash-verify the B05/Matter Profile visual-workflow release at `dist\CSPM\CSPM.exe` without changing live data. The 4,315-file promoted tree matches the verified candidate (manifest SHA-256 `73A01E6DCE1DC2B25CA0CAB33E8AF5CA9B5C1BF19A641A85F7FEF34426C342EF`); EXE SHA-256 is `2C29636E917227DF3B1C52194FEBA13731518FCBA34BF38A581E73374C9E9543`. The prior release is recoverable at `to_delete\dist__manual_replaced_release_20260813_121312`, with promotion audit `to_delete\release_promotion_20260813_121312.json`.
+- [ ] Manual foreground verification: double-click each B05 date field on every monitor and confirm the Jelly Calendar's centre exactly matches that monitor's centre; type/filter a matter in both B05 selectors with no clipping; complete a test move and confirm the prominent success dialog; confirm reconciliation's non-reversible acknowledgement uses **OK**. Confirm the visible Joint Retainer control and Archive Matter confirmation in Edit Matter Profile. Then move the misfiled PLC `$148.75` docket using **B05 Move Dockets Between Matters**; select the remaining Borkowsky rows, confirm they total `$0.00`, reconcile them to Suffolk `26-0080`, then archive Borkowsky and test the protected re-open flow. Also confirm WIP selections survive tab-state restore, filtering, sorting, and Refresh; confirm the explanatory dialog appears only when selected records genuinely leave the list.
+
+## In-App Legacy WIP Catch-Up (2026-08-13)
+
+- [x] Add **Select Safe Docket Update** to Legacy Dockets Import's analysis-review grid. It selects only newly identified dockets plus any newly required client/matter rows; it explicitly leaves ledger, A/R, invoices, disbursements, and unrelated legacy setup records unselected.
+- [x] Manual foreground workflow completed through **Legacy Dockets Import**: **Select Safe Docket Update** selected 18 true source-only dockets plus the required H. Kassinger client and Tax Audit matter—no finance rows. **Import Selected Data** added 20 records. WIP now has 51 Draft entries totalling `$27,101.65`; the 14 Borkowsky historical entries remain Reconciled and excluded.
+
+## WIP Zen Selected-Row Theme Repair (2026-08-13)
+
+- [x] Define the missing shared `SemanticTheme.tableSelectedBackground()` token as an opaque, contrast-safe blend for both light and dark themes. This eliminates the Zen workbench's repeated QML TypeError and its white-on-white selected rows.
+- [x] Build, validate, and copy-promote the complete release at `dist\CSPM\CSPM.exe` (tree SHA-256 `6417E40B1ABCE09258923976C6251A078740FC4DBB72F56CFF3923F174DD8B6E`; EXE SHA-256 `C699444A2B3A68340503213E51F0D0372D255E6B599DE2C485C34A203DDDBA60`). The replaced release is recoverable at `to_delete\dist__manual_replaced_release_20260813_183840`.
+- [ ] Manual foreground verification: in both Light and Dark mode, open WIP-to-Bill, select several rows, then open Zen Mode. Selected rows must remain visibly distinct with readable text; the runtime log must have no `tableSelectedBackground is not a function` warning.
+
+## Closing Transition Monitor Affinity (2026-08-13)
+
+- [x] Freeze the close animation's content geometry and source monitor from the native window position at the instant the user initiates Close.
+- [x] Keep the Console closing overlay hidden until that source monitor and its frozen global geometry have been explicitly applied.
+- [ ] Manual foreground verification: place CSPM on each monitor in turn, press Close from that monitor, and confirm the entire animated closing transition remains on that same monitor in both Console and Professional styles.
+
+## Cloud-Canonical Checkout / Publish (2026-08-11)
+
+- [x] Replace the unsafe timestamp-based local/master copy logic with package SHA-256 comparisons and a recorded common ancestor for `CSPM.xlsm` plus `Dockets.xlsm`.
+- [x] Make the configured OneDrive shared folder canonical and require an exclusive `.cspm_checkout.json` writer checkout before CSPM enables any Excel-repository save.
+- [x] On normal exit, publish only a checked-out local change after creating a verified, immutable full-package release under the shared folder's `.cspm_releases/`; then release the checkout.
+- [x] Refuse unknown or divergent local/cloud copies without overwriting either; preserve local files and fail safe as read-only.
+- [x] Replace the setup wizard's unconditional baseline copies with safe empty-cloud seeding and conflict detection.
+- [x] Add isolated tests for fresh-machine checkout, second-PC blocking, release publish, publish-time cloud conflict, blank seed handling, and existing-cloud setup protection.
+- [ ] Manually recover and merge the other PC's `26-0092` / `26-0095` correction before allowing this PC's existing divergent local package to become the cloud baseline.
+- [ ] Manual two-PC verification after recovery: open CSPM on PC A, confirm PC B is read-only while A holds checkout; save/close A; open B and confirm it pulls A's release before edits.
+
+## Statement Matter-Link Dark Contrast (2026-08-11)
+
+- [x] Override Qt RichText's default dark link colour for clickable matters in Statement of Account with high-contrast `#93C5FD` only when the app is in dark mode.
+- [x] Preserve the existing light-mode matter-link treatment and ordinary Client & Matter text.
+- [x] Add focused regression coverage for the dark-only inline link-colour markup.
+- [x] Rebuild and copy-promote the complete cloud-checkout release at `dist/cspm.exe` / `dist/CSPM.exe` (SHA-256 `C46F71CF1FA968FBC7FC595AB0EB16D788A19B9AC0359FB50C5AC91C423B230F`); the replaced package is recoverable at `to_delete/dist__manual_replaced_release_20260811_233744/`.
+- [ ] Manual foreground verification: in dark mode, reopen Leviathan's Statement of Account and confirm each clickable matter label is readily legible, clearly identifiable as a link, and remains readable on alternating rows; confirm light mode remains unchanged.
+
+## CIPO Rogue Vendor A/R Repair (2026-08-11)
+
+- [x] Trace the Statement of Account CIPO choice to five imported CIPO expense rows that were incorrectly represented in Receivables and Invoice Log as open client invoices.
+- [x] Add an idempotent, guarded repair that selects a candidate only when its vendor-named receivable reference is also backed by a same-vendor **Expense** transaction; preserve the expense, disbursement, and ordinary vendor-ledger history.
+- [x] Create protected snapshot `Backup_20260811_225403_A11A358A` and atomically remove the five CIPO Receivables rows, five CIPO Invoice Log rows, and one stale rogue-vendor cleanup ledger row from the live LocalAppData workbook.
+- [x] Verify afterward that CIPO has zero receivables/Invoice Log artifacts and is no longer selectable for Statement of Account; all five CIPO expense transactions and Tremendis Group's `25-0062` disbursement remain.
+- [ ] Manual foreground verification: reopen Statement of Account and confirm CIPO is absent from **Billing Client** while genuine open billing clients and invoices remain available.
+
+## Professional Module Rail Tooltip Dismissal (2026-08-11)
+
+- [x] Suppress a rail icon's hover tooltip immediately on left-button press and while that module's flyout is active, so the popup cannot cover the flyout menu.
+- [x] Add focused regression coverage for the press suppression, pointer-exit reset, and active-flyout guard.
+- [x] Rebuild and copy-promote the complete runnable package at `dist/cspm.exe` (SHA-256 `DB5DA08E0C54C00E5C4E7A585CDC843F68CB8C78EF4296DBB1318500BFA11142`); the immediately replaced package is recoverably retained under `to_delete/dist__manual_replaced_release_20260811_222200/`.
+- [ ] Manual foreground verification: hover **Billing & Invoicing** until its label appears, then click it. Confirm the label disappears immediately and never covers the menu; repeat with another module flyout.
+
+## Payment Entry Routed Defaults and Deposit Account (2026-08-11)
+
+- [x] When Invoice Directory opens a new Payment Entry tab for an invoice, wait for that invoice's live receivable row and prefill the editable payment amount with its full remaining balance exactly once.
+- [x] Add a workbook-backed **Deposit account** selector to Payment Entry; retain the payment method separately and post the selected account as the transaction's receiving account.
+- [x] Preserve the selected deposit account when amending an existing payment.
+- [x] Rebuild and promote the complete runnable package at `dist/cspm.exe` (SHA-256 `B7F0E0961EA4B493961F95E5A07198F4D1244FD4BC9A9AD4CD415784C078D0E1`); the immediately replaced package is recoverably retained under `to_delete/dist__manual_replaced_release_20260811_220900/`.
+- [ ] Manual foreground verification: from Invoice Directory, select an unpaid invoice and choose its **Unpaid** payment shortcut. Confirm Payment Entry pre-fills the exact balance due, allows editing it for a partial payment, and lists/selects the intended receiving account before posting.
+
 ## Payment Entry Selection Stability and Form Fit (2026-08-11)
 
 - [x] Preserve the selected invoice as a scalar invoice key across payment-list refreshes, rather than relying on a replaceable table-row object.
@@ -165,6 +260,14 @@
 - [x] Replace the broken immediate relaunch after Data Folder Setup with a delayed restart that waits for the active CSPM process and its single-instance lock to exit first.
 - [x] Rebuild and promote the complete runnable package at `dist/CSPM/CSPM.exe` after the splash and auto-restart repairs.
 - [ ] Manually complete the final Data Folder Setup step and confirm CSPM closes and automatically reopens using the selected Shared Data Source and Local Working folders.
+## 10/10 Quality Execution Roadmap (2026-08-10)
+
+- [ ] Follow the ordered financial-correctness, runtime-stability, manual-audit,
+  operational-resilience, and certification gates in
+  `docs/CSPM_10_10_EXECUTION_ROADMAP.md`.
+- [ ] Do not declare a 10/10 release until its certification checklist has
+  evidence for financial reconciliation, clean core-workflow logs, manual audit,
+  shared-data recovery, and candidate-package verification.
 
 ## Selectable Billing-Client Statements (2026-08-10)
 
@@ -402,4 +505,19 @@
 - [x] Rebuild and promote `dist/CSPM/CSPM.exe` after the settlement-set-off correction (SHA-256 `0F69B493A3487812FD7F0C32297834128D9FCE5813C02871CB8D7AC823EAFF40`); retain the replaced package at `to_delete/CSPM__replaced_release_20260810_121803/`.
 - [x] Rebuild and promote `dist/cspm.exe` after the update (SHA-256 `7688024CF76F5B41F1E60B9BC91EF44BD155C524260217D06C45BF368671DBA7`); retain the replaced release at `to_delete/dist__replaced_release_20260810_092700/`.
 - [ ] Manual foreground verification: select invoice `26-0061` in Invoice Directory; confirm `Commercial Contracts Review`, the Jun 30, 2026 EFT payment, the aligned payment columns, and the taller balanced cards are visible. Confirm an Unpaid pill opens Payment Entry for its invoice, and that clicking a payment amount/date opens that payment for editing. For invoice `26-0069`, confirm the card says `Settlement set-off — LIHDC settlement 2026-07-29` rather than `No payments recorded`; click it and confirm a new editable Transaction Master tab opens for `TXN_e0add4a5d6` while Invoice Directory remains open. Then post two partial payments against a test invoice and confirm both payment dates/amounts remain listed and one can be amended without duplication.
+
+## Productivity Zen Layout & Invoice Status Clarity (2026-08-13)
+
+- [x] Remove the recursive Zen report layout constraint that expanded the forecast/client cards and crushed the chart row below the viewport.
+- [x] Derive Invoice Directory labels from the financial balance: positive/no payment = `Unpaid`, partial payment = `Partially Paid`, zero balance = `Paid`; an outstanding status pill opens the prefilled Payment Entry workspace.
+- [x] Build and hash-verify the complete runnable release at `dist\CSPM\CSPM.exe` without opening or changing active data. The 4,315-file installed tree matches the isolated candidate (tree SHA-256 `07A78C619B841FBC763C534D922BB76AD8E29412FD104BA92A6B6C29587087D4`); EXE SHA-256 is `341FF04BFC98FBF8C46F29F197060A7FB47E59F2CA64FA65C1ACE5EE824F4003`. The replaced package is recoverable at `to_delete\dist__manual_replaced_release_20260813_232746`, with promotion audit `to_delete\release_promotion_20260813_232746.json`.
+- [ ] Manual foreground verification after the next package build: open Productivity Zen View on a maximized display and confirm all KPIs, insights, and both charts are fully visible without overlap; open invoice `26-0077` and confirm the clickable pill says `Unpaid`.
+
+## Same-PC Abandoned Cloud Checkout Recovery (2026-08-14)
+
+- [x] Automatically recover a shared checkout marker only when it identifies this same CSPM installation and Windows confirms its recorded process is no longer running. Preserve a local write-once audit copy before removing that marker.
+- [x] Preserve the conservative cross-PC rule: never reclaim a marker from another installation, a different computer name, an unreadable marker, or any recorded PID that is still live or cannot be queried.
+- [x] Add focused regression coverage for dead same-PC recovery, foreign-marker protection, and live-process protection.
+- [x] With CSPM closed, build/promote the updated package. `dist\CSPM\CSPM.exe` SHA-256 is `94E1DCDDC37E785860BC248D2BD8402775B07B48E8CE20970A25393314907261`; promoted package tree SHA-256 is `98853FF31B48FBDBFE6F17D78C17D3100395F26A624B6417F9A1216B4C2677EF`.
+- [ ] Manual foreground verification: launch the new package and confirm the existing OFFICENEW marker is recovered automatically at startup before posting a verified payment.
 

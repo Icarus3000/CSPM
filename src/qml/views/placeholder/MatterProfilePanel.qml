@@ -86,8 +86,9 @@ Rectangle {
                 sfxBus: root.sfxBus
                 text: "Load Profile"
                 primary: true
-                Layout.preferredWidth: root.ratioPxW(0.108, 98)
-                Layout.preferredHeight: root.fieldHeightPx
+                textScale: 0.84
+                Layout.preferredWidth: root.ratioPxW(0.084, 92)
+                Layout.preferredHeight: Math.max(38, Math.round(root.fieldHeightPx * 0.78))
                 onClicked: root.loadSelectedMatterProfile(profileMatterCombo.editText)
             }
 
@@ -97,8 +98,9 @@ Rectangle {
                 sfxBus: root.sfxBus
                 text: "Edit Matter"
                 primary: true
-                Layout.preferredWidth: root.ratioPxW(0.108, 98)
-                Layout.preferredHeight: root.fieldHeightPx
+                textScale: 0.84
+                Layout.preferredWidth: root.ratioPxW(0.084, 92)
+                Layout.preferredHeight: Math.max(38, Math.round(root.fieldHeightPx * 0.78))
                 onClicked: root.editSelectedMatterInWizard()
             }
 
@@ -108,8 +110,9 @@ Rectangle {
                 sfxBus: root.sfxBus
                 text: "Directory"
                 primary: false
-                Layout.preferredWidth: root.ratioPxW(0.088, 80)
-                Layout.preferredHeight: root.fieldHeightPx
+                textScale: 0.84
+                Layout.preferredWidth: root.ratioPxW(0.066, 74)
+                Layout.preferredHeight: Math.max(38, Math.round(root.fieldHeightPx * 0.78))
                 onClicked: root.gotoNode("A09")
             }
 
@@ -131,8 +134,9 @@ Rectangle {
                 text: "Merge Matter"
                 primary: false
                 visible: root.selectedMatterId.length > 0
-                Layout.preferredWidth: root.ratioPxW(0.12, 110)
-                Layout.preferredHeight: root.fieldHeightPx
+                textScale: 0.84
+                Layout.preferredWidth: root.ratioPxW(0.090, 100)
+                Layout.preferredHeight: Math.max(38, Math.round(root.fieldHeightPx * 0.78))
                 onClicked: mergeMatterDialog.open()
             }
 
@@ -220,7 +224,7 @@ Rectangle {
         }
 
         Item {
-            Layout.preferredWidth: 150
+            Layout.preferredWidth: 202
             Layout.fillHeight: true
 
             PillButton {
@@ -231,7 +235,7 @@ Rectangle {
                 primary: false
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: 150
+                width: 202
                 height: 44
                 onClicked: root.gotoNode("D17")
             }

@@ -302,6 +302,11 @@ Window {
     property var dragMonitorVisibleRect: ({ "x": 0, "y": 0, "w": 1, "h": 1 })
     property var activeVisibleRect: ({ "x": 0, "y": 0, "w": 1, "h": 1 })
     property var closingOverlayRef: null
+    // Freeze the visible content, monitor, and motion geometry at the instant
+    // close is initiated.  The host envelope may span monitors, so its own
+    // Window.screen is not a reliable proxy for the monitor containing the
+    // visible CSPM surface.
+    property var closingOverlayGeometry: null
     property int closingOverlayHandoffSeq: 0
     property var startupSplashRef: null
     property var startupSplashRefs: []
@@ -3551,7 +3556,73 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         };
     }
 
+    function clearClosingOverlayGeometry() {
+        closingOverlayGeometry = null;
+    }
+
+    function captureClosingOverlayGeometry() {
+        // Read the native window geometry at click time, not the previous
+        // modelled host envelope.  Windows can commit an OS monitor move one
+        // event after QML's hostX/hostY model was updated.
+        var actualHostX = Math.round(mainWin.x);
+        var actualHostY = Math.round(mainWin.y);
+        var localContentX = Math.round(canvasLocalX + contentLocalX);
+        var localContentY = Math.round(canvasLocalY + contentLocalY);
+        var actualContentX = Math.round(actualHostX + localContentX);
+        var actualContentY = Math.round(actualHostY + localContentY);
+
+        if (!isFinite(actualContentX) || !isFinite(actualContentY)) {
+            actualContentX = Math.round(finalX);
+            actualContentY = Math.round(finalY);
+        }
+
+        var previousX = Math.round(finalX);
+        var previousY = Math.round(finalY);
+        finalX = actualContentX;
+        finalY = actualContentY;
+
+        var centerX = finalX + (finalW / 2.0);
+        var centerY = finalY + (finalH / 2.0);
+        var sourceScreen = screenForPoint(centerX, centerY,
+            mainWin.screen ? mainWin.screen : targetScreen);
+        if (sourceScreen) {
+            // Preserve the actual source monitor without pinning/moving the
+            // host window during the close handoff.
+            adoptTargetScreen(sourceScreen, true);
+        } else {
+            updateTargetScreenFromFinalCenter();
+            sourceScreen = targetScreen;
+        }
+        refreshActiveVisibleRect();
+
+        var target = closeTargetGlobalPoint();
+        var rect = closingOverlayMotionRect(finalX, finalY, finalW, finalH, target.x, target.y);
+        closingOverlayGeometry = {
+            "sourceScreen": sourceScreen,
+            "contentX": Math.round(finalX),
+            "contentY": Math.round(finalY),
+            "contentW": Math.max(1, Math.round(finalW)),
+            "contentH": Math.max(1, Math.round(finalH)),
+            "targetX": Math.round(target.x),
+            "targetY": Math.round(target.y),
+            "rect": {
+                "x": Math.round(rect.x),
+                "y": Math.round(rect.y),
+                "w": Math.max(1, Math.round(rect.w)),
+                "h": Math.max(1, Math.round(rect.h))
+            }
+        };
+        phaseLog("CLOSING", "Frozen close monitor=" + describeScreen(sourceScreen)
+            + " content=" + fmtRect(finalX, finalY, finalW, finalH)
+            + " previous=" + previousX + "," + previousY
+            + " target=" + Math.round(target.x) + "," + Math.round(target.y));
+        return true;
+    }
+
     function closingCanvasRect() {
+        if (closingOverlayGeometry && closingOverlayGeometry.rect) {
+            return closingOverlayGeometry.rect;
+        }
         var target = closeTargetGlobalPoint();
         return closingOverlayMotionRect(finalX, finalY, finalW, finalH, target.x, target.y);
     }
@@ -4356,10 +4427,18 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function createClosingOverlayWithSnapshot(snapshotUrl) {
         if (!closingOverlayComponent) return false;
-        var rect = closingCanvasRect();
-        var target = closeTargetGlobalPoint();
+        var frozen = closingOverlayGeometry;
+        var rect = (frozen && frozen.rect) ? frozen.rect : closingCanvasRect();
+        var target = (frozen && isFinite(frozen.targetX) && isFinite(frozen.targetY))
+            ? { "x": frozen.targetX, "y": frozen.targetY }
+            : closeTargetGlobalPoint();
+        var contentX = (frozen && isFinite(frozen.contentX)) ? frozen.contentX : finalX;
+        var contentY = (frozen && isFinite(frozen.contentY)) ? frozen.contentY : finalY;
+        var contentW = (frozen && isFinite(frozen.contentW)) ? frozen.contentW : finalW;
+        var contentH = (frozen && isFinite(frozen.contentH)) ? frozen.contentH : finalH;
+        var sourceScreen = (frozen && frozen.sourceScreen) ? frozen.sourceScreen : targetScreen;
         phaseLog("CLOSING", "Overlay create requested rect=" + fmtRect(rect.x, rect.y, rect.w, rect.h)
-            + " content=" + fmtRect(finalX, finalY, finalW, finalH)
+            + " content=" + fmtRect(contentX, contentY, contentW, contentH)
             + " target=" + Math.round(target.x) + "," + Math.round(target.y)
             + " snapshot=" + ((snapshotUrl && snapshotUrl.length > 0) ? "yes" : "no"));
         var overlayProps = {
@@ -4369,17 +4448,20 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             "overlayY": rect.y,
             "overlayWidth": rect.w,
             "overlayHeight": rect.h,
-            "contentX": Math.round(finalX - rect.x),
-            "contentY": Math.round(finalY - rect.y),
-            "contentWidth": Math.max(1, Math.round(finalW)),
-            "contentHeight": Math.max(1, Math.round(finalH)),
+            "contentX": Math.round(contentX - rect.x),
+            "contentY": Math.round(contentY - rect.y),
+            "contentWidth": Math.max(1, Math.round(contentW)),
+            "contentHeight": Math.max(1, Math.round(contentH)),
             "targetX": Math.round(target.x - rect.x),
             "targetY": Math.round(target.y - rect.y),
             "snapshotUrl": snapshotUrl ? snapshotUrl : "",
-            "visible": true
+            // Do not permit a first frame on the default monitor.  Pin the
+            // window to the monitor containing the closing surface, then
+            // reveal it only after all geometry has been applied.
+            "visible": false
         };
-        if (targetScreen) {
-            overlayProps["screen"] = targetScreen;
+        if (sourceScreen) {
+            overlayProps["screen"] = sourceScreen;
         }
         var overlayObj = closingOverlayComponent.createObject(null, overlayProps);
         if (!overlayObj) {
@@ -4407,6 +4489,19 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 mainWin.phaseLog("CLOSING", "Overlay close finished -> finalize");
                 mainWin.finalizeCloseSequence("overlay-close-finished");
             });
+        }
+        try {
+            if (sourceScreen) {
+                overlayObj.screen = sourceScreen;
+            }
+            overlayObj.x = Math.round(rect.x);
+            overlayObj.y = Math.round(rect.y);
+            overlayObj.width = Math.max(1, Math.round(rect.w));
+            overlayObj.height = Math.max(1, Math.round(rect.h));
+            overlayObj.visible = true;
+        } catch (e) {
+            phaseLog("CLOSING", "Overlay monitor pin failed; using frozen global geometry err=" + e);
+            overlayObj.visible = true;
         }
         return true;
     }
@@ -7894,22 +7989,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             finishUserDrag();
         }
 
-        // Capture current visible content position before entering closing phase.
-        // This prevents stale targetScreen/finalX/finalY from sending closing canvas to another monitor.
-        var observedContent = observedContentGlobalPosition();
-        if (observedContent.valid) {
-            var driftX = Math.abs(observedContent.x - observedContent.animatedX);
-            var driftY = Math.abs(observedContent.y - observedContent.animatedY);
-            if (driftX > 1 || driftY > 1) {
-                phaseLog("CLOSING", "Stabilized close snapshot model-vs-window drift="
-                    + Math.round(observedContent.x - observedContent.animatedX) + ","
-                    + Math.round(observedContent.y - observedContent.animatedY));
-            }
-            finalX = observedContent.x;
-            finalY = observedContent.y;
-        }
-        updateTargetScreenFromFinalCenter();
-        refreshActiveVisibleRect();
+        // Freeze the close geometry before entering the closing phase.  This
+        // binds the transition to the monitor containing the visible CSPM
+        // surface, even if the host envelope has stale geometry after an OS
+        // move or mixed-DPI monitor change.
+        clearClosingOverlayGeometry();
+        captureClosingOverlayGeometry();
 
         // Enter closing phase before toggling isClosing so rounded-mask teardown
         // cannot occur while still reported as "settled" (prevents corner flash).
@@ -7917,6 +8002,17 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         isClosing = true;
         closeMotionStarted = false;
         jelly.freezeToIdentity();
+
+        // Professional keeps the same close transition, but starts it on the
+        // live window immediately.  Waiting for a full-frame GPU grab before
+        // the first visible frame made a title-bar click feel unresponsive on
+        // high-DPI displays.  Console retains the snapshot-overlay path.
+        if (mainWin.appStyle === "Professional") {
+            phaseLog("CLOSING", "Professional immediate in-place close motion");
+            applyClosingGeometryAtomically();
+            mainWin.startCloseMotion("professional-immediate");
+            return;
+        }
 
         // Preferred close path: render closing animation in a dedicated overlay window.
         // This avoids any visible host-window relocation before close animation begins.
@@ -9383,6 +9479,15 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.updateTargetScreenFromFinalCenter();
         mainWin.refreshActiveVisibleRect();
 
+        // The Professional transition is intentionally retained, but a
+        // high-DPI frame capture must not delay its first frame.  Its overlay
+        // renders the live read-only shell for this short handoff instead.
+        if (mainWin.appStyle === "Professional") {
+            if (mainWin.createMinimizeOverlayWithSnapshot("")) {
+                return true;
+            }
+        }
+
         if (mainWin.beginMinimizeOverlayHandoff()) {
             return true;
         }
@@ -9409,6 +9514,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             mainWin.clearPendingDockCommit();
         }
         mainWin.clearCloseTargetOverride();
+        mainWin.clearClosingOverlayGeometry();
         mainWin.isClosing = false;
         mainWin.isMinimizing = false;
         mainWin.isRestoringFromMinimize = false;
@@ -9890,6 +9996,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         onReportBrandingRequested: {
             reportBrandingSettings.openWithProfiles();
         }
+        onProductivitySettingsRequested: {
+            productivitySettings.open();
+        }
         onBackupRecoveryRequested: {
             backupRecoveryDialog.open();
         }
@@ -9919,6 +10028,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 mainContent.reloadAllActiveReportBranding()
             }
         }
+    }
+
+    ProductivitySettingsDialog {
+        id: productivitySettings
+        parentWindow: mainWin
+        t: mainWin.t
+        appRef: mainWin.appRef
+        metrics: mainWin.uiMetrics
     }
     
     ThemePicker {

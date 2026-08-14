@@ -360,6 +360,9 @@ def test_invoice_directory_has_matter_detail_payment_tabs_and_taller_cards():
     assert "root._refreshSelectedInvoiceDetails()" in source
     assert "function onInvoiceDirectoryDetailsLoaded(payload)" in source
     assert 'property string st: loading ? "Loading..."' in source
+    assert "function _displayInvoiceStatus(summary)" in source
+    assert 'if (raw === "pending" || raw === "unpaid") return "Unpaid"' in source
+    assert 'st === "Unpaid" || st === "Partially Paid"' in source
     assert "function onPaymentSaveFinished(result)" in source
     assert "root._refreshSelectedInvoiceDetails()" in source
     assert 'text: "Matter:"' in source

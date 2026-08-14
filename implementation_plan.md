@@ -23,6 +23,33 @@ Do not duplicate the app. Do not fork business logic. Do not create two versions
 
 Historic `Dockets.xlsm` finance is synchronized through a governed backend service rather than through QML forms or the generic incremental importer. The service reads the OneDrive workbook as a dated source snapshot, produces a read-only plan, writes only an isolated candidate, and allows a separately confirmed promotion only after backup, hash, integrity, ledger/A/R, productivity, and Executive Dashboard reconciliation gates pass. Native CSPM activity after the source cutoff remains preserved. This keeps both interface styles on the same financial data model and prevents a dashboard-only correction from diverging from the ledger.
 
+## Shared OneDrive Workbook Boundary
+
+Until CSPM moves to its future transactional SQL data service, the macro-enabled
+workbook package supports **one active writer**, not concurrent editing. The
+configured OneDrive folder is canonical; each computer receives a local
+checked-out replica.
+
+- Opening CSPM acquires a shared exclusive checkout marker before any
+  workbook write is permitted. A second computer opens read-only while that
+  marker exists.
+- The local replica is compared to the cloud package by SHA-256 hashes and a
+  recorded common ancestor—not timestamps. An unknown or divergent copy is a
+  conflict and is never copied over either side.
+- Normal close publishes a complete verified `CSPM.xlsm` + `Dockets.xlsm`
+  release archive in the shared folder, promotes it to the canonical package,
+  then releases the checkout. No release occurs if the cloud changed during
+  the checkout.
+- The Data Folder Setup wizard may seed an empty cloud folder once; it never
+  treats an existing local folder as authority or overwrites an existing cloud
+  package.
+- OneDrive version history and the release archive are recovery layers. They
+  do not make independently edited Excel replicas safe to merge automatically.
+
+This is deliberately a sequential multi-PC workflow. The later SQL/API
+migration remains required for true simultaneous users, transactions,
+record-level concurrency, and server-enforced recovery.
+
 ## Long-Term Target
 
 Professional mode is not just a QML skin. It is the reference implementation for
@@ -48,6 +75,13 @@ The canonical product brief for this destination is saved at:
 
 ```text
 docs/CSPM_Option_3_Interface_Rebuild_Brief.md
+```
+
+The concrete quality, financial-trust, audit, and release gates required to
+reach a 10/10 CSPM are maintained in:
+
+```text
+docs/CSPM_10_10_EXECUTION_ROADMAP.md
 ```
 
 Future agents should treat that brief as the durable UI architecture direction unless
@@ -453,6 +487,15 @@ by Flutter or React Native.
 - Use the same backend/data contracts.
 - Keep QML Professional screens available until each replacement is verified.
 - Retire QML Professional modules only after parity checks pass.
+
+### Phase 8: Connectivity, Automation, and Ecosystem (A+ Objective)
+- **Secure Client Web Drop**: Build a lightweight, read-only Next.js or React web portal hitting the Azure SQL API for secure invoice delivery, stripe payments, and KYC document uploads to eliminate plaintext email risks.
+- **Pipeline & Web Intake**: Add a Kanban-style Prospects/Leads board to the Option 3 shell. Create a public-facing intake web form that feeds directly into the CSPM database to eliminate manual data entry.
+- **Microsoft Graph API Sync**: Introduce native two-way sync for Deadlines/Ticklers with Outlook Calendar, and a background service to automatically file emails into Matter Notes.
+
+### Phase 9: Web-First Deployment (A+ Objective)
+- Ensure the "Expert" tier Flutter or React Native client explicitly targets the **Web** as a first-class deployment target.
+- Allow the lawyer to securely access the full practice management suite from any modern browser globally, rather than relying exclusively on a local Windows Desktop installation.
 
 ## 11. Verification Plan
 

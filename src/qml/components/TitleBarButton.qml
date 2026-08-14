@@ -67,16 +67,20 @@ Button {
 
     background: Rectangle {
         radius: Math.max(1, Math.round(control.buttonSizePx * 0.28))
-        color: control.hovered
+        color: control.down
+            ? (control.danger
+                ? SemanticTheme.alpha(control.dangerFill, 0.90)
+                : SemanticTheme.alpha(control.accentColor, 0.30))
+            : (control.hovered
             ? (control.danger
                 ? control.dangerFill
-                : SemanticTheme.hoverOverlay(t, appStyle))
-            : "transparent"
-        border.width: control.hovered ? Math.max(1, Math.round(control.buttonSizePx * 0.03)) : 0
+                : SemanticTheme.hoverOverlay(control.t, control.appStyle))
+            : "transparent")
+        border.width: (control.hovered || control.down) ? Math.max(1, Math.round(control.buttonSizePx * 0.03)) : 0
         border.color: control.danger
             ? control.dangerBorder
-            : SemanticTheme.destructiveHover(t, appStyle)
-        Behavior on color { ColorAnimation { duration: 90 } }
+            : SemanticTheme.border(control.t, "tooltip", "neutral")
+        Behavior on color { ColorAnimation { duration: 45 } }
     }
 
     contentItem: Item {
@@ -87,7 +91,7 @@ Button {
             anchors.centerIn: parent
             text: control.text
             font.pixelSize: control.fontSize > 0 ? control.fontSize : control.autoFontSizePx
-            color: control.hovered
+            color: (control.hovered || control.down)
                 ? (control.danger ? control.dangerInk : control.hoverIconColor)
                 : control.baseTextColor
             opacity: control.down ? 0.7 : 1.0

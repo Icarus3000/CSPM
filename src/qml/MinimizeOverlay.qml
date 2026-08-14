@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Window
+import "components"
+import "views"
 
 ApplicationWindow {
     id: minimizeOverlayWin
@@ -172,6 +174,16 @@ ApplicationWindow {
             }
         ]
 
+        Loader {
+            id: contentLoader
+            anchors.fill: parent
+            sourceComponent: (minimizeOverlayWin.snapshotUrl && minimizeOverlayWin.snapshotUrl.length > 0)
+                ? snapshotContent : liveContent
+        }
+    }
+
+    Component {
+        id: snapshotContent
         Image {
             anchors.fill: parent
             source: minimizeOverlayWin.snapshotUrl
@@ -179,6 +191,36 @@ ApplicationWindow {
             asynchronous: false
             smooth: true
             cache: false
+        }
+    }
+
+    Component {
+        id: liveContent
+        ChromeSurface {
+            anchors.fill: parent
+            farGlowEnabled: !(mainWindow && mainWindow.lowPerformanceMode)
+            glowRadiusNear: (mainWindow && mainWindow.lowPerformanceMode) ? 10 : 18
+            glowRadiusFar: (mainWindow && mainWindow.lowPerformanceMode) ? 20 : 36
+            plasmaOpacity: (mainWindow && mainWindow.lowPerformanceMode)
+                ? (minimizeOverlayWin.animOpacity * 0.72)
+                : minimizeOverlayWin.animOpacity
+            lowFxMode: !!(mainWindow && mainWindow.lowPerformanceMode)
+            interactionBoost: 0.16
+            flairEnabled: false
+            t: (mainWindow && mainWindow.t) ? mainWindow.t : ({
+                "bg": "#000000", "accent": "#2979FF", "text": "#FFFFFF", "glow": "#FF1744"
+            })
+            cornerRadius: (mainWindow && mainWindow.chromeCornerRadiusPx)
+                ? mainWindow.chromeCornerRadiusPx() : 16
+
+            MainContent {
+                anchors.fill: parent
+                t: (mainWindow && mainWindow.t) ? mainWindow.t : ({})
+                metrics: (mainWindow && mainWindow.uiMetrics) ? mainWindow.uiMetrics : ({})
+                appRef: (mainWindow && mainWindow.appRef) ? mainWindow.appRef : null
+                isInteractive: false
+                windowRef: mainWindow
+            }
         }
     }
 
@@ -204,8 +246,12 @@ ApplicationWindow {
         repeat: false
         onTriggered: {
             if (snapshotUrl && snapshotUrl.length > 0) {
-                var img = sprite.children.length > 0 ? sprite.children[0] : null;
-                if (img && img.status !== undefined && img.status !== Image.Ready) {
+                if (contentLoader.status !== Loader.Ready) {
+                    handoffDelay.restart();
+                    return;
+                }
+                var loaded = contentLoader.item
+                if (loaded && loaded.status !== undefined && loaded.status !== Image.Ready) {
                     handoffDelay.restart();
                     return;
                 }

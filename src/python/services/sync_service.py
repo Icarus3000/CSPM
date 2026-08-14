@@ -40,9 +40,12 @@ class SyncService:
     before a local replica is made writable; ``publish_and_release`` creates a
     verified immutable release before promoting the local package to cloud.
 
-    The lease is intentionally conservative.  It never expires automatically:
-    a crashed or abandoned checkout needs an explicit recovery decision rather
-    than risking a second computer overwriting in-progress work.
+    The lease is intentionally conservative.  It never expires based on age:
+    a checkout from another computer is never reclaimed automatically.  The
+    one exception is an abandoned marker which proves it was created by this
+    same CSPM installation and whose recorded local process is no longer
+    running.  That narrow recovery prevents a crash from leaving this PC
+    permanently read-only without weakening the cross-PC writer guarantee.
     """
 
     STATE_VERSION = 2
@@ -52,6 +55,8 @@ class SyncService:
     RELEASES_DIR_NAME = ".cspm_releases"
     RELEASE_MANIFEST_NAME = "release.json"
     MACHINE_ID_FILE_NAME = "cloud_checkout_machine.json"
+    RECOVERY_GUARD_PREFIX = ".cspm_checkout_recovering_"
+    RECOVERY_DIR_NAME = "checkout_recovery"
 
     def __init__(self, paths: AppPaths):
         self.paths = paths
@@ -199,6 +204,159 @@ class SyncService:
         checked_out = str(lease.get("checkedOutAtUtc", "an unknown time") or "an unknown time")
         return f"{computer} since {checked_out}"
 
+    @staticmethod
+    def _local_process_is_running(raw_pid: Any) -> bool:
+        """Return ``True`` unless a local process is conclusively gone.
+
+        A reused PID is treated as live, which is deliberately conservative:
+        the only safe automatic recovery case is a same-installation marker
+        whose original process ID is definitely absent.
+        """
+        try:
+            pid = int(raw_pid or 0)
+        except (TypeError, ValueError):
+            return True
+        if pid <= 0:
+            return True
+        if os.name == "nt":
+            # Do not use ``os.kill(pid, 0)`` on Windows: unlike the POSIX
+            # existence probe, its supported signal semantics are different.
+            # Query the process exit code instead and treat an access/query
+            # failure as live (the safe choice).
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                process_query_limited_information = 0x1000
+                synchronize = 0x00100000
+                still_active = 259
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                open_process = kernel32.OpenProcess
+                open_process.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+                open_process.restype = wintypes.HANDLE
+                get_exit_code = kernel32.GetExitCodeProcess
+                get_exit_code.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+                get_exit_code.restype = wintypes.BOOL
+                close_handle = kernel32.CloseHandle
+                close_handle.argtypes = (wintypes.HANDLE,)
+                close_handle.restype = wintypes.BOOL
+
+                handle = open_process(process_query_limited_information | synchronize, False, pid)
+                if not handle:
+                    # ERROR_INVALID_PARAMETER is Windows' "PID does not
+                    # exist" result.  Any other error is not safe to reclaim.
+                    return ctypes.get_last_error() != 87
+                try:
+                    exit_code = wintypes.DWORD()
+                    if not get_exit_code(handle, ctypes.byref(exit_code)):
+                        return True
+                    return exit_code.value == still_active
+                finally:
+                    close_handle(handle)
+            except (AttributeError, OSError):
+                return True
+        try:
+            # On POSIX, ``kill(pid, 0)`` checks for process existence without
+            # signalling it. Permission failures are treated as live instead
+            # of risking a checkout owned by another user/session.
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return True
+
+    def _is_reclaimable_abandoned_local_lease(self, lease: Dict[str, Any]) -> bool:
+        """Whether a marker is safe to recover automatically on this PC."""
+        if not lease or lease.get("unreadable"):
+            return False
+        if lease.get("machineId") != self._machine_identity():
+            return False
+        lease_computer = str(lease.get("computerName", "") or "").casefold()
+        if not lease_computer or lease_computer != socket.gethostname().casefold():
+            return False
+        return not self._local_process_is_running(lease.get("processId"))
+
+    def _record_abandoned_lease(self, lease: Dict[str, Any]) -> str:
+        """Keep a local audit copy before removing an abandoned marker."""
+        recovery_dir = self.paths.runtime_dir() / self.RECOVERY_DIR_NAME
+        recovery_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        target = recovery_dir / f"{stamp}_abandoned_checkout_{uuid4().hex}.json"
+        payload = {
+            "schemaVersion": 1,
+            "recoveredAtUtc": datetime.now(UTC).isoformat(),
+            "reason": "same_installation_dead_process",
+            "abandonedLease": lease,
+        }
+        with target.open("x", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        return str(target)
+
+    def _recover_abandoned_local_lease(self, original: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove only a proven-dead lease from this installation.
+
+        A short-lived exclusive recovery guard prevents two new CSPM launches
+        on this same PC from both attempting to recover the marker.  The
+        marker is re-read after the guard is acquired; any change of ownership
+        cancels recovery without touching the shared data.
+        """
+        lease_path = self._lease_path()
+        if lease_path is None or not self._is_reclaimable_abandoned_local_lease(original):
+            return self._result(False, "not-reclaimable", "The shared checkout is not a recoverable local marker.")
+
+        checkout_id = str(original.get("checkoutId", "unknown") or "unknown")
+        guard_path = lease_path.parent / f"{self.RECOVERY_GUARD_PREFIX}{checkout_id}"
+        try:
+            with guard_path.open("x", encoding="utf-8") as handle:
+                handle.write(self._checkout_id)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except FileExistsError:
+            return self._result(
+                False,
+                "recovery-in-progress",
+                "A same-PC startup is already recovering an abandoned checkout marker.",
+            )
+        except OSError as exc:
+            return self._result(False, "recovery-error", f"Could not prepare abandoned-checkout recovery: {exc}")
+
+        try:
+            confirmed = self._read_lease()
+            if confirmed != original or not self._is_reclaimable_abandoned_local_lease(confirmed):
+                return self._result(
+                    False,
+                    "lease-changed",
+                    "The shared checkout changed while recovery was being verified; it was not removed.",
+                    lease=confirmed,
+                )
+            audit_path = self._record_abandoned_lease(confirmed)
+            lease_path.unlink()
+            logger.warning(
+                "SyncService reclaimed abandoned same-PC checkout %s from dead process %s; audit=%s",
+                checkout_id,
+                confirmed.get("processId"),
+                audit_path,
+            )
+            return self._result(
+                True,
+                "recovered-abandoned-checkout",
+                "Recovered an abandoned checkout from this computer; acquiring a fresh writer checkout.",
+                recoveredLease=confirmed,
+                recoveryAuditPath=audit_path,
+            )
+        except OSError as exc:
+            return self._result(False, "recovery-error", f"Could not recover the abandoned checkout: {exc}")
+        finally:
+            try:
+                guard_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("SyncService could not remove checkout recovery guard %s", guard_path)
+
     def _acquire_checkout_lease(self) -> Dict[str, Any]:
         """Atomically create the shared one-writer marker when possible."""
         lease_path = self._lease_path()
@@ -210,13 +368,17 @@ class SyncService:
         if self._lease_matches_self(existing):
             self._lease_owned = True
             return self._result(True, "checked-out", "This CSPM session already holds the shared write checkout.")
+        recovery: Optional[Dict[str, Any]] = None
         if existing:
-            return self._result(
-                False,
-                "checkout-held",
-                f"Shared data is checked out by {self._lease_description(existing)}. This session is read-only.",
-                lease=existing,
-            )
+            recovery = self._recover_abandoned_local_lease(existing)
+            if not recovery.get("ok"):
+                return self._result(
+                    False,
+                    "checkout-held",
+                    f"Shared data is checked out by {self._lease_description(existing)}. This session is read-only.",
+                    lease=existing,
+                    recovery=recovery,
+                )
 
         payload = self._lease_payload()
         try:
@@ -227,7 +389,13 @@ class SyncService:
                 handle.flush()
                 os.fsync(handle.fileno())
             self._lease_owned = True
-            return self._result(True, "checked-out", "Exclusive shared write checkout acquired.", lease=payload)
+            return self._result(
+                True,
+                "checked-out",
+                "Exclusive shared write checkout acquired.",
+                lease=payload,
+                recovery=recovery,
+            )
         except FileExistsError:
             existing = self._read_lease()
             return self._result(
@@ -607,6 +775,8 @@ class SyncService:
         sync_result = self._synchronize("checkout")
         if sync_result.get("ok"):
             sync_result["checkout"] = lease_result.get("lease", {})
+            if lease_result.get("recovery"):
+                sync_result["checkoutRecovery"] = lease_result["recovery"]
             return sync_result
 
         # Never retain a writer lease for a conflict/error that left the

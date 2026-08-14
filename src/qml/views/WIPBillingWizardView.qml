@@ -19,6 +19,7 @@ Item {
 
     // State
     property var idsToDraft: []
+    property bool isReconcilingWip: false
 
     // Core Layout Metrics
     property real basePadding: 24
@@ -48,6 +49,197 @@ Item {
         visible: running
         width: 64
         height: 64
+    }
+
+    SelectionRemovalNoticeDialog {
+        id: selectionRemovalNotice
+        t: root.t
+        appStyle: root.appStyle
+    }
+
+    Popup {
+        id: reconcileWipDialog
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        width: 600
+        height: 492
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+
+        property int entryCount: 0
+        property real selectedTotal: 0.0
+        readonly property bool hasNonZeroTotal: Math.abs(selectedTotal) >= 0.005
+        readonly property bool confirmationReady: reconciliationAcknowledgement.checked
+            && (!hasNonZeroTotal || nonZeroReconciliationAcknowledgement.checked)
+
+        background: Rectangle {
+            color: root.panelColor
+            border.color: root.borderColor
+            border.width: 1
+            radius: 10
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 12
+
+            Text {
+                text: "Reconcile selected WIP"
+                color: root.textColor
+                font.pixelSize: 20
+                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+            }
+
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "This records that " + reconcileWipDialog.entryCount
+                    + " selected time or fee entr" + (reconcileWipDialog.entryCount === 1 ? "y has" : "ies have")
+                    + " already been settled or billed elsewhere. It removes only those entries from WIP; it does not create, alter, reverse, or pay an invoice."
+                color: root.mutedColor
+                font.pixelSize: 13
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Selected WIP total: $" + reconcileWipDialog.selectedTotal.toLocaleString(Qt.locale("en_CA"), "f", 2)
+                color: reconcileWipDialog.hasNonZeroTotal
+                    ? SemanticTheme.tone(root.t, "warning", root.appStyle)
+                    : root.mutedColor
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                visible: reconcileWipDialog.hasNonZeroTotal
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "This selection does not net to $0.00. Reconciling it will remove this non-zero amount from unbilled WIP without creating or changing an invoice."
+                color: SemanticTheme.tone(root.t, "warning", root.appStyle)
+                font.pixelSize: 12
+            }
+
+            Text {
+                text: "Destination invoice / reconciliation reference"
+                color: root.textColor
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+            }
+
+            TextField {
+                id: reconciliationReferenceField
+                Layout.fillWidth: true
+                Layout.preferredHeight: 40
+                color: root.textColor
+                placeholderText: "e.g., SEE SUFFOLK 26-0080"
+                placeholderTextColor: root.mutedColor
+                background: Rectangle {
+                    color: SemanticTheme.surfaceInput(root.t, root.appStyle)
+                    border.color: reconciliationReferenceField.activeFocus ? root.accentColor : root.borderColor
+                    radius: 6
+                }
+            }
+
+            Text {
+                text: "Reason (kept in the docket audit trail)"
+                color: root.textColor
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+            }
+
+            TextArea {
+                id: reconciliationReasonField
+                Layout.fillWidth: true
+                Layout.preferredHeight: 92
+                color: root.textColor
+                wrapMode: TextEdit.Wrap
+                placeholderText: "Explain why this work is no longer billable from this matter."
+                placeholderTextColor: root.mutedColor
+                background: Rectangle {
+                    color: SemanticTheme.surfaceInput(root.t, root.appStyle)
+                    border.color: reconciliationReasonField.activeFocus ? root.accentColor : root.borderColor
+                    radius: 6
+                }
+            }
+
+            CheckBox {
+                id: reconciliationAcknowledgement
+                Layout.fillWidth: true
+                text: "I verified the destination invoice or reconciliation evidence."
+                contentItem: Text {
+                    text: reconciliationAcknowledgement.text
+                    color: root.textColor
+                    font.pixelSize: 13
+                    leftPadding: reconciliationAcknowledgement.indicator.width + 8
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            CheckBox {
+                id: nonZeroReconciliationAcknowledgement
+                visible: reconcileWipDialog.hasNonZeroTotal
+                Layout.fillWidth: true
+                text: "I intentionally approve reconciling the non-zero total shown above."
+                contentItem: Text {
+                    text: nonZeroReconciliationAcknowledgement.text
+                    color: root.textColor
+                    font.pixelSize: 13
+                    leftPadding: nonZeroReconciliationAcknowledgement.indicator.width + 8
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            Item { Layout.fillHeight: true }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                Rectangle {
+                    Layout.preferredWidth: 100
+                    Layout.preferredHeight: 38
+                    radius: 6
+                    color: "transparent"
+                    border.color: root.borderColor
+                    border.width: 1
+                    Text { anchors.centerIn: parent; text: "Cancel"; color: root.textColor; font.pixelSize: 13 }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: reconcileWipDialog.close()
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Rectangle {
+                    Layout.preferredWidth: 190
+                    Layout.preferredHeight: 38
+                    radius: 6
+                    color: reconcileWipDialog.confirmationReady && !root.isReconcilingWip
+                        ? SemanticTheme.buttonPrimary(root.t, root.appStyle)
+                        : SemanticTheme.borderSubtle(root.t, root.appStyle)
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.isReconcilingWip ? "Reconciling…" : "Confirm Reconciliation"
+                        color: reconcileWipDialog.confirmationReady && !root.isReconcilingWip
+                            ? SemanticTheme.textOnPrimary(root.t, root.appStyle)
+                            : root.mutedColor
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: reconcileWipDialog.confirmationReady && !root.isReconcilingWip
+                            ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root._confirmWipReconciliation()
+                    }
+                }
+            }
+        }
     }
 
 
@@ -508,6 +700,9 @@ Item {
     // State
     property var wipItems: []
     property var selectedIds: ({})
+    // When a user-initiated operation removes records from WIP, the refresh
+    // handler uses this explanation rather than silently discarding selection.
+    property string pendingSelectionRemovalReason: ""
     // The row currently targeted by the right-click docket menu.  Keep this
     // separate from invoice selection so the menu always acts on one docket.
     property var contextDocket: null
@@ -630,7 +825,9 @@ Item {
         }
     }
 
-    function autoCheckFilterMatch() { root._clearSelection() }
+    // A route/state restore is not permission to discard a user's worklist.
+    // Filters can hide selected rows, but they must not unselect them.
+    function autoCheckFilterMatch() { }
 
     function applySort() {
         if (!sortCol) return
@@ -670,40 +867,112 @@ Item {
         isLoading = true
         billingBackend.loadUnbilledWip(!!forceRefresh)
     }
+    function _setSelectedIds(nextIds) {
+        var copy = ({})
+        var count = 0
+        var total = 0.0
+        for (var key in nextIds) {
+            if (nextIds[key] === undefined) continue
+            copy[String(key)] = Number(nextIds[key] || 0.0)
+            count++
+            total += copy[String(key)]
+        }
+        selectedIds = copy
+        selectedCount = count
+        selectedTotal = total
+    }
+
     function _toggleSelection(entryId, net) {
         var copy = {}
         for (var k in selectedIds) copy[k] = selectedIds[k]
-        if (copy[entryId] !== undefined) {
-            delete copy[entryId]
+        var key = String(entryId || "")
+        if (copy[key] !== undefined) {
+            delete copy[key]
         } else {
-            copy[entryId] = net
+            copy[key] = Number(net || 0.0)
         }
-        selectedIds = copy
-        // Recount
-        var count = 0; var total = 0.0
-        for (var k2 in selectedIds) {
-            count++
-            total += selectedIds[k2]
-        }
-        selectedCount = count
-        selectedTotal = total
+        _setSelectedIds(copy)
     }
     function _selectAll() {
         var copy = {}
+        // Select All adds the visible rows; it must not silently unselect
+        // records that happen to be hidden by the current filters.
+        for (var key in selectedIds) copy[key] = selectedIds[key]
         for (var i = 0; i < filteredItems.length; i++) {
             var item = filteredItems[i]
-            copy[item.entryId] = item.net
+            copy[String(item.entryId)] = Number(item.net || 0.0)
         }
-        selectedIds = copy
-        var count = 0; var total = 0.0
-        for (var k in selectedIds) { count++; total += selectedIds[k] }
-        selectedCount = count
-        selectedTotal = total
+        _setSelectedIds(copy)
     }
     function _clearSelection() {
-        selectedIds = ({})
-        selectedCount = 0
-        selectedTotal = 0.0
+        _setSelectedIds(({}))
+    }
+
+    function _selectedWipRows() {
+        var selected = []
+        for (var i = 0; i < wipItems.length; i++) {
+            var row = wipItems[i] || ({})
+            if (selectedIds[String(row.entryId || "")] !== undefined) selected.push(row)
+        }
+        return selected
+    }
+
+    function _openWipReconciliation() {
+        if (root.isReconcilingWip) return
+        var selected = root._selectedWipRows()
+        if (selected.length === 0) {
+            emptyWipSelectionDialog.open()
+            return
+        }
+        var references = ({})
+        var onlyReference = ""
+        for (var i = 0; i < selected.length; i++) {
+            var reference = String(selected[i].invoiceRef || "").trim()
+            if (reference.length > 0) references[reference] = true
+        }
+        var values = Object.keys(references)
+        if (values.length === 1) onlyReference = values[0]
+        reconcileWipDialog.entryCount = selected.length
+        reconcileWipDialog.selectedTotal = root.selectedTotal
+        reconciliationReferenceField.text = onlyReference
+        reconciliationReasonField.text = ""
+        reconciliationAcknowledgement.checked = false
+        nonZeroReconciliationAcknowledgement.checked = false
+        reconcileWipDialog.open()
+    }
+
+    function _confirmWipReconciliation() {
+        if (root.isReconcilingWip || !reconciliationAcknowledgement.checked) return
+        if (reconcileWipDialog.hasNonZeroTotal && !nonZeroReconciliationAcknowledgement.checked) return
+        var reference = String(reconciliationReferenceField.text || "").trim()
+        var reason = String(reconciliationReasonField.text || "").trim()
+        if (reference.length === 0 || reason.length === 0) {
+            appToast("Enter both the destination reference and a reconciliation reason.")
+            return
+        }
+        if (!billingBackend || !billingBackend.reconcileWipEntries) {
+            appToast("WIP reconciliation is unavailable. Please restart CSPM after installing the update.")
+            return
+        }
+        var ids = []
+        var selected = root._selectedWipRows()
+        for (var i = 0; i < selected.length; i++) {
+            var entryId = String(selected[i].entryId || "").trim()
+            if (entryId.length > 0) ids.push(entryId)
+        }
+        root.isReconcilingWip = true
+        var result = billingBackend.reconcileWipEntries(
+            ids, reference, reason, !reconcileWipDialog.hasNonZeroTotal || nonZeroReconciliationAcknowledgement.checked
+        )
+        root.isReconcilingWip = false
+        if (result && result.ok) {
+            reconcileWipDialog.close()
+            root.pendingSelectionRemovalReason = "You confirmed a WIP reconciliation, so these records are no longer eligible for billing."
+            root._loadWip(true)
+            appToast(String(result.message || "WIP reconciliation recorded."))
+            return
+        }
+        appToast(String((result && result.message) || "WIP reconciliation could not be saved."))
     }
 
     function _openDocketContextMenu(entry, sourceItem, localX, localY) {
@@ -727,7 +996,7 @@ Item {
         var result = appRef.deleteTimeEntry(entryId)
         if (result && result.ok) {
             contextDocket = null
-            root._clearSelection()
+            root.pendingSelectionRemovalReason = "You deleted a selected docket, so it is no longer eligible WIP."
             root._loadWip(true)
             return
         }
@@ -876,6 +1145,7 @@ Item {
             root.wipStatusText = String(message || "")
         }
         function onWipDataLoaded(data) {
+            var priorSelection = root.selectedIds
             root.wipItems = data
             if (root.sortCol !== "") {
                 root.applySort()
@@ -887,8 +1157,7 @@ Item {
                 validIds[String(root.wipItems[i].entryId)] = true
             }
             var newSelectedIds = {}
-            var count = 0
-            var total = 0.0
+            var removedSelectionIds = []
             
             // Handle pending client filter
             if (root._pendingClientIdToFilter) {
@@ -922,19 +1191,32 @@ Item {
                 root.idsToDraft = [] // Clear after applying
             }
 
-            for (var k in root.selectedIds) {
+            for (var k in priorSelection) {
                 if (validIds[k]) {
-                    newSelectedIds[k] = root.selectedIds[k]
+                    // Recalculate with the refreshed amount, without losing
+                    // the selection merely because the list was reloaded.
+                    for (var refreshedIndex = 0; refreshedIndex < root.wipItems.length; refreshedIndex++) {
+                        var refreshed = root.wipItems[refreshedIndex] || ({})
+                        if (String(refreshed.entryId || "") === String(k)) {
+                            newSelectedIds[k] = Number(refreshed.net || 0.0)
+                            break
+                        }
+                    }
+                } else {
+                    removedSelectionIds.push(k)
                 }
             }
-            
-            for (var key in newSelectedIds) {
-                count++
-                total += newSelectedIds[key]
+
+            root._setSelectedIds(newSelectedIds)
+
+            if (removedSelectionIds.length > 0) {
+                var explanation = root.pendingSelectionRemovalReason
+                if (!explanation.length) {
+                    explanation = "The WIP worklist was refreshed and these dockets are no longer eligible. They may have been billed, reconciled, deleted, or changed in another screen."
+                }
+                selectionRemovalNotice.showRemoval(removedSelectionIds.length, "WIP docket", explanation)
             }
-            root.selectedIds = newSelectedIds
-            root.selectedCount = count
-            root.selectedTotal = total
+            root.pendingSelectionRemovalReason = ""
 
             root.isLoading = false
         }
@@ -948,7 +1230,7 @@ Item {
                 if (result.message) appToast("Could not create draft: " + String(result.message))
                 return
             }
-            root._clearSelection()
+            root.pendingSelectionRemovalReason = "You created a draft invoice, so the selected dockets are now attached to that draft and are no longer unbilled WIP."
             root._loadWip(true)
             var draftNum = result.InvoiceNum || result.draftNum || (result.draft && result.draft.draftNum) || result.id || "";
             if (draftNum) {
@@ -1742,6 +2024,29 @@ Item {
                         font.weight: Font.DemiBold
                     }
                     Item { Layout.fillWidth: true }
+                    Rectangle {
+                        Layout.preferredWidth: 174
+                        Layout.preferredHeight: 40
+                        radius: 8
+                        color: root.selectedCount > 0 && !root.isReconcilingWip
+                            ? "transparent" : SemanticTheme.borderSubtle(root.t, root.appStyle)
+                        border.color: root.borderColor
+                        border.width: 1
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Reconcile Selected"
+                            color: root.selectedCount > 0 && !root.isReconcilingWip ? root.textColor : root.mutedColor
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                            font.family: "Inter"
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: root.selectedCount > 0 && !root.isReconcilingWip
+                                ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: root._openWipReconciliation()
+                        }
+                    }
                     // Create Draft Button
                     Rectangle {
                         width: 200

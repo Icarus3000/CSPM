@@ -2262,6 +2262,38 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         _runMatterProfileSave()
     }
 
+    function requestMatterArchive() {
+        if (!root.matterEditMode) {
+            root.saveMessage = "Load an existing matter before archiving it."
+            return
+        }
+        if (String(root.matterPersistedStatus || "").trim().toLowerCase() === "archived") {
+            root.saveMessage = "This matter is already archived."
+            return
+        }
+        if (root.matterStatusSelectionIsBlocked("Archived")) {
+            root.saveMessage = "This matter cannot be archived while it has "
+                + root.matterFinancialBlockerText()
+                + ". Resolve that financial work first."
+            root.lastSaveOk = false
+            return
+        }
+        archiveMatterConfirmPopup.open()
+    }
+
+    function archiveMatterAfterConfirmation() {
+        archiveMatterConfirmPopup.blockerMessage = ""
+        root._setComboBoxSilently(matterStatusCombo, "Archived")
+        root.dirty = true
+        root.trySaveMatterProfile()
+        if (root.lastSaveOk) {
+            archiveMatterConfirmPopup.close()
+            root.saveMessage = "Matter archived. New time, fee, and disbursement entries require the protected re-open flow."
+        } else {
+            archiveMatterConfirmPopup.blockerMessage = String(root.saveMessage || "CSPM could not archive this matter.")
+        }
+    }
+
     function emptyGlobalSearchFacets() {
         return {
             "client": 0,
@@ -3957,6 +3989,7 @@ Behavior on border.color {
                         && !root.activeIsFinancialDashboard()
                         && !root.activeIsARAgingReport()
                         && !root.activeIsDocketActivityReport()
+                        && !root.activeIsProductivityDashboard()
                         && !root.activeIsClientLedgerReport()
                         && !root.activeIsStatementOfAccount()
                         && !root.activeIsTransactionsMaster()
@@ -4366,9 +4399,10 @@ Behavior on border.color {
                         anchors.fill: parent
                         active: root.activeIsProductivityDashboard()
                         asynchronous: true
-                        source: "ProductivityDashboardView.qml"
+                        source: "../components/ProductivityReportPanel.qml"
                         onLoaded: {
                             item.t = Qt.binding(function() { return root.t })
+                            item.metrics = Qt.binding(function() { return root.responsiveMetrics })
                             item.windowRef = Qt.binding(function() { return root.windowRef })
                             item.sfxBus = Qt.binding(function() { return root.sfxBus })
                             item.appRef = Qt.binding(function() { return root.appRef })
@@ -5196,6 +5230,47 @@ Behavior on border.color {
                         checked: false
                         Layout.fillWidth: true
                         Layout.columnSpan: root.formGridSpan(matterWizardGrid.columns, 2)
+                        Layout.minimumHeight: root.fieldHeightPx
+                        Layout.preferredHeight: root.fieldHeightPx
+                        spacing: root.ratioPxW(0.008, 8)
+                        indicator: Rectangle {
+                            implicitWidth: root.ratioPx(0.018, 16)
+                            implicitHeight: implicitWidth
+                            x: root.ratioPx(0.006, 6)
+                            y: Math.round((parent.height - height) / 2)
+                            radius: 3
+                            color: matterJointRetainerCheck.checked
+                                ? root._accent : Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.78)
+                            border.width: 1
+                            border.color: matterJointRetainerCheck.checked
+                                ? root._accent : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.34)
+                            Text {
+                                anchors.centerIn: parent
+                                visible: matterJointRetainerCheck.checked
+                                text: "✓"
+                                color: SemanticTheme.readableInk(root._accent)
+                                font.pixelSize: Math.max(10, Math.round(parent.height * 0.78))
+                                font.weight: Font.Bold
+                            }
+                        }
+                        contentItem: Text {
+                            text: matterJointRetainerCheck.text
+                            color: root._text
+                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            font.weight: Font.Medium
+                            verticalAlignment: Text.AlignVCenter
+                            elide: Text.ElideRight
+                            leftPadding: matterJointRetainerCheck.indicator.width + root.ratioPxW(0.014, 12)
+                            rightPadding: root.ratioPxW(0.010, 8)
+                        }
+                        background: Rectangle {
+                            radius: Math.max(4, root.sectionRadiusPx - 3)
+                            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.58)
+                            border.width: 1
+                            border.color: matterJointRetainerCheck.activeFocus
+                                ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.70)
+                                : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.18)
+                        }
                         onToggled: {
                             if (!root._hydrating) root.setMatterJointRetainer(checked)
                         }
@@ -5851,6 +5926,7 @@ Behavior on border.color {
                         && !root.activeIsInvoiceBuilder()
                         && !root.activeIsInvoiceReversal()
                         && !root.activeIsAccountsPayable()
+                        && !root.activeIsProductivityDashboard()
                     Layout.fillWidth: true
                     Layout.topMargin: root.controlGapPx
                     Layout.preferredHeight: root.ratioPxH(0.066, 48)
@@ -5916,6 +5992,19 @@ Behavior on border.color {
                         Layout.preferredWidth: root.ratioPxW(root.scaleRatios.cancelBtnWidthPct, 106)
                         Layout.preferredHeight: root.fieldHeightPx
                         onClicked: root.requestCancelAction()
+                    }
+
+                    PillButton {
+                        visible: root.activeIsNewMatterWizard() && root.matterEditMode
+                            && String(root.matterPersistedStatus || "").trim().toLowerCase() !== "archived"
+                        t: root.t
+                        metrics: root.responsiveMetrics
+                        sfxBus: root.sfxBus
+                        text: "Archive Matter"
+                        primary: false
+                        Layout.preferredWidth: root.ratioPxW(0.118, 124)
+                        Layout.preferredHeight: root.fieldHeightPx
+                        onClicked: root.requestMatterArchive()
                     }
 
                     PillButton {
@@ -6215,6 +6304,90 @@ Behavior on border.color {
     ReceivableEditorDialog {
         id: receivableEditorPopup
         root: root
+    }
+
+    Popup {
+        id: archiveMatterConfirmPopup
+        property string blockerMessage: ""
+        modal: true
+        focus: true
+        dim: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.max(root.ratioPxW(0.42, 360), 520)
+        padding: root.ratioPx(0.010, 10)
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        onOpened: blockerMessage = ""
+
+        background: Rectangle {
+            radius: root.isProMode ? 4 : root.ratioPx(0.012, 10)
+            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.98)
+            border.width: 1
+            border.color: "#a86212"
+        }
+
+        contentItem: ColumnLayout {
+            spacing: root.ratioPx(0.008, 8)
+
+            Text {
+                Layout.fillWidth: true
+                text: "Archive matter"
+                color: root._text
+                font.pixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Archive " + (root.selectedMatterName || root.selectedMatterId || "this matter")
+                    + "? It will be removed from active worklists. Nothing is deleted. New time, fee, and client-disbursement entries will require CSPM's protected re-open flow and a separate final save confirmation."
+                color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
+                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: archiveMatterConfirmPopup.blockerMessage.length > 0
+                text: archiveMatterConfirmPopup.blockerMessage
+                color: "#b42318"
+                wrapMode: Text.WordWrap
+                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                font.weight: Font.DemiBold
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.minimumHeight: root.fieldHeightPx
+                Layout.preferredHeight: root.fieldHeightPx
+                spacing: root.ratioPx(0.006, 6)
+
+                Item { Layout.fillWidth: true }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Cancel"
+                    primary: false
+                    Layout.preferredWidth: root.ratioPxW(0.110, 106)
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: archiveMatterConfirmPopup.close()
+                }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Archive Matter"
+                    primary: true
+                    accentColor: "#a86212"
+                    Layout.preferredWidth: root.ratioPxW(0.142, 142)
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: root.archiveMatterAfterConfirmation()
+                }
+            }
+        }
     }
 
     Popup {

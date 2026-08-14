@@ -155,6 +155,37 @@ Item {
         return Qt.locale().toString(dateValue, "MMM d, yyyy")
     }
 
+    function _displayInvoiceStatus(summary) {
+        if (!summary) return "Unavailable"
+        var raw = String(summary.Status || "").trim().toLowerCase()
+        var hasBalance = Object.prototype.hasOwnProperty.call(summary, "BalanceDue")
+        var balance = Number(summary.BalanceDue)
+        var paid = Number(summary.AmountPaid || 0)
+
+        // The legacy receivables sheet calls an outstanding invoice "PENDING".
+        // That describes neither the invoice state nor the next action.  In
+        // CSPM an issued invoice with a positive balance is plainly Unpaid;
+        // partial payment is shown separately and a settled invoice is Paid.
+        if (hasBalance && isFinite(balance)) {
+            if (Math.abs(balance) <= 0.005) return "Paid"
+            if (paid > 0.005) return "Partially Paid"
+            if (balance > 0.005) return "Unpaid"
+        }
+        if (raw === "pending" || raw === "unpaid") return "Unpaid"
+        if (raw === "partial") return "Partially Paid"
+        if (raw === "closed") return "Closed"
+        if (raw === "paid") return "Paid"
+        return raw ? String(summary.Status) : "Unavailable"
+    }
+
+    function _isSettledInvoiceStatus(status) {
+        return status === "Paid" || status === "Closed"
+    }
+
+    function _isPartialInvoiceStatus(status) {
+        return status === "Partially Paid"
+    }
+
     function _paymentWorkspaceState(invoiceNumber, paymentId, clientName) {
         var invoice = String(invoiceNumber || root.selectedInvoiceNum || "")
         if (!invoice) return null
@@ -544,13 +575,13 @@ Item {
                     // Status Badge
                     Rectangle {
                         property bool loading: root.invoiceDetailsLoading
-                        property string st: loading ? "Loading..." : (root.selectedInvoiceSummary ? (root.selectedInvoiceSummary.Status || "Unknown") : "Unavailable")
-                        property bool canRecordPayment: !loading && st.toLowerCase() === "unpaid"
+                        property string st: loading ? "Loading..." : root._displayInvoiceStatus(root.selectedInvoiceSummary)
+                        property bool canRecordPayment: !loading && (st === "Unpaid" || st === "Partially Paid")
                         width: 144
                         height: 46
                         radius: visualRules.isPro ? 23 : 23
-                        color: loading ? SemanticTheme.alpha(root._primary, 0.12) : (st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "success", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "error", "Professional"))))
-                        border.color: loading ? root._primary : (st === "Closed" || st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.border(root.t, "success", "Professional")) : (st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.border(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.border(root.t, "error", "Professional"))))
+                        color: loading ? SemanticTheme.alpha(root._primary, 0.12) : (root._isSettledInvoiceStatus(st) ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "success", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "success", "Professional")) : (root._isPartialInvoiceStatus(st) ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.16) : SemanticTheme.surface(root.t, "error", "Professional"))))
+                        border.color: loading ? root._primary : (root._isSettledInvoiceStatus(st) ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.border(root.t, "success", "Professional")) : (root._isPartialInvoiceStatus(st) ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.border(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.border(root.t, "error", "Professional"))))
                         border.width: 1
                         Layout.alignment: Qt.AlignTop | Qt.AlignRight
                         Text {
@@ -558,7 +589,7 @@ Item {
                             text: parent.st
                             font.pixelSize: 17
                             font.weight: Font.DemiBold
-                            color: parent.loading ? root._primary : (parent.st === "Closed" || parent.st === "Paid" ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.ink(root.t, "success", "Professional")) : (parent.st === "Partial" ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.ink(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.ink(root.t, "error", "Professional"))))
+                            color: parent.loading ? root._primary : (root._isSettledInvoiceStatus(parent.st) ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : SemanticTheme.ink(root.t, "success", "Professional")) : (root._isPartialInvoiceStatus(parent.st) ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : SemanticTheme.ink(root.t, "warning", "Professional")) : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : SemanticTheme.ink(root.t, "error", "Professional"))))
                         }
                         MouseArea {
                             id: statusPillMouse

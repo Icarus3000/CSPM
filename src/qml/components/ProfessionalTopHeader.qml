@@ -26,8 +26,13 @@ Rectangle {
     readonly property color headerInk: SemanticTheme.inkPrimary(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
     readonly property color headerMutedInk: SemanticTheme.inkMuted(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
     readonly property color headerBorder: SemanticTheme.alpha(SemanticTheme.borderSubtle(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional"), 0.70)
-    readonly property color controlHoverFill: SemanticTheme.hoverOverlay(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
-    readonly property color controlHoverBorder: SemanticTheme.borderSubtle(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
+    // Window controls need a clearly perceptible acknowledgement before the
+    // longer native transition begins.  The previous semantic hover overlay
+    // was too close to the title-bar surface in both themes.
+    readonly property color controlHoverFill: topHeaderRoot.headerLight ? "#DCE8F8" : "#2D4361"
+    readonly property color controlPressedFill: topHeaderRoot.headerLight ? "#C8DCF5" : "#38557A"
+    readonly property color controlHoverBorder: topHeaderRoot.headerLight ? "#8AAED9" : "#6F95C5"
+    readonly property color controlHoverInk: SemanticTheme.accentPrimary(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
     readonly property color closeHoverFill: SemanticTheme.destructive(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
     readonly property color closeHoverInk: SemanticTheme.textOnAccent(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
     Layout.fillWidth: true
@@ -440,15 +445,17 @@ Rectangle {
                 hoverEnabled: true
                 background: Rectangle {
                     radius: 3
-                    color: minimizeButton.hovered ? topHeaderRoot.controlHoverFill : "transparent"
-                    border.width: minimizeButton.hovered ? 1 : 0
+                    color: minimizeButton.down ? topHeaderRoot.controlPressedFill
+                        : (minimizeButton.hovered ? topHeaderRoot.controlHoverFill : "transparent")
+                    border.width: (minimizeButton.hovered || minimizeButton.down) ? 1 : 0
                     border.color: topHeaderRoot.controlHoverBorder
                 }
                 contentItem: Text {
                     text: minimizeButton.text
                     font.family: "Segoe MDL2 Assets"
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
-                    color: minimizeButton.hovered ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
+                    color: (minimizeButton.hovered || minimizeButton.down)
+                        ? topHeaderRoot.controlHoverInk : topHeaderRoot.headerMutedInk
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -475,15 +482,17 @@ Rectangle {
                 hoverEnabled: true
                 background: Rectangle {
                     radius: 3
-                    color: maximizeButton.hovered ? topHeaderRoot.controlHoverFill : "transparent"
-                    border.width: maximizeButton.hovered ? 1 : 0
+                    color: maximizeButton.down ? topHeaderRoot.controlPressedFill
+                        : (maximizeButton.hovered ? topHeaderRoot.controlHoverFill : "transparent")
+                    border.width: (maximizeButton.hovered || maximizeButton.down) ? 1 : 0
                     border.color: topHeaderRoot.controlHoverBorder
                 }
                 contentItem: Text {
                     text: maximizeButton.text
                     font.family: "Segoe MDL2 Assets"
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
-                    color: maximizeButton.hovered ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
+                    color: (maximizeButton.hovered || maximizeButton.down)
+                        ? topHeaderRoot.controlHoverInk : topHeaderRoot.headerMutedInk
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -508,15 +517,16 @@ Rectangle {
                 hoverEnabled: true
                 background: Rectangle {
                     radius: 3
-                    color: closeButton.hovered ? topHeaderRoot.closeHoverFill : "transparent"
-                    border.width: closeButton.hovered ? 1 : 0
+                    color: (closeButton.hovered || closeButton.down) ? topHeaderRoot.closeHoverFill : "transparent"
+                    border.width: (closeButton.hovered || closeButton.down) ? 1 : 0
                     border.color: SemanticTheme.destructiveHover(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
                 }
                 contentItem: Text {
                     text: closeButton.text
                     font.family: "Segoe MDL2 Assets"
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
-                    color: closeButton.hovered ? topHeaderRoot.closeHoverInk : topHeaderRoot.headerMutedInk
+                    color: (closeButton.hovered || closeButton.down)
+                        ? topHeaderRoot.closeHoverInk : topHeaderRoot.headerMutedInk
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }

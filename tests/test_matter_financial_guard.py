@@ -96,6 +96,31 @@ def test_permanent_deletion_is_blocked_when_the_matter_has_wip_or_unpaid_ar():
     assert "unpaid invoice" in result["message"]
 
 
+def test_matter_financial_summary_blocks_archiving_when_a_linked_draft_exists():
+    repo = _SummaryRepo()
+    summary = ExcelRepo._matter_financial_summary_from_rows(
+        repo,
+        "matter-1",
+        [{
+            sc.COL_TIME_ENTRY_ID: "T-draft",
+            sc.COL_TIME_MATTER_ID: "matter-1",
+            sc.COL_TIME_STATUS: "Draft",
+            sc.COL_TIME_INVOICE_REF: "DRAFT-26-0032",
+            sc.COL_TIME_TOTAL: 100.0,
+        }],
+        [],
+        [],
+        [{sc.COL_DRAFT_INVOICE_NUM: "DRAFT-26-0032"}],
+    )
+
+    assert summary["draftInvoiceCount"] == 1
+    assert summary["draftInvoices"] == ["DRAFT-26-0032"]
+    assert summary["hasFinancialBlockers"] is True
+    assert "draft invoice" in ExcelRepo._matter_financial_blocker_message(
+        repo, summary, action="archive this matter"
+    )
+
+
 def test_matter_screens_expose_financial_work_and_sized_delete_buttons():
     root = Path(__file__).resolve().parents[1]
     wizard = (root / "src" / "qml" / "views" / "PlaceholderSubmenuView.qml").read_text(encoding="utf-8")

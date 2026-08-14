@@ -1876,6 +1876,9 @@ Window {
         onReportBrandingRequested: {
             reportBrandingSettings.openWithProfiles()
         }
+        onProductivitySettingsRequested: {
+            productivitySettings.open()
+        }
         onBackupRecoveryRequested: {
             backupRecoveryDialog.open()
         }
@@ -1904,6 +1907,14 @@ Window {
                 mainContent.reloadAllActiveReportBranding()
             }
         }
+    }
+
+    ProductivitySettingsDialog {
+        id: productivitySettings
+        parentWindow: floatWin
+        t: floatWin.t
+        appRef: floatWin.appRef
+        metrics: floatWin.uiMetrics
     }
 
     ThemePicker {

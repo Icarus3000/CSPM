@@ -531,12 +531,15 @@ Item {
                 spacing: root.tight ? 8 : 12
 
                 Rectangle {
+                    id: productivityCard
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     radius: 5
-                    color: root.surfaceColor
+                    color: root.interactive && productivityClickArea.containsMouse
+                        ? root.hoverColor : root.surfaceColor
                     border.width: 1
-                    border.color: root.borderColor
+                    border.color: root.interactive && productivityClickArea.containsMouse
+                        ? root.activeBorderColor : root.borderColor
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -558,7 +561,7 @@ Item {
 
                             Text {
                                 visible: !root.tight
-                                text: "Report ›"
+                                text: "Open report ›"
                                 color: root.accentColor
                                 font.family: "Segoe UI"
                                 font.pixelSize: 10
@@ -608,9 +611,13 @@ Item {
                         }
                     }
 
-                    TapHandler {
+                    MouseArea {
+                        id: productivityClickArea
+                        anchors.fill: parent
                         enabled: root.interactive
-                        onTapped: root.openScreenRequested("finance", "D10")
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root.openScreenRequested("finance", "D10")
                     }
                 }
 
