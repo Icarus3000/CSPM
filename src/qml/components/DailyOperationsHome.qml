@@ -31,6 +31,7 @@ Item {
         ? root.briefing.productivitySummary : ({})
 
     signal openScreenRequested(string moduleId, string nodeId)
+    signal openWorkspaceRequested(string moduleId, string nodeId, var state)
 
     clip: true
 
@@ -57,6 +58,10 @@ Item {
                 "ytd": { "hours": 0.0, "gross": 0.0, "net": 0.0 }
             }
         }
+    }
+
+    function localTodayIso() {
+        return Qt.formatDate(new Date(), "yyyy-MM-dd")
     }
 
     function number(value) {
@@ -200,7 +205,15 @@ Item {
             "detail": formatMoney(productivity.today ? productivity.today.gross : 0) + " recorded",
             "icon": "\uE823",
             "tone": "accent",
-            "moduleId": "docketing", "nodeId": "B01"
+            "moduleId": "finance", "nodeId": "D18",
+            "workspaceState": {
+                "focusNodeId": "D18",
+                "tabTitle": "Today's Time Ledger",
+                "singleInstanceKey": "report:D18:today",
+                "startDate": root.localTodayIso(),
+                "endDate": root.localTodayIso(),
+                "showTimeOnly": true
+            }
         },
         {
             "label": "WIP to review",
@@ -418,7 +431,18 @@ Item {
                     HoverHandler { id: metricHover }
                     TapHandler {
                         enabled: root.interactive
-                        onTapped: root.openScreenRequested(String(metricCard.modelData.moduleId), String(metricCard.modelData.nodeId))
+                        onTapped: {
+                            var state = metricCard.modelData.workspaceState
+                            if (state && typeof state === "object") {
+                                root.openWorkspaceRequested(
+                                    String(metricCard.modelData.moduleId),
+                                    String(metricCard.modelData.nodeId),
+                                    state
+                                )
+                            } else {
+                                root.openScreenRequested(String(metricCard.modelData.moduleId), String(metricCard.modelData.nodeId))
+                            }
+                        }
                     }
                 }
             }

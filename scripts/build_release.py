@@ -336,6 +336,15 @@ def main():
         "--icon=src/assets/app_icon.ico",
         "--hidden-import=pypdf",
         "--hidden-import=reportlab",
+        # Supplier evidence conversion: Pillow renders image files and
+        # pywin32 drives the locally installed Word/Excel PDF exporters.
+        "--hidden-import=PIL.Image",
+        "--hidden-import=PIL.ImageOps",
+        "--hidden-import=PIL.ImageSequence",
+        "--hidden-import=pythoncom",
+        "--hidden-import=pywintypes",
+        "--hidden-import=win32com.client",
+        "--hidden-import=win32com.client.dynamic",
         "--distpath", str(dist_dir),
         "--workpath", str(build_dir),
     ]

@@ -3,10 +3,29 @@ from __future__ import annotations
 # CSPM_AP_GOVERNED_SCHEMA_V1
 AP_BILLS_SHEET = "APBills"
 AP_BILLS_TABLE = "tblAPBills"
-AP_BILLS_HEADERS = ("APBillID", "Vendor", "VendorInvoiceNumber", "InvoiceDate", "DueDate", "Subtotal", "TaxAmount", "Total", "AmountPaid", "Balance", "Status", "Currency", "ExpenseTransactionID", "DuplicateKey", "Notes", "CreatedAt", "UpdatedAt", "ExpenseTreatment", "CategoryCode", "CategoryName", "SourceAccount")
+AP_BILLS_HEADERS = (
+    "APBillID", "Vendor", "VendorInvoiceNumber", "InvoiceDate", "DueDate",
+    "Subtotal", "TaxAmount", "Total", "AmountPaid", "Balance", "Status",
+    "Currency", "ExpenseTransactionID", "DuplicateKey", "Notes", "CreatedAt",
+    "UpdatedAt", "ExpenseTreatment", "CategoryCode", "CategoryName", "SourceAccount",
+    # V2 governed supplier-document, currency, and client-recovery evidence.
+    # These are deliberately appended: deployed workbooks can be migrated without
+    # changing the meaning or positions of their existing A/P columns.
+    "OriginalCurrency", "OriginalSubtotal", "OriginalTaxAmount", "OriginalTotal",
+    "BaseCurrency", "BaseSubtotal", "BaseTaxAmount", "BaseTotal", "FXRate",
+    "FXRateDate", "FXSource", "ClientTaxExempt", "BillClaimPct", "MatterID",
+    "ClientID", "ParentID", "DisbursementID", "DocumentPath", "DocumentHash",
+    "DocumentOriginalName", "DocumentOriginalPath", "DocumentOriginalHash",
+    "DocumentStorageFormat", "HistoricalAdoption", "AdoptedAt",
+)
 AP_PAYMENTS_SHEET = "APPayments"
 AP_PAYMENTS_TABLE = "tblAPPayments"
-AP_PAYMENTS_HEADERS = ("APPaymentID", "APBillID", "PaymentDate", "Amount", "FromAccount", "Method", "Reference", "Status", "ReversalOfPaymentID", "ReversalReason", "Notes", "CreatedAt", "UpdatedAt")
+AP_PAYMENTS_HEADERS = (
+    "APPaymentID", "APBillID", "PaymentDate", "Amount", "FromAccount", "Method",
+    "Reference", "Status", "ReversalOfPaymentID", "ReversalReason", "Notes",
+    "CreatedAt", "UpdatedAt", "BaseAmount", "FXRate", "PaymentTransactionID",
+    "DocumentPath", "DocumentHash", "DocumentOriginalName", "HistoricalPayment",
+)
 AP_REQUIRED_TABLES = {
     AP_BILLS_TABLE: {"sheet": AP_BILLS_SHEET, "headers": AP_BILLS_HEADERS, "authority": "supplier_obligation"},
     AP_PAYMENTS_TABLE: {"sheet": AP_PAYMENTS_SHEET, "headers": AP_PAYMENTS_HEADERS, "authority": "outgoing_payment_application"},

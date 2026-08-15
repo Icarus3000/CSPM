@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QThreadPool, Signal, Slot, QUrl
+from PySide6.QtGui import QDesktopServices
 
 from backend.workers import Worker
 from repositories.ap_workbook_repository import APWorkbookRepository
@@ -348,6 +349,35 @@ class APController(QObject):
             self.apPaymentFinished,
             dict(payload or {}),
         )
+
+    @Slot(str, result=list)
+    def listHistoricalSupplierCandidates(self, query: str = "") -> list[dict[str, Any]]:
+        """Read-only legacy candidate lookup used by the adoption wizard."""
+        try:
+            return list(self._orchestrator.list_historical_candidates(query) or [])
+        except Exception as exc:
+            logger.exception("Historical supplier candidate lookup failed")
+            self.error.emit(self._error_text(exc))
+            return []
+
+    @Slot(result=str)
+    def supplierDocumentFolder(self) -> str:
+        service = getattr(self._orchestrator, "document_service", None)
+        if service is None:
+            return ""
+        try:
+            return str(service.ensure_root())
+        except Exception as exc:
+            self.error.emit(self._error_text(exc))
+            return ""
+
+    @Slot()
+    def openSupplierDocumentFolder(self) -> None:
+        folder = self.supplierDocumentFolder()
+        if not folder:
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(folder)):
+            self.error.emit("CSPM could not open the shared supplier-invoices folder.")
 
     @Slot(str, str, str)
     def reverseAPPayment(

@@ -472,6 +472,7 @@ class AppController(QObject):
         startup_logger.info("%s AppController creating accounts payable controller", _elapsed())
         from repositories.ap_workbook_repository import APWorkbookRepository
         from services.ap_orchestration_service import APOrchestrationService
+        from services.supplier_document_service import SupplierDocumentService
 
         ap_workbook_path = self._paths.workbook_path()
         self._ap_repository = None
@@ -482,6 +483,10 @@ class AppController(QObject):
             self._ap_orchestration = APOrchestrationService(
                 self._ap_repository,
                 self._excel_repo,
+                SupplierDocumentService(
+                    self._paths.master_data_dir(),
+                    self._paths.data_dir(),
+                ),
             )
             self._ap_controller = APController(
                 self._excel_repo,
@@ -2377,7 +2382,7 @@ class AppController(QObject):
             "addressLines": ["14 Parsons Court", "Thornhill, ON L4K 6Z4"],
             "phone": "416-725-9364",
             "email": "cory@coryschneiderlaw.ca",
-            "logoPath": str(self._paths.root / "src" / "qml" / "assets" / "CS.svg"),
+            "logoPath": str(self._paths.root / "assets" / "CS.svg"),
         }
 
     def _safe_profile_id(self, text: Any, fallback: str = "") -> str:
@@ -2855,17 +2860,45 @@ class AppController(QObject):
         return ""
 
     def _logo_path_for_pdf(self, profile: Dict[str, Any]) -> str:
-        logo_path = str(profile.get("logoPath") or "").strip()
-        if not logo_path:
-            return ""
-        candidate = self._coerce_file_path(logo_path)
-        if not candidate.exists():
-            return ""
-        ext = candidate.suffix.lower()
-        if ext in {".png", ".jpg", ".jpeg"}:
-            return str(candidate)
-        if ext == ".svg":
-            return self._rasterize_svg_logo_for_pdf(str(profile.get("id") or "profile"), candidate)
+        """Resolve a printable report mark, always retaining the CSPM default.
+
+        A branding profile may predate the report-logo setting or point to a
+        file that was moved.  In either case, exports should remain branded
+        rather than silently dropping the firm mark from the header.
+        """
+        candidates = []
+        configured_logo = str(profile.get("logoPath") or "").strip()
+        firm_report_logo = self._paths.root / "assets" / "CS.svg"
+        legacy_report_logo = self._paths.root / "src" / "qml" / "assets" / "CS.svg"
+        legacy_app_icon = self._paths.root / "src" / "assets" / "app_icon_preview.png"
+        configured_path = self._coerce_file_path(configured_logo) if configured_logo else None
+        default_logo_paths = {
+            str(path.resolve()).casefold()
+            for path in (firm_report_logo, legacy_report_logo, legacy_app_icon)
+        }
+        configured_key = str(configured_path.resolve()).casefold() if configured_path else ""
+        # Existing default profiles may contain the former app icon or the
+        # pre-report SVG location.  They all resolve to the firm's canonical
+        # invoice/report mark.  A genuinely custom profile logo is untouched.
+        if configured_key and configured_key in default_logo_paths:
+            candidates.append((DEFAULT_REPORT_BRANDING_PROFILE_ID, str(firm_report_logo)))
+        elif configured_logo:
+            candidates.append((str(profile.get("id") or "profile"), configured_logo))
+        candidates.append((DEFAULT_REPORT_BRANDING_PROFILE_ID, str(firm_report_logo)))
+        candidates.append((DEFAULT_REPORT_BRANDING_PROFILE_ID, str(legacy_report_logo)))
+        candidates.append((DEFAULT_REPORT_BRANDING_PROFILE_ID, str(legacy_app_icon)))
+
+        for profile_id, logo_path in candidates:
+            candidate = self._coerce_file_path(logo_path)
+            if not candidate.exists():
+                continue
+            ext = candidate.suffix.lower()
+            if ext in {".png", ".jpg", ".jpeg"}:
+                return str(candidate)
+            if ext == ".svg":
+                rendered = self._rasterize_svg_logo_for_pdf(profile_id, candidate)
+                if rendered:
+                    return rendered
         return ""
 
     def _apply_report_branding_to_payload(self, payload: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
@@ -4893,6 +4926,50 @@ class AppController(QObject):
             if not isinstance(export_payload, dict):
                 export_payload = payload_dict
             return self.exportDocketActivityPdf(export_payload)
+        if report_id in {"matter_time_ledger", "today_time_ledger", "time_ledger"}:
+            try:
+                from services.report_pdf_exporter import generate_matter_time_ledger_pdf
+
+                export_payload = payload_dict.get("exportPayload")
+                if not isinstance(export_payload, dict):
+                    export_payload = payload_dict
+                export_payload, branding_profile = self._apply_report_branding_to_payload(export_payload)
+                logo_path = self._logo_path_for_pdf(branding_profile)
+                candidate_dirs = [
+                    self._paths.exports_dir(),
+                    self._paths.data_dir() / "exports",
+                    self._paths.root / "outputs",
+                ]
+                filepath = ""
+                last_error = None
+                for export_dir in candidate_dirs:
+                    try:
+                        export_dir.mkdir(parents=True, exist_ok=True)
+                        filepath = generate_matter_time_ledger_pdf(export_payload, str(export_dir), str(logo_path))
+                        if filepath:
+                            break
+                    except Exception as exc:
+                        last_error = exc
+                        continue
+                if not filepath:
+                    raise RuntimeError(f"PDF export failed for all output locations: {last_error}")
+                filepath = os.path.abspath(filepath)
+                if not os.path.exists(filepath):
+                    raise RuntimeError(f"PDF exporter returned a non-existent path: {filepath}")
+                return {
+                    "ok": True,
+                    "path": filepath,
+                    "filename": os.path.basename(filepath),
+                    "message": f"PDF exported: {os.path.basename(filepath)} | Saved to: {os.path.dirname(filepath)}",
+                }
+            except Exception as exc:
+                self._report_failure(
+                    "Could not export Matter Time Ledger PDF",
+                    context="report.matter_time_ledger.export_pdf",
+                    exc=exc,
+                )
+                logging.getLogger("cspm.pdf").exception("Matter Time Ledger PDF export failed")
+                return {"ok": False, "message": str(exc), "path": "", "filename": ""}
         if report_id in {"productivity", "productivity_report"}:
             try:
                 from services.report_pdf_exporter import generate_productivity_report_pdf

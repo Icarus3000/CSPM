@@ -556,6 +556,14 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         return String(currentNode().id || "") === "D07"
     }
 
+    function activeIsMatterTimeLedger() {
+        return String(currentNode().id || "") === "D18"
+    }
+
+    function activeIsLedgerReport() {
+        return root.activeIsClientLedgerReport() || root.activeIsMatterTimeLedger()
+    }
+
     function activeIsStatementOfAccount() {
         return String(currentNode().id || "") === "D17"
     }
@@ -3383,6 +3391,12 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         if (root.activeIsDocketActivityReport() && docketActivityReportPanel && docketActivityReportPanel.applyState) {
             docketActivityReportPanel.applyState(state, true)
         }
+        var matterTimeLedgerShell = matterTimeLedgerLoader.item
+        var matterTimeLedgerPanel = matterTimeLedgerShell ? matterTimeLedgerShell["reportPanel"] : null
+        if (root.activeIsMatterTimeLedger() && matterTimeLedgerPanel
+                && matterTimeLedgerPanel.applyState) {
+            matterTimeLedgerPanel.applyState(state)
+        }
         if (root.activeIsInvoiceBuilder() && invoiceBuilderView) {
             var dn = root.initialInvoiceDraftNumber()
             invoiceBuilderView._loadDrafts()
@@ -3990,7 +4004,7 @@ Behavior on border.color {
                         && !root.activeIsARAgingReport()
                         && !root.activeIsDocketActivityReport()
                         && !root.activeIsProductivityDashboard()
-                        && !root.activeIsClientLedgerReport()
+                        && !root.activeIsLedgerReport()
                         && !root.activeIsStatementOfAccount()
                         && !root.activeIsTransactionsMaster()
                         && !root.activeIsPaymentEntry()
@@ -4179,29 +4193,65 @@ Behavior on border.color {
                     }
                 }
 
-                Rectangle {
-                    visible: root.activeIsClientLedgerReport()
+                Loader {
+                    id: clientLedgerReportLoader
+                    active: root.activeIsClientLedgerReport()
+                    visible: active
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: root.sectionRadiusPx
-                    color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
-                    border.width: 1
-                    border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+                    sourceComponent: Component {
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: root.sectionRadiusPx
+                            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
+                            border.width: 1
+                            border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
 
-                    ClientLedgerReportPanel {
-                        id: clientLedgerReportPanel
-                        onReportWindowRequested: function(reportDocument) { root.reportWindowRequested(reportDocument) }
-                        onWorkspaceOpenRequested: function(tileIndex, nodeId, state) { root.workspaceOpenRequested(tileIndex, nodeId, state) }
-                        anchors.fill: parent
-                        anchors.margins: root.ratioPx(root.scaleRatios.descPadPct * 1.15, 10)
-                        t: root.t
-                        metrics: root.responsiveMetrics
-                        appRef: root.appRef
-                        windowRef: root.windowRef
-                        sfxBus: root.sfxBus
-                        sectionRadiusPx: root.sectionRadiusPx
-                        fieldHeightPx: root.fieldHeightPx
-                        autoLoadOnVisible: true
+                            ClientLedgerReportPanel {
+                                onReportWindowRequested: function(reportDocument) { root.reportWindowRequested(reportDocument) }
+                                onWorkspaceOpenRequested: function(tileIndex, nodeId, state) { root.workspaceOpenRequested(tileIndex, nodeId, state) }
+                                anchors.fill: parent
+                                anchors.margins: root.ratioPx(root.scaleRatios.descPadPct * 1.15, 10)
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                appRef: root.appRef
+                                windowRef: root.windowRef
+                                sfxBus: root.sfxBus
+                                sectionRadiusPx: root.sectionRadiusPx
+                                fieldHeightPx: root.fieldHeightPx
+                                autoLoadOnVisible: true
+                            }
+                        }
+                    }
+                }
+
+                Loader {
+                    id: matterTimeLedgerLoader
+                    active: root.activeIsMatterTimeLedger()
+                    visible: active
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    sourceComponent: Component {
+                        Rectangle {
+                            property alias reportPanel: matterTimeLedgerReportPanel
+                            anchors.fill: parent
+                            radius: root.sectionRadiusPx
+                            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
+                            border.width: 1
+                            border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+
+                            MatterTimeLedgerReportPanel {
+                                id: matterTimeLedgerReportPanel
+                                anchors.fill: parent
+                                anchors.margins: root.ratioPx(root.scaleRatios.descPadPct * 1.15, 10)
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                appRef: root.appRef
+                                windowRef: root.windowRef
+                                sfxBus: root.sfxBus
+                                startupState: root.initialState
+                            }
+                        }
                     }
                 }
 
@@ -5878,7 +5928,7 @@ Behavior on border.color {
                         && !root.activeIsFinancialDashboard()
                         && !root.activeIsARAgingReport()
                         && !root.activeIsDocketActivityReport()
-                        && !root.activeIsClientLedgerReport()
+                        && !root.activeIsLedgerReport()
                         && !root.activeIsStatementOfAccount()
                         && !root.activeIsTransactionsMaster()
                         && !root.activeIsPaymentEntry()
@@ -5917,7 +5967,7 @@ Behavior on border.color {
                 }
 
                 RowLayout {
-                    visible: !root.activeIsClientLedgerReport()
+                    visible: !root.activeIsLedgerReport()
                         && !root.activeIsFinancialDashboard()
                         && !root.activeIsARAgingReport()
                         && !root.activeIsStatementOfAccount()

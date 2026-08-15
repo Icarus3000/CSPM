@@ -207,6 +207,12 @@ class APWorkbookRepository:
                 "CreatedAt": created,
                 "UpdatedAt": created,
             })
+            # Keep all governed V2 evidence supplied by the orchestration
+            # service.  Unknown input keys are intentionally ignored, but every
+            # declared workbook column is durable and survives a later edit.
+            for header in AP_BILLS_HEADERS:
+                if header in bill and header not in {"APBillID", "AmountPaid", "Balance", "Status", "DuplicateKey", "CreatedAt", "UpdatedAt"}:
+                    row[header] = bill.get(header, row.get(header, ""))
             bills.append(row)
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
@@ -287,6 +293,9 @@ class APWorkbookRepository:
                 "CreatedAt": created,
                 "UpdatedAt": _now(),
             })
+            for header in AP_BILLS_HEADERS:
+                if header in bill and header not in {"APBillID", "AmountPaid", "Balance", "Status", "DuplicateKey", "CreatedAt", "UpdatedAt"}:
+                    existing[header] = bill.get(header, existing.get(header, ""))
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
             workbook.save(self.path)
@@ -381,6 +390,9 @@ class APWorkbookRepository:
                 "Reference": clean_text(payment.get("Reference")), "Status": "Posted",
                 "Notes": clean_text(payment.get("Notes")), "CreatedAt": created, "UpdatedAt": created,
             })
+            for header in AP_PAYMENTS_HEADERS:
+                if header in payment and header not in {"APPaymentID", "APBillID", "Status", "CreatedAt", "UpdatedAt"}:
+                    row[header] = payment.get(header, row.get(header, ""))
             payments.append(row)
             target.update({"AmountPaid": float(snapshot.total_paid), "Balance": float(snapshot.balance), "Status": snapshot.status.value, "UpdatedAt": _now()})
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
@@ -421,6 +433,9 @@ class APWorkbookRepository:
                 "ReversalOfPaymentID": original.get("APPaymentID"), "ReversalReason": clean_text(reason),
                 "CreatedAt": created, "UpdatedAt": created,
             })
+            for header in AP_PAYMENTS_HEADERS:
+                if header in original and header not in {"APPaymentID", "APBillID", "Status", "CreatedAt", "UpdatedAt", "ReversalOfPaymentID", "ReversalReason"}:
+                    reversal[header] = original.get(header, reversal.get(header, ""))
             payments.append(reversal)
             bill_id = clean_text(original.get("APBillID"))
             target = next(row for row in bills if clean_text(row.get("APBillID")).casefold() == bill_id.casefold())
@@ -434,3 +449,31 @@ class APWorkbookRepository:
         finally:
             _close_workbook(workbook)
         return next(row for row in self.list_payments(bill_id) if clean_text(row.get("APPaymentID")).casefold() == reversal_id.casefold())
+
+    def update_payment_metadata(self, payment_id: str, metadata: Mapping[str, Any]) -> dict[str, Any]:
+        """Add immutable linkage evidence after the cash-transfer transaction saves.
+
+        This deliberately cannot change payment amount, bill, or lifecycle
+        status; it is only for transaction/document identifiers produced by the
+        governed orchestration layer.
+        """
+        key = clean_text(payment_id).casefold()
+        if not key:
+            raise APValidationError("APPaymentID is required.")
+        workbook = _open(self.path)
+        try:
+            bills = _read_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS)
+            payments = _read_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS)
+            row = next((item for item in payments if clean_text(item.get("APPaymentID")).casefold() == key), None)
+            if row is None:
+                raise APValidationError(f"Unknown AP payment ID: {payment_id}")
+            for header in AP_PAYMENTS_HEADERS:
+                if header in metadata:
+                    row[header] = metadata[header]
+            row["UpdatedAt"] = _now()
+            _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
+            _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
+            workbook.save(self.path)
+        finally:
+            _close_workbook(workbook)
+        return next(row for row in self.list_payments() if clean_text(row.get("APPaymentID")).casefold() == key)

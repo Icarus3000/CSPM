@@ -2199,6 +2199,150 @@ class ExcelRepo:
         data.setdefault("status", "Pending")
         return self.save_transaction(data)
 
+    @with_financial_write_batch
+    def create_supplier_disbursement(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create the client-facing WIP entry for a governed supplier bill.
+
+        A supplier invoice creates one business expense and, where selected,
+        one recoverable client disbursement.  Keeping this in the ExcelRepo
+        means WIP, draft invoices, Statement of Account, and reporting all see
+        the same entry immediately.
+        """
+        self.ensure_schema()
+        self._assert_write_permitted()
+        data = dict(payload or {})
+        matter_id = _clean_text(data.get("MatterID") or data.get("matterId") or data.get("Matter"))
+        if not matter_id:
+            raise ValueError("A client matter is required for a recoverable supplier disbursement.")
+        matter = self._find_matter_row(matter_id)
+        if matter is None:
+            raise ValueError("The selected client matter could not be found.")
+        self._ensure_matter_is_open_for_new_entry(matter, "disbursement")
+
+        amount = self._money_round(data.get("Amount") or data.get("BaseAmount"))
+        if amount <= 0:
+            raise ValueError("The recoverable client disbursement must be greater than zero.")
+        bill_pct = self._money_round(data.get("BillPct") if data.get("BillPct") not in (None, "") else 100)
+        if bill_pct < 0 or bill_pct > 100:
+            raise ValueError("Client recovery percentage must be between 0 and 100.")
+        ap_bill_id = _clean_text(data.get("APBillID"))
+        allocation_id = _clean_text(data.get("APAllocationID")) or self._new_id("APA")
+        disbursement_rows = self._read_table_rows(TBL_DISBURSEMENTS)
+        if ap_bill_id and any(
+            _clean_text(row.get(sc.COL_DISB_AP_BILL_ID)).casefold() == ap_bill_id.casefold()
+            and _clean_text(row.get(sc.COL_DISB_AP_ALLOCATION_ID)).casefold() == allocation_id.casefold()
+            for row in disbursement_rows
+        ):
+            raise ValueError("This supplier-bill allocation already has a client disbursement.")
+
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        disbursement_id = _clean_text(data.get("DisbursementID")) or self._new_id("DISB")
+        description = _clean_text(data.get("Description")) or "Supplier disbursement"
+        supplier_reference = _clean_text(data.get("SupplierInvoiceRef"))
+        if supplier_reference:
+            description += f" — supplier invoice {supplier_reference}"
+        row = {
+            sc.COL_DISB_ID: disbursement_id,
+            sc.COL_DISB_DATE: _clean_text(data.get("Date") or data.get("InvoiceDate")) or date.today().isoformat(),
+            sc.COL_DISB_CLIENT_NAME: _clean_text(matter.get(sc.COL_MATTER_PARENT_NAME)),
+            sc.COL_DISB_SUB_CLIENT: _clean_text(matter.get(sc.COL_MATTER_CLIENT_NAME)),
+            sc.COL_DISB_CLIENT_ID: _clean_text(matter.get(sc.COL_MATTER_CLIENT_ID)),
+            sc.COL_DISB_PARENT_ID: _clean_text(matter.get(sc.COL_MATTER_PARENT_ID)),
+            sc.COL_DISB_MATTER_ID: _clean_text(matter.get(sc.COL_MATTER_ID)),
+            sc.COL_DISB_DESCRIPTION: description,
+            sc.COL_DISB_AMOUNT: amount,
+            sc.COL_DISB_TAX_EXEMPT: 1 if self._to_bool_int(data.get("ClientTaxExempt"), default=0) else 0,
+            sc.COL_DISB_BILL_PCT: bill_pct,
+            sc.COL_DISB_INVOICE_REF: "",
+            sc.COL_DISB_PAYMENT_STATUS: "Unbilled",
+            sc.COL_DISB_INVOICE_TOTAL: 0.0,
+            sc.COL_DISB_INVOICE_AMOUNT_PAID: 0.0,
+            sc.COL_DISB_INVOICE_BALANCE_DUE: 0.0,
+            sc.COL_DISB_REISSUE_INVOICE_NUM: "",
+            sc.COL_DISB_CREATED_AT: now_stamp,
+            sc.COL_DISB_AP_BILL_ID: ap_bill_id,
+            sc.COL_DISB_AP_ALLOCATION_ID: allocation_id,
+            sc.COL_DISB_SOURCE_TRANSACTION_ID: _clean_text(data.get("SourceTransactionID")),
+            sc.COL_DISB_ORIGINAL_CURRENCY: _clean_text(data.get("OriginalCurrency")) or "CAD",
+            sc.COL_DISB_ORIGINAL_AMOUNT: self._money_round(data.get("OriginalAmount")),
+            sc.COL_DISB_FX_RATE: self._money_round(data.get("FXRate") or 1),
+            sc.COL_DISB_SUPPLIER_INVOICE_REF: supplier_reference,
+            sc.COL_DISB_DOCUMENT_PATH: _clean_text(data.get("DocumentPath")),
+        }
+        disbursement_rows.append(row)
+        self._replace_table_rows(TBL_DISBURSEMENTS, disbursement_rows)
+
+        ledger_rows = self._read_table_rows(TBL_LEDGER)
+        ledger_rows.append({
+            sc.COL_LEDGER_ID: self._new_id("LED"),
+            sc.COL_LEDGER_DATE: row[sc.COL_DISB_DATE],
+            sc.COL_LEDGER_CLIENT_VENDOR: _clean_text(data.get("Vendor")) or row[sc.COL_DISB_SUB_CLIENT],
+            sc.COL_LEDGER_DESCRIPTION: description,
+            sc.COL_LEDGER_CATEGORY: _clean_text(data.get("CategoryName")) or "Supplier disbursement",
+            sc.COL_LEDGER_REFERENCE: supplier_reference or ap_bill_id,
+            sc.COL_LEDGER_BILLINGS_EXCL_HST: 0.0,
+            sc.COL_LEDGER_HST_COLLECTED: 0.0,
+            sc.COL_LEDGER_EXPENSES_EXCL_HST: self._money_round(data.get("BaseSubtotal") or amount),
+            sc.COL_LEDGER_HST_PAID: self._money_round(data.get("BaseTaxAmount")),
+            sc.COL_LEDGER_COLLECTED: 0.0,
+            sc.COL_LEDGER_WRITE_OFF: 0.0,
+            sc.COL_LEDGER_RECEIVABLE: amount,
+            sc.COL_LEDGER_TRX_ID: _clean_text(data.get("SourceTransactionID")),
+            sc.COL_LEDGER_EXTERNAL_REF_ID: disbursement_id,
+            sc.COL_LEDGER_ORIGINAL_AMOUNT: self._money_round(data.get("OriginalAmount") or amount),
+            sc.COL_LEDGER_WORK_CLIENT: row[sc.COL_DISB_SUB_CLIENT],
+            sc.COL_LEDGER_CREATED_AT: now_stamp,
+        })
+        self._replace_table_rows(TBL_LEDGER, ledger_rows)
+        return {
+            "ok": True,
+            "disbursementId": disbursement_id,
+            "allocationId": allocation_id,
+            "matterId": row[sc.COL_DISB_MATTER_ID],
+            "amount": amount,
+            "message": "Client disbursement added to WIP.",
+        }
+
+    @with_financial_write_batch
+    def link_historical_supplier_disbursement(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Attach an A/P audit record to existing historic expense/WIP rows.
+
+        It never creates a new expense, ledger, or client WIP entry.  That is
+        the critical no-double-count guard for legacy reconciliations.
+        """
+        self.ensure_schema()
+        self._assert_write_permitted()
+        data = dict(payload or {})
+        disbursement_id = _clean_text(data.get("DisbursementID"))
+        ap_bill_id = _clean_text(data.get("APBillID"))
+        if not disbursement_id or not ap_bill_id:
+            raise ValueError("Historical reconciliation requires both the selected disbursement and A/P bill ID.")
+        rows = self._read_table_rows(TBL_DISBURSEMENTS)
+        target_index = next((index for index, row in enumerate(rows) if _clean_text(row.get(sc.COL_DISB_ID)).casefold() == disbursement_id.casefold()), -1)
+        if target_index < 0:
+            raise ValueError("The selected historic disbursement could not be found.")
+        row = dict(rows[target_index])
+        existing_bill = _clean_text(row.get(sc.COL_DISB_AP_BILL_ID))
+        if existing_bill and existing_bill.casefold() != ap_bill_id.casefold():
+            raise ValueError("This historic disbursement is already linked to a different A/P bill.")
+        row.update({
+            sc.COL_DISB_AP_BILL_ID: ap_bill_id,
+            sc.COL_DISB_AP_ALLOCATION_ID: _clean_text(data.get("APAllocationID")) or self._new_id("APA"),
+            sc.COL_DISB_SOURCE_TRANSACTION_ID: _clean_text(data.get("SourceTransactionID")),
+            sc.COL_DISB_ORIGINAL_CURRENCY: _clean_text(data.get("OriginalCurrency")) or "CAD",
+            sc.COL_DISB_ORIGINAL_AMOUNT: self._money_round(data.get("OriginalAmount")),
+            sc.COL_DISB_FX_RATE: self._money_round(data.get("FXRate") or 1),
+            sc.COL_DISB_SUPPLIER_INVOICE_REF: _clean_text(data.get("SupplierInvoiceRef")),
+            sc.COL_DISB_DOCUMENT_PATH: _clean_text(data.get("DocumentPath")),
+        })
+        rows[target_index] = row
+        self._replace_table_rows(TBL_DISBURSEMENTS, rows)
+        return {
+            "ok": True,
+            "disbursementId": disbursement_id,
+            "message": "Historic disbursement linked without creating duplicate WIP.",
+        }
+
     def save_receivable(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Save a Receivables master record directly (used for data generation during legacy import)."""
         self.ensure_schema()
@@ -12355,6 +12499,7 @@ class ExcelRepo:
             client_parent: Dict[str, str] = {}
             parent_names, client_parent_lookup = self._client_parent_lookup(profile_rows, clients_rows, parents_rows)
             matter_names: Dict[str, str] = {}
+            matter_numbers: Dict[str, str] = {}
             matter_client: Dict[str, str] = {}
             matter_parent: Dict[str, str] = {}
 
@@ -12398,8 +12543,10 @@ class ExcelRepo:
             for row in matters_rows:
                 matter_id = _clean_text(row.get(sc.COL_MATTER_ID))
                 matter_name = _clean_text(row.get(sc.COL_MATTER_NAME)) or _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME))
+                matter_number = _clean_text(row.get(sc.COL_MATTER_NUMBER))
                 if matter_id:
                     matter_names[matter_id] = matter_name or matter_id
+                    matter_numbers[matter_id] = matter_number
                     matter_client[matter_id] = _clean_text(row.get(sc.COL_MATTER_CLIENT_ID))
                     matter_parent[matter_id] = _clean_text(row.get(sc.COL_MATTER_PARENT_ID))
                 put_option(matter_options, matter_id, matter_name)
@@ -12441,6 +12588,32 @@ class ExcelRepo:
             def amount(value: Any) -> float:
                 return float(self._parse_float(value) or 0.0)
 
+            def normalized_party_name(value: Any) -> str:
+                """Compare display names conservatively, without making UI labels lossy."""
+                return re.sub(r"\s+", " ", _clean_text(value)).strip().casefold()
+
+            def is_distinct_billing_client(entry: Dict[str, Any]) -> bool:
+                """Return whether the billing party contributes new information.
+
+                Client profiles sometimes use a separate Parent ID for a party that
+                has the same visible legal name as the service client.  The ledger
+                must not show that party twice merely because the identifiers are
+                from different tables.  Matching IDs or matching normalized names
+                therefore mean one displayed party; only a genuinely separate
+                biller is exposed as a Billing Client.
+                """
+                client_id = _clean_text(entry.get("clientId"))
+                billing_id = _clean_text(entry.get("billingParentId"))
+                client_name = normalized_party_name(entry.get("clientName"))
+                billing_name = normalized_party_name(entry.get("billingParentName"))
+                if not billing_name:
+                    return False
+                if client_id and billing_id and client_id.casefold() == billing_id.casefold():
+                    return False
+                if client_name and client_name == billing_name:
+                    return False
+                return True
+
             def add_entry(entry: Dict[str, Any]) -> None:
                 haystack = " ".join(
                     _clean_text(entry.get(key))
@@ -12454,6 +12627,18 @@ class ExcelRepo:
                 entry["hours"] = round(float(entry.get("hours") or 0.0), 2)
                 entry.setdefault("tax", 0.0)
                 entry.setdefault("matter", entry.get("matterName", ""))
+                matter_number = _clean_text(entry.get("matterNumber"))
+                matter_name = _clean_text(entry.get("matterName"))
+                entry["matterDisplay"] = (
+                    f"{matter_number} — {matter_name}"
+                    if matter_number and matter_name
+                    else (matter_number or matter_name)
+                )
+                entry["billingClientDisplay"] = (
+                    _clean_text(entry.get("billingParentName"))
+                    if is_distinct_billing_client(entry)
+                    else ""
+                )
                 entries.append(entry)
 
             entries: List[Dict[str, Any]] = []
@@ -12500,19 +12685,27 @@ class ExcelRepo:
                     status = "WIP" if status_raw.lower() not in {"billed", "merged"} else status_raw
                     invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
                     debit = amount(row.get(sc.COL_TIME_TOTAL)) or amount(row.get(sc.COL_TIME_GROSS))
+                    gross_fee = amount(row.get(sc.COL_TIME_GROSS)) or debit
+                    net_fee = amount(row.get(sc.COL_TIME_NET))
                     add_entry({
                         "date": row.get(sc.COL_TIME_DATE),
                         "type": "Time" if is_time else "Fee",
+                        "entryId": _clean_text(row.get(sc.COL_TIME_ENTRY_ID)),
                         "clientId": client_id,
                         "clientName": client_name,
                         "matterId": matter_id,
+                        "matterNumber": matter_numbers.get(matter_id, ""),
                         "matterName": matter_name,
                         "matter": matter_name,
                         "description": _clean_text(row.get(sc.COL_TIME_DESC)),
                         "hours": hours,
+                        "rate": amount(row.get(sc.COL_TIME_RATE)),
+                        "grossFee": gross_fee,
+                        "netFee": net_fee,
                         "debit": debit,
                         "credit": 0.0,
                         "status": status,
+                        "docketStatus": status_raw or status,
                         "invoiceRef": invoice_ref,
                         "billingParentId": parent_id,
                         "billingParentName": parent_name,
@@ -12530,6 +12723,7 @@ class ExcelRepo:
                             "clientId": client_id,
                             "clientName": client_name,
                             "matterId": matter_id,
+                            "matterNumber": matter_numbers.get(matter_id, ""),
                             "matterName": matter_name,
                             "matter": matter_name,
                             "description": "WIP Relieved (Legacy Orphan)",
@@ -12577,6 +12771,7 @@ class ExcelRepo:
                         "clientId": client_id,
                         "clientName": client_name,
                         "matterId": matter_id,
+                        "matterNumber": matter_numbers.get(matter_id, ""),
                         "matterName": matter_name,
                         "matter": matter_name,
                         "description": _clean_text(row.get(sc.COL_DISB_DESCRIPTION)),
@@ -12744,9 +12939,73 @@ class ExcelRepo:
                 selected_label = client_names.get(selected_client, selected_client)
 
             client_info = {"clientId": selected_client or "ALL", "clientName": selected_label}
+
+            matter_time_groups: Dict[str, Dict[str, Any]] = {}
+            for entry in entries:
+                if _clean_text(entry.get("type")) != "Time":
+                    continue
+                matter_id = _clean_text(entry.get("matterId"))
+                matter_number = _clean_text(entry.get("matterNumber"))
+                matter_name = _clean_text(entry.get("matterName")) or "Unassigned matter"
+                group_key = matter_id or matter_number or ("|".join([
+                    _clean_text(entry.get("clientId")), matter_name
+                ]))
+                group = matter_time_groups.get(group_key)
+                if group is None:
+                    group = {
+                        "matterId": matter_id,
+                        "matterNumber": matter_number,
+                        "matterName": matter_name,
+                        "matterDisplay": _clean_text(entry.get("matterDisplay")) or matter_name,
+                        "clientId": _clean_text(entry.get("clientId")),
+                        "clientName": _clean_text(entry.get("clientName")),
+                        "billingClientName": _clean_text(entry.get("billingClientDisplay")),
+                        "entries": [],
+                        "entryCount": 0,
+                        "totalHours": 0.0,
+                        "totalGrossFee": 0.0,
+                        "totalNetFee": 0.0,
+                    }
+                    matter_time_groups[group_key] = group
+                group["entries"].append(entry)
+                group["entryCount"] += 1
+                group["totalHours"] += float(entry.get("hours") or 0.0)
+                group["totalGrossFee"] += float(entry.get("grossFee") or 0.0)
+                group["totalNetFee"] += float(entry.get("netFee") or 0.0)
+
+            ordered_matter_time_groups = sorted(
+                matter_time_groups.values(),
+                key=lambda group: (
+                    _clean_text(group.get("matterNumber")).casefold(),
+                    _clean_text(group.get("matterName")).casefold(),
+                    _clean_text(group.get("clientName")).casefold(),
+                ),
+            )
+            matter_time_totals = {
+                "entryCount": 0,
+                "totalHours": 0.0,
+                "totalGrossFee": 0.0,
+                "totalNetFee": 0.0,
+            }
+            for group in ordered_matter_time_groups:
+                group["totalHours"] = round(float(group.get("totalHours") or 0.0), 2)
+                group["totalGrossFee"] = round(float(group.get("totalGrossFee") or 0.0), 2)
+                group["totalNetFee"] = round(float(group.get("totalNetFee") or 0.0), 2)
+                matter_time_totals["entryCount"] += int(group.get("entryCount") or 0)
+                matter_time_totals["totalHours"] += float(group.get("totalHours") or 0.0)
+                matter_time_totals["totalGrossFee"] += float(group.get("totalGrossFee") or 0.0)
+                matter_time_totals["totalNetFee"] += float(group.get("totalNetFee") or 0.0)
+            for key in ("totalHours", "totalGrossFee", "totalNetFee"):
+                matter_time_totals[key] = round(float(matter_time_totals[key]), 2)
+
             return {
                 "ok": True,
                 "entries": entries,
+                "matterTimeGroups": ordered_matter_time_groups,
+                "matterTimeTotals": matter_time_totals,
+                "hasDistinctBillingClient": any(
+                    bool(_clean_text(entry.get("billingClientDisplay"))) for entry in entries
+                ),
                 "optionClients": options_from(client_options),
                 "optionBillingClients": options_from(billing_options),
                 "optionMatters": options_from(matter_options),

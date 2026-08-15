@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
+import QtQuick.Dialogs
 import "../components"
 import "../standards"
 import "../standards/SemanticTheme.js" as SemanticTheme
@@ -86,6 +87,13 @@ Item {
     property string selectedMatterClientId: ""
     property string selectedMatterClientName: ""
     property string selectedMatterName: ""
+    property bool clientTaxExempt: false
+    property string supplierDocumentSourcePath: ""
+    property string supplierDocumentDisplayName: ""
+    property var historicalCandidate: null
+    property bool historicalPaymentConfirmed: false
+    property var historicalCandidates: []
+    property string historicalSearch: ""
     property var dateTargetField: null
     property var setoffReceivableRows: []
     property var setoffAllocationRows: []
@@ -105,18 +113,20 @@ Item {
 
     Timer {
         id: operationTimeout
-        interval: 12000
-        repeat: false
+        // Workbook and OneDrive writes are deliberately allowed to finish.
+        // This is a progress reminder, never a failed-operation timeout.
+        interval: 15000
+        repeat: true
         property int operationVersion: -1
         onTriggered: {
             if (!root.busy || operationTimeout.operationVersion !== root.operationVersion)
                 return
-            operationTimeout.stop()
-            root.busy = false
-            root.busyOperation = ""
-            root.errorState = true
-            root.statusMessage = "The Accounts Payable operation took too long. Select Refresh to try again."
-            console.warn("[AP] operation timeout", operationTimeout.operationVersion)
+            root.errorState = false
+            if (root.busyOperation === "save_bill" || root.busyOperation === "update_bill")
+                root.statusMessage = "Still saving and verifying supplier invoice evidence. CSPM will refresh automatically when complete."
+            else
+                root.statusMessage = "Still processing. CSPM will refresh automatically when complete."
+            console.log("[AP] operation still in progress", operationTimeout.operationVersion, root.busyOperation)
         }
     }
 
@@ -320,6 +330,101 @@ Item {
         return prefix + "-" + Date.now().toString()
     }
 
+    function selectedCurrency() {
+        return String(currencyField.currentText || "CAD").trim().toUpperCase()
+    }
+
+    function currentFXRate() {
+        var rate = Number(fxRateField.text || 0)
+        return root.selectedCurrency() === "CAD" ? 1 : rate
+    }
+
+    function baseInvoiceTotal() {
+        var rate = root.currentFXRate()
+        var total = root.apNumber(totalField.text)
+        return isFinite(rate) && rate > 0 ? total * rate : 0
+    }
+
+    function filenameFromUrl(value) {
+        var text = String(value || "")
+        var slash = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"))
+        return slash >= 0 ? decodeURIComponent(text.slice(slash + 1)) : decodeURIComponent(text)
+    }
+
+    function chooseHistoricalCandidate(row) {
+        if (!row) return
+        root.historicalCandidate = row
+        vendorField.text = String(row.vendor || "")
+        invoiceNumberField.text = String(row.invoiceRef || "")
+        invoiceDateField.text = String(row.date || root.todayText())
+        dueDateField.text = ""
+        subtotalField.text = root.apMoney(row.baseSubtotal || row.baseTotal || 0)
+        taxField.text = root.apMoney(row.baseTaxAmount || 0)
+        totalField.text = root.apMoney(row.baseTotal || 0)
+        root.apTaxExempt = Number(row.baseTaxAmount || 0) === 0
+        currencyField.currentIndex = 0
+        fxRateField.text = "1.000000"
+        root.selectedTreatmentId = "matter"
+        treatmentField.selectedId = "matter"
+        treatmentField.selectedLabel = "Client matter expense"
+        root.selectedMatterId = String(row.matterId || "")
+        root.selectedMatterName = root.selectedMatterId
+        root.selectedMatterClientId = String(row.clientId || "")
+        root.selectedMatterClientName = root.selectedMatterClientId
+        for (var i = 0; i < root.matterOptions.length; i++) {
+            var option = root.matterOptions[i] || {}
+            if (String(option.id || "") === root.selectedMatterId) {
+                root.selectedMatterName = String(option.matterName || root.selectedMatterId)
+                root.selectedMatterClientId = String(option.clientId || root.selectedMatterClientId)
+                root.selectedMatterClientName = String(option.clientName || root.selectedMatterClientName)
+                matterField.selectedId = root.selectedMatterId
+                matterField.selectedLabel = String(option.label || root.selectedMatterName)
+                break
+            }
+        }
+        billClaimPctField.text = "100"
+        root.historicalPaymentConfirmed = ["cleared", "reconciled", "paid"].indexOf(String(row.status || "").toLowerCase()) >= 0
+        historicalAdoptionDialog.close()
+        root.paymentMode = false
+        root.entryPanelVisible = true
+        root.errorState = false
+        root.statusMessage = "Historical adoption mode: CSPM will link the selected legacy expense and WIP only. Attach the supplier invoice before saving."
+    }
+
+    function openHistoricalAdoption() {
+        root.historicalSearch = ""
+        root.historicalCandidates = []
+        try {
+            if (root.apController && root.apController.listHistoricalSupplierCandidates)
+                root.historicalCandidates = root.apController.listHistoricalSupplierCandidates("") || []
+        } catch (error) {
+            root.errorState = true
+            root.statusMessage = "Could not load historical supplier records. " + error
+            return
+        }
+        historicalAdoptionDialog.open()
+    }
+
+    function refreshHistoricalCandidates() {
+        try {
+            if (root.apController && root.apController.listHistoricalSupplierCandidates)
+                root.historicalCandidates = root.apController.listHistoricalSupplierCandidates(root.historicalSearch) || []
+        } catch (error) {
+            root.errorState = true
+            root.statusMessage = "Could not search historical supplier records. " + error
+        }
+    }
+
+    FileDialog {
+        id: supplierInvoiceFileDialog
+        title: "Attach supplier invoice evidence"
+        nameFilters: ["Invoice documents (*.pdf *.PDF *.jpg *.jpeg *.png *.tif *.tiff *.doc *.docx *.xls *.xlsx)", "All files (*)"]
+        onAccepted: {
+            root.supplierDocumentSourcePath = String(selectedFile || "")
+            root.supplierDocumentDisplayName = root.filenameFromUrl(root.supplierDocumentSourcePath)
+        }
+    }
+
     function _setoffAllocationsFromPayment(payment) {
         var marker = "CSPM_SET_OFF_ALLOCATIONS_V1:"
         var lines = String(payment && payment.Notes ? payment.Notes : "").split("\n")
@@ -431,6 +536,18 @@ Item {
             root.statusMessage = "Select a client matter for a client matter expense."
             return false
         }
+        if (root.selectedCurrency() === "USD" && (!isFinite(root.currentFXRate()) || root.currentFXRate() <= 0)) {
+            root.statusMessage = "Enter the CAD exchange rate used for this USD supplier invoice."
+            return false
+        }
+        if (!root.supplierDocumentSourcePath && !(root.editingBillDetails && root.editingBillDetails.bill && root.editingBillDetails.bill.DocumentPath)) {
+            root.statusMessage = "Attach a supplier invoice file. CSPM stores it in the shared Supplier_Invoices folder and verifies its SHA-256 hash."
+            return false
+        }
+        if (root.historicalCandidate && !String(root.historicalCandidate.disbursementId || "").trim()) {
+            root.statusMessage = "This historic expense has no matching client disbursement to adopt. Choose a matching legacy record or reconcile the WIP first."
+            return false
+        }
         if (root.selectedTreatmentId === "matter" && root.selectedMatterId && root.appRef
                 && root.appRef.getMatterProfile) {
             try {
@@ -524,6 +641,8 @@ Item {
             "TaxExempt": root.apTaxExempt,
             "AmountEntryMode": root.apAmountEntryMode,
             "Currency": currencyField.currentText,
+            "FXRate": root.currentFXRate(),
+            "FXSource": root.selectedCurrency() === "USD" ? "User-entered" : "CAD at par",
             "SourceAccount": root.selectedPaymentAccountId,
             "CategoryCode": root.selectedCategoryId,
             "CategoryName": categoryField.selectedLabel,
@@ -533,6 +652,15 @@ Item {
             "ClientID": root.selectedMatterClientId,
             "ClientName": root.selectedMatterClientName,
             "ExpenseTreatment": root.selectedTreatmentId,
+            "BillClaimPct": root.selectedTreatmentId === "matter" ? root.apNumber(billClaimPctField.text) : 0,
+            "ClientTaxExempt": root.clientTaxExempt,
+            "DocumentSourcePath": root.supplierDocumentSourcePath,
+            "DisbursementDescription": disbursementDescriptionField.text.trim(),
+            "HistoricalTransactionID": root.historicalCandidate ? String(root.historicalCandidate.transactionId || "") : "",
+            "HistoricalDisbursementID": root.historicalCandidate ? String(root.historicalCandidate.disbursementId || "") : "",
+            "HistoricalPaymentConfirmed": root.historicalCandidate && root.historicalPaymentConfirmed,
+            "HistoricalPaymentDate": root.historicalCandidate ? String(root.historicalCandidate.date || "") : "",
+            "HistoricalPaymentReference": root.historicalCandidate ? String(root.historicalCandidate.transactionId || "") : "",
             "Notes": notesField.text.trim(),
             "Class": "Business"
         }
@@ -609,6 +737,8 @@ Item {
             "APBillID": String(root.selectedBill.APBillID || ""),
             "PaymentDate": paymentDateField.text.trim(),
             "Amount": Number(paymentAmountField.text || 0),
+            "BaseAmount": Number(paymentBaseAmountField.text || 0),
+            "FXRate": root.selectedBill ? Number(root.selectedBill.FXRate || 1) : 1,
             "FromAccount": root.selectedPaymentAccountId,
             "Method": paymentMethodField.currentText,
             "Reference": paymentReferenceField.text.trim(),
@@ -765,6 +895,9 @@ Item {
         root.selectedBill = row
         root.recordedSetoffPayment = null
         paymentAmountField.text = Number(row.Balance || 0).toFixed(2)
+        var rate = Number(row.FXRate || 1)
+        paymentBaseAmountField.text = (String(row.OriginalCurrency || row.Currency || "CAD").toUpperCase() === "USD"
+            ? (Number(row.Balance || 0) * rate) : Number(row.Balance || 0)).toFixed(2)
         root.clearSetoffAllocations()
         root.statusMessage = ""
         root.errorState = false
@@ -783,6 +916,12 @@ Item {
         taxField.text = "0.00"
         totalField.text = ""
         currencyField.currentIndex = 0
+        fxRateField.text = "1.000000"
+        root.clientTaxExempt = false
+        root.supplierDocumentSourcePath = ""
+        root.supplierDocumentDisplayName = ""
+        root.historicalCandidate = null
+        root.historicalPaymentConfirmed = false
         root.selectedTreatmentId = "office"
         treatmentField.selectedId = "office"
         treatmentField.selectedLabel = "General office expense"
@@ -793,6 +932,8 @@ Item {
         paymentAccountField.clearSelection()
         root.clearSetoffAllocations()
         root.clearMatterSelection()
+        billClaimPctField.text = "100"
+        disbursementDescriptionField.text = ""
         notesField.text = ""
     }
 
@@ -841,6 +982,8 @@ Item {
         currencyField.currentIndex = currencyField.find(currency)
         if (currencyField.currentIndex < 0)
             currencyField.currentIndex = 0
+        fxRateField.text = String(bill.FXRate || "1.000000")
+        root.clientTaxExempt = Boolean(bill.ClientTaxExempt)
         root.selectedCategoryId = String(transaction.categoryCode || transaction.CategoryCode || "")
         categoryField.selectedId = root.selectedCategoryId
         categoryField.selectedLabel = String(transaction.categoryName || transaction.CategoryName || root.selectedCategoryId)
@@ -856,6 +999,14 @@ Item {
         treatmentField.selectedLabel = root.selectedTreatmentId === "matter" ? "Client matter expense" : "General office expense"
         matterField.selectedId = root.selectedMatterId
         matterField.selectedLabel = root.selectedMatterName
+        billClaimPctField.text = String(bill.BillClaimPct || transaction.billClaimPct || (root.selectedMatterId ? "100" : "0"))
+        disbursementDescriptionField.text = String(bill.DisbursementDescription || "")
+        root.supplierDocumentSourcePath = ""
+        root.supplierDocumentDisplayName = String(bill.DocumentOriginalName || bill.DocumentPath || "")
+        root.historicalCandidate = String(bill.HistoricalAdoption || "").toLowerCase() === "yes"
+            ? { "transactionId": String(bill.ExpenseTransactionID || ""), "disbursementId": String(bill.DisbursementID || "") }
+            : null
+        root.historicalPaymentConfirmed = false
         notesField.text = String(bill.Notes || transaction.notes || transaction.Notes || "")
         root.entryPanelVisible = true
         root.paymentMode = false
@@ -1911,6 +2062,85 @@ Item {
         }
     }
 
+    Dialog {
+        id: historicalAdoptionDialog
+        modal: true
+        focus: true
+        title: "Adopt historic supplier expense"
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(940, Math.max(680, root.width * 0.72))
+        height: Math.min(700, Math.max(460, root.height * 0.76))
+        background: Rectangle {
+            color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : "#FFFFFF"
+            radius: visualRules.isPro ? visualRules.radiusPopup : 8
+            border.width: 1
+            border.color: root.isProMode ? SemanticTheme.borderSubtle(root.t, root.appStyle) : "#B9C9DB"
+        }
+        contentItem: ColumnLayout {
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                text: "Choose the existing legacy expense that already has matching client WIP. CSPM will attach an A/P bill and the supplier PDF to those records; it will not add a second expense, ledger row, or disbursement."
+                wrapMode: Text.Wrap
+                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#42566D"
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                FormField {
+                    id: historicalSearchField
+                    Layout.fillWidth: true
+                    placeholderText: "Search supplier, invoice reference, matter, or transaction ID"
+                    text: root.historicalSearch
+                    onTextEdited: root.historicalSearch = text
+                    onAccepted: root.refreshHistoricalCandidates()
+                }
+                Button { text: "Search"; onClicked: root.refreshHistoricalCandidates() }
+            }
+            Label {
+                visible: root.historicalCandidates.length === 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                text: "No eligible historic expenses were found. Search a supplier name such as Spencer Fane, then confirm its legacy WIP is present before adopting it."
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.Wrap
+                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#607287"
+            }
+            ListView {
+                visible: root.historicalCandidates.length > 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 5
+                model: root.historicalCandidates
+                delegate: Rectangle {
+                    required property var modelData
+                    width: parent.width
+                    implicitHeight: 74
+                    color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : "#F7FAFD"
+                    radius: visualRules.isPro ? visualRules.radiusControl : 6
+                    border.width: 1
+                    border.color: root.isProMode ? SemanticTheme.borderSubtle(root.t, root.appStyle) : "#C7D3DF"
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 2
+                        Label { Layout.fillWidth: true; text: String(modelData.label || ""); font.weight: Font.DemiBold; elide: Text.ElideRight; color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40" }
+                        Label { Layout.fillWidth: true; text: modelData.disbursementId ? "Matching client WIP: " + String(modelData.disbursementId) + (modelData.clientInvoiceRef ? " • billed on " + String(modelData.clientInvoiceRef) : " • unbilled") + (modelData.matchMethod === "legacy-ledger-invoice" ? " • verified through historic ledger" : "") : "No matching client WIP found — not eligible for adoption"; elide: Text.ElideRight; color: modelData.disbursementId ? (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : "#285C37") : (root.isProMode ? SemanticTheme.tone(root.t, "error", root.appStyle) : "#9B2C2C") }
+                    }
+                    MouseArea { anchors.fill: parent; enabled: !!modelData.disbursementId && !!modelData.matterId; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: root.chooseHistoricalCandidate(modelData) }
+                }
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button { text: "Cancel"; onClicked: historicalAdoptionDialog.close() }
+            }
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.isProMode ? SemanticTheme.surfaceApp(root.t, root.appStyle) : "#F4F7FA"
@@ -1950,6 +2180,18 @@ Item {
                 ToolbarButton {
                     text: root.entryPanelVisible ? "Focus results" : "Show entry"
                     onClicked: root.entryPanelVisible = !root.entryPanelVisible
+                }
+
+                ToolbarButton {
+                    text: "Adopt historical…"
+                    enabled: !root.busy
+                    onClicked: root.openHistoricalAdoption()
+                }
+
+                ToolbarButton {
+                    text: "Shared invoices"
+                    enabled: !root.busy && root.apController && root.apController.openSupplierDocumentFolder
+                    onClicked: root.apController.openSupplierDocumentFolder()
                 }
 
                 ToolbarButton {
@@ -2172,6 +2414,87 @@ Item {
                                     }
                                 }
 
+                                FormLabel {
+                                    visible: root.selectedCurrency() === "USD"
+                                    text: "CAD exchange rate *"
+                                }
+                                FormField {
+                                    id: fxRateField
+                                    visible: root.selectedCurrency() === "USD"
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                    placeholderText: "e.g. 1.4408425"
+                                    inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                }
+                                Label {
+                                    visible: root.selectedCurrency() === "USD"
+                                    Layout.fillWidth: true
+                                    text: "CAD reporting total: " + root.moneyText(root.baseInvoiceTotal())
+                                    color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#52677C"
+                                    font.pixelSize: 11
+                                }
+
+                                FormLabel { text: "Supplier invoice evidence *" }
+                                Button {
+                                    id: attachSupplierInvoiceButton
+                                    Layout.fillWidth: true
+                                    implicitHeight: 34
+                                    enabled: !root.busy
+                                    text: root.supplierDocumentDisplayName.length > 0
+                                        ? "Attached: " + root.supplierDocumentDisplayName
+                                        : "Attach invoice document…"
+                                    onClicked: supplierInvoiceFileDialog.open()
+                                }
+                                RowLayout {
+                                    visible: root.busy && (root.busyOperation === "save_bill" || root.busyOperation === "update_bill")
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? 24 : 0
+                                    spacing: 7
+                                    BusyIndicator {
+                                        running: parent.visible
+                                        Layout.preferredWidth: 18
+                                        Layout.preferredHeight: 18
+                                    }
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: "Saving and verifying invoice evidence…"
+                                        color: root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : "#52677C"
+                                        font.pixelSize: 11
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: "PDFs are stored as-is. Images and Word or Excel files are saved with their original and a verified PDF copy in the shared Supplier_Invoices folder."
+                                    color: root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : "#607287"
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
+                                }
+
+                                Rectangle {
+                                    visible: root.historicalCandidate !== null
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? historicalPaymentConfirmation.implicitHeight + 18 : 0
+                                    color: root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.11) : "#FFF6D8"
+                                    radius: visualRules.isPro ? visualRules.radiusControl : 5
+                                    border.width: 1
+                                    border.color: root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.55) : "#D8B86A"
+                                    CheckBox {
+                                        id: historicalPaymentConfirmation
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        text: "The selected historic expense confirms that this supplier invoice was already paid. Record it as historical payment evidence; do not create new cash movement."
+                                        checked: root.historicalPaymentConfirmed
+                                        onToggled: root.historicalPaymentConfirmed = checked
+                                        contentItem: Text {
+                                            text: historicalPaymentConfirmation.text
+                                            color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#4A390A"
+                                            wrapMode: Text.Wrap
+                                            leftPadding: historicalPaymentConfirmation.indicator.width + 8
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                    }
+                                }
+
                                 FormLabel { text: "Expense treatment" }
                                 SearchSelector {
                                     id: treatmentField
@@ -2184,6 +2507,43 @@ Item {
                                         if (root.selectedTreatmentId !== "matter")
                                             root.clearMatterSelection()
                                     }
+                                }
+
+                                FormLabel {
+                                    visible: root.selectedTreatmentId === "matter"
+                                    text: "Client recovery percentage"
+                                }
+                                FormField {
+                                    id: billClaimPctField
+                                    visible: root.selectedTreatmentId === "matter"
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                    placeholderText: "100"
+                                    inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                }
+                                CheckBox {
+                                    id: clientTaxExemptCheckBox
+                                    visible: root.selectedTreatmentId === "matter"
+                                    text: "Client re-bill is HST exempt"
+                                    checked: root.clientTaxExempt
+                                    onToggled: root.clientTaxExempt = checked
+                                    contentItem: Text {
+                                        text: clientTaxExemptCheckBox.text
+                                        color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
+                                        leftPadding: clientTaxExemptCheckBox.indicator.width + 8
+                                        rightPadding: 2
+                                        verticalAlignment: Text.AlignVCenter
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                                FormLabel {
+                                    visible: root.selectedTreatmentId === "matter"
+                                    text: "Client disbursement description"
+                                }
+                                FormField {
+                                    id: disbursementDescriptionField
+                                    visible: root.selectedTreatmentId === "matter"
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                    placeholderText: "Optional client-facing description"
                                 }
 
                                 FormLabel { text: "Expense category *" }
@@ -2266,8 +2626,32 @@ Item {
                                         }
                                     }
 
-                                FormLabel { text: "Amount *" }
-                                FormField { id: paymentAmountField; placeholderText: "0.00"; readOnly: root.viewingRecordedSetoff }
+                                FormLabel {
+                                    text: root.selectedBill && String(root.selectedBill.OriginalCurrency || root.selectedBill.Currency || "CAD").toUpperCase() === "USD"
+                                        ? "Payment amount (USD) *" : "Payment amount (CAD) *"
+                                }
+                                FormField {
+                                    id: paymentAmountField
+                                    placeholderText: "0.00"
+                                    readOnly: root.viewingRecordedSetoff
+                                    onTextEdited: {
+                                        if (!root.selectedBill || String(root.selectedBill.OriginalCurrency || root.selectedBill.Currency || "CAD").toUpperCase() !== "USD")
+                                            paymentBaseAmountField.text = text
+                                        else
+                                            paymentBaseAmountField.text = (root.apNumber(text) * Number(root.selectedBill.FXRate || 1)).toFixed(2)
+                                    }
+                                }
+                                FormLabel {
+                                    visible: root.selectedBill && String(root.selectedBill.OriginalCurrency || root.selectedBill.Currency || "CAD").toUpperCase() === "USD" && !root.isSetoffMethod()
+                                    text: "Actual payment amount (CAD) *"
+                                }
+                                FormField {
+                                    id: paymentBaseAmountField
+                                    visible: root.selectedBill && String(root.selectedBill.OriginalCurrency || root.selectedBill.Currency || "CAD").toUpperCase() === "USD" && !root.isSetoffMethod()
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                    placeholderText: "0.00"
+                                    readOnly: root.viewingRecordedSetoff
+                                }
 
                                 FormLabel {
                                     visible: !root.isSetoffMethod()

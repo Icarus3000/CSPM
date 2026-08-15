@@ -9,7 +9,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 def build_html(payload):
     config = payload.get("config", {})
@@ -244,7 +244,11 @@ def _draw_header_footer(canvas, doc, config, logo_path):
                     logo_y,
                     width=logo_w,
                     height=logo_h,
-                    preserveAspectRatio=False,
+                    # The firm mark is intentionally a horizontal wordmark.
+                    # Keep it undistorted inside the reserved header footprint
+                    # when a report explicitly requests this treatment.
+                    preserveAspectRatio=bool(config.get("headerLogoPreserveAspectRatio", False)),
+                    anchor="c",
                     mask="auto",
                 )
                 logo_drawn = True
@@ -444,6 +448,73 @@ def _styles():
             leading=8.4,
             alignment=TA_RIGHT,
             textColor=colors.HexColor("#111827"),
+        ),
+        "cardValue": ParagraphStyle(
+            "DocketCardValue",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=9.2,
+            leading=11,
+            textColor=colors.HexColor("#132c4f"),
+        ),
+        "cardValueRight": ParagraphStyle(
+            "DocketCardValueRight",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=9.2,
+            leading=11,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor("#132c4f"),
+        ),
+        "scopeLabel": ParagraphStyle(
+            "DocketScopeLabel",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=6.8,
+            leading=8.2,
+            textColor=colors.HexColor("#365170"),
+        ),
+        "scopeValue": ParagraphStyle(
+            "DocketScopeValue",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=7.3,
+            leading=8.7,
+            textColor=colors.HexColor("#16243a"),
+        ),
+        "matterTitle": ParagraphStyle(
+            "DocketMatterTitle",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=9.6,
+            leading=11.5,
+            textColor=colors.HexColor("#132c4f"),
+        ),
+        "matterTitleRight": ParagraphStyle(
+            "DocketMatterTitleRight",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8.3,
+            leading=10,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor("#132c4f"),
+        ),
+        "matterMeta": ParagraphStyle(
+            "DocketMatterMeta",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=7.2,
+            leading=8.6,
+            textColor=colors.HexColor("#39506d"),
+        ),
+        "matterMetaRight": ParagraphStyle(
+            "DocketMatterMetaRight",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=7.2,
+            leading=8.6,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor("#39506d"),
         ),
         "muted": ParagraphStyle(
             "DocketMuted",
@@ -968,6 +1039,449 @@ def generate_generic_report_pdf(payload, export_dir, logo_path):
     )
     styles = _styles()
     story = _build_generic_story(payload, styles, doc.width)
+    draw_page = lambda canvas, document: _draw_header_footer(canvas, document, config, logo_path)
+    doc.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
+    return filepath
+
+
+def generate_matter_time_ledger_pdf(payload, export_dir, logo_path):
+    """Render a portrait, grouped Matter Time Ledger as a branded PDF.
+
+    This renderer deliberately reflows the ledger for portrait paper instead
+    of compressing the on-screen grid.  Rate remains a dedicated numerical
+    column, status stays with its docket description, the financial columns
+    remain consistently aligned, and each page has enough context to stand
+    alone.
+    """
+    os.makedirs(export_dir, exist_ok=True)
+    payload = dict(payload or {})
+    config = dict(payload.get("config", {}) or {})
+    config["title"] = str(payload.get("title") or config.get("title") or "Matter Time Ledger")
+    # A square mark is intentional here: it balances the firm's name/contact
+    # block without competing with the report title centred below it.
+    config.setdefault("headerLogoWidth", 0.50 * inch)
+    config.setdefault("headerLogoHeight", 0.50 * inch)
+    config.setdefault("headerLogoBottomAligned", True)
+    config.setdefault("headerLogoPreserveAspectRatio", True)
+    payload["config"] = config
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filepath = os.path.join(export_dir, f"MatterTimeLedger_{stamp}.pdf")
+    doc = SimpleDocTemplate(
+        filepath,
+        pagesize=letter,
+        leftMargin=0.55 * inch,
+        rightMargin=0.55 * inch,
+        topMargin=1.48 * inch,
+        bottomMargin=0.55 * inch,
+        title=config["title"],
+        author=_safe_text(config.get("firmName") or "CSPM"),
+    )
+    styles = _styles()
+    story = []
+    totals = dict(payload.get("totals", {}) or {})
+    groups = [group for group in (payload.get("matterGroups", []) or []) if isinstance(group, dict)]
+    filters = dict(payload.get("filters", {}) or {})
+
+    def ledger_hours(value):
+        """Format production time consistently for this operational ledger."""
+        try:
+            return f"{float(value or 0.0):.1f}"
+        except (TypeError, ValueError):
+            return "0.0"
+
+    report_label = ParagraphStyle(
+        "MatterLedgerReportLabel",
+        parent=styles["tableHeader"],
+        fontSize=6.6,
+        leading=8.0,
+        textColor=colors.HexColor("#365170"),
+    )
+    report_value = ParagraphStyle(
+        "MatterLedgerReportValue",
+        parent=styles["scopeValue"],
+        fontSize=7.5,
+        leading=9.2,
+        textColor=colors.HexColor("#16243a"),
+    )
+    kpi_label = ParagraphStyle(
+        "MatterLedgerKpiLabel",
+        parent=styles["tableHeader"],
+        fontSize=6.7,
+        leading=8.0,
+        textColor=colors.HexColor("#365170"),
+    )
+    kpi_value = ParagraphStyle(
+        "MatterLedgerKpiValue",
+        parent=styles["cardValue"],
+        fontSize=10.5,
+        leading=12.6,
+        textColor=colors.HexColor("#132c4f"),
+    )
+    kpi_value_right = ParagraphStyle(
+        "MatterLedgerKpiValueRight",
+        parent=kpi_value,
+        alignment=TA_RIGHT,
+    )
+    detail_header = ParagraphStyle(
+        "MatterLedgerDetailHeader",
+        parent=styles["tableHeader"],
+        fontSize=6.7,
+        leading=7.8,
+        textColor=colors.HexColor("#28496f"),
+    )
+    detail_header_right = ParagraphStyle(
+        "MatterLedgerDetailHeaderRight",
+        parent=detail_header,
+        alignment=TA_RIGHT,
+    )
+    detail_date = ParagraphStyle(
+        "MatterLedgerDetailDate",
+        parent=styles["cell"],
+        fontSize=7.1,
+        leading=8.8,
+    )
+    detail_description = ParagraphStyle(
+        "MatterLedgerDetailDescription",
+        parent=styles["cell"],
+        fontSize=7.5,
+        leading=9.4,
+        textColor=colors.HexColor("#111827"),
+    )
+    detail_amount = ParagraphStyle(
+        "MatterLedgerDetailAmount",
+        parent=styles["cellRight"],
+        fontSize=7.2,
+        leading=8.8,
+    )
+    subtotal_label = ParagraphStyle(
+        "MatterLedgerSubtotalLabel",
+        parent=styles["tableHeader"],
+        fontSize=7.1,
+        leading=8.6,
+        textColor=colors.HexColor("#183b67"),
+    )
+    subtotal_amount = ParagraphStyle(
+        "MatterLedgerSubtotalAmount",
+        parent=subtotal_label,
+        alignment=TA_RIGHT,
+    )
+
+    period = _safe_text(
+        payload.get("filterSummary")
+        or config.get("filterSummary")
+        or f"{filters.get('fromDate') or 'Earliest'} to {filters.get('toDate') or 'Today'}"
+    ).strip()
+    if period.lower().startswith("period:"):
+        period = period.split(":", 1)[1].strip()
+    scope_rows = [
+        [
+            _paragraph("REPORT PERIOD", report_label),
+            _paragraph(period, report_value),
+            _paragraph("DATA SCOPE", report_label),
+            _paragraph("Docketed time · Live data · Read only", report_value),
+        ],
+        [
+            _paragraph("CLIENT", report_label),
+            _paragraph(_safe_text(filters.get("client") or "All Clients"), report_value),
+            _paragraph("BILLING CLIENT", report_label),
+            _paragraph(_safe_text(filters.get("billingClient") or "All Billing Clients"), report_value),
+        ],
+        [
+            _paragraph("MATTER", report_label),
+            _paragraph(_safe_text(filters.get("matter") or "All Matters"), report_value),
+            _paragraph("SEARCH", report_label),
+            _paragraph(_safe_text(filters.get("search") or "All descriptions"), report_value),
+        ],
+    ]
+    scope_label_width = 0.82 * inch
+    scope_value_width = (doc.width - (scope_label_width * 2)) / 2.0
+    scope_table = Table(
+        scope_rows,
+        colWidths=[scope_label_width, scope_value_width, scope_label_width, scope_value_width],
+        hAlign="LEFT",
+    )
+    scope_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef4fc")),
+        ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#eef4fc")),
+        ("BACKGROUND", (1, 0), (1, -1), colors.white),
+        ("BACKGROUND", (3, 0), (3, -1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor("#cbd8ea")),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.25, colors.HexColor("#dce6f3")),
+        ("LINEAFTER", (0, 0), (0, -1), 0.25, colors.HexColor("#dce6f3")),
+        ("LINEAFTER", (1, 0), (1, -1), 0.25, colors.HexColor("#dce6f3")),
+        ("LINEAFTER", (2, 0), (2, -1), 0.25, colors.HexColor("#dce6f3")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5.5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.extend([scope_table, Spacer(1, 0.16 * inch)])
+
+    # Four cards give the executive totals enough room on portrait paper;
+    # gross and net fees intentionally remain together as a financial pair.
+    fee_value = Paragraph(
+        f"Gross {_money(totals.get('totalGrossFee'))}<br/><font size='8.2'>Net {_money(totals.get('totalNetFee'))}</font>",
+        kpi_value_right,
+    )
+    total_cards = [
+        [
+            _paragraph("MATTERS", kpi_label),
+            _paragraph("DOCKETS", kpi_label),
+            _paragraph("BILLABLE HOURS", kpi_label),
+            _paragraph("FEES", kpi_label),
+        ],
+        [
+            _paragraph(str(len(groups)), kpi_value),
+            _paragraph(str(int(totals.get("entryCount", 0) or 0)), kpi_value),
+            _paragraph(ledger_hours(totals.get("totalHours")), kpi_value),
+            fee_value,
+        ],
+    ]
+    cards = Table(total_cards, colWidths=[doc.width / 4.0] * 4, hAlign="LEFT")
+    cards.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8f0fb")),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor("#c7d5e8")),
+        ("LINEABOVE", (0, 0), (-1, 0), 0.9, colors.HexColor("#1f4d86")),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.25, colors.HexColor("#c7d5e8")),
+        ("LINEAFTER", (0, 0), (-2, -1), 0.25, colors.HexColor("#dce6f3")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.extend([cards, Spacer(1, 0.20 * inch)])
+
+    # Portrait detail grid.  Reference is intentionally excluded: it is not
+    # useful for a production ledger, whereas the rate deserves its own
+    # consistently aligned column.  Status remains with the docket record.
+    detail_widths = [
+        0.68 * inch,
+        doc.width - (0.68 * inch + 0.60 * inch + 0.72 * inch + 0.90 * inch + 0.90 * inch),
+        0.60 * inch,
+        0.72 * inch,
+        0.90 * inch,
+        0.90 * inch,
+    ]
+
+    def entry_row(entry):
+        entry = dict(entry or {})
+        status = _safe_text(entry.get("docketStatus") or entry.get("status") or "WIP")
+        description = _safe_text(entry.get("description") or "(No description)")
+        metadata = "Status: " + status
+        description_cell = Paragraph(
+            html.escape(description).replace("\n", "<br/>")
+            + "<br/><font color='#52677f' size='6.45'>"
+            + html.escape(metadata)
+            + "</font>",
+            detail_description,
+        )
+        return [
+            _paragraph(entry.get("date", ""), detail_date),
+            description_cell,
+            _paragraph(ledger_hours(entry.get("hours")), detail_amount),
+            _paragraph(_money(entry.get("rate")), detail_amount),
+            _paragraph(_money(entry.get("grossFee")), detail_amount),
+            _paragraph(_money(entry.get("netFee")), detail_amount),
+        ]
+
+    detail_headers = [
+        _paragraph("DATE", detail_header),
+        _paragraph("DESCRIPTION & STATUS", detail_header),
+        _paragraph("HOURS", detail_header_right),
+        _paragraph("RATE", detail_header_right),
+        _paragraph("GROSS FEES", detail_header_right),
+        _paragraph("NET FEES", detail_header_right),
+    ]
+
+    def build_detail_table(entries, *, include_header=True):
+        data = ([detail_headers] if include_header else []) + [entry_row(entry) for entry in entries]
+        table = Table(data, colWidths=detail_widths, repeatRows=1 if include_header else 0, hAlign="LEFT")
+        style = TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf3fb")),
+            ("LINEABOVE", (0, 0), (-1, 0), 0.45, colors.HexColor("#c7d5e8")),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.30, colors.HexColor("#d7e2f0")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ])
+        if include_header and entries:
+            style.add("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fbfdff")])
+        table.setStyle(style)
+        return table
+
+    def build_subtotal(group):
+        # These are intentionally the *same exact widths* as the detail grid.
+        # Values therefore sit under their column headers rather than merely
+        # looking approximately aligned beside the table.
+        subtotal = Table(
+            [[
+                _paragraph(
+                    "Matter subtotal · " + str(int(group.get("entryCount", 0) or 0)) + " docket(s)",
+                    subtotal_label,
+                ),
+                "",
+                _paragraph(ledger_hours(group.get("totalHours")), subtotal_amount),
+                "",
+                _paragraph(_money(group.get("totalGrossFee")), subtotal_amount),
+                _paragraph(_money(group.get("totalNetFee")), subtotal_amount),
+            ]],
+            colWidths=detail_widths,
+            hAlign="LEFT",
+        )
+        subtotal.setStyle(TableStyle([
+            ("SPAN", (0, 0), (1, 0)),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f5f8fc")),
+            ("LINEABOVE", (0, 0), (-1, -1), 0.85, colors.HexColor("#7c9dc5")),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.30, colors.HexColor("#c9d8ea")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        return subtotal
+
+    for index, group in enumerate(groups):
+        if index:
+            story.append(Spacer(1, 0.18 * inch))
+        # A new matter never begins in the last sliver of a page.  The lead
+        # block itself is also kept together with its first docket.
+        story.append(CondPageBreak(1.45 * inch))
+        entries = group.get("entries", []) or []
+        entries = [entry for entry in entries if isinstance(entry, dict)]
+        matter_title = _safe_text(group.get("matterDisplay") or group.get("matterName") or "Unassigned matter")
+        client_line = "Client: " + (_safe_text(group.get("clientName")) or "—")
+        billing_client = _safe_text(group.get("billingClientName")).strip()
+        if billing_client:
+            client_line += "  |  Billing client: " + billing_client
+        matter_banner = Table(
+            [[
+                _paragraph(matter_title, styles["matterTitle"]),
+                _paragraph("Gross fees " + _money(group.get("totalGrossFee")), styles["matterTitleRight"]),
+            ], [
+                _paragraph(client_line, styles["matterMeta"]),
+                _paragraph(
+                    str(int(group.get("entryCount", 0) or 0))
+                    + " docket(s) · "
+                    + ledger_hours(group.get("totalHours"))
+                    + " hours · Net fees "
+                    + _money(group.get("totalNetFee")),
+                    styles["matterMetaRight"],
+                ),
+            ]],
+            colWidths=[doc.width - 1.72 * inch, 1.72 * inch],
+            hAlign="LEFT",
+        )
+        matter_banner.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef4fc")),
+            ("BACKGROUND", (0, 1), (-1, 1), colors.white),
+            ("LINEABOVE", (0, 0), (-1, 0), 1.15, colors.HexColor("#2f5f9d")),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.30, colors.HexColor("#c7d5e8")),
+            ("LINEBELOW", (0, 1), (-1, 1), 0.45, colors.HexColor("#c7d5e8")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        subtotal = build_subtotal(group)
+        if not entries:
+            no_entries = Table(
+                [[_paragraph("No docketed time entries.", styles["muted"])]],
+                colWidths=[doc.width],
+                hAlign="LEFT",
+                style=TableStyle([
+                    ("BOX", (0, 0), (-1, -1), 0.30, colors.HexColor("#d7e2f0")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ]),
+            )
+            story.append(KeepTogether([matter_banner, Spacer(1, 0.09 * inch), no_entries, Spacer(1, 0.06 * inch), subtotal]))
+        elif len(entries) <= 5:
+            # Most matter groups are compact.  Keeping the whole unit together
+            # prevents an orphan heading or an isolated subtotal.
+            story.append(
+                KeepTogether([
+                    matter_banner,
+                    Spacer(1, 0.09 * inch),
+                    build_detail_table(entries),
+                    Spacer(1, 0.06 * inch),
+                    subtotal,
+                ])
+            )
+        else:
+            # Large groups retain the same protections without wasting whole
+            # pages: heading/first docket and last docket/subtotal are atomic;
+            # the middle table can naturally continue with repeated headers.
+            story.append(KeepTogether([matter_banner, Spacer(1, 0.09 * inch), build_detail_table(entries[:1])]))
+            middle_entries = entries[1:-1]
+            if middle_entries:
+                story.append(build_detail_table(middle_entries))
+            story.append(KeepTogether([build_detail_table(entries[-1:]), Spacer(1, 0.06 * inch), subtotal]))
+
+    if not groups:
+        story.append(Paragraph("No docketed time entries match the selected filters.", styles["muted"]))
+
+    final_label_style = ParagraphStyle(
+        "MatterLedgerFinalLabel",
+        parent=styles["tableHeader"],
+        fontSize=6.7,
+        leading=8.0,
+        textColor=colors.HexColor("#c9dbf2"),
+    )
+    final_cell_style = ParagraphStyle(
+        "MatterLedgerFinalCell",
+        parent=final_label_style,
+        # Keep the compact executive summary, but give the small all-caps
+        # label a little breathing room before its larger value.
+        leading=12.0,
+    )
+
+    def final_cell(label, value):
+        return Paragraph(
+            html.escape(label)
+            + "<br/><font color='#ffffff' size='9.7'><b>"
+            + html.escape(value)
+            + "</b></font>",
+            final_cell_style,
+        )
+
+    final_summary = Table(
+        [[
+            final_cell("TOTAL DOCKETS", str(int(totals.get("entryCount", 0) or 0))),
+            final_cell("TOTAL HOURS", ledger_hours(totals.get("totalHours"))),
+            final_cell("TOTAL GROSS FEES", _money(totals.get("totalGrossFee"))),
+            final_cell("TOTAL NET FEES", _money(totals.get("totalNetFee"))),
+        ]],
+        colWidths=[doc.width / 4.0] * 4,
+        hAlign="LEFT",
+    )
+    final_summary.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#1f365b")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.white),
+        ("LINEABOVE", (0, 0), (-1, 0), 1.1, colors.HexColor("#2f5f9d")),
+        ("LINEAFTER", (0, 0), (-2, -1), 0.35, colors.HexColor("#536f96")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    # Keep the final heading and all of its values on one page.  This is a
+    # real pagination constraint, not a margin tweak, so neither labels nor
+    # values can be stranded on a subsequent page.
+    story.append(KeepTogether([
+        Spacer(1, 0.10 * inch),
+        _section_title("Final Summary", styles),
+        Spacer(1, 0.05 * inch),
+        final_summary,
+    ]))
+
     draw_page = lambda canvas, document: _draw_header_footer(canvas, document, config, logo_path)
     doc.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
     return filepath

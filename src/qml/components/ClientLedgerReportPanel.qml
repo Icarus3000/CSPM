@@ -172,6 +172,26 @@ Item {
         { key: "balance", label: "Balance", width: 110, defaultWidth: 110, minWidth: 86, align: "right", fmt: "currency", visible: true, resizable: false }
     ]
 
+    // A billing parent which resolves to the same party as the service client
+    // adds no useful information. The repository determines this result-wide
+    // flag after comparing party IDs and normalized display names.
+    readonly property bool hasDistinctBillingClient: !!(root.reportData && root.reportData.hasDistinctBillingClient)
+    property var displayColumns: {
+        var source = root.columns || []
+        var next = []
+        for (var i = 0; i < source.length; i++) {
+            var column = Object.assign({}, source[i])
+            if (column.key === "billingParentName" && !root.hasDistinctBillingClient) {
+                // Never persist this temporary absence. A later filtered result
+                // may legitimately contain a separate billing client.
+                column.visible = false
+                column.hiddenBecauseDuplicateParty = true
+            }
+            next.push(column)
+        }
+        return next
+    }
+
     Timer {
         id: columnPreferenceSaveTimer
         interval: 300
@@ -271,10 +291,36 @@ Item {
         }
     }
 
+    function applyVisibleColumnConfig(newColumns) {
+        // StandardTableHeader receives displayColumns. When Billing Client is
+        // temporarily hidden, it is correctly absent from the reorder payload;
+        // merge by key so that its saved preference is not discarded.
+        var current = root.columns || []
+        var byKey = ({})
+        for (var i = 0; i < current.length; i++) byKey[current[i].key] = current[i]
+        var merged = []
+        var seen = ({})
+        var incoming = newColumns || []
+        for (var n = 0; n < incoming.length; n++) {
+            var next = incoming[n]
+            var key = String(next.key || "")
+            if (!key || !byKey[key] || seen[key]) continue
+            merged.push(Object.assign({}, byKey[key], next))
+            seen[key] = true
+        }
+        for (var r = 0; r < current.length; r++) {
+            var remaining = current[r]
+            if (!seen[remaining.key]) merged.push(Object.assign({}, remaining))
+        }
+        root.columns = merged
+        root.scheduleColumnPreferenceSave()
+    }
+
     function columnsSnapshot(includeHidden) {
         var arr = []
-        for (var i = 0; i < root.columns.length; i++) {
-            var c = root.columns[i]
+        var source = root.displayColumns || []
+        for (var i = 0; i < source.length; i++) {
+            var c = source[i]
             if (!includeHidden && !c.visible) continue
             arr.push({
                 "label": c.label || "",
@@ -1284,7 +1330,7 @@ Item {
                 height: parent.height
                 color: "transparent"
                 
-                columns: root.columns
+                columns: root.displayColumns
                 sortColumn: root.sortColumn
                 sortAscending: root.sortAsc
                 columnMargin: root.tableSideMarginPx
@@ -1295,8 +1341,7 @@ Item {
                     root.sortEntries(key)
                 }
                 onConfigChanged: function(newColumns) {
-                    root.columns = newColumns
-                    root.scheduleColumnPreferenceSave()
+                    root.applyVisibleColumnConfig(newColumns)
                 }
             }
         } // <--- CLOSE TABLE HEADER RECTANGLE
@@ -1348,7 +1393,7 @@ Item {
                     spacing: root.tableColumnSpacingPx
                     
                     Repeater {
-                        model: root.columns
+                        model: root.displayColumns
                         delegate: Item {
                             id: bodyCol
                             required property int index
@@ -1363,7 +1408,7 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 0
                                 leftPadding: root.tableCellPadXPx
-                                rightPadding: index === root.columns.length - 1 ? 4 : root.tableCellPadXPx
+                                rightPadding: index === root.displayColumns.length - 1 ? 4 : root.tableCellPadXPx
                                 verticalAlignment: Text.AlignVCenter
                                 horizontalAlignment: colDef.align === "right" ? Text.AlignRight : Text.AlignLeft
                                 elide: Text.ElideRight
@@ -1406,7 +1451,8 @@ Item {
                                         return hr > 0 ? hr.toFixed(1) : ""
                                     }
                                     var val = rowDelegate.modelData[columnKey]
-                                    if (val === undefined && columnKey === "matterName") val = rowDelegate.modelData["matter"]
+                                    if (columnKey === "billingParentName") val = rowDelegate.modelData["billingClientDisplay"]
+                                    if (columnKey === "matterName") val = rowDelegate.modelData["matterDisplay"] || rowDelegate.modelData["matter"]
                                     return String(val !== undefined ? val : "")
                                 }
                             }

@@ -4274,6 +4274,13 @@ Item {
                             onOpenScreenRequested: function(moduleId, nodeId) {
                                 root.option3OpenScreenByModuleNode(moduleId, nodeId)
                             }
+                            onOpenWorkspaceRequested: function(moduleId, nodeId, state) {
+                                var module = root.option3ModuleForId(moduleId)
+                                var item = root.option3ItemForModuleNode(moduleId, nodeId)
+                                if (module && item) {
+                                    root.option3OpenWorkspace(module, item, state || ({}))
+                                }
+                            }
                         }
                     }
                     Loader {
