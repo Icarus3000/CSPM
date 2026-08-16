@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Item detail</title>
+  <style>
+    body{font-family:system-ui,Arial;background:#f6f8fb;padding:12px}
+    .card{background:#fff;padding:12px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
+    .row{margin:8px 0}
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:#0b63ff;color:#fff;text-decoration:none}
+  </style>
+</head>
+<body>
+  <div id="content"><div class="card"><h2>Loading...</h2></div></div>
+  <script>
+    function q(name){ var u=new URL(location.href); return u.searchParams.get(name); }
+    function uid(id){return id}
+    function getLocal(){try{return JSON.parse(localStorage.getItem('cspm_local_dockets')||'[]')}catch(e){return []}}
+    function merge(sample){
+      var items=[];
+      if (sample){
+        (sample.todaysTasks||[]).forEach(i=>items.push(Object.assign({id: 's-'+Math.random().toString(36).slice(2,9),category:'today',title:i.title,client:i.client},i)));
+        (sample.upcomingDeadlines||[]).forEach(i=>items.push(Object.assign({id: 's-'+Math.random().toString(36).slice(2,9),category:'upcoming',title:i.title,date:i.date,client:i.client},i)));
+        (sample.overdueDeadlines||[]).forEach(i=>items.push(Object.assign({id: 's-'+Math.random().toString(36).slice(2,9),category:'overdue',title:i.title,date:i.date,client:i.client},i)));
+        (sample.overdueBills||[]).forEach(i=>items.push(Object.assign({id: 's-'+Math.random().toString(36).slice(2,9),category:'bill',title:i.invoice,client:i.client,wipAmount:i.wipAmount},i)));
+        (sample.readyToBillMatters||[]).forEach(i=>items.push(Object.assign({id: 's-'+Math.random().toString(36).slice(2,9),category:'readyToBill',title:i.matterName,client:i.clientName,entryCount:i.entryCount,wipAmount:i.wipAmount},i)));
+      }
+      getLocal().forEach(i=>items.push(Object.assign({_source:'local'},i)));
+      return items;
+    }
+
+    function render(item){
+      var c=document.getElementById('content');
+      if(!item){ c.innerHTML='<div class="card"><h2>Item not found</h2><p>It may be a local item only stored in another browser.</p><p><a class="btn" href="/">Back</a></p></div>'; return }
+      var html = '<div class="card">';
+      html += '<h2>'+ (item.title||'Detail') +'</h2>';
+      html += '<div class="row"><strong>Client:</strong> '+(item.client||'N/A')+'</div>';
+      if(item.date) html += '<div class="row"><strong>Date:</strong> '+item.date+'</div>';
+      if(item.wipAmount) html += '<div class="row"><strong>WIP:</strong> $'+item.wipAmount+'</div>';
+      if(item.notes) html += '<div class="row"><strong>Notes:</strong><div>'+item.notes+'</div></div>';
+      html += '<div style="margin-top:12px"><a class="btn" href="/">Back</a> <a class="btn" target="_blank" href="/docket.html">Add Docket</a></div>';
+      html += '</div>';
+      c.innerHTML = html;
+    }
+
+    function findAndRender(sample){
+      var items = merge(sample);
+      var id = q('id');
+      var found = items.find(i=>i.id===id || i.id===(''+id));
+      render(found);
+    }
+
+    // Define hydrateBriefing so sample-hydrate.js can call it and we capture sample
+    window.hydrateBriefing = function(data){ try{ window.__detail_sample = data; }catch(e){}; try{ findAndRender(data);}catch(e){} };
+    // Try to load sample-hydrate.js if present on gh-pages
+  </script>
+  <script src="./sample-hydrate.js"></script>
+  <script>
+    // In case sample didn't load or we already have local-only items, render from local
+    setTimeout(function(){ if(!window.__detail_sample) findAndRender(null); }, 600);
+  </script>
+</body>
+</html>
