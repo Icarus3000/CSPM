@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
 
 jobs:
@@ -17,9 +17,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Verify package.json exists
         run: |
+          echo "== Repo files changed in this run =="
+          git --no-pager diff --name-only HEAD^ HEAD || true
           if [ -f "src/web/practice_briefing/package.json" ]; then
             echo "Found package.json"
             cat src/web/practice_briefing/package.json | jq -r '.name, .version' || true
@@ -27,6 +32,11 @@ jobs:
             echo "ERROR: src/web/practice_briefing/package.json not found"
             exit 1
           fi
+
+      - name: Show Node & npm versions
+        run: |
+          node -v || true
+          npm -v || true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
