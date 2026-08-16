@@ -19,5 +19,4 @@ window.hydrateBriefing && window.hydrateBriefing({
   ]
 });
 
-// Trigger commit: updated for deployment
-// deployed: 2026-08-16T18:54:00Z
+// Deployment retrigger: 2026-08-16T18:59:00Z

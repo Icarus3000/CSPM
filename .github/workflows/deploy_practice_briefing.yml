@@ -31,15 +31,10 @@ jobs:
         working-directory: src/web/practice_briefing
         run: npm run build
 
-      - name: Prepare artifact folder
-        run: |
-          mkdir -p site/practice_briefing
-          cp -a src/web/practice_briefing/dist/. site/practice_briefing/
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v1
+      - name: Deploy to gh-pages branch
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          path: 'site'
-
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v1
+          branch: gh-pages
+          folder: src/web/practice_briefing/dist
+          clean: true
+          token: ${{ secrets.GITHUB_TOKEN }}
