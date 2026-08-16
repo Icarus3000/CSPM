@@ -18,10 +18,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify package.json exists
+        run: |
+          if [ -f "src/web/practice_briefing/package.json" ]; then
+            echo "Found package.json"
+            cat src/web/practice_briefing/package.json | jq -r '.name, .version' || true
+          else
+            echo "ERROR: src/web/practice_briefing/package.json not found"
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20.19.0'
 
       - name: Install dependencies
         working-directory: src/web/practice_briefing
@@ -30,6 +40,16 @@ jobs:
       - name: Build (Vite)
         working-directory: src/web/practice_briefing
         run: npm run build
+
+      - name: Show build output
+        run: |
+          echo "== Listing build output folder =="
+          if [ -d "src/web/practice_briefing/dist" ]; then
+            ls -la src/web/practice_briefing/dist
+          else
+            echo "ERROR: build output folder src/web/practice_briefing/dist not found"
+            exit 1
+          fi
 
       - name: Deploy to gh-pages branch
         uses: JamesIves/github-pages-deploy-action@v4
