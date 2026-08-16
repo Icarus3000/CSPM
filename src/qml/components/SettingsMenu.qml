@@ -785,6 +785,55 @@ Popup {
             Layout.fillWidth: true
             Layout.preferredHeight: 40
             radius: root.radiusFor(height)
+            color: motionFxMouse.containsMouse ? root.hoverFill : root.inactiveFill
+            border.width: 1
+            border.color: motionFxMouse.containsMouse ? root.menuBorder : SemanticTheme.alpha(root.menuInk, 0.18)
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 8
+
+                Text {
+                    text: "Motion FX Studio"
+                    color: root.menuInk
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                    Layout.fillWidth: true
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    text: ">"
+                    color: root.menuInk
+                    font.pixelSize: 14
+                    font.weight: Font.Bold
+                    Layout.preferredWidth: 12
+                    horizontalAlignment: Text.AlignRight
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            MouseArea {
+                id: motionFxMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    root.close()
+                    if (root.appRef && root.appRef.openMotionFxStudio) {
+                        root.appRef.openMotionFxStudio()
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 40
+            radius: root.radiusFor(height)
             color: backupMouse.containsMouse ? root.hoverFill : root.inactiveFill
             border.width: 1
             border.color: backupMouse.containsMouse ? root.menuBorder : SemanticTheme.alpha(root.menuInk, 0.18)

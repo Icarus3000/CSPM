@@ -8,6 +8,7 @@ Status: Active Source of Truth
 CSPM is a premium legal practice command console that combines:
 - Fast daily data entry
 - Bulletproof financial controls
+- Long-term Ontario trust-accounting and regulatory-reporting readiness
 - Delightful, high-end user experience
 - Reliable backup/restore so no meaningful work is lost
 
@@ -19,6 +20,12 @@ The system must stay portable from Excel-first desktop workflows to SQL-backed m
 3. UX quality is mandatory: style, motion, sound, readability, and print/PDF output quality are requirements, not polish.
 4. Architecture portability: no dead-end design choices that block SQL/mobile migration.
 5. Auditability: key workflows must be inspectable and reproducible through logs, manifests, and reports.
+6. Context separation: client trust, sole-proprietor practice, a future
+   professional corporation, and household/family activity must never be
+   silently commingled in ledgers, tax reports, or permissions.
+7. Regulatory truth: trust, GST/HST, and income-tax outputs must be
+   source-linked, versioned, reviewable, and governed by current official rules
+   rather than hard-coded assumptions.
 
 ## 3) User-Frequency Delivery Order
 The implementation sequence must follow this operational path:
@@ -29,13 +36,21 @@ The implementation sequence must follow this operational path:
 5. A/R and payment application.
 6. Trust-safe ledger flows and reconciliation.
 7. Reporting and productivity intelligence.
-8. Advanced automation and integrations.
+8. Regulated trust, GST/HST, and income-tax preparation after the underlying
+   financial records are proven.
+9. Household/family financial management as a separate context.
+10. Advanced automation and integrations.
 
 ## 4) Architecture Direction
 1. Phase 1: Windows + Excel-first using strict tabular schemas.
 2. Phase 1.5: in-memory row processing, never cell-by-cell loops for business logic.
 3. Phase 2: SQL adapter replacement behind repository interfaces.
 4. Phase 3: mobile-capable front-end with shared domain services and APIs.
+
+The approved storage sequence is Excel stabilization -> local SQLite outside
+OneDrive -> validated OneDrive snapshots -> possible Azure SQL behind a secure
+API. The detailed regulated financial roadmap is
+`docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`.
 
 Canonical machine-readable specs are stored in `docs/spec/`.
 The Professional client migration boundary is defined in `docs/spec/professional_client_contracts.yaml`; use the selected local loopback HTTP JSON plus WebSocket event boundary while keeping Flutter versus React Native intentionally undecided. The explicit-start HTTP leg is proven against the real Excel-backed Client Directory/Profile workflow; WebSocket delivery and a visual external client remain pending.
@@ -73,6 +88,10 @@ Minimum report families:
 3. WIP reports (unbilled inventory by matter/client/age/risk).
 4. Billing quality reports (write-downs, leakage, margin drivers).
 5. Trust and compliance reports (three-way reconciliation, exception logs).
+6. Ontario trust-accounting records, monthly-close evidence, Form 9A support,
+   and annual-report support packages after formal requirements validation.
+7. Per-registrant GST/HST return workpapers, filing/payment task reminders, and
+   separate personal/sole-proprietor, future-PC, and household tax workpapers.
 
 UX requirements for every report:
 1. Visually engaging on-screen layout (clear hierarchy, modern styling).
@@ -92,5 +111,7 @@ Every workflow stage must maintain:
 Future AI contributors must:
 1. Read this file first.
 2. Read all files in `docs/spec/` before implementation planning.
-3. Update both Bible and relevant spec files when behavior changes.
-4. Keep runtime backup/restore behavior aligned with spec documents.
+3. Read `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md` before planning a data,
+   trust, tax, household, or compliance-related change.
+4. Update both Bible and relevant spec files when behavior changes.
+5. Keep runtime backup/restore behavior aligned with spec documents.

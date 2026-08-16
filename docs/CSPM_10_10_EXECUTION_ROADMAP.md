@@ -31,6 +31,13 @@ The canonical interface destination remains
 that brief; it turns quality, financial trust, and release readiness into an
 ordered checklist.
 
+The post-10/10 product direction—SQL-backed data, Ontario trust accounting,
+per-registrant GST/HST, income-tax workpapers, and household/family financial
+management—is maintained in
+`docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`. Those workstreams are not
+removed by this roadmap; they are deliberately sequenced after the present
+financial-correctness, data-protection, and real-app validation gates.
+
 ## How the roadmap is run
 
 ### Quality rules
@@ -599,4 +606,7 @@ and Cory’s real-app confirmation before moving on.
   logic.
 
 Those initiatives can resume after the 10/10 quality gate, or earlier only with
-an explicit owner decision that they are necessary to resolve a blocker.
+an explicit owner decision that they are necessary to resolve a blocker. For
+the complete post-gate dependency order and compliance acceptance requirements,
+use `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md` rather than inferring scope
+from this temporary expansion freeze.

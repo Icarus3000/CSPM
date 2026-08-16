@@ -5025,11 +5025,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function shellRoundedMaskActive() {
         return mainWin.outerRoundedShellMaskEnabled
-            && mainWin.animationPhase === "settled"
+            && (mainWin.animationPhase === "settled" || mainWin.animationPhase === "closing")
             && !canvasTransition.running
             && canvasGeometryAdjust.transitionProgress >= 0.995
             && mainWin.shellMaskSettleDelayReady
-            && !mainWin.isClosing
             && !mainWin.isMinimizing
             && !mainWin.isRestoringFromMinimize
             && !mainWin.maximizeAnimInProgress
@@ -7989,41 +7988,15 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             finishUserDrag();
         }
 
-        // Freeze the close geometry before entering the closing phase.  This
-        // binds the transition to the monitor containing the visible CSPM
-        // surface, even if the host envelope has stale geometry after an OS
-        // move or mixed-DPI monitor change.
-        clearClosingOverlayGeometry();
-        captureClosingOverlayGeometry();
-
-        // Enter closing phase before toggling isClosing so rounded-mask teardown
-        // cannot occur while still reported as "settled" (prevents corner flash).
+        // Lock the exact settled host and content geometry in-place.
+        // Zero window repositioning or host envelope resizing avoids DWM/FBO repaints.
         animationPhase = "closing";
         isClosing = true;
         closeMotionStarted = false;
         jelly.freezeToIdentity();
 
-        // Professional keeps the same close transition, but starts it on the
-        // live window immediately.  Waiting for a full-frame GPU grab before
-        // the first visible frame made a title-bar click feel unresponsive on
-        // high-DPI displays.  Console retains the snapshot-overlay path.
-        if (mainWin.appStyle === "Professional") {
-            phaseLog("CLOSING", "Professional immediate in-place close motion");
-            applyClosingGeometryAtomically();
-            mainWin.startCloseMotion("professional-immediate");
-            return;
-        }
-
-        // Preferred close path: render closing animation in a dedicated overlay window.
-        // This avoids any visible host-window relocation before close animation begins.
-        if (beginClosingOverlayHandoff()) {
-            return;
-        }
-
-        // Fallback: legacy in-place close if overlay creation fails.
-        phaseLog("CLOSING", "Overlay unavailable; using in-place close motion");
-        applyClosingGeometryAtomically();
-        mainWin.startCloseMotion("phase-transition-fallback");
+        phaseLog("CLOSING", "Starting direct in-place Singularity close motion");
+        mainWin.startCloseMotion("singularity-inplace");
     }
     
     // ============================================================
@@ -8730,12 +8703,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // contentLayer so the canvas cannot become a clipped viewport.
         transform: [
             Scale {
-                origin.x: (mainWin.animationPhase === "closing")
-                    ? (mainWin.contentLocalX + (mainWin.finalW / 2))
-                    : mainWin.settledScaleOriginX()
-                origin.y: (mainWin.animationPhase === "closing")
-                    ? (mainWin.contentLocalY + (mainWin.finalH / 2))
-                    : mainWin.settledScaleOriginY()
+                origin.x: mainWin.contentLocalX + (mainWin.finalW / 2)
+                origin.y: mainWin.contentLocalY + (mainWin.finalH / 2)
                 xScale: (mainWin.animationPhase === "opening")
                     ? 1.0
                     : ((mainWin.animationPhase !== "settled") ? jelly.scaleX : mainWin.settledScaleX())
@@ -8752,12 +8721,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                     : ((mainWin.animationPhase !== "settled") ? jelly.transY : mainWin.settledTransY())
             },
             Rotation {
-                origin.x: (mainWin.animationPhase === "closing")
-                    ? (mainWin.contentLocalX + (mainWin.finalW / 2))
-                    : mainWin.settledScaleOriginX()
-                origin.y: (mainWin.animationPhase === "closing")
-                    ? (mainWin.contentLocalY + (mainWin.finalH / 2))
-                    : mainWin.settledScaleOriginY()
+                origin.x: mainWin.contentLocalX + (mainWin.finalW / 2)
+                origin.y: mainWin.contentLocalY + (mainWin.finalH / 2)
                 angle: (mainWin.animationPhase === "opening")
                     ? 0.0
                     : ((mainWin.animationPhase !== "settled") ? jelly.rotationVal : mainWin.settledRotate())
@@ -9259,6 +9224,89 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             onCanceled: {
                 if (mainWin.userMoveInProgress || mainWin.systemMoveInProgress) {
                     mainWin.finishUserDrag()
+                }
+            }
+        }
+
+        Canvas {
+            id: closingAccretionCanvas
+            anchors.fill: parent
+            visible: mainWin.animationPhase === "closing" && jelly.closeProgress > 0.01 && jelly.closeProgress < 0.98
+            z: 99999
+
+            property var particles: []
+            property bool initialized: false
+
+            function initParticles() {
+                var pts = [];
+                for (var i = 0; i < 250; i++) {
+                    pts.push({
+                        "angle": Math.random() * Math.PI * 2,
+                        "distRatio": 0.15 + Math.random() * 0.85,
+                        "speed": 1.8 + Math.random() * 3.6,
+                        "size": 1.2 + Math.random() * 2.8,
+                        "alpha": 0.25 + Math.random() * 0.75
+                    });
+                }
+                particles = pts;
+                initialized = true;
+            }
+
+            Connections {
+                target: jelly
+                function onCloseProgressChanged() {
+                    if (closingAccretionCanvas.visible) {
+                        closingAccretionCanvas.requestPaint();
+                    }
+                }
+            }
+
+            onPaint: {
+                var ctx = getContext("2d");
+                if (!ctx) return;
+                var w = width;
+                var h = height;
+                ctx.clearRect(0, 0, w, h);
+
+                var p = jelly.closeProgress;
+                if (p <= 0.02 || p >= 1.0) return;
+                if (!initialized) initParticles();
+
+                var singX = mainWin.contentLocalX + (mainWin.finalW / 2.0);
+                var singY = mainWin.contentLocalY + (mainWin.finalH / 2.0);
+
+                var discAlpha = Math.min(1.0, Math.pow(p * 1.4, 2.0));
+                var discRadius = Math.max(14, (1.0 - p * 0.65) * Math.min(mainWin.finalW, mainWin.finalH) * 0.45);
+
+                var grad = ctx.createRadialGradient(singX, singY, 4, singX, singY, discRadius);
+                grad.addColorStop(0.0, "rgba(56, 189, 248, " + (discAlpha * 0.85).toFixed(3) + ")");
+                grad.addColorStop(0.35, "rgba(129, 140, 248, " + (discAlpha * 0.50).toFixed(3) + ")");
+                grad.addColorStop(0.70, "rgba(244, 114, 182, " + (discAlpha * 0.22).toFixed(3) + ")");
+                grad.addColorStop(1.0, "rgba(56, 189, 248, 0.0)");
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(singX, singY, discRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                for (var i = 0; i < particles.length; i++) {
+                    var pt = particles[i];
+                    pt.angle += (pt.speed * 0.035) / (pt.distRatio + 0.08);
+                    var currentDist = pt.distRatio * (1.0 - p * 0.86) * (Math.min(mainWin.finalW, mainWin.finalH) * 0.48);
+                    var px = singX + Math.cos(pt.angle) * currentDist;
+                    var py = singY + Math.sin(pt.angle) * currentDist;
+
+                    var ptAlpha = pt.alpha * discAlpha;
+                    var ptSize = Math.max(0.6, pt.size * (1.0 - p * 0.55));
+
+                    ctx.fillStyle = (i % 3 === 0)
+                        ? "rgba(56, 189, 248, " + ptAlpha.toFixed(3) + ")"
+                        : (i % 3 === 1)
+                            ? "rgba(129, 140, 248, " + ptAlpha.toFixed(3) + ")"
+                            : "rgba(244, 114, 182, " + ptAlpha.toFixed(3) + ")";
+                    ctx.beginPath();
+                    ctx.arc(px, py, ptSize, 0, Math.PI * 2);
+                    ctx.fill();
                 }
             }
         }

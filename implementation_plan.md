@@ -84,6 +84,13 @@ reach a 10/10 CSPM are maintained in:
 docs/CSPM_10_10_EXECUTION_ROADMAP.md
 ```
 
+The approved long-term SQL, Ontario trust-accounting, GST/HST, income-tax,
+and household/family financial direction is maintained in:
+
+```text
+docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md
+```
+
 Future agents should treat that brief as the durable UI architecture direction unless
 the user explicitly supersedes it.
 
@@ -482,11 +489,17 @@ by Flutter or React Native.
 - Build a small Professional-client proof of concept against Client Directory/Profile and the Option 3 shell model.
 - Keep Console QML behavior intact while the Professional client is developed.
 
-### Phase 7: Module-By-Module Professional Client Replacement
-- Rebuild Professional workflows outside QML one module at a time.
-- Use the same backend/data contracts.
-- Keep QML Professional screens available until each replacement is verified.
-- Retire QML Professional modules only after parity checks pass.
+### Phase 7: Expert Client Parity And Expansion
+- Rebuild mature Professional workflows in the separate Expert client one
+  module at a time only after the service boundary and parity contracts are
+  proven.
+- Use the same backend/data contracts and retain the QML Professional interface
+  as the canonical production reference unless the owner explicitly changes
+  that direction.
+- Keep Console behavior intact and never make the Expert client a second source
+  of business logic or persistence rules.
+- Do not begin this work before the current 10/10 quality gate unless the owner
+  explicitly authorizes a narrow proof-of-concept.
 
 ### Phase 8: Connectivity, Automation, and Ecosystem (A+ Objective)
 - **Secure Client Web Drop**: Build a lightweight, read-only Next.js or React web portal hitting the Azure SQL API for secure invoice delivery, stripe payments, and KYC document uploads to eliminate plaintext email risks.
@@ -578,3 +591,19 @@ The roadmap reserves the following concepts for the dedicated household budgetin
 - Dedicated household dashboards and Excel/PDF reporting
 
 For tax and accounting purposes, family/personal transactions require no BusinessUnit, receive 0% ITC eligibility, are explicitly excluded from all business HST calculations, and are classified as `Out of Scope` for business tax reporting.
+
+## 13. Regulated Financial Expansion Boundary
+
+The long-term product scope includes a controlled SQL migration, detailed
+Ontario trust accounting, per-registrant GST/HST preparation and deadlines,
+personal/sole-proprietor and future-professional-corporation income-tax
+workpapers, and household/family financial management. These are not generic
+dashboard features: each requires explicit financial contexts, source-linked
+evidence, versioned regulatory rules, review/approval gates, synthetic fixture
+tests, and controlled correction history.
+
+The complete sequencing, acceptance criteria, official-source references, and
+current execution boundary are in
+`docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`. Do not start a broad database
+cutover, live trust workflow, or tax-filing integration while the current
+Excel-backed 10/10 quality and financial-trust gates remain open.

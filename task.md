@@ -1,4 +1,40 @@
-# Phase 7: Statements of Account and Ledgers Task List
+# CSPM Task And Validation Ledger
+
+## Strategic Roadmap Rebaseline (2026-08-16)
+
+Status: long-term direction recorded; no code, workbook, database, or release
+artifact changed by this planning update.
+
+- [x] Consolidate the approved long-term SQL, Ontario trust-accounting,
+  GST/HST, income-tax, professional-corporation, household, and family goals in
+  `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md` and align the primary roadmap
+  documents to it.
+- [ ] Complete the active 10/10 financial-correctness, data-protection,
+  packaged-app, and Professional-first manual-audit gate before beginning a
+  broad SQL migration, live trust module, tax-preparation workflow, or direct
+  filing integration.
+- [ ] Continue the manual audit one problem at a time. The current required
+  starting point remains New Matter Client dropdown / New Client handoff in
+  Professional, Console, and then the detached-window path after the user
+  confirms each preceding result in the real app.
+- [ ] After explicit post-10/10 authorization, specify the financial-context
+  model and versioned regulatory rule matrices before building any regulated
+  write path. Contexts: Client Trust, Sole Proprietor Practice, future
+  Professional Corporation, and Household.
+- [ ] After the financial-context specification, perform the governed local
+  SQLite migration with reconciliation, backup/restore, report-parity, and
+  OneDrive-snapshot gates. Excel must not remain a parallel editable source of
+  truth after a controlled cutover.
+- [ ] After SQL cutover proof, deliver the dependent regulated workstreams in
+  the documented order: Ontario trust accounting and Form 9A support;
+  per-registrant GST/HST workpapers and calendar tasks; personal/
+  sole-proprietor and future-PC tax workpapers; then household/family finance
+  and attributed tax-preparation workflows.
+
+The detailed acceptance criteria, official-source references, deadline behavior,
+and explicit deferrals are in
+`docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`. Do not reorder these
+dependencies merely because an individual report or screen already exists.
 
 ## Controlled Cross-PC Workbook Merge Gate (2026-08-12)
 
@@ -557,10 +593,16 @@
 - [x] With CSPM still closed, build and promote the PDF-layout follow-up at `dist\CSPM\CSPM.exe`. PyInstaller completed both bundles; Windows denied only its final directory rename. The guarded copy-promotion command exceeded its console limit after materializing the destination, but independent source-versus-installed tree manifests match exactly: 4,321 files, 712,846,829 bytes, SHA-256 `EC1966FF2FD76A40E3509C0DB23129855991E5DE519714A91E9C88F1EFD0B962`. `CSPM.exe` SHA-256 is `B18BF5AF1B5194BACC663F3FF4EAB8A6F8741AD6A1F977AB82123736F55BC8B6`; the package has no `Zone.Identifier`, and the previous package is recoverable at `to_delete\dist__manual_replaced_release_20260815_165820`.
 - [x] Replace the Matter Time Ledger's landscape export with a true portrait composition: the canonical Cory Schneider Law Office invoice/report mark beside the firm block; concise three-row scope card; portrait-native KPI strip; date, description/status, hours, rate, gross, and net ledger grid; exact-grid matter subtotals; and a compact four-metric final summary.
 - [x] Add structural pagination rules rather than relying on margins: a matter heading is kept with its first docket, a large matter's final docket stays with its exact-grid subtotal, repeated detail headers continue across pages, and the Final Summary title/values are one indivisible unit.
-- [x] Restore Rate as its own ledger column and deliberately remove Reference from this operational production report. Status remains directly below each docket description; all other matter, client, billing-party, date, time, rate, gross-fee, and net-fee information remains visible.
-- [x] Make report branding resilient: an unavailable or pre-existing default wordmark configuration now falls back to the compact square CSPM brand mark rather than silently omitting the logo.
-- [x] With CSPM closed, build and hash-verify the portrait Matter Time Ledger redesign at `dist\CSPM\CSPM.exe`. PyInstaller built the complete candidate; Windows denied only its final staging-directory rename. Governed copy-promotion then installed an exact candidate match: 4,321 files, 712,850,464 bytes, package-tree SHA-256 `CD932C71AC8A9CBD9515B3721C1699A17016C456C8D588CB819BB1FA6ECCAD31`. `CSPM.exe` SHA-256: `598962C315A0EB54CC1936737DC64A3B198BD6716D6E54CA9124097DCCF32AB1`. The preceding package is recoverable at `to_delete\dist__manual_replaced_release_20260815_181831`; audit: `to_delete\release_promotion_20260815_181831.json`.
-- [x] Correct the Matter Time Ledger header to use the canonical Cory Schneider Law Office invoice/report wordmark instead of the CSPM application icon. The mark retains the same 0.50-inch header footprint, left anchor, and text offset while preserving its natural aspect ratio. The complete 4,321-file release was hash-verified after promotion: package-tree SHA-256 `4E6F0BF379784AD6CE095DF7E2E50F180271C5A320AF025B3F74AE66D0F5EC50`; `CSPM.exe` SHA-256 `E17598ED1D3F28E96169314BF3D33E7E8C493B82BABE3B45588FA3274BF2FAB2`. The prior package is recoverable at `to_delete\dist__manual_replaced_release_20260815_183849`; audit: `to_delete\release_promotion_20260815_183849.json`.
-- [x] Give the Matter Time Ledger PDF Final Summary labels and values more vertical breathing room without changing its column grid, colours, or pagination structure. With CSPM not running, the complete candidate was built and governed-promotion installed an exact 4,321-file / 712,850,778-byte match at `dist\CSPM` (tree SHA-256 `17B424359D2C4A05973CB581048A802272840C8F80ACE1198519EF0015663C9D`; EXE SHA-256 `5DB003D691DDD425363FC6F1ECBCC71C39D62E106976101BC688412FBA3C66BA`). The replaced package remains recoverable at `to_delete\dist__manual_replaced_release_20260815_190428`.
-- [x] Standardize Matter Time Ledger PDF hours as one-decimal values (`1.0`, `0.2`) rather than two-decimal values, remove redundant `h` suffixes from the Billable Hours KPI, subtotals, and Final Summary, and retain the complete word `hours` only in the free-text matter metadata line where a unit is otherwise unclear. The verified 4,321-file / 712,850,916-byte release at `dist\CSPM` has tree SHA-256 `0AA3270E22E4F8C48B3E4D996191C19DDAAB07DDCB3936B452E974D574B82C8C`; EXE SHA-256 `B0D7DD0E4DE5D2C8A7226AAABD2B7DC199F0166BC249FA4421A15D308EB1E075`. The preceding package is recoverable at `to_delete\dist__manual_replaced_release_20260815_191719`.
+
+## Singularity Exit VFX & Direct In-Place Close Engine (2026-08-16)
+
+- [x] Full Revert to Git Cloud baseline (`origin/main` commit `c692fad`): all original window dragging, Aero Snap, minimize, restore, and header logic completely restored to their pristine state.
+- [x] Direct In-Place Singularity Close Engine:
+  - Eliminated fragile secondary overlay window handoff, asynchronous `grabToImage` bitmap memory reclamation issues, and DWM multi-window transparency FBO composite failures.
+  - Implemented 550ms Singularity mathematical collapse ($p^{0.7} \times \pi$ tidal spaghettification, $720^\circ$ continuous vortex twist, $(1-p)^{2.2}$ scale decay, smooth fade-out) directly in `JellyController.qml` on the live window's hardware-accelerated scene graph.
+  - Embedded 250-particle orbital accretion Canvas directly inside `DetachedShellWindow.qml` with dynamic radial gradient glow (`#38BDF8` $\to$ `#818CF8` $\to$ `#F472B6`).
+  - Eliminated pre-animation flash/flicker by bypassing `applyClosingGeometryAtomically()` on in-place close, locking the settled host window envelope without DWM/FBO resize repaints, and maintaining seamless rounded-mask shader continuity.
+  - Added Motion FX Studio launcher in `SettingsMenu.qml` and backend setting slots in `AppController`.
+  - Promoted verified release package at `dist/CSPM/CSPM.exe` (SHA-256 `B7DB028380AD040253967F4C63AC2BC5457272A94D5120301082C6804AE2F693`).
+- [ ] Manual foreground verification: launch `dist/CSPM/CSPM.exe` and test standard window dragging, snapping, minimize/restore, and click `✕` to verify the seamless, flicker-free 550ms in-place Singularity twist, spaghettification collapse, and accretion particle swirl.
 

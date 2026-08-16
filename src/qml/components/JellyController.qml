@@ -67,6 +67,7 @@ Item {
     signal closeFinished()
     
     property bool isFrozenAtIdentity: false
+    property real closeProgress: 0.0
 
     property point launchOrigin: Qt.point(0,0)
     property bool isAnimating: openSeq.running || openBlobSeq.running || closeSeq.running
@@ -260,9 +261,9 @@ Item {
             closeSeq.stop();
         }
         // Snap to terminal state for deterministic shutdown handoff.
-        transX = -(screenWidth * 0.70);
-        transY = -(screenHeight * 1.80);
-        rotationVal = -22;
+        transX = 0.0;
+        transY = 0.0;
+        rotationVal = 720.0;
         scaleX = 0.0;
         scaleY = 0.0;
         opacityVal = 0.0;
@@ -274,7 +275,6 @@ Item {
         console.log("[JELLY] startClose() called");
         if (root.reducedMotion) {
             console.log("[JELLY] reducedMotion active - skipping closeSeq");
-            // Snap to identity state immediately; let outer logic perform simple fade out
             transX = 0.0;
             transY = 0.0;
             scaleX = 1.0;
@@ -283,22 +283,17 @@ Item {
             opacityVal = 1.0;
             isInSpringPhase = false;
             closeFinishEmitted = false;
+            root.finishCloseIfNeeded("reduced-motion");
             return;
         }
-        // Ensure we start from identity state for pixel-perfect handover
-        // This is called after freezeToIdentity() in Main.qml, but we double-check here
-        if (Math.abs(scaleX - 1.0) > 0.01 || Math.abs(scaleY - 1.0) > 0.01 || 
-            Math.abs(transX) > 0.01 || Math.abs(transY) > 0.01) {
-            console.log("[JELLY] Warning: Starting close from non-identity state, resetting");
-            scaleX = 1.0;
-            scaleY = 1.0;
-            transX = 0.0;
-            transY = 0.0;
-            rotationVal = 0.0;
-        }
-        opacityVal = 1.0;  // Ensure full opacity at start
+        scaleX = 1.0;
+        scaleY = 1.0;
+        transX = 0.0;
+        transY = 0.0;
+        rotationVal = 0.0;
+        opacityVal = 1.0;
+        closeProgress = 0.0;
         
-        // Disable spring phase behaviors - we're using explicit animations
         isInSpringPhase = false;
         closeFinishEmitted = false;
         closeTimeout.restart();
@@ -802,84 +797,51 @@ Item {
     }
 
     // ============================================================
-    // CLOSING ANIMATION: Bounce/Oscillate, then fly off-screen
-    // - tightened timing and slightly looser "damp" feel (more pronounced rebounds)
+    // CLOSING ANIMATION: Singularity Mathematical Collapse
     // ============================================================
     SequentialAnimation {
         id: closeSeq
+        running: false
 
-        // Phase 1: initial squash + drop (extra loose + faster)
-        ParallelAnimation {
-            NumberAnimation { target: root; property: "transY"; to: root.pxY(root.motionRatios.closePhase1TransYPct); duration: 200; easing.type: Easing.OutCubic }
-            NumberAnimation { target: root; property: "transX"; to: root.pxX(root.motionRatios.closePhase1TransXPct); duration: 200; easing.type: Easing.OutCubic }
-            NumberAnimation { target: root; property: "scaleX"; to: 1.223; duration: 200; easing.type: Easing.OutCubic }
-            NumberAnimation { target: root; property: "scaleY"; to: 0.778; duration: 200; easing.type: Easing.OutCubic }
-            NumberAnimation { target: root; property: "rotationVal"; to: 5.8; duration: 200; easing.type: Easing.OutCubic }
-        }
-
-        // Phase 2: larger rebound above origin (extra loose + faster)
-        ParallelAnimation {
-            NumberAnimation { target: root; property: "transY"; to: root.pxY(root.motionRatios.closePhase2TransYPct); duration: 288; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "transX"; to: root.pxX(root.motionRatios.closePhase2TransXPct); duration: 288; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "scaleX"; to: 0.746; duration: 288; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "scaleY"; to: 1.382; duration: 288; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "rotationVal"; to: -16.0; duration: 288; easing.type: Easing.InOutSine }
-        }
-
-        // Phase 3: second wobble retains more amplitude (extra loose + faster)
-        ParallelAnimation {
-            NumberAnimation { target: root; property: "transY"; to: root.pxY(root.motionRatios.closePhase3TransYPct); duration: 231; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "transX"; to: root.pxX(root.motionRatios.closePhase3TransXPct); duration: 231; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "scaleX"; to: 1.190; duration: 231; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "scaleY"; to: 0.810; duration: 231; easing.type: Easing.InOutSine }
-            NumberAnimation { target: root; property: "rotationVal"; to: 7.6; duration: 231; easing.type: Easing.InOutSine }
-        }
-
-        PauseAnimation { duration: 58 }
-
-        // Phase 4: smooth launch off-screen while stretching beyond original bounds (faster)
-        ParallelAnimation {
-            NumberAnimation {
-                target: root
-                property: "transX"
-                to: -(root.screenWidth * 0.70)
-                duration: 923
-                easing.type: Easing.InOutCubic
-            }
-            NumberAnimation {
-                target: root
-                property: "transY"
-                to: -(root.screenHeight * 2.10)
-                duration: 923
-                easing.type: Easing.InCubic
-            }
-            NumberAnimation {
-                target: root
-                property: "rotationVal"
-                to: -18
-                duration: 923
-                easing.type: Easing.InOutSine
-            }
-            SequentialAnimation {
-                NumberAnimation { target: root; property: "scaleX"; to: 0.52; duration: 323; easing.type: Easing.OutQuad }
-                NumberAnimation { target: root; property: "scaleX"; to: 0.0; duration: 585; easing.type: Easing.InCubic }
-            }
-            SequentialAnimation {
-                NumberAnimation { target: root; property: "scaleY"; to: 0.60; duration: 323; easing.type: Easing.OutQuad }
-                NumberAnimation { target: root; property: "scaleY"; to: 0.0; duration: 585; easing.type: Easing.InCubic }
-            }
-            NumberAnimation {
-                target: root
-                property: "opacityVal"
-                from: root.opacityVal
-                to: 0.0
-                duration: 923
-                easing.type: Easing.InQuad
-            }
+        NumberAnimation {
+            target: root
+            property: "closeProgress"
+            from: 0.0
+            to: 1.0
+            duration: 550
+            easing.type: Easing.InOutQuad
         }
 
         onFinished: {
-            root.finishCloseIfNeeded("spring-finished")
+            root.finishCloseIfNeeded("singularity-finished")
+        }
+    }
+
+    onCloseProgressChanged: {
+        var p = closeProgress;
+        // 1. Continuous Exponential Twist (720 deg)
+        rotationVal = Math.pow(p, 3.0) * 720.0;
+
+        // 2. Mathematical Tidal Spaghettification
+        if (p < 0.10) {
+            var breath = Math.sin((p / 0.10) * Math.PI) * 0.04;
+            scaleX = 1.0 - breath;
+            scaleY = 1.0 - breath;
+        } else {
+            var collapseP = (p - 0.10) / 0.90;
+            var stretchCurve = Math.sin(Math.pow(collapseP, 0.7) * Math.PI);
+            var tidalElongation = 1.0 + stretchCurve * 0.95;
+            var shrinkFactor = Math.pow(1.0 - collapseP, 2.2);
+
+            scaleX = Math.max(0.001, shrinkFactor * tidalElongation);
+            scaleY = Math.max(0.001, shrinkFactor * (1.0 - Math.pow(collapseP, 0.6) * 0.82));
+        }
+
+        // 3. Smooth fade out near the end
+        if (p < 0.92) {
+            opacityVal = 1.0;
+        } else {
+            opacityVal = Math.max(0.0, 1.0 - ((p - 0.92) / 0.08));
         }
     }
 

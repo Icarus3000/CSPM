@@ -92,6 +92,15 @@ OneDrive should retain a latest completed snapshot and manifest, timestamped his
 
 The future database must support durable transactions, stable IDs, audit events, correction and reversal workflows, reconciliation, governed migrations, tested backup and restore, incomplete-migration detection, deterministic import/export, and rollback protection.
 
+It must also carry an explicit financial context on every financial record and
+report. The initial required contexts are Client Trust, Sole Proprietor
+Practice, future Professional Corporation, and Household. They are separate
+ledgers and reporting scopes, not category labels. The SQL schema and migration
+must prevent their silent commingling, retain source/evidence identity, and
+preserve tax registrant, period, allocation, approval, and correction history.
+Trust, GST/HST, and income-tax workpapers must be generated from versioned,
+source-linked records rather than a second set of spreadsheet calculations.
+
 ## Excel and CSV after migration
 
 Excel and CSV remain supported for legacy import, controlled export, accountant schedules, reconciliation, reports, archives, and interoperability. After a dataset moves to SQLite, Excel and CSV must not remain parallel editable sources of truth.
@@ -107,6 +116,10 @@ CSPM UI and business logic
 ```
 
 The UI and business logic must not depend directly on SQLite paths or OneDrive behavior. A later target may use Microsoft sign-in, a secure CSPM API, and Azure SQL, while OneDrive or SharePoint continues to hold documents, exports, reports, and backup packages.
+
+The detailed product sequencing for SQL migration, Ontario trust accounting,
+GST/HST, income-tax workpapers, and household/family financial management is
+`docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`.
 
 ## Current blockers to monitor
 

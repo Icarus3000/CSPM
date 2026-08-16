@@ -1,5 +1,31 @@
 # Implementation History
 
+## 2026-08-16: Strategic Roadmap Rebaseline
+
+- **Planning consolidation only:** established
+  `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md` as the canonical detailed
+  destination for the SQL migration, Ontario trust accounting, GST/HST,
+  personal/sole-proprietor and future-PC income-tax workpapers, and household/
+  family financial management. The master roadmap, implementation plan, 10/10
+  roadmap, task ledger, Project Bible, and future-data architecture now link to
+  and preserve the same dependency order.
+- **Explicit scope boundary:** current implementation remains Excel-backed and
+  is still governed by the 10/10 financial-correctness, data-protection, and
+  Professional-first manual-audit gate. The next audit item remains New Matter
+  Client dropdown / New Client handoff. No SQL database, trust accounting,
+  tax-filing, household data model, workbook, source code, runtime setting, or
+  release artifact was changed by this entry.
+- **Direction clarified:** Professional remains the canonical Qt/QML Option 3
+  interface; Expert is a separate future Flutter/React Native client that must
+  use explicit backend contracts and does not replace QML Professional without
+  a later explicit owner decision. Long-term regulated workflows require
+  explicit financial contexts, versioned official rules, source-linked
+  workpapers, human review, synthetic fixtures, and controlled correction
+  history.
+- **Validation:** documentation-only review and consistency checks are pending
+  for this entry. No sandbox-safe code checks or real foreground Qt/WebEngine
+  validation were applicable or executed.
+
 ## 2026-08-15: Matter Time Ledger Report Workspace
 
 - **Dedicated daily workflow**: Daily Operations **Time today** now opens a separate **Today's Time Ledger** work tab (`finance / D18`) rather than Time Docket Entry. It starts with local Today, All Clients, All Billing Clients, All Matters, and Time-only filters; it is a report and never saves or changes the workbook.
@@ -1123,11 +1149,26 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 - Sandbox-safe validation: `python -c "import sys, pytest; sys.path.append('src/python'); raise SystemExit(pytest.main(['tests/test_supplier_document_service.py','tests/test_ap_supplier_bundle.py','-q']))"` passed (**6 passed**); `python -m py_compile src/python/services/supplier_document_service.py src/python/domain/ap_schema.py` passed; and `scripts/qmllint.ps1 -Targets @('src/qml/views/AccountsPayableView.qml')` completed with pre-existing warning-only diagnostics and no errors. A recursive package inspection confirmed `SupplierDocumentService`, Pillow image modules, `win32com.client`, `pythoncom`, and `pywintypes` are all bundled.
 - Release: CSPM was confirmed not running. The complete candidate built successfully; Windows denied only the standard staging-directory rename, so the hash-verified copy-promotion fallback was used. `dist\CSPM\CSPM.exe` is SHA-256 `71C6FE854CB1648F776B9258331BFD9378034EBA280FD92E683ABB738F4BFF5B`; all 4,320 installed files match the candidate tree SHA-256 `EDD8F9506C8FC128DA463D464520EAE098CD01617358C127271F27755222E929`. The preceding package is recoverable at `to_delete\dist__manual_replaced_release_20260815_145318`, with promotion audit `to_delete\release_promotion_20260815_145318.json`. Real Office conversion and Qt/WebEngine foreground validation remains manual outside this environment.
 
-### Planned: Premium Ledger Report Workspace (2026-08-15)
+### Premium Ledger Report Workspace (2026-08-15)
 
-- The next reporting enhancement will build on the existing Client Ledger Report query/component and the existing report-export infrastructure, not a new disconnected data model. A dedicated **Today's Time Ledger** route will open from Daily Operations with Today + all scopes + time-only + matter grouping pre-applied; the same report workspace will remain customizable for broader client, billing-client, matter, date, type, and search reporting.
-- Two presentation modes are planned: **Matter Time Ledger** for operational daily work, with matter-level entry summaries and report totals; and **Client Ledger** for the mixed financial chronology and WIP/A/R-oriented review represented by the legacy workbook.
-- The report contract will expose matter number, client, billing client, rate, hours, fee amounts, entry state, and references without modifying any underlying workbook records. Client/billing-client resolution must remain compatible with parent-client and joint-retainer records.
-- Billing identity is a deliberate usability rule: when service client and billing client resolve to the same party, CSPM will render the party once only. The value is omitted from the extra billing-client field/column and from headings/PDF captions. A distinct parent biller remains visible exactly once.
-- The existing inline Zen treatment is not adequate for a large ledger. The planned solution is a detached, monitor-affine Ledger Zen Window with an independent responsive layout, plus a specialized branded PDF renderer capable of repeated headers, group subtotals, totals, and filter context.
-- This is a documented implementation plan only. No source code, workbook data, QML behavior, package, or release artifact changed as part of this entry.
+- Added a dedicated **Today's Time Ledger** route from Daily Operations with Today + all scopes + time-only + matter grouping pre-applied. The same workspace provides full client, billing-client, matter, date range, type, and search reporting.
+- Two presentation modes supported: **Matter Time Ledger** for operational daily work with matter-level entry summaries and report totals, and **Client Ledger** for mixed financial chronology.
+- The report exposes matter number, client, distinct billing client, rate, hours, gross fee, net fee, entry state, and references without mutating any workbook records.
+- Deliberate billing identity display rule: when service client and billing client resolve to the same party, CSPM renders the party once only.
+- Added detached, monitor-affine Ledger Zen Window with responsive layout.
+- Replaced landscape export with a true portrait PDF composition: Cory Schneider Law Office wordmark header, concise scope card, portrait-native KPI strip, exact-grid matter subtotals, and compact final metrics bar.
+- Release promoted at `dist\CSPM\CSPM.exe` (4,321 files).
+
+## 2026-08-16: Direct In-Place Singularity Exit Engine
+
+- **Root-Cause Resolution**:
+  - Diagnostic review of `dist/logs/cspm.log` confirmed that secondary unparented overlay handoff (`ClosingOverlay.qml`) suffered from Windows DWM transparent FBO composite stalls and `grabToImage` bitmap memory reclamation timing, causing the window to disappear immediately on `mainWin.opacity = 0.0` while waiting 6.894s for the safety timer.
+  - Eliminated the secondary overlay window completely in favor of direct in-place hardware-accelerated scene-graph transformations within `DetachedShellWindow.qml` and `JellyController.qml`.
+- **In-Place Collapse & Accretion Engine**:
+  - `JellyController.qml`: `closeSeq` drives `closeProgress` from $0.0 \to 1.0$ over 550ms, applying continuous $720^\circ$ vortex twist ($\theta = p^3 \times 720^\circ$), mathematical tidal spaghettification ($1.0 + \sin(p^{0.7} \times \pi) \times 0.95$ on X, $(1 - p^{0.6} \times 0.82)$ on Y), scale decay ($(1-p)^{2.2}$), and smooth alpha fade ($p > 0.92$).
+  - `DetachedShellWindow.qml`: Directly routes `transitionToClosing` to `mainWin.startCloseMotion("singularity-inplace")` without altering host geometry (`hostX, hostY, hostW, hostH, canvasX, canvasY, contentLocalX, contentLocalY`). Bypassed `applyClosingGeometryAtomically()` and maintained `shellRoundedMaskActive()` continuity across the transition, eliminating initial DWM/FBO buffer reallocation flicker. Embedded `closingAccretionCanvas` inside `animationCanvasLayer` with $z=99999$ to render the 250-particle orbital vortex and `#38BDF8` $\to$ `#818CF8` $\to$ `#F472B6` radial accretion glow directly over the live window surface at 60/120 FPS.
+- **Validation**:
+  - QML compilation test verified `Status.Ready` on both `JellyController.qml` and `DetachedShellWindow.qml`.
+  - `scripts/qmllint.ps1` completed with 0 errors.
+  - Runtime assets synchronized and verified at `dist/CSPM/_internal/src/qml/`.
+  - Executable bundle hash verified at `dist/CSPM/CSPM.exe` (SHA-256: `B7DB028380AD040253967F4C63AC2BC5457272A94D5120301082C6804AE2F693`).

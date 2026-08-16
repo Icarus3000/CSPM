@@ -1,72 +1,177 @@
-# CSPM Roadmap
+# CSPM Master Roadmap
 
-Updated: 2026-06-04
-Status: Active
+Updated: 2026-08-16
+Status: active; rebaselined around financial correctness, regulatory readiness,
+and a controlled transition away from Excel.
 
-## Sprint 0: Platform Pivot (Current)
-Goal: establish durable foundation before adding large feature scope.
+## Governing Direction
 
-Deliverables:
-1. Bible and machine-readable spec baseline.
-2. Project snapshot backup/restore chain including data + specs.
-3. Auto backup cadence for core database protection.
-4. Canonical implementation order based on user-frequency workflows.
-5. Active workbook integrity checks wired into release gates, Git cloud restore validation, and support diagnostics.
-6. Production backup-chain operator runbook for snapshots, Git cloud backup/restore, offsite retention, encryption expectations, and restore-drill cadence.
-7. Professional client contract baseline covering the Option 3 shell plus Clients, Docketing, Billing, Finance, and Reports workflows.
-8. Professional client transport boundary selected: local loopback HTTP JSON for queries/actions plus WebSocket events. The secure explicit-start HTTP proof now drives the real Excel-backed Client Directory/Profile workflow while WebSocket delivery and a visual external client remain pending.
+CSPM is a premium legal-practice-management system. Its purpose is to make daily
+legal work efficient while keeping money, records, reports, and recovery
+trustworthy.
 
-Remaining trust gates before live use:
-1. Controlled Git cloud backup and restore drill with workbook hashes/manifests, following `docs/PRODUCTION_BACKUP_CHAIN.md`.
-2. Complete the pre-live security evidence packet required by `docs/spec/pre_live_security_gate.yaml`.
-3. Decision on whether the known legacy `TEST_CAT` workbook warning must be repaired before production.
+The roadmap has two horizons:
 
-## Sprint 1: Daily Data Entry Core
-1. Client/matter context selection and persistence.
-2. Time capture workflow hardening (timer, narration, validation).
-3. Unsaved/running-state crash-safe autosave and restore.
-4. WIP queue with edit/approve/hold statuses.
+1. **Current execution:** achieve the 10/10 quality, financial-correctness,
+   operational-resilience, and manual-audit gate while Excel remains the
+   production data store.
+2. **Post-10/10 expansion:** create the financial-context foundation; move to
+   SQL-backed authoritative data; then deliver Ontario trust accounting,
+   per-registrant GST/HST, personal/sole-proprietor and future-PC tax
+   workpapers, household/family financial management, and later ecosystem
+   integrations.
 
-## Sprint 2: Billing Pipeline
-1. Invoice drafting from approved WIP.
-2. Pricing controls (hourly defaults, flat-fee support).
-3. Invoice lifecycle state machine.
-4. PDF/print export baseline for invoice docs.
+The detailed long-term compliance direction is canonical in
+`docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`. The current release gate is
+canonical in `docs/CSPM_10_10_EXECUTION_ROADMAP.md`.
 
-## Sprint 3: A/R and Payments
-1. Payment posting and allocation.
-2. Aging buckets and collection workflows.
-3. Cash projection and risk indicators.
-4. Client-facing payment UX hooks.
+## Current Execution — 10/10 Gate
 
-## Sprint 4: Trust and Accounting Guardrails
-1. Double-entry ledger primitives.
-2. Trust overdraft prevention rules.
-3. Three-way reconciliation report engine.
-4. Audit and exception trail exports.
+The current priority is not a storage migration or new regulated module. It is
+to prove that CSPM's existing legal-office workflows are financially correct,
+stable, safe, and polished in the real packaged application.
 
-## Sprint 5: Reporting Studio
-1. WIP, A/R, productivity, and billing-quality report families.
-2. Fun, modern on-screen report layouts with drill-down navigation.
-3. Premium PDF export styles and print templates.
-4. Report presets and scheduled generation.
+Immediate order:
 
-## Sprint 6+: Advanced Automation and Integrations
-1. Communication-to-time conversion.
-2. Passive context tracking enhancements.
-3. Document/email hub, OCR, and signature workflows.
-4. IP-specific integrations and monitoring.
-5. SQL adapter + API layer for mobile and portal expansions.
-6. Complete the Professional client proof by adding WebSocket event delivery and a small Flutter or React Native visual client on top of the proven local HTTP Client Directory/Profile workflow.
+1. Repair and prove financial posting, A/R, payment, reversal, invoice, WIP,
+   and historic-correction behavior.
+2. Complete the Professional-first manual audit under the one-observed-defect
+   stop rule, beginning with New Matter Client dropdown / New Client handoff.
+3. Complete backup, restore, shared-data, security, supportability, performance,
+   release-candidate, and office-pilot evidence.
+4. Certify only when no relevant P0/P1/P2 issue remains and real-app evidence
+   supports the result.
 
-## Future Data Architecture: SQLite, OneDrive Snapshots, and Azure
+Until that gate is passed, a broad SQLite/SQL migration, full trust accounting,
+tax preparation, direct filing integration, and unrelated large modules are
+deferred. A read-only requirements/discovery task may proceed only with express
+owner authorization and must not obscure the current validation queue.
 
-<!-- CSPM_FUTURE_DATA_ARCHITECTURE_V1 -->
+## Professional And Expert Client Direction
 
-**Status:** Approved future requirement. Not authorized during the current Excel-backed trust milestone.
+- **Console** remains the expressive Qt/QML experience.
+- **Professional** remains the canonical restrained Qt/QML Option 3 interface:
+  compact module rail, temporary flyouts, work tabs, breadcrumb, and full-width
+  workspace.
+- **Expert** is a separate future Flutter or React Native client tier that
+  clones the mature Professional experience through framework-neutral local
+  service contracts. It does not replace Professional QML without an explicit
+  owner decision.
 
-**Sequence:** stabilize current workflows, migrate authoritative structured data to local SQLite, add validated OneDrive snapshot transfer for single-user one-computer-at-a-time use, then later consider Azure SQL behind a secure API and Microsoft sign-in.
+The interface and client-contract sources are
+`docs/CSPM_Option_3_Interface_Rebuild_Brief.md`,
+`implementation_plan.md`, and
+`docs/spec/professional_client_contracts.yaml`.
 
-**Non-negotiable:** never open the live SQLite database from OneDrive. OneDrive stores only completed validated snapshots and associated manifests, checksums, locks, and recovery history.
+## Post-10/10 Dependency Order
 
-Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
+```text
+10/10 current-product certification
+    -> financial-context and compliance-rule specification
+    -> repository/service separation and local SQLite migration preparation
+    -> governed SQLite cutover, parity, backup, recovery, and OneDrive snapshot proof
+    -> Ontario trust-accounting ledger, monthly close, Form 9A, and compliance packages
+    -> GST/HST reporting, calendar tasks, and CRA line/box workpapers per registrant
+    -> personal/sole-proprietor and future-PC income-tax workpapers
+    -> household/family finance, budgets, and attributed tax-preparation workpapers
+    -> Azure SQL/secure API, Expert-client expansion, web portal, and integrations
+```
+
+The ordering is deliberate: regulated reporting cannot safely be built on
+ambiguous financial data, and SQL cutover cannot safely be built before the
+existing workflows, IDs, audit rules, and recovery path are proven.
+
+## Post-10/10 Workstreams
+
+### 1. Financial Context And Compliance Rules
+
+Establish the durable separation of Client Trust, Sole Proprietor Practice,
+future Professional Corporation, and Household contexts. Every posting, report,
+deadline, tax treatment, source document, allocation, approval, and export must
+identify its context. Trust, operating, corporate, and household funds must
+never share a ledger or be blended in a report.
+
+Create versioned regulatory rules and requirements matrices before implementing
+a trust, HST, or income-tax write path. Outputs begin as review-ready workpapers
+and evidence packs; direct external filing is a later security/certification
+decision.
+
+### 2. SQL-Backed Authoritative Data
+
+Move from Excel to local SQLite only through a governed candidate migration.
+The live database remains outside OneDrive. OneDrive transfers completed,
+validated snapshots and manifests only. Azure SQL behind a secure API is a later
+multi-user/cloud option.
+
+No dataset may remain editable in both Excel and SQL after its controlled
+cutover. Stable IDs, financial/audit semantics, reconciliation, backup, restore,
+and report parity are acceptance gates.
+
+### 3. Ontario Trust Accounting
+
+Deliver a detailed, compliance-oriented By-Law 9 trust subsystem: client/matter
+liabilities, journals, transfer records, bank evidence, monthly
+reconciliations/comparisons, exception handling, retention, Form 9A work
+packages, and annual-report support. Maintain human authorization and
+professional review; no generated form is automatically an executed transfer or
+filed report.
+
+### 4. GST/HST Reporting And Calendar
+
+Deliver separate GST/HST registrant profiles for the sole-proprietor practice
+and future PC; accurate tax/ITC/adjustment evidence; line/box-mapped CRA
+workpapers; and a close/review/file/pay task calendar. The calendar calculates
+deadlines from the configured reporting period and official rule set, with
+configurable early reminders. It must not hard-code a generic 30-day rule.
+
+### 5. Income-Tax Workpapers
+
+Provide separate workflows for personal and sole-proprietor professional
+activity, the future PC, and household/family members. Start with source-linked,
+review-ready T1/T2125 and T2/GIFI/schedule-oriented workpapers, entity-specific
+deadlines, instalments, and correction history. Do not claim tax-preparation
+software certification or automate CRA submission without a separate decision.
+
+### 6. Household And Family Financial Management
+
+Build the dedicated household context: members, accounts, budgets, recurring
+plans, goals, personal income/expenses, allocations, dashboards, and
+privacy-aware reports. Personal transactions remain excluded from business
+GST/HST and ITC calculations unless an explicit, reviewed allocation is
+configured.
+
+### 7. Ecosystem And Secure Connectivity
+
+After the financial-data, security, and API boundaries are proven:
+
+- complete the Expert client proof and expand it module by module;
+- consider Azure SQL and a secure API with Microsoft identity;
+- add a secure client portal for invoice delivery, payments, and document
+  intake; and
+- add Outlook/Graph deadline and matter-email workflows, public intake,
+  pipeline, automation, and web-first deployment only after access control,
+  privacy, audit, and data-residency requirements are defined.
+
+## Delivery Rules
+
+- Implement in the order users perform work: client/matter context, docketing,
+  WIP, billing, A/R, trust/reconciliation, reporting, compliance, automation.
+- No silent money changes, silent tax classifications, or silent data merges.
+- Build one regulated workflow at a time: requirement matrix, DTO/data contract,
+  read-only workpaper, synthetic fixtures, controlled write path, real-app
+  confirmation, and release evidence.
+- Keep every tax/trust rule, form/line mapping, and deadline source versioned by
+  effective date; historical packages must remain reproducible.
+- Keep live confidential client, trust, family, and tax data out of public
+  repositories and unapproved remote services.
+- Preserve Console and Professional business/data parity throughout every
+  migration.
+
+## Supporting References
+
+- `docs/CSPM_10_10_EXECUTION_ROADMAP.md`
+- `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`
+- `docs/FUTURE_DATA_ARCHITECTURE.md`
+- `docs/PRODUCTION_BACKUP_CHAIN.md`
+- `docs/CSPM_Option_3_Interface_Rebuild_Brief.md`
+- `docs/spec/professional_client_contracts.yaml`

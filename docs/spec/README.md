@@ -12,7 +12,12 @@ This folder is the machine-readable planning and operating contract for future c
 2. `backup_restore_policy.yaml` is the live contract for active workbook protection, Git cloud backup/restore behavior, data integrity gates, and support diagnostics.
 3. `pre_live_security_gate.yaml` is the required confidential-data security gate before live workbook use, Git cloud backup with real data, restore drills, or external support sharing.
 4. `professional_client_contracts.yaml` is the framework-neutral Option 3 shell, workflow, and local-service contract for the current QML Professional prototype and future Flutter/React Native migration.
-5. Generated UI registry artifacts for the placeholder-elimination plan:
+5. `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md` is the required long-term
+   product reference when planning SQL storage, trust, GST/HST, tax, household,
+   or family-finance work. It is intentionally outside the active implementation
+   queue until the 10/10 quality gate is complete or the owner authorizes a
+   narrow discovery task.
+6. Generated UI registry artifacts for the placeholder-elimination plan:
    - `ui_control_registry.csv`
    - `ui_control_registry_summary.md`
    - `ui_control_contract_matrix.csv`

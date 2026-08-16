@@ -6,6 +6,7 @@ status: "active"
 source_of_truth:
   bible: "docs/BIBLE.md"
   roadmap: "docs/ROADMAP.md"
+  regulatory_tax_trust_roadmap: "docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md"
   schema: "schema/workbook_schema.yml"
   production_backup_chain: "docs/PRODUCTION_BACKUP_CHAIN.md"
 

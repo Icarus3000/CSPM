@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSPM Singularity Exit Animation Tuner</title>
+  <style>
+    :root {
+      --bg-deep: #080a0f;
+      --panel-bg: rgba(16, 21, 30, 0.85);
+      --panel-border: rgba(64, 120, 220, 0.25);
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.4);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent-purple: #c084fc;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-deep);
+      color: var(--text-main);
+      overflow: hidden;
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* Left Control Panel */
+    #sidebar {
+      width: 360px;
+      min-width: 340px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      border-right: 1px solid var(--panel-border);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      z-index: 100;
+    }
+
+    #sidebar::-webkit-scrollbar {
+      width: 6px;
+    }
+    #sidebar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+
+    .header-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: linear-gradient(135deg, #0284c7, #9333ea);
+      padding: 2px 7px;
+      border-radius: 4px;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .description {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--accent);
+      margin-top: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 4px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .control-value {
+      font-family: "SF Mono", "Consolas", monospace;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-glow);
+      transition: transform 0.1s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.25);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    button:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+    }
+    button.primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border-color: transparent;
+    }
+    button.primary:hover {
+      background: linear-gradient(135deg, #38bdf8, #3b82f6);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
+    }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .preset-btn {
+      font-size: 11px;
+      padding: 7px 8px;
+    }
+
+    /* Main Viewport Stage */
+    #viewport-container {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at center, #111827 0%, #030712 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #stage-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* Simulated Screen Grid & Monitor Frame */
+    .monitor-hud {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .singularity-crosshair {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      opacity: 0.35;
+      transition: opacity 0.3s;
+    }
+    .singularity-crosshair::before, .singularity-crosshair::after {
+      content: '';
+      position: absolute;
+      background: var(--accent);
+    }
+    .singularity-crosshair::before {
+      top: 11px; left: 0; width: 24px; height: 2px;
+    }
+    .singularity-crosshair::after {
+      top: 0; left: 11px; width: 2px; height: 24px;
+    }
+
+    /* Scrubber / Playback Bar */
+    #scrubber-bar {
+      position: absolute;
+      bottom: 64px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 55%;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 30px;
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      z-index: 50;
+    }
+
+    /* Simulated Windows Taskbar */
+    #sim-taskbar {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 4px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+      z-index: 60;
+    }
+
+    .taskbar-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #cbd5e1;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .taskbar-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+    .taskbar-item.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #f8fafc;
+    }
+    .taskbar-item.minimized {
+      border: 1px dashed var(--accent);
+      background: rgba(192, 132, 252, 0.1);
+    }
+    .active-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Control Sidebar -->
+  <div id="sidebar">
+    <div class="header-title">
+      <span>Singularity VFX</span>
+      <span class="badge">PROTOTYPE</span>
+    </div>
+    <div class="description">
+      Interactive visual test bench for the cinema-grade Black Hole exit, smooth Maximize, and directional Taskbar Minimize transitions.
+    </div>
+
+    <div class="btn-row">
+      <button class="primary" id="btn-trigger-exit" title="Test Singularity Exit Animation">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Singularity Exit
+      </button>
+      <button id="btn-toggle-maximize" title="Toggle Smooth Maximize / Restore">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+        Maximize
+      </button>
+    </div>
+    <div class="btn-row" style="margin-top: 6px;">
+      <button id="btn-toggle-minimize" title="Test Directional Taskbar Minimize">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        Minimize
+      </button>
+      <button id="btn-reset" title="Reset Window to Default Position">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+        Reset
+      </button>
+    </div>
+
+    <div class="section-title">Presets</div>
+    <div class="preset-grid">
+      <button class="preset-btn" onclick="applyPreset('cinema')">🎬 Cinema Gargantua</button>
+      <button class="preset-btn" onclick="applyPreset('pro')">💼 Executive Pro</button>
+      <button class="preset-btn" onclick="applyPreset('console')">⚡ Neon Console</button>
+      <button class="preset-btn" onclick="applyPreset('snappy')">🚀 Snappy Micro (500ms)</button>
+    </div>
+
+    <div class="section-title">Physics & Timing</div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Total Duration</span>
+        <span class="control-value" id="val-duration">850 ms</span>
+      </div>
+      <input type="range" id="param-duration" min="300" max="2000" step="50" value="850">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Vortex Spin Twist (&theta;)</span>
+        <span class="control-value" id="val-twist">900 &deg;</span>
+      </div>
+      <input type="range" id="param-twist" min="0" max="1800" step="45" value="900">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Tidal Spaghettification Stretch</span>
+        <span class="control-value" id="val-stretch">1.65x</span>
+      </div>
+      <input type="range" id="param-stretch" min="1.0" max="3.0" step="0.05" value="1.65">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Gravitational Acceleration Easing</span>
+        <span class="control-value" id="val-easing">Cubic In</span>
+      </div>
+      <input type="range" id="param-easing-type" min="1" max="4" step="1" value="2">
+    </div>
+
+    <div class="section-title">Visual Effects (VFX)</div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Accretion Disc Particle Swirl</span>
+        <span class="control-value" id="val-particles">120</span>
+      </div>
+      <input type="range" id="param-particles" min="0" max="250" step="10" value="120">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Event Horizon Gravitational Lensing</span>
+        <span class="control-value" id="val-lensing">75 %</span>
+      </div>
+      <input type="range" id="param-lensing" min="0" max="100" step="5" value="75">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Photonic Implosion Flash</span>
+        <span class="control-value" id="val-flash">Enabled</span>
+      </div>
+      <input type="range" id="param-flash" min="0" max="1" step="1" value="1">
+    </div>
+
+    <div class="control-group">
+      <div class="control-label">
+        <span>Accretion Core Glow Color</span>
+        <span class="control-value" id="val-color">Electric Cyan</span>
+      </div>
+      <input type="range" id="param-color-theme" min="0" max="3" step="1" value="0">
+    </div>
+  </div>
+
+  <!-- Viewport Stage -->
+  <div id="viewport-container">
+    <canvas id="stage-canvas"></canvas>
+
+    <div class="singularity-crosshair" id="crosshair"></div>
+
+    <div class="monitor-hud">
+      <div>MONITOR: <strong>1920 &times; 1080 (Simulated)</strong></div>
+      <div>SINGULARITY CENTER: <span id="hud-singularity">0, 0</span></div>
+      <div>FPS: <span id="hud-fps" style="color: #4ade80; font-weight: bold;">60.0</span></div>
+      <div>STATE: <span id="hud-state" style="color: var(--accent);">SETTLED</span></div>
+    </div>
+
+    <!-- Scrubber Bar -->
+    <div id="scrubber-bar">
+      <span style="font-size: 11px; font-weight: 600; color: var(--text-muted);">PROGRESS</span>
+      <input type="range" id="param-scrubber" min="0" max="1" step="0.001" value="0">
+      <span id="val-scrubber-pct" style="font-family: monospace; font-size: 12px; color: var(--accent); min-width: 45px;">0.0%</span>
+    </div>
+
+    <!-- Simulated Windows Taskbar -->
+    <div id="sim-taskbar">
+      <div class="taskbar-item active" id="taskbar-cspm" title="Click to Restore / Minimize CSPM Window">
+        <div class="active-dot"></div>
+        <span>⚡ CSPM Suite</span>
+      </div>
+      <div class="taskbar-item" style="opacity: 0.45;">
+        <span>📁 Documents</span>
+      </div>
+      <div class="taskbar-item" style="opacity: 0.45;">
+        <span>🌐 Browser</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Canvas & Setup
+    const canvas = document.getElementById('stage-canvas');
+    const ctx = canvas.getContext('2d');
+    const container = document.getElementById('viewport-container');
+    const crosshair = document.getElementById('crosshair');
+
+    let width = 0;
+    let height = 0;
+    let singularityX = 0;
+    let singularityY = 0;
+
+    // Window Mock Dimensions
+    let winW = 540;
+    let winH = 360;
+    let winX = 140;
+    let winY = 120;
+    let isDraggingWindow = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+
+    // Animation Engine State
+    let animProgress = 0.0;
+    let isAnimating = false;
+    let animStartTime = 0;
+    let animDuration = 850;
+    let maxTwistDeg = 900;
+    let maxStretch = 1.65;
+    let easingMode = 2; // 1: Quad, 2: Cubic, 3: Quart, 4: Expo
+    let particleCount = 120;
+    let lensingIntensity = 0.75;
+    let flashEnabled = true;
+    let colorTheme = 0; // 0: Cyan, 1: Purple, 2: Amber, 3: White/Glass
+
+    // Particle Swarm
+    let particles = [];
+
+    function resize() {
+      width = container.clientWidth;
+      height = container.clientHeight;
+      canvas.width = width * window.devicePixelRatio;
+      canvas.height = height * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+      singularityX = width / 2;
+      singularityY = height / 2;
+      crosshair.style.left = singularityX + 'px';
+      crosshair.style.top = singularityY + 'px';
+      document.getElementById('hud-singularity').textContent = Math.round(singularityX) + ', ' + Math.round(singularityY);
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Initialize Particles
+    function initParticles() {
+      particles = [];
+      for (let i = 0; i < 250; i++) {
+        particles.push({
+          angle: Math.random() * Math.PI * 2,
+          distRatio: 0.2 + Math.random() * 0.8,
+          speed: 1.5 + Math.random() * 3.5,
+          size: 1 + Math.random() * 2.5,
+          alpha: 0.2 + Math.random() * 0.8
+        });
+      }
+    }
+    initParticles();
+
+    // Easing Functions
+    function easeIn(t, type) {
+      if (type === 1) return t * t;
+      if (type === 2) return t * t * t;
+      if (type === 3) return t * t * t * t;
+      return Math.pow(2, 10 * (t - 1));
+    }
+    function easeOut(t, type) {
+      return 1 - easeIn(1 - t, type);
+    }
+
+    // Window State Management
+    let windowMode = 'normal'; // 'normal' | 'maximized' | 'minimized'
+    let normalX = 140;
+    let normalY = 100;
+    let normalW = 540;
+    let normalH = 360;
+
+    let curX = normalX;
+    let curY = normalY;
+    let curW = normalW;
+    let curH = normalH;
+    let curRadius = 14;
+
+    // Geometric Transitions (Maximize / Minimize)
+    let isGeomTransitioning = false;
+    let geomStart = { x: 0, y: 0, w: 0, h: 0, r: 14, scale: 1, opacity: 1 };
+    let geomTarget = { x: 0, y: 0, w: 0, h: 0, r: 14, scale: 1, opacity: 1 };
+    let geomStartTime = 0;
+    let geomDuration = 240;
+    let curScale = 1.0;
+    let curOpacity = 1.0;
+
+    function startGeomTransition(target, duration = 240) {
+      geomStart = { x: curX, y: curY, w: curW, h: curH, r: curRadius, scale: curScale, opacity: curOpacity };
+      geomTarget = target;
+      geomDuration = duration;
+      geomStartTime = performance.now();
+      isGeomTransitioning = true;
+    }
+
+    function toggleMaximize() {
+      if (isAnimating) return;
+      if (windowMode === 'minimized') {
+        restoreFromTaskbar();
+        return;
+      }
+      if (windowMode === 'normal') {
+        normalX = winX;
+        normalY = winY;
+        windowMode = 'maximized';
+        document.getElementById('btn-toggle-maximize').innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg> Restore`;
+        document.getElementById('hud-state').textContent = 'MAXIMIZED';
+        document.getElementById('hud-state').style.color = '#38bdf8';
+        startGeomTransition({ x: 12, y: 12, w: width - 24, h: height - 74, r: 4, scale: 1, opacity: 1 }, 250);
+      } else {
+        windowMode = 'normal';
+        document.getElementById('btn-toggle-maximize').innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg> Maximize`;
+        document.getElementById('hud-state').textContent = 'SETTLED';
+        document.getElementById('hud-state').style.color = 'var(--accent)';
+        startGeomTransition({ x: normalX, y: normalY, w: normalW, h: normalH, r: 14, scale: 1, opacity: 1 }, 250);
+      }
+    }
+
+    function minimizeToTaskbar() {
+      if (isAnimating || windowMode === 'minimized') return;
+      if (windowMode === 'normal') { normalX = winX; normalY = winY; }
+      windowMode = 'minimized';
+      document.getElementById('taskbar-cspm').classList.add('minimized');
+      document.getElementById('taskbar-cspm').innerHTML = `<div class="active-dot" style="background:#f59e0b; box-shadow:0 0 8px #f59e0b;"></div><span>⚡ CSPM [Click to Restore]</span>`;
+      document.getElementById('hud-state').textContent = 'MINIMIZED (TASKBAR)';
+      document.getElementById('hud-state').style.color = '#f59e0b';
+      startGeomTransition({ x: width / 2 - 100, y: height - 30, w: winW * 0.2, h: winH * 0.2, r: 14, scale: 0.1, opacity: 0 }, 200);
+    }
+
+    function restoreFromTaskbar() {
+      if (isAnimating) return;
+      document.getElementById('taskbar-cspm').classList.remove('minimized');
+      document.getElementById('taskbar-cspm').innerHTML = `<div class="active-dot"></div><span>⚡ CSPM Suite</span>`;
+      document.getElementById('hud-state').textContent = 'RESTORED';
+      document.getElementById('hud-state').style.color = 'var(--accent)';
+
+      if (windowMode === 'maximized') {
+        startGeomTransition({ x: 12, y: 12, w: width - 24, h: height - 74, r: 4, scale: 1, opacity: 1 }, 220);
+      } else {
+        windowMode = 'normal';
+        startGeomTransition({ x: normalX, y: normalY, w: normalW, h: normalH, r: 14, scale: 1, opacity: 1 }, 220);
+      }
+    }
+
+    document.getElementById('btn-toggle-maximize').addEventListener('click', toggleMaximize);
+    document.getElementById('btn-toggle-minimize').addEventListener('click', minimizeToTaskbar);
+    document.getElementById('taskbar-cspm').addEventListener('click', () => {
+      if (windowMode === 'minimized') restoreFromTaskbar();
+      else minimizeToTaskbar();
+    });
+
+    // Interactive Dragging & Traffic Lights
+    let lastClickTime = 0;
+    container.addEventListener('mousedown', (e) => {
+      if (isAnimating || windowMode === 'minimized') return;
+      const rect = container.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      // Check Traffic Light clicks
+      const hw = curW / 2;
+      const hh = curH / 2;
+      const titlebarY = curY;
+      const titlebarX = curX;
+
+      if (my >= curY && my <= curY + 42) {
+        // Red dot (Close / Singularity)
+        if (Math.hypot(mx - (curX + 20), my - (curY + 21)) <= 12) {
+          triggerExit();
+          return;
+        }
+        // Yellow dot (Minimize)
+        if (Math.hypot(mx - (curX + 38), my - (curY + 21)) <= 12) {
+          minimizeToTaskbar();
+          return;
+        }
+        // Green dot (Maximize / Restore)
+        if (Math.hypot(mx - (curX + 56), my - (curY + 21)) <= 12) {
+          toggleMaximize();
+          return;
+        }
+
+        // Double click on titlebar -> Toggle Maximize
+        const now = performance.now();
+        if (now - lastClickTime < 300) {
+          toggleMaximize();
+          lastClickTime = 0;
+          return;
+        }
+        lastClickTime = now;
+
+        // Start drag if in normal mode (Titlebar Only)
+        if (windowMode === 'normal') {
+          isDraggingWindow = true;
+          dragOffsetX = mx - curX;
+          dragOffsetY = my - curY;
+        }
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDraggingWindow || windowMode !== 'normal') return;
+      const rect = container.getBoundingClientRect();
+      winX = e.clientX - rect.left - dragOffsetX;
+      winY = e.clientY - rect.top - dragOffsetY;
+      // Clamp inside viewport
+      winX = Math.max(10, Math.min(width - winW - 10, winX));
+      winY = Math.max(10, Math.min(height - winH - 60, winY));
+      curX = winX;
+      curY = winY;
+      normalX = winX;
+      normalY = winY;
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDraggingWindow = false;
+    });
+
+    // Preset Configurations
+    function applyPreset(type) {
+      if (windowMode === 'minimized') restoreFromTaskbar();
+      if (type === 'cinema') {
+        setControls(950, 1080, 1.85, 2, 180, 85, 1, 0);
+      } else if (type === 'pro') {
+        setControls(650, 540, 1.25, 2, 40, 40, 0, 3);
+      } else if (type === 'console') {
+        setControls(850, 1260, 2.0, 3, 200, 95, 1, 1);
+      } else if (type === 'snappy') {
+        setControls(500, 720, 1.4, 2, 90, 60, 1, 0);
+      }
+      triggerExit();
+    }
+
+    function setControls(duration, twist, stretch, easing, parts, lens, flash, color) {
+      document.getElementById('param-duration').value = duration;
+      document.getElementById('param-twist').value = twist;
+      document.getElementById('param-stretch').value = stretch;
+      document.getElementById('param-easing-type').value = easing;
+      document.getElementById('param-particles').value = parts;
+      document.getElementById('param-lensing').value = lens;
+      document.getElementById('param-flash').value = flash;
+      document.getElementById('param-color-theme').value = color;
+      updateControlLabels();
+    }
+
+    function updateControlLabels() {
+      animDuration = parseInt(document.getElementById('param-duration').value);
+      maxTwistDeg = parseInt(document.getElementById('param-twist').value);
+      maxStretch = parseFloat(document.getElementById('param-stretch').value);
+      easingMode = parseInt(document.getElementById('param-easing-type').value);
+      particleCount = parseInt(document.getElementById('param-particles').value);
+      lensingIntensity = parseInt(document.getElementById('param-lensing').value) / 100;
+      flashEnabled = parseInt(document.getElementById('param-flash').value) === 1;
+      colorTheme = parseInt(document.getElementById('param-color-theme').value);
+
+      document.getElementById('val-duration').textContent = animDuration + ' ms';
+      document.getElementById('val-twist').innerHTML = maxTwistDeg + ' &deg;';
+      document.getElementById('val-stretch').textContent = maxStretch.toFixed(2) + 'x';
+      const easings = ['Quad In', 'Cubic In', 'Quart In', 'Exponential In'];
+      document.getElementById('val-easing').textContent = easings[easingMode - 1];
+      document.getElementById('val-particles').textContent = particleCount;
+      document.getElementById('val-lensing').textContent = Math.round(lensingIntensity * 100) + ' %';
+      document.getElementById('val-flash').textContent = flashEnabled ? 'Enabled' : 'Disabled';
+      const themes = ['Electric Cyan', 'Cosmic Violet', 'Solar Amber', 'Obsidian / Glass'];
+      document.getElementById('val-color').textContent = themes[colorTheme];
+    }
+
+    document.querySelectorAll('#sidebar input[type="range"]').forEach(input => {
+      input.addEventListener('input', updateControlLabels);
+    });
+
+    // Color Helpers
+    function getThemeAccent() {
+      if (colorTheme === 0) return { r: 56, g: 189, b: 248, hex: '#38bdf8' };
+      if (colorTheme === 1) return { r: 192, g: 132, b: 252, hex: '#c084fc' };
+      if (colorTheme === 2) return { r: 251, g: 191, b: 36, hex: '#fbbf24' };
+      return { r: 240, g: 240, b: 245, hex: '#f1f5f9' };
+    }
+
+    // Trigger & Control Actions
+    function triggerExit() {
+      if (windowMode === 'minimized') restoreFromTaskbar();
+      animProgress = 0.0;
+      isAnimating = true;
+      animStartTime = performance.now();
+      document.getElementById('hud-state').textContent = 'COLLAPSING';
+      document.getElementById('hud-state').style.color = '#f43f5e';
+    }
+
+    function resetWindow() {
+      isAnimating = false;
+      animProgress = 0.0;
+      windowMode = 'normal';
+      document.getElementById('taskbar-cspm').classList.remove('minimized');
+      document.getElementById('taskbar-cspm').innerHTML = `<div class="active-dot"></div><span>⚡ CSPM Suite</span>`;
+      document.getElementById('btn-toggle-maximize').innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg> Maximize`;
+      document.getElementById('param-scrubber').value = 0;
+      document.getElementById('val-scrubber-pct').textContent = '0.0%';
+      document.getElementById('hud-state').textContent = 'SETTLED';
+      document.getElementById('hud-state').style.color = 'var(--accent)';
+      curX = normalX;
+      curY = normalY;
+      curW = normalW;
+      curH = normalH;
+      curRadius = 14;
+      curScale = 1.0;
+      curOpacity = 1.0;
+      winX = normalX;
+      winY = normalY;
+      winW = normalW;
+      winH = normalH;
+    }
+
+    document.getElementById('btn-trigger-exit').addEventListener('click', triggerExit);
+    document.getElementById('btn-reset').addEventListener('click', resetWindow);
+
+    document.getElementById('param-scrubber').addEventListener('input', (e) => {
+      isAnimating = false;
+      animProgress = parseFloat(e.target.value);
+      document.getElementById('val-scrubber-pct').textContent = (animProgress * 100).toFixed(1) + '%';
+      document.getElementById('hud-state').textContent = animProgress >= 1 ? 'COLLAPSED' : 'SCRUBBING';
+    });
+
+    // Render Loop
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let fpsTimer = 0;
+
+    function render(now) {
+      // Calculate FPS
+      const dt = now - lastFrameTime;
+      lastFrameTime = now;
+      frameCount++;
+      if (now - fpsTimer > 500) {
+        document.getElementById('hud-fps').textContent = (frameCount * 1000 / (now - fpsTimer)).toFixed(1);
+        frameCount = 0;
+        fpsTimer = now;
+      }
+
+      // Update Geometric Transitions (Maximize / Minimize)
+      if (isGeomTransitioning) {
+        const elapsed = now - geomStartTime;
+        const tLinear = Math.min(1.0, elapsed / geomDuration);
+        const t = easeOut(tLinear, 3); // Cubic Out
+
+        curX = geomStart.x + (geomTarget.x - geomStart.x) * t;
+        curY = geomStart.y + (geomTarget.y - geomStart.y) * t;
+        curW = geomStart.w + (geomTarget.w - geomStart.w) * t;
+        curH = geomStart.h + (geomTarget.h - geomStart.h) * t;
+        curRadius = geomStart.r + (geomTarget.r - geomStart.r) * t;
+        curScale = geomStart.scale + (geomTarget.scale - geomStart.scale) * t;
+        curOpacity = geomStart.opacity + (geomTarget.opacity - geomStart.opacity) * t;
+
+        winX = curX;
+        winY = curY;
+        winW = curW;
+        winH = curH;
+
+        if (tLinear >= 1.0) {
+          isGeomTransitioning = false;
+        }
+      }
+
+      // Update animation progress
+      if (isAnimating) {
+        const elapsed = now - animStartTime;
+        animProgress = Math.min(1.0, elapsed / animDuration);
+        document.getElementById('param-scrubber').value = animProgress;
+        document.getElementById('val-scrubber-pct').textContent = (animProgress * 100).toFixed(1) + '%';
+
+        if (animProgress >= 1.0) {
+          isAnimating = false;
+          document.getElementById('hud-state').textContent = 'COLLAPSED (READY)';
+          document.getElementById('hud-state').style.color = '#10b981';
+        }
+      }
+
+      // Clear Canvas
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw Grid / Ambient Stars
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+      ctx.lineWidth = 1;
+      const gridSize = 60;
+      for (let x = 0; x < width; x += gridSize) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+      }
+      for (let y = 0; y < height; y += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+      }
+
+      const p = animProgress;
+      const theme = getThemeAccent();
+
+      // Draw Accretion Disc & Event Horizon (Ramps up with progress)
+      if (p > 0.05 && p < 1.0) {
+        const discAlpha = easeIn(Math.min(1.0, p * 1.5), 2) * lensingIntensity;
+        const discRadius = Math.max(10, (1 - p * 0.7) * 90);
+
+        const grad = ctx.createRadialGradient(singularityX, singularityY, 2, singularityX, singularityY, discRadius);
+        grad.addColorStop(0.0, `rgba(${theme.r}, ${theme.g}, ${theme.b}, ${discAlpha * 0.9})`);
+        grad.addColorStop(0.35, `rgba(${theme.r}, ${theme.g}, ${theme.b}, ${discAlpha * 0.4})`);
+        grad.addColorStop(1.0, `rgba(${theme.r}, ${theme.g}, ${theme.b}, 0.0)`);
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(singularityX, singularityY, discRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Accretion Swirl Particles
+        for (let i = 0; i < particleCount; i++) {
+          const pt = particles[i];
+          pt.angle += (pt.speed * 0.03) / (pt.distRatio + 0.1);
+          const currentDist = pt.distRatio * (1 - p * 0.85) * 160;
+          const px = singularityX + Math.cos(pt.angle) * currentDist;
+          const py = singularityY + Math.sin(pt.angle) * currentDist;
+
+          ctx.fillStyle = `rgba(${theme.r}, ${theme.g}, ${theme.b}, ${pt.alpha * discAlpha})`;
+          ctx.beginPath();
+          ctx.arc(px, py, pt.size * (1 - p * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Draw the Window (Only if not fully collapsed and opacity > 0)
+      if (p < 1.0 && curOpacity > 0.01) {
+        ctx.save();
+
+        const windowCenterX = curX + (curW / 2);
+        const windowCenterY = curY + (curH / 2);
+
+        let currentCenterX = windowCenterX;
+        let currentCenterY = windowCenterY;
+        let rotationAngle = 0;
+        let scaleRadial = curScale;
+        let scaleTangential = curScale;
+        let opacity = curOpacity;
+
+        if (p > 0.0) {
+          // Singularity motion active
+          const moveP = easeIn(p, easingMode + 1);
+          currentCenterX = windowCenterX + (singularityX - windowCenterX) * moveP;
+          currentCenterY = windowCenterY + (singularityY - windowCenterY) * moveP;
+          rotationAngle = (easeIn(p, easingMode + 2) * (maxTwistDeg * Math.PI / 180));
+
+          if (p < 0.10) {
+            const breath = Math.sin(p / 0.10 * Math.PI) * 0.04;
+            scaleRadial = 1.0 - breath;
+            scaleTangential = 1.0 - breath;
+          } else {
+            const collapseP = (p - 0.10) / 0.90;
+            const stretchCurve = Math.sin(Math.pow(collapseP, 0.7) * Math.PI);
+            const tidalElongation = 1.0 + stretchCurve * (maxStretch * 1.15 - 1.0);
+            const shrinkFactor = Math.pow(1.0 - collapseP, 2.2);
+
+            scaleRadial = Math.max(0.0001, shrinkFactor * tidalElongation);
+            const tidalCompression = Math.max(0.12, 1.0 - Math.pow(collapseP, 0.6) * 0.82);
+            scaleTangential = Math.max(0.0001, shrinkFactor * tidalCompression);
+          }
+
+          if (p > 0.93) {
+            opacity = Math.max(0.0, 1.0 - ((p - 0.93) / 0.07));
+          }
+        }
+
+        // Apply 2D Matrix Transforms
+        ctx.translate(currentCenterX, currentCenterY);
+        ctx.rotate(rotationAngle);
+        ctx.scale(scaleRadial, scaleTangential);
+        ctx.globalAlpha = opacity;
+
+        // Draw Window Chrome / Content Body
+        const hw = curW / 2;
+        const hh = curH / 2;
+        const radius = curRadius;
+
+        // Glass Specular & Deep Card Base
+        ctx.fillStyle = '#0f172a';
+        ctx.strokeStyle = `rgba(${theme.r}, ${theme.g}, ${theme.b}, ${0.3 + p * 0.5})`;
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        ctx.roundRect(-hw, -hh, curW, curH, radius);
+        ctx.fill();
+        ctx.stroke();
+
+        // Window Titlebar & Mock UI Controls
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.roundRect(-hw, -hh, curW, 42, [radius, radius, 0, 0]);
+        ctx.fill();
+
+        // Titlebar traffic lights (Red, Yellow, Green)
+        ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(-hw + 20, -hh + 21, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(-hw + 38, -hh + 21, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#10b981'; ctx.beginPath(); ctx.arc(-hw + 56, -hh + 21, 6, 0, Math.PI * 2); ctx.fill();
+
+        // Mock App Title
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 13px -apple-system, sans-serif';
+        ctx.fillText('CSPM — Legal Practice & Financial Suite', -hw + 78, -hh + 26);
+
+        // Mock Interior Cards
+        const cardW1 = Math.min(260, (curW - 60) / 2);
+        const cardW2 = Math.min(280, (curW - 60) / 2);
+        const cardH1 = Math.min(110, (curH - 120) / 2);
+        const cardH2 = Math.min(140, (curH - 120) / 2);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.beginPath(); ctx.roundRect(-hw + 20, -hh + 60, cardW1, cardH1, 8); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-hw + 30 + cardW1, -hh + 60, cardW2, cardH1, 8); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-hw + 20, -hh + 70 + cardH1, curW - 40, cardH2, 8); ctx.fill();
+
+        // Accretion Lensing Edge Glow
+        if (lensingIntensity > 0 && p > 0.0) {
+          ctx.strokeStyle = `rgba(${theme.r}, ${theme.g}, ${theme.b}, ${lensingIntensity * (0.2 + p * 0.8)})`;
+          ctx.lineWidth = 4 + p * 8;
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      // 4. Photonic Quantum Implosion Flash (At p >= 0.94)
+      if (flashEnabled && p >= 0.94) {
+        const flashP = (p - 0.94) / 0.06; // 0.0 -> 1.0 in final 50ms
+        const flashRadius = 4 + easeOut(flashP, 2) * 54;
+        const flashAlpha = (1.0 - flashP) * 0.95;
+
+        const flashGrad = ctx.createRadialGradient(singularityX, singularityY, 0, singularityX, singularityY, flashRadius);
+        flashGrad.addColorStop(0.0, '#ffffff');
+        flashGrad.addColorStop(0.3, `rgba(${theme.r}, ${theme.g}, ${theme.b}, ${flashAlpha})`);
+        flashGrad.addColorStop(1.0, `rgba(${theme.r}, ${theme.g}, ${theme.b}, 0.0)`);
+
+        ctx.fillStyle = flashGrad;
+        ctx.beginPath();
+        ctx.arc(singularityX, singularityY, flashRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Diamond Spike Flare
+        ctx.strokeStyle = `rgba(255, 255, 255, ${flashAlpha * 0.8})`;
+        ctx.lineWidth = 1.5;
+        const spikeLen = flashRadius * 1.8;
+        ctx.beginPath();
+        ctx.moveTo(singularityX - spikeLen, singularityY); ctx.lineTo(singularityX + spikeLen, singularityY);
+        ctx.moveTo(singularityX, singularityY - spikeLen); ctx.lineTo(singularityX, singularityY + spikeLen);
+        ctx.stroke();
+      }
+
+      requestAnimationFrame(render);
+    }
+
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>

@@ -3498,6 +3498,57 @@ class AppController(QObject):
             self._report_failure("Could not save firm lawyers", context="settings.firm_lawyers.save", exc=exc)
             return {"ok": False, "message": str(exc), "lawyers": []}
 
+    @Slot(result=bool)
+    def openMotionFxStudio(self):
+        try:
+            import sys
+            from PySide6.QtGui import QDesktopServices
+            from PySide6.QtCore import QUrl
+            from pathlib import Path
+            candidate_paths = [
+                Path(__file__).resolve().parent.parent.parent / "resources" / "singularity_tuner.html",
+                Path(sys.executable).resolve().parent / "resources" / "singularity_tuner.html",
+                Path(sys.executable).resolve().parent / "src" / "resources" / "singularity_tuner.html",
+            ]
+            for p in candidate_paths:
+                if p.exists():
+                    return QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+            return False
+        except Exception:
+            return False
+
+    @Slot(result=dict)
+    def getMotionFxSettings(self):
+        try:
+            if not self._settings_load_complete:
+                self.load_settings()
+            return dict(self._settings_data.get("motionFx", {
+                "exitStyle": "Singularity",
+                "durationMs": 580,
+                "twistDegrees": 720,
+                "stretchRatio": 1.95,
+                "particlesCount": 250,
+            }))
+        except Exception:
+            return {
+                "exitStyle": "Singularity",
+                "durationMs": 580,
+                "twistDegrees": 720,
+                "stretchRatio": 1.95,
+                "particlesCount": 250,
+            }
+
+    @Slot("QVariantMap", result=bool)
+    def saveMotionFxSettings(self, payload):
+        try:
+            clean = dict(payload or {})
+            self._settings_data["motionFx"] = clean
+            self.save_settings()
+            return True
+        except Exception:
+            return False
+
+
     # ── SECTION: Snapshot / Backup ────────────────────────────────────────────
 
     @Slot(str, result=bool)

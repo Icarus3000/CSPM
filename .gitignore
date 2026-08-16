@@ -21,8 +21,12 @@ tmp*/
 
 # Build and distribution
 dist/
+dist_*/
+dist_new/
 build/
+build_*/
 to_delete/
+prototypes/
 node_modules/
 .expo/
 .expo-shared/
@@ -99,6 +103,9 @@ qml_lint.log
 # Volatile runtime session markers
 data/state/runtime_session_state*.json
 session_draft_snapshot*.json
+cloud_checkout_machine.json
+sync_state.json
+test_excel.ps1
 
 # Ad hoc repair scripts and throwaway runners
 fix_*.py
