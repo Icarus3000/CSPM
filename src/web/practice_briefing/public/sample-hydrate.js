@@ -18,3 +18,6 @@ window.hydrateBriefing && window.hydrateBriefing({
     { matterName: "Matter X", clientName: "Client E", entryCount: 3, wipAmount: 450.0 }
   ]
 });
+
+// Trigger commit: updated for deployment
+// deployed: 2026-08-16T18:54:00Z
