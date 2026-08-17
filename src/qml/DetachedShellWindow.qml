@@ -58,6 +58,33 @@ Window {
     signal didClose(string instanceId)
     signal requestDetach(int tileIndex, string titleText, var state, rect originRect)
     signal startupFirstPixelVisible()
+    signal hiddenStartupBriefingPrepared()
+    signal startupCinematicBloomStaged()
+
+    Shortcut {
+        sequence: "Space"
+        context: Qt.ApplicationShortcut
+        enabled: mainWin.startupCinematicBloomActive
+        onActivated: mainWin.skipStartupCinematicBloom("space")
+    }
+    Shortcut {
+        sequence: "Return"
+        context: Qt.ApplicationShortcut
+        enabled: mainWin.startupCinematicBloomActive
+        onActivated: mainWin.skipStartupCinematicBloom("return")
+    }
+    Shortcut {
+        sequence: "Enter"
+        context: Qt.ApplicationShortcut
+        enabled: mainWin.startupCinematicBloomActive
+        onActivated: mainWin.skipStartupCinematicBloom("enter")
+    }
+    Shortcut {
+        sequence: "Escape"
+        context: Qt.ApplicationShortcut
+        enabled: mainWin.startupCinematicBloomActive
+        onActivated: mainWin.skipStartupCinematicBloom("escape")
+    }
 
 
     
@@ -95,6 +122,32 @@ Window {
     property bool startupDataBootStarted: false
     property bool startupDataBootComplete: false
     property bool startupDataBootFailed: false
+    property bool startupHiddenBriefingPrepared: false
+    // The expensive final-window geometry pass is prepared while the native
+    // splash is still on-screen.  Act III can then begin at its pinpoint on
+    // the very next handoff frame instead of pausing between acts.
+    property bool startupCinematicGeometryPrepared: false
+    // True only while the native splash is still covering the QML pinpoint.
+    // The visual scale stays at 0.2% until main.py releases Act III.
+    property bool startupCinematicBloomPrestageOnly: false
+    // Some Qt paths emit NumberAnimation.finished when a staging animation is
+    // stopped. Keep staging distinct from a real, released bloom.
+    property bool startupCinematicBloomReleaseStarted: false
+    // The launch bloom uses a frozen GPU-ready canvas instead of exposing the
+    // live host while Windows is creating/activating it. This gives Act III a
+    // single visual surface that can unambiguously grow from the screen centre.
+    property bool startupCinematicSnapshotActive: false
+    property string startupCinematicSnapshotUrl: ""
+    property int startupCinematicSnapshotSequence: 0
+    // A GPU readback is normally returned quickly.  Keep a bounded fallback
+    // so a platform that loses the grab callback can never leave the opening
+    // sequence frozen behind the native splash.
+    property int startupCinematicSnapshotFallbackMs: 6000
+    // Act III of the Phase 2 launch sequence.  The native window is already
+    // positioned at its final geometry; only the fully composed visual layer
+    // scales from its exact centre point.
+    property bool startupCinematicBloomActive: false
+    property real startupCinematicBloomScale: 1.0
     // Temporarily muted per UX request.
     // property string startupDataBootMessage: "Loading Data - Please Wait"
     property string startupDataBootMessage: ""
@@ -4040,6 +4093,165 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.phaseLog("SPLASH", fpMsg);
     }
 
+    function prepareStartupBriefingForReveal() {
+        if (mainWin.detachedMode || mainWin.startupHiddenBriefingPrepared) return mainWin.startupHiddenBriefingPrepared
+        if (!(mainWin.appRef && mainWin.appRef.startupBriefingSnapshotReady === true)) return false
+        if (!mainContent || !mainContent.applyPreparedStartupBriefing) return false
+        if (mainContent.applyPreparedStartupBriefing() !== true) return false
+        if (!mainWin.prepareStartupCinematicGeometry()) return false
+
+        // Let bindings consume the supplied payload before the backend's
+        // ready-to-reveal state is emitted.  The window remains visible:false
+        // throughout this acknowledgement.
+        Qt.callLater(function() {
+            if (mainWin.startupHiddenBriefingPrepared) return
+            mainWin.startupHiddenBriefingPrepared = true
+            mainWin.lagLog("hidden Practice Briefing prepared before first pixel")
+            try {
+                if (mainWin.appRef && mainWin.appRef.markStartupBriefingFrameReady) {
+                    mainWin.appRef.markStartupBriefingFrameReady()
+                }
+            } catch (e0) {
+                mainWin.lagLog("hidden Practice Briefing acknowledgement failed=" + e0)
+                return
+            }
+            mainWin.hiddenStartupBriefingPrepared()
+        })
+        return true
+    }
+
+    function prepareStartupCinematicGeometry() {
+        if (mainWin.detachedMode) return true
+        if (mainWin.startupCinematicGeometryPrepared && mainWin.launchConfigured) return true
+
+        var selected = mainWin.resolveTargetScreen()
+        if (!selected) {
+            lagLog("hidden cinematic geometry preparation failed: resolveTargetScreen")
+            return false
+        }
+        if (!mainWin.applyGeometryToTargetScreen(false)) {
+            lagLog("hidden cinematic geometry preparation failed: applyGeometryToTargetScreen")
+            return false
+        }
+        mainWin.startupCinematicGeometryPrepared = true
+        mainWin.lagLog("hidden final window geometry prepared during native splash")
+        return true
+    }
+
+    function completeStartupCinematicBloom(reason) {
+        if (startupCinematicBloomAnimation.running) {
+            startupCinematicBloomAnimation.stop()
+        }
+        startupCinematicBloomScale = 1.0
+        if (!startupCinematicBloomActive) return
+        startupCinematicBloomActive = false
+        startupCinematicBloomReleaseStarted = false
+        startupCinematicSnapshotActive = false
+        startupCinematicSnapshotUrl = ""
+        phaseLog("SPLASH", "Act III bloom complete reason=" + String(reason || "finished"))
+        if (sfxBus && sfxBus.playWindowSettle) {
+            // SfxBus already owns the app's sound-effects enabled flag and
+            // master-volume scaling, so a muted launch remains silent.
+            sfxBus.playWindowSettle("launch", 0.42)
+        }
+    }
+
+    function releaseStartupCinematicBloom() {
+        if (!startupCinematicBloomActive) return false
+        startupCinematicBloomPrestageOnly = false
+        // Reassert the pinpoint in case a platform staging frame was committed
+        // immediately before the native splash disappeared.
+        startupCinematicBloomScale = 0.002
+        startupCinematicBloomReleaseStarted = true
+        phaseLog("SPLASH", "Act III main window bloom begins t+" + splashElapsedMs() + "ms")
+        startupCinematicBloomAnimation.restart()
+        return true
+    }
+
+    function startupCinematicBloomCanvasOriginX() {
+        return (mainWin.activeVisibleRect.x + (mainWin.activeVisibleRect.w / 2.0))
+            - mainWin.x - mainWin.canvasLocalX
+    }
+
+    function startupCinematicBloomCanvasOriginY() {
+        return (mainWin.activeVisibleRect.y + (mainWin.activeVisibleRect.h / 2.0))
+            - mainWin.y - mainWin.canvasLocalY
+    }
+
+    function _finishStartupCinematicPrestage(snapshotUrl, sequence) {
+        if (sequence !== mainWin.startupCinematicSnapshotSequence) return
+        if (!mainWin.startupCinematicBloomPrestageOnly) return
+
+        startupCinematicSnapshotFallbackTimer.stop()
+        mainWin.startupCinematicSnapshotUrl = snapshotUrl || ""
+        mainWin.startupCinematicSnapshotActive = mainWin.startupCinematicSnapshotUrl.length > 0
+        mainWin.startupCinematicBloomScale = 0.002
+        mainWin.startupCinematicBloomActive = true
+        // The live host has now been replaced by either its frozen canvas or
+        // the in-place fallback. Make the native window compositable only once
+        // it cannot expose a full-size frame above the native splash.
+        mainWin.opacity = 1.0
+        mainWin.lagLog("Act III prestage ready snapshot="
+            + (mainWin.startupCinematicSnapshotActive ? "yes" : "fallback-live"))
+        mainWin.startupCinematicBloomStaged()
+    }
+
+    function prestageStartupCinematicBloom() {
+        var sequence = mainWin.startupCinematicSnapshotSequence + 1
+        mainWin.startupCinematicSnapshotSequence = sequence
+        if (!animationCanvasLayer || !animationCanvasLayer.grabToImage) {
+            mainWin._finishStartupCinematicPrestage("", sequence)
+            return false
+        }
+        var captureSize = Qt.size(Math.max(1, Math.round(mainWin.canvasW)),
+            Math.max(1, Math.round(mainWin.canvasH)))
+        var requested = false
+        try {
+            startupCinematicSnapshotFallbackTimer.sequence = sequence
+            startupCinematicSnapshotFallbackTimer.restart()
+            requested = animationCanvasLayer.grabToImage(function(result) {
+                var snapshotUrl = (result && result.url) ? String(result.url) : ""
+                mainWin._finishStartupCinematicPrestage(snapshotUrl, sequence)
+            }, captureSize)
+        } catch (eCapture) {
+            mainWin.lagLog("Act III snapshot capture failed=" + eCapture)
+            requested = false
+        }
+        if (!requested) {
+            mainWin._finishStartupCinematicPrestage("", sequence)
+        }
+        return requested
+    }
+
+    Timer {
+        id: startupCinematicSnapshotFallbackTimer
+        property int sequence: -1
+        interval: mainWin.startupCinematicSnapshotFallbackMs
+        repeat: false
+        onTriggered: {
+            if (mainWin.startupCinematicBloomPrestageOnly
+                    && sequence === mainWin.startupCinematicSnapshotSequence) {
+                mainWin.lagLog("Act III snapshot capture timed out; using live bloom fallback")
+                mainWin._finishStartupCinematicPrestage("", sequence)
+            }
+        }
+    }
+
+    function skipStartupCinematicBloom(reason) {
+        if (!startupCinematicBloomActive) return false
+        completeStartupCinematicBloom("user-skipped:" + String(reason || "input"))
+        forceLaunchFocusLight()
+        return true
+    }
+
+    function startupCinematicBloomOriginX() {
+        return (mainWin.activeVisibleRect.x + (mainWin.activeVisibleRect.w / 2.0)) - mainWin.finalX
+    }
+
+    function startupCinematicBloomOriginY() {
+        return (mainWin.activeVisibleRect.y + (mainWin.activeVisibleRect.h / 2.0)) - mainWin.finalY
+    }
+
     function startProfessionalLaunchNow() {
         perfStart("window.transition.open", "detached=" + detachedMode + " phase=" + animationPhase + " style=Professional");
         setStartupPhase("professional-open", "startProfessionalLaunchNow");
@@ -4050,16 +4262,18 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         startupFocusReassertRemaining = 0;
         startupFocusReassertTimer.stop();
 
-        var selected = mainWin.resolveTargetScreen();
-        if (!selected) {
-            lagLog("startProfessionalLaunchNow abort: resolveTargetScreen failed");
-            return;
-        }
-
-        var applied = mainWin.applyGeometryToTargetScreen(false);
-        if (!applied) {
-            lagLog("startProfessionalLaunchNow abort: applyGeometryToTargetScreen failed");
-            return;
+        if (!mainWin.startupCinematicGeometryPrepared) {
+            // Safe fallback for detached/diagnostic routes which do not use
+            // the hidden readiness gate.
+            var selected = mainWin.resolveTargetScreen();
+            if (!selected) {
+                lagLog("startProfessionalLaunchNow abort: resolveTargetScreen failed");
+                return;
+            }
+            if (!mainWin.applyGeometryToTargetScreen(false)) {
+                lagLog("startProfessionalLaunchNow abort: applyGeometryToTargetScreen failed");
+                return;
+            }
         }
 
         jelly.freezeToIdentity();
@@ -4069,6 +4283,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         jelly.transX = 0.0;
         jelly.transY = 0.0;
         jelly.rotationVal = 0.0;
+        startupCinematicBloomAnimation.stop();
+        startupCinematicBloomReleaseStarted = false;
+        startupCinematicSnapshotActive = false;
+        startupCinematicSnapshotUrl = "";
+        startupCinematicBloomScale = 1.0;
+        startupCinematicBloomActive = false;
         var previousGeometryTransitionSuppressed = mainWin.geometryTransitionSuppressed;
         mainWin.geometryTransitionSuppressed = true;
         try {
@@ -4077,18 +4297,44 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             mainWin.geometryTransitionSuppressed = previousGeometryTransitionSuppressed;
         }
 
-        mainWin.opacity = 1.0;
+        // During native prestage, keep the Windows host effectively invisible
+        // until a frozen canvas has replaced its live full-size contents.
+        mainWin.opacity = mainWin.startupCinematicBloomPrestageOnly ? 0.001 : 1.0;
         if (!mainWin.visible) {
             mainWin.show();
         }
-        mainWin.forceLaunchFocus();
+        if (!mainWin.startupCinematicBloomPrestageOnly) {
+            mainWin.forceLaunchFocus();
+        }
         if (mainWin.detachedMode) {
             startupFocusReassertRemaining = 3;
             startupFocusReassertTimer.stop();
             startupFocusReassertTimer.start();
         }
-        mainWin.markStartupFirstPixelVisible("professional-fast-open");
-        phaseLog("SPLASH", "Professional main window visible t+" + splashElapsedMs() + "ms");
+        mainWin.markStartupFirstPixelVisible("professional-cinematic-bloom");
+        if (mainWin.startupCinematicBloomPrestageOnly) {
+            phaseLog("SPLASH", "Act III frozen canvas staging behind native splash t+" + splashElapsedMs() + "ms")
+            mainWin.prestageStartupCinematicBloom()
+            return
+        }
+        mainWin.startupCinematicBloomScale = 0.002
+        mainWin.startupCinematicBloomActive = true
+        mainWin.releaseStartupCinematicBloom()
+    }
+
+    NumberAnimation {
+        id: startupCinematicBloomAnimation
+        target: mainWin
+        property: "startupCinematicBloomScale"
+        from: 0.002
+        to: 1.0
+        duration: 400
+        easing.type: Easing.OutCubic
+        onFinished: {
+            if (mainWin.startupCinematicBloomReleaseStarted) {
+                mainWin.completeStartupCinematicBloom("animation-finished")
+            }
+        }
     }
 
     function startOpeningLaunchNow() {
@@ -7922,6 +8168,13 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         shellMaskSettleTimer.stop();
         phaseLog("PHASE", "SETTLED -> CLOSING");
         clearStartupDeferredQueue("transition-to-closing");
+        try {
+            if (mainContent && mainContent.cancelAsyncStartupWork) {
+                mainContent.cancelAsyncStartupWork("window-transition-to-closing");
+            }
+        } catch (eCancelStartupLoaders) {
+            lagLog("MainContent async-loader cancellation failed=" + eCancelStartupLoaders);
+        }
         phaseLog("CLOSING", "Transition requested content=" + fmtRect(finalX, finalY, finalW, finalH)
             + " canvas=" + fmtRect(canvasX, canvasY, canvasW, canvasH));
         if (sfxBus && sfxBus.playWindowCloseFly) {
@@ -8076,6 +8329,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     Connections {
         target: mainWin.appRef
         ignoreUnknownSignals: true
+        function onStartupBriefingSnapshotChanged() {
+            mainWin.prepareStartupBriefingForReveal()
+        }
         function onBackendBootChanged() {
             if (!(mainWin.appRef && mainWin.appRef.backendBooted)) return;
             mainWin.startupDataBootStarted = true;
@@ -8663,7 +8919,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     
     Item {
         id: animationCanvasLayer
-        visible: !mainWin.isExitingFromTray
+        visible: !mainWin.isExitingFromTray && !mainWin.startupCinematicSnapshotActive
         // Canvas is a dynamic rectangle inside a fixed host window.
         x: mainWin.canvasLocalX
         y: mainWin.canvasLocalY
@@ -8782,27 +9038,37 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             height: mainWin.userResizeInProgress
                 ? Math.max(1, Math.round(mainWin.resizeStartFinalH))
                 : mainWin.finalH
-            clip: !(mainWin.animationPhase === "opening" || mainWin.startupPhase === "falling-window")
+            clip: !(mainWin.animationPhase === "opening"
+                || mainWin.startupPhase === "falling-window"
+                || mainWin.startupCinematicBloomActive)
             layer.enabled: mainWin.userResizeInProgress
             layer.smooth: !mainWin.userResizeInProgress
             transform: [
                 Scale {
-                    origin.x: (mainWin.animationPhase === "opening")
+                    origin.x: mainWin.startupCinematicBloomActive
+                        ? mainWin.startupCinematicBloomOriginX()
+                        : ((mainWin.animationPhase === "opening")
                         ? (Math.max(1, mainWin.finalW) / 2.0)
-                        : 0
-                    origin.y: (mainWin.animationPhase === "opening")
+                        : 0)
+                    origin.y: mainWin.startupCinematicBloomActive
+                        ? mainWin.startupCinematicBloomOriginY()
+                        : ((mainWin.animationPhase === "opening")
                         ? Math.max(1, mainWin.finalH)
-                        : 0
-                    xScale: (mainWin.animationPhase === "opening")
+                        : 0)
+                    xScale: mainWin.startupCinematicBloomActive
+                        ? mainWin.startupCinematicBloomScale
+                        : ((mainWin.animationPhase === "opening")
                         ? animationCanvasLayer.openingRenderScaleX
                         : ((mainWin.userResizeInProgress && contentLayer.width > 0)
                             ? (mainWin.finalW / contentLayer.width)
-                            : 1.0)
-                    yScale: (mainWin.animationPhase === "opening")
+                            : 1.0))
+                    yScale: mainWin.startupCinematicBloomActive
+                        ? mainWin.startupCinematicBloomScale
+                        : ((mainWin.animationPhase === "opening")
                         ? animationCanvasLayer.openingRenderScaleY
                         : ((mainWin.userResizeInProgress && contentLayer.height > 0)
                             ? (mainWin.finalH / contentLayer.height)
-                            : 1.0)
+                            : 1.0))
                 },
                 Translate {
                     x: (mainWin.animationPhase === "opening")
@@ -8954,6 +9220,33 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
     }
 
+    // Act III visual owner. It is a frozen GPU canvas captured while the
+    // native splash is still in front, so nothing other than this image can
+    // appear between the plasma's centre point and the growing app surface.
+    Image {
+        id: startupCinematicBloomSnapshot
+        x: mainWin.canvasLocalX
+        y: mainWin.canvasLocalY
+        width: Math.max(1, mainWin.canvasW)
+        height: Math.max(1, mainWin.canvasH)
+        z: 1750
+        visible: mainWin.startupCinematicSnapshotActive
+            && mainWin.startupCinematicSnapshotUrl.length > 0
+        source: mainWin.startupCinematicSnapshotUrl
+        fillMode: Image.Stretch
+        smooth: true
+        mipmap: true
+        asynchronous: false
+        transform: Scale {
+            origin.x: mainWin.startupCinematicBloomCanvasOriginX()
+            origin.y: mainWin.startupCinematicBloomCanvasOriginY()
+            xScale: mainWin.startupCinematicBloomActive
+                ? mainWin.startupCinematicBloomScale : 1.0
+            yScale: mainWin.startupCinematicBloomActive
+                ? mainWin.startupCinematicBloomScale : 1.0
+        }
+    }
+
     Rectangle {
         id: startupDataLoadingOverlay
         anchors.fill: parent
@@ -9023,6 +9316,23 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                     horizontalAlignment: Text.AlignHCenter
                 }
             }
+        }
+    }
+
+    // The native splash handles input during Acts I/II.  Once it has vanished,
+    // this short-lived shield completes the promised click-to-skip contract
+    // while Act III grows the already-hydrated window from its centre point.
+    MouseArea {
+        anchors.fill: parent
+        z: 1801
+        visible: mainWin.startupCinematicBloomActive
+        enabled: visible
+        acceptedButtons: Qt.AllButtons
+        hoverEnabled: true
+        preventStealing: true
+        onPressed: function(mouse) {
+            mainWin.skipStartupCinematicBloom("pointer")
+            mouse.accepted = true
         }
     }
 
@@ -10907,6 +11217,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.resolveTargetScreen();
         mainWin.refreshActiveVisibleRect();
         mainWin.updateDebugOverlayBounds();
+        Qt.callLater(function() {
+            mainWin.prepareStartupBriefingForReveal();
+        });
         if (mainWin.detachedMode) {
             mainWin.beginCoreLaunchSequence();
             return;
@@ -11037,7 +11350,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 mainWin.resetMaximizeFxState();
             }
 
-            if (mainWin.opacity !== 1.0) {
+            // The cinematic pre-stage intentionally keeps the native host at
+            // near-zero opacity until its frozen launch canvas is ready. Do
+            // not let this ordinary visibility-recovery hook reveal one full
+            // app frame above the still-loading CS splash.
+            if (mainWin.opacity !== 1.0 && !mainWin.startupCinematicBloomPrestageOnly) {
                 mainWin.opacity = 1.0;
             }
             mainWin.phaseLog("MAIN", "Host visibility resumed state=" + mainWin.visibility);

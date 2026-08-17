@@ -1,5 +1,86 @@
 # CSPM Task And Validation Ledger
 
+## Cinematic Opening Sequence — Phase 1 Readiness Gate (2026-08-17)
+
+- [x] Establish a data-backed, hidden **ready-to-reveal** gate for the first
+  Professional workspace. The main window is created with `visible: false`;
+  persisted briefing rules, workbook schema, and one complete Practice
+  Briefing snapshot now finish before the normal launch gate can reveal CSPM.
+- [x] Hydrate both consumers of that snapshot before reveal: the actual
+  Professional landing surface (`DailyOperationsHome`, including **WIP to
+  review**) and the named Practice Briefing view. Neither may schedule its
+  initial direct workbook read while startup preparation is pending.
+- [x] Hold the native splash safely on preload failure instead of revealing an
+  empty dashboard. The eventual retry/recovery controls and cinematic progress
+  presentation remain Phase 2 work.
+- [x] Add focused regression coverage for valid-snapshot acknowledgement,
+  failed-snapshot withholding, and the Professional landing-home handoff
+  (`tests/test_startup_briefing_readiness.py`).
+- [x] Serialize the optional startup metadata warm-up behind the hidden
+  snapshot handoff. It no longer competes with the opening snapshot for the
+  Excel repository/cache; a source launch that ended with native access-
+  violation code `0xC0000005` exposed the unsafe overlap, although no Python or
+  QML exception was emitted before the process stopped.
+- [x] Manual foreground validation: the first `./launch.ps1` run correctly
+  exposed that `DailyOperationsHome` still used its independent zero fallback
+  (`WIP to review`: `$0` then `$10.1K`). Its handoff and metadata-warm race were
+  repaired in source; the follow-up source launch confirmed that the landing
+  home opens pre-hydrated with the real value. The current splash/window
+  handoff visual is deliberately unchanged until Phase 2.
+- [x] Phase 2 implementation: the native splash bar now follows only the real
+  readiness milestones and reaches 100% only after `ready-to-reveal`. It then
+  runs the approved 550 ms accelerating 0°→1080° logo vortex, 150 ms plasma
+  flash, 80 ms hold, and 220 ms cubic implosion before it hides. Only then does
+  the fully hydrated QML shell run its 400 ms centre-point bloom. Space, Enter,
+  Escape, or a click skips the active act without opening a non-ready shell.
+- [x] Shutdown hardening: `MainContent` cancels pending asynchronous lazy-page
+  loaders before close and binds each loader's `active` state to that shutdown
+  flag. The benign tray-resident `lastWindowClosed` lifecycle event is now an
+  info diagnostic rather than a warning.
+- [x] Phase 2 handoff tightening: the final shell geometry is now calculated
+  while the native vortex/plasma sequence remains on-screen. The final plasma
+  frame hides and emits its handoff in the same event turn, and Act III starts
+  its deliberate 400 ms centre-point bloom without an extra queued callback.
+- [x] Phase 2 seamless joining: the QML shell is now fully rendered at its
+  0.2%-scale centre pinpoint behind the native splash *before* the final
+  progress fill and vortex begin. The native splash stays above it until the
+  plasma reaches zero, then exposes and releases the bloom in one handoff;
+  the plasma burst radius is reduced from 88 px to 76 px per scale unit. The
+  staging completion is now isolated from the true bloom completion so the
+  complete centre-out growth is always visible.
+- [x] Phase 2 visual-surface correction: Act III now uses a frozen GPU canvas
+  captured behind the native splash. The live QML host remains effectively
+  transparent during capture, then the frozen complete app surface—not an
+  independently composited host—grows from the exact screen-centre pinpoint
+  for 400 ms before swapping back to the matching live shell.
+- [x] Prevent an early full-host flash: the ordinary Qt visibility-recovery
+  handler now preserves the cinematic prestage's near-zero host opacity until
+  the frozen canvas is ready. Also guard the two close-time Matter-popup
+  centring bindings against a destroyed `parent`.
+- [x] Harden the native/QML cinematic boundary: while the frozen Act III frame
+  is prepared, the native splash is explicitly topmost and re-raised before
+  QML is shown. A bounded 6-second QML GPU-capture fallback switches to the
+  existing live centre-bloom rather than allowing a missing capture callback
+  to hold startup forever.
+- [x] Remove the pre-logo native flash: replace the empty-pixmap
+  `QSplashScreen` base with a transparent `QWidget`, and begin the logo
+  dissolve only after its custom logo frame has been painted while invisible.
+- [x] Build and copy-promote the complete cinematic-opening release at
+  `dist\CSPM\CSPM.exe`. The normal builder completed both executables and
+  templates but Windows denied its final directory rename; the repository's
+  hash-verified promotion tool then installed the 4,358-file package manifest
+  `E057B5687873859DBBB75818AA3FDA419546850105950113ADDE3EF06D5B85E3`.
+  The executable SHA-256 is
+  `6449FBBC00A99AD6AD4AD9F94D7D600D4C17EBAF382316CF569C86A593634D2A`;
+  the prior local release is recoverable at
+  `to_delete\dist__manual_replaced_release_20260817_171930`.
+- [ ] Manual Phase 2 foreground verification: launch via `./launch.ps1`; verify
+  that no app pixels precede the splash's plasma implosion, that the bar holds
+  below 100% until data readiness, that the landing values never change after
+  reveal, that the app begins blooming immediately from the implosion point,
+  that each skip input snaps safely to the hydrated UI, and that a normal close
+  no longer logs the in-progress-QML-item warning.
+
 ## Strategic Roadmap Rebaseline (2026-08-16)
 
 Status: long-term direction recorded; no code, workbook, database, or release

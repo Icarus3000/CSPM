@@ -29,6 +29,10 @@ Rectangle {
         "readyToBillMatters": [],
         "summary": ({})
     })
+    // The opening sequence prepares one complete briefing payload while this
+    // window is hidden.  Keep the placeholder model strictly off the visible
+    // first frame; normal user-requested refreshes still read live data.
+    property bool startupSnapshotApplied: false
 
     signal openScreenRequested(string moduleId, string nodeId)
     signal navigateRequested(int tileIndex, string nodeId, var state)
@@ -92,6 +96,24 @@ Rectangle {
             console.error("PracticeBriefingView.refreshBriefing failed:", e)
             root.statusText = "Error refreshing briefing: " + String(e)
         }
+    }
+
+    function startupReadinessBlocksDirectLoad() {
+        if (!root.appRef || root.startupSnapshotApplied) return false
+        var state = String(root.appRef.startupReadinessState || "idle")
+        return state !== "idle" && state !== "ready-to-reveal"
+    }
+
+    function applyPreparedStartupBriefing() {
+        if (!root.appRef || root.startupSnapshotApplied) return root.startupSnapshotApplied
+        if (root.appRef.startupBriefingSnapshotReady !== true) return false
+        var payload = root.appRef.startupBriefingSnapshot
+        if (!payload || typeof payload !== "object" || payload.ok !== true) return false
+        root.briefing = payload
+        root.briefingJsonStr = JSON.stringify(payload)
+        root.statusText = ""
+        root.startupSnapshotApplied = true
+        return true
     }
 
     function sectionCount(items) {
@@ -210,9 +232,22 @@ Rectangle {
         onFiltersSaved: root.refreshBriefing()
     }
 
-    Component.onCompleted: refreshBriefing()
+    Component.onCompleted: {
+        if (root.applyPreparedStartupBriefing()) return
+        if (!root.startupReadinessBlocksDirectLoad()) root.refreshBriefing()
+    }
     onVisibleChanged: {
-        if (visible) refreshBriefing()
+        if (!visible) return
+        if (root.applyPreparedStartupBriefing()) return
+        if (!root.startupReadinessBlocksDirectLoad()) root.refreshBriefing()
+    }
+
+    Connections {
+        target: root.appRef
+        ignoreUnknownSignals: true
+        function onStartupBriefingSnapshotChanged() {
+            root.applyPreparedStartupBriefing()
+        }
     }
 
     ScrollView {

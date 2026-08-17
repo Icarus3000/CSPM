@@ -14,6 +14,11 @@ Item {
     property bool interactive: true
     property bool loadingBriefing: false
     property var briefing: defaultBriefing()
+    // This is the actual first Professional landing surface.  It must consume
+    // the same prepared briefing snapshot as PracticeBriefingView before the
+    // hidden startup window can be revealed; otherwise its WIP card briefly
+    // paints the zero-valued fallback model.
+    property bool startupSnapshotApplied: false
 
     readonly property bool tight: width < 760 || height < 540
     readonly property int queueRowLimit: height < 560 ? 2 : (height < 760 ? 3 : 4)
@@ -183,6 +188,22 @@ Item {
         root.loadingBriefing = false
     }
 
+    function startupReadinessBlocksDirectLoad() {
+        if (!root.appRef || root.startupSnapshotApplied) return false
+        var state = String(root.appRef.startupReadinessState || "idle")
+        return state !== "idle" && state !== "ready-to-reveal"
+    }
+
+    function applyPreparedStartupBriefing() {
+        if (!root.appRef || root.startupSnapshotApplied) return root.startupSnapshotApplied
+        if (root.appRef.startupBriefingSnapshotReady !== true) return false
+        var payload = root.appRef.startupBriefingSnapshot
+        if (!payload || typeof payload !== "object" || payload.ok !== true) return false
+        root.briefing = payload
+        root.startupSnapshotApplied = true
+        return true
+    }
+
     property var quickActions: [
         { "label": "Today", "icon": "\uE80F", "moduleId": "home", "nodeId": "H01" },
         { "label": "Time docket", "icon": "\uE823", "moduleId": "docketing", "nodeId": "B01" },
@@ -242,18 +263,27 @@ Item {
         onTriggered: root.refreshBriefing()
     }
 
-    Component.onCompleted: initialBriefingTimer.start()
+    Component.onCompleted: {
+        if (root.applyPreparedStartupBriefing()) return
+        if (!root.startupReadinessBlocksDirectLoad()) initialBriefingTimer.start()
+    }
     onVisibleChanged: {
-        if (visible)
-            initialBriefingTimer.restart()
+        if (!visible) return
+        if (root.applyPreparedStartupBriefing()) return
+        if (!root.startupReadinessBlocksDirectLoad()) initialBriefingTimer.restart()
     }
 
     Connections {
         target: root.appRef
         ignoreUnknownSignals: true
         function onBackendBootChanged() {
-            if (root.appRef && root.appRef.backendBooted)
+            if (root.appRef && root.appRef.backendBooted
+                    && !root.applyPreparedStartupBriefing()
+                    && !root.startupReadinessBlocksDirectLoad())
                 initialBriefingTimer.restart()
+        }
+        function onStartupBriefingSnapshotChanged() {
+            root.applyPreparedStartupBriefing()
         }
         function onHomeDashboardSummaryUpdated(payload) {
             if (payload && typeof payload === "object")

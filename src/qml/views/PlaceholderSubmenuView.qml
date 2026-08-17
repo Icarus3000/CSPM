@@ -6365,8 +6365,8 @@ Behavior on border.color {
         closePolicy: Popup.CloseOnEscape
         width: Math.max(root.ratioPxW(0.42, 360), 520)
         padding: root.ratioPx(0.010, 10)
-        x: Math.round((parent.width - width) / 2)
-        y: Math.round((parent.height - height) / 2)
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.round((parent.height - height) / 2) : 0
         onOpened: blockerMessage = ""
 
         background: Rectangle {
@@ -6449,8 +6449,8 @@ Behavior on border.color {
         closePolicy: Popup.CloseOnEscape
         width: Math.max(root.ratioPxW(0.46, 360), 560)
         padding: root.ratioPx(0.010, 10)
-        x: Math.round((parent.width - width) / 2)
-        y: Math.round((parent.height - height) / 2)
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.round((parent.height - height) / 2) : 0
         onOpened: blockerMessage = ""
 
         background: Rectangle {

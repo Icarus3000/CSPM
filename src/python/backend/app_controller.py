@@ -240,6 +240,12 @@ class AppController(QObject):
     keepTrayAliveChanged = Signal()
     homeDashboardSummaryUpdated = Signal(dict)
     startupFirstInputSeenChanged = Signal()
+    # Opening readiness is deliberately independent from "first pixel".  The
+    # cinematic startup sequence may reveal the shell only after the first
+    # workspace has real data bound to it while the window is still hidden.
+    startupReadinessChanged = Signal()
+    startupBriefingSnapshotChanged = Signal()
+    startupReadinessFailed = Signal(str)
     importProgress = Signal(str, int, int)  # phase, current, total
     importFinished = Signal(dict)  # full results dict
     importDuplicateFound = Signal(dict)  # duplicate prompt payload with requestId
@@ -413,6 +419,12 @@ class AppController(QObject):
         self._startup_lag_trace_active = True
         self._startup_lag_trace_auto_off_ms = 45000
         self._startup_first_input_seen = False
+        self._startup_readiness_state = "idle"
+        self._startup_readiness_progress = 0.0
+        self._startup_readiness_error = ""
+        self._startup_briefing_snapshot: Dict[str, Any] = {}
+        self._startup_briefing_preparation_started = False
+        self._startup_briefing_frame_marked = False
         self._expert_preview_process = None
         
         startup_logger.info("%s AppController loading dashboard cache", _elapsed())
@@ -420,6 +432,7 @@ class AppController(QObject):
         self._startup_boot_inflight = False
         self._startup_metadata_warm_running = False
         self._startup_metadata_warm_scheduled = False
+        self._startup_metadata_warm_deferred_for_reveal = False
         self._settings_load_started = False
         self._settings_load_complete = False
         # Keep bootstrap work independent from the deferred settings read.  The
@@ -681,6 +694,13 @@ class AppController(QObject):
             self._background_workers.pop(worker_key, None)
             raise
 
+    def _queue_startup_metadata_warm(self) -> None:
+        """Schedule optional metadata warming only when it cannot contend with launch."""
+        if self._startup_metadata_warm_scheduled:
+            return
+        self._startup_metadata_warm_scheduled = True
+        QTimer.singleShot(2200, self._schedule_startup_metadata_warm)
+
     def _schedule_startup_metadata_warm(self) -> None:
         if not self._is_booted:
             return
@@ -760,9 +780,14 @@ class AppController(QObject):
         if self._auto_backup_enabled and not self._startup_snapshot_scheduled:
             self._startup_snapshot_scheduled = True
             QTimer.singleShot(15000, self._run_startup_snapshot)
-        if not self._startup_metadata_warm_scheduled:
-            self._startup_metadata_warm_scheduled = True
-            QTimer.singleShot(2200, self._schedule_startup_metadata_warm)
+        if self._startup_briefing_preparation_started and not self.startupReadyToReveal:
+            # The hidden launch gate owns the workbook until its authoritative
+            # snapshot has reached the first QML surfaces.  Do not compete for
+            # the same repository/cache from the metadata worker during that
+            # critical read; it is optional startup optimization only.
+            self._startup_metadata_warm_deferred_for_reveal = True
+        else:
+            self._queue_startup_metadata_warm()
         startup_logger.info("Backend boot complete.")
         self._trace_startup_backend_step("boot_backend complete", boot_start)
         startup_logger.info(
@@ -781,6 +806,249 @@ class AppController(QObject):
             "[BACKEND-TRACE] boot_backend failed after %.3fs",
             max(0.0, time.perf_counter() - boot_start),
         )
+
+    # ── SECTION: Hidden first-workspace startup readiness ──────────────────
+
+    def _set_startup_readiness(
+        self,
+        state: str,
+        progress: float,
+        *,
+        error_message: str = "",
+    ) -> None:
+        """Publish a one-way, data-backed opening milestone to QML.
+
+        This is intentionally separate from the legacy first-pixel and
+        first-input probes.  Those probes describe a visible window; these
+        milestones describe whether the hidden first workspace is trustworthy
+        enough to reveal.
+        """
+        safe_state = str(state or "idle").strip() or "idle"
+        safe_progress = max(0.0, min(1.0, float(progress or 0.0)))
+        safe_error = str(error_message or "").strip()
+        changed = (
+            safe_state != self._startup_readiness_state
+            or abs(safe_progress - self._startup_readiness_progress) > 0.0001
+            or safe_error != self._startup_readiness_error
+        )
+        self._startup_readiness_state = safe_state
+        self._startup_readiness_progress = safe_progress
+        self._startup_readiness_error = safe_error
+        if changed:
+            logging.getLogger("startup").info(
+                "[STARTUP-READINESS] state=%s progress=%.3f%s",
+                safe_state,
+                safe_progress,
+                (" error=" + safe_error) if safe_error else "",
+            )
+            self.startupReadinessChanged.emit()
+
+    @Property(str, notify=startupReadinessChanged)
+    def startupReadinessState(self) -> str:
+        return self._startup_readiness_state
+
+    @Property(float, notify=startupReadinessChanged)
+    def startupReadinessProgress(self) -> float:
+        return float(self._startup_readiness_progress)
+
+    @Property(str, notify=startupReadinessChanged)
+    def startupReadinessError(self) -> str:
+        return self._startup_readiness_error
+
+    @Property(bool, notify=startupReadinessChanged)
+    def startupReadinessActive(self) -> bool:
+        return self._startup_readiness_state not in {"idle", "ready-to-reveal", "failed"}
+
+    @Property(bool, notify=startupReadinessChanged)
+    def startupReadyToReveal(self) -> bool:
+        return self._startup_readiness_state == "ready-to-reveal"
+
+    @Property(bool, notify=startupBriefingSnapshotChanged)
+    def startupBriefingSnapshotReady(self) -> bool:
+        return bool(self._startup_briefing_snapshot.get("ok"))
+
+    @Property(dict, notify=startupBriefingSnapshotChanged)
+    def startupBriefingSnapshot(self) -> Dict[str, Any]:
+        return dict(self._startup_briefing_snapshot or {})
+
+    def _fail_startup_readiness(self, exc: Any, *, context: str) -> None:
+        detail = str(exc or "Unknown data preparation failure.").strip()
+        user_message = "CSPM could not prepare the Practice Briefing."
+        logging.getLogger("startup").error(
+            "[STARTUP-READINESS] failed context=%s detail=%s",
+            context,
+            detail,
+        )
+        self._set_startup_readiness("failed", self._startup_readiness_progress, error_message=detail)
+        self.startupReadinessFailed.emit(user_message)
+
+    @Slot()
+    def prepareStartupPracticeBriefing(self) -> None:
+        """Prepare the Professional opening workspace before any main pixel.
+
+        The sequence is intentionally narrow: load persisted settings needed by
+        the briefing, boot the workbook, read one authoritative briefing
+        snapshot, and retain it for hidden QML composition.  It does *not*
+        pre-load unrelated screens or reports.
+        """
+        if self._startup_briefing_preparation_started:
+            logging.getLogger("startup").info(
+                "[STARTUP-READINESS] prepareStartupPracticeBriefing skipped state=%s",
+                self._startup_readiness_state,
+            )
+            return
+
+        self._startup_briefing_preparation_started = True
+        self._startup_briefing_frame_marked = False
+        self._startup_briefing_snapshot = {}
+        self._startup_readiness_error = ""
+        self.startupBriefingSnapshotChanged.emit()
+        self._set_startup_readiness("settings-loading", 0.05)
+
+        if self._settings_load_complete:
+            self._begin_startup_briefing_backend_boot()
+            return
+        if self._settings_load_started:
+            self._wait_for_startup_briefing_settings()
+            return
+        self._start_startup_briefing_settings_load()
+
+    def _wait_for_startup_briefing_settings(self) -> None:
+        if self._settings_load_complete:
+            self._begin_startup_briefing_backend_boot()
+            return
+        if self._settings_load_started:
+            QTimer.singleShot(50, self._wait_for_startup_briefing_settings)
+            return
+        self._start_startup_briefing_settings_load()
+
+    def _start_startup_briefing_settings_load(self) -> None:
+        if self._settings_load_started:
+            self._wait_for_startup_briefing_settings()
+            return
+        self._settings_load_started = True
+        runtime_settings_path = self._paths.user_settings_path()
+        legacy_settings_path = self._legacy_settings_path
+        prefs_settings_path = self._prefs_settings_path
+
+        def _do_load() -> Dict[str, Any]:
+            return AppController._collect_settings_payload(
+                runtime_settings_path,
+                legacy_settings_path,
+                prefs_settings_path,
+            )
+
+        def _on_loaded(payload: Dict[str, Any]) -> None:
+            try:
+                self._apply_settings_payload(payload, emit_theme_signal=True)
+                # The normal settings path also establishes the governed
+                # checkout.  Preserve that safety boundary before reading the
+                # source workbook for the hidden first workspace.
+                self._checkout_shared_data("startup practice briefing preload")
+                self._settings_load_complete = True
+                self._settings_load_started = False
+                self._set_startup_readiness("settings-ready", 0.16)
+                self._begin_startup_briefing_backend_boot()
+            except Exception as exc:
+                self._settings_load_started = False
+                self._fail_startup_readiness(exc, context="startup.briefing.settings")
+
+        def _on_failed(err_tuple) -> None:
+            self._settings_load_started = False
+            _, exc, _ = err_tuple
+            self._fail_startup_readiness(exc, context="startup.briefing.settings")
+
+        self._start_background_worker(
+            _do_load,
+            name="startup_briefing_settings",
+            on_result=_on_loaded,
+            on_error=_on_failed,
+            priority=self._background_low_priority,
+        )
+
+    def _begin_startup_briefing_backend_boot(self) -> None:
+        if self._startup_readiness_state == "failed":
+            return
+        if self._is_booted:
+            self._set_startup_readiness("workbook-ready", 0.48)
+            self._begin_startup_briefing_snapshot_load()
+            return
+        if self._startup_boot_inflight:
+            QTimer.singleShot(50, self._begin_startup_briefing_backend_boot)
+            return
+
+        self._startup_boot_inflight = True
+        boot_start = time.perf_counter()
+        self._set_startup_readiness("workbook-booting", 0.30)
+
+        def _do_boot() -> None:
+            self._bootstrap_workbook_schema()
+
+        def _on_booted(_result: Any) -> None:
+            self._on_boot_complete(boot_start)
+            self._set_startup_readiness("workbook-ready", 0.48)
+            self._begin_startup_briefing_snapshot_load()
+
+        def _on_failed(err_tuple) -> None:
+            self._startup_boot_inflight = False
+            _, exc, _ = err_tuple
+            self._is_booted = False
+            self.backendBootChanged.emit()
+            self._fail_startup_readiness(exc, context="startup.briefing.workbook_boot")
+
+        self._start_background_worker(
+            _do_boot,
+            name="startup_briefing_backend_boot",
+            on_result=_on_booted,
+            on_error=_on_failed,
+            priority=self._background_low_priority,
+        )
+
+    def _begin_startup_briefing_snapshot_load(self) -> None:
+        if self._startup_readiness_state == "failed":
+            return
+        filters = dict(self.getPracticeBriefingFilters() or {})
+        self._set_startup_readiness("briefing-snapshot-loading", 0.62)
+
+        def _do_load() -> Dict[str, Any]:
+            payload = self._excel_repo.practice_briefing(filters)
+            if not isinstance(payload, dict) or not bool(payload.get("ok")):
+                raise RuntimeError("The Practice Briefing data snapshot could not be read.")
+            return dict(payload)
+
+        def _on_loaded(payload: Dict[str, Any]) -> None:
+            self._startup_briefing_snapshot = dict(payload or {})
+            self.startupBriefingSnapshotChanged.emit()
+            self._set_startup_readiness("briefing-snapshot-ready", 0.86)
+            logging.getLogger("startup").info(
+                "[STARTUP-READINESS] briefing snapshot ready sections=%d",
+                len(self._startup_briefing_snapshot),
+            )
+
+        def _on_failed(err_tuple) -> None:
+            _, exc, _ = err_tuple
+            self._fail_startup_readiness(exc, context="startup.briefing.snapshot")
+
+        self._start_background_worker(
+            _do_load,
+            name="startup_practice_briefing",
+            on_result=_on_loaded,
+            on_error=_on_failed,
+            priority=self._background_low_priority,
+        )
+
+    @Slot()
+    def markStartupBriefingFrameReady(self) -> None:
+        """Accept QML's acknowledgement that the hidden briefing owns the snapshot."""
+        if self._startup_readiness_state != "briefing-snapshot-ready":
+            return
+        if not self.startupBriefingSnapshotReady or self._startup_briefing_frame_marked:
+            return
+        self._startup_briefing_frame_marked = True
+        self._set_startup_readiness("ready-to-reveal", 1.0)
+        if self._startup_metadata_warm_deferred_for_reveal:
+            self._startup_metadata_warm_deferred_for_reveal = False
+            self._queue_startup_metadata_warm()
 
     def _resolve_paths(self, paths=None) -> AppPaths:
         if isinstance(paths, AppPaths):

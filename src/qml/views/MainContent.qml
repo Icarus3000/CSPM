@@ -83,6 +83,10 @@ Item {
     property bool _startupPrewarmComplete: false
     property bool _startupPrewarmQueuedToWindow: false
     property int _startupPrewarmStepMs: 220
+    // Set by the host before the QML engine is released.  Loader.active is
+    // bound to this flag so asynchronous page creation is cancelled cleanly
+    // instead of being left mid-flight at engine destruction.
+    property bool shutdownRequested: false
     property var _perfMarks: ({})
     property color bgColor: (root && root.t && root.t.bg) ? root.t.bg : "#090E18"
     property color panelColor: (root && root.t && root.t.panel) ? root.t.panel : "#131C2B"
@@ -1696,6 +1700,18 @@ Item {
         return true
     }
 
+    // Called by the hidden main-window preload gate.  The launch surface is
+    // DailyOperationsHome in the Professional shell, while the named Practice
+    // Briefing view may be opened next.  Both must own the same prepared
+    // payload before CSPM is permitted to reveal any app pixels.
+    function applyPreparedStartupBriefing() {
+        if (!practiceBriefingView || !practiceBriefingView.applyPreparedStartupBriefing
+                || !dailyOperationsHome || !dailyOperationsHome.applyPreparedStartupBriefing) return false
+        var briefingPrepared = practiceBriefingView.applyPreparedStartupBriefing() === true
+        var homePrepared = dailyOperationsHome.applyPreparedStartupBriefing() === true
+        return briefingPrepared && homePrepared
+    }
+
     function startupQueueEnabled() {
         return !!(root.windowRef
             && root.windowRef.startupDeferredQueueEnabledForClients
@@ -1771,6 +1787,7 @@ Item {
     }
 
     function requestStackPageLoad(stackIndex, reason) {
+        if (shutdownRequested) return false
         var idx = Math.round(stackIndex)
         if (idx <= 0) return false
         if (idx > tileTitles.length) return false
@@ -1794,7 +1811,7 @@ Item {
     }
 
     function scheduleStartupStackPrewarm(reason) {
-        if (root.detachedWindow || _startupPrewarmComplete) return
+        if (shutdownRequested || root.detachedWindow || _startupPrewarmComplete) return
         if (startupQueueEnabled()) {
             queueStartupStackPrewarm(reason)
             return
@@ -1805,7 +1822,7 @@ Item {
     }
 
     function queueStartupStackPrewarm(reason) {
-        if (!startupQueueEnabled()) return
+        if (shutdownRequested || !startupQueueEnabled()) return
         if (root.detachedWindow || _startupPrewarmComplete) return
         if (_startupPrewarmQueuedToWindow) return
 
@@ -1831,7 +1848,7 @@ Item {
     }
 
     function _runQueuedStartupStackPrewarmTask(payload) {
-        if (root.detachedWindow) return true
+        if (shutdownRequested || root.detachedWindow) return true
         if (!root.visible || !stack) return false
         if (!startupAllowsHeavyWork("startupStackPrewarm.queued")) return false
         var idx = Math.round(payload && payload.stackIndex !== undefined ? payload.stackIndex : -1)
@@ -1841,7 +1858,7 @@ Item {
     }
 
     function runStartupStackPrewarmTick() {
-        if (root.detachedWindow || _startupPrewarmComplete) return
+        if (shutdownRequested || root.detachedWindow || _startupPrewarmComplete) return
         if (startupQueueEnabled()) {
             queueStartupStackPrewarm("runStartupStackPrewarmTick")
             return
@@ -1872,6 +1889,22 @@ Item {
             }
         }
         _startupPrewarmComplete = true
+    }
+
+    function cancelAsyncStartupWork(reason) {
+        if (shutdownRequested) return
+        shutdownRequested = true
+        _startupPrewarmComplete = true
+        _startupPrewarmQueuedToWindow = false
+        _stackPageLoadRequested = ({ "1": false, "2": false, "3": false, "4": false })
+        startupStackPrewarmTimer.stop()
+        startupDashboardRetryTimer.stop()
+        dashboardRefreshTimer.stop()
+        option3TabStateRefreshTimer.stop()
+        if (root.windowRef && root.windowRef.lagLog) {
+            root.windowRef.lagLog("MainContent async startup work cancelled reason="
+                + String(reason || "unspecified"))
+        }
     }
 
     function stackIndexForTile(tileIndex) {
@@ -4278,6 +4311,7 @@ Item {
                         }
 
                         DailyOperationsHome {
+                            id: dailyOperationsHome
                             anchors.fill: parent
                             visible: root.option3ShellEnabled && !root.option3HasCurrentWorkspace()
                             t: root.t
@@ -4301,7 +4335,7 @@ Item {
                         id: clientsLanePanelLoader
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        active: root.isStackPageLoadRequested(1)
+                        active: !root.shutdownRequested && root.isStackPageLoadRequested(1)
                         asynchronous: stack.currentIndex !== 1
                         sourceComponent: clientsLanePanelComponent
                     }
@@ -4310,7 +4344,7 @@ Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.margins: root.bodyMarginPx
-                        active: root.isStackPageLoadRequested(2)
+                        active: !root.shutdownRequested && root.isStackPageLoadRequested(2)
                         asynchronous: stack.currentIndex !== 2
                         sourceComponent: docketLanePanelComponent
                     }
@@ -4318,7 +4352,7 @@ Item {
                         id: billingLanePanelLoader
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        active: root.isStackPageLoadRequested(3)
+                        active: !root.shutdownRequested && root.isStackPageLoadRequested(3)
                         asynchronous: stack.currentIndex !== 3
                         sourceComponent: billingLanePanelComponent
                     }
@@ -4326,7 +4360,7 @@ Item {
                         id: financeLanePanelLoader
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        active: root.isStackPageLoadRequested(4)
+                        active: !root.shutdownRequested && root.isStackPageLoadRequested(4)
                         asynchronous: stack.currentIndex !== 4
                         sourceComponent: financeLanePanelComponent
                     }
@@ -4878,6 +4912,10 @@ Item {
         scheduleStartupStackPrewarm("Component.onCompleted")
     }
 
+    Component.onDestruction: {
+        cancelAsyncStartupWork("component-destruction")
+    }
+
     onInitialTileIndexChanged: {
         applyInitialSelection()
         option3EnsureTabForCurrentWorkspace("initialTileIndexChanged")
@@ -4903,7 +4941,7 @@ Item {
     }
 
     onVisibleChanged: {
-        if (visible) {
+        if (visible && !shutdownRequested) {
             refreshDashboardSummary()
             scheduleStartupStackPrewarm("onVisibleChanged")
         }

@@ -40,6 +40,18 @@ Item {
     property bool _createRetryExhaustedLogged: false
     property int _handoffTimeoutRetryCount: 0
     property int _handoffTimeoutRetryMax: 12
+    // Phase 1: create and hydrate the first workspace while every main-window
+    // pixel remains hidden.  The native splash stays in front until the
+    // controller and the hidden QML tree both acknowledge readiness.
+    property bool _phaseOnePreloadStarted: false
+    property bool _phaseOneFailureObserved: false
+    // Phase 2 is separate from the data gate: the hidden shell can be ready
+    // while the native splash still owns the vortex and plasma acts.
+    property bool _phaseTwoCinematicRequested: false
+    property bool _phaseTwoCinematicPrestageRequested: false
+    property bool _phaseTwoCinematicPrestageCompleted: false
+    property bool _phaseTwoCinematicReleased: false
+    property bool nativeStartupCinematicActive: false
     property bool forensicBootEnabled: false
     property int forensicPulseMs: 200
 
@@ -90,6 +102,8 @@ Item {
     readonly property int startupMainObjectPrewarmLeadMs: _runtimeIntSafe("startupMainObjectPrewarmLeadMs", 4200)
 
     signal mainWindowReady(var windowRef)
+    signal cinematicRevealRequested()
+    signal cinematicBloomPrestageComplete()
 
     Timer {
         id: forensicPulseTimer
@@ -124,11 +138,15 @@ Item {
         case "init": return 0
         case "splash-starting": return 1
         case "splash-running": return 2
-        case "gate-open": return 3
-        case "main-created": return 4
-        case "splash-released": return 5
-        case "splash-gone": return 6
-        case "core-launch-dispatched": return 7
+        case "phase1-preloading": return 3
+        case "hidden-window-created": return 4
+        case "ready-to-reveal": return 5
+        case "cinematic-running": return 6
+        case "gate-open": return 7
+        case "main-created": return 8
+        case "splash-released": return 9
+        case "splash-gone": return 10
+        case "core-launch-dispatched": return 11
         default: return 0
         }
     }
@@ -491,6 +509,17 @@ Item {
             }
         } catch (e) {
         }
+        try {
+            if (windowRef.startupCinematicBloomStaged) {
+                windowRef.startupCinematicBloomStaged.connect(function() {
+                    if (_phaseTwoCinematicPrestageCompleted) return
+                    _phaseTwoCinematicPrestageCompleted = true
+                    _lagLog("Phase 2 QML pinpoint staged behind native splash")
+                    cinematicBloomPrestageComplete()
+                })
+            }
+        } catch (eStage) {
+        }
     }
 
     function _bindSplashGone(splashObj) {
@@ -530,6 +559,141 @@ Item {
         _lagLog("_onSplashGone reason=" + String(reason || "unknown")
             + " remaining=" + remaining.length)
         _maybeLaunchAfterSplashGone("splash-gone:" + String(reason || "unknown"))
+    }
+
+    function _phaseOneReadinessState() {
+        try {
+            if (typeof app !== "undefined" && app && app.startupReadinessState !== undefined) {
+                return String(app.startupReadinessState || "idle")
+            }
+        } catch (e0) {
+        }
+        return "idle"
+    }
+
+    function _requestHiddenBriefingAcknowledgement(reason) {
+        if (!_phaseOnePreloadStarted || _phaseOneFailureObserved) return false
+        if (!mainWindowRef) {
+            _requestMainWindowCreate("phase1-wait-hidden-window:" + String(reason || "unknown"), true)
+            return false
+        }
+        if (_phaseOneReadinessState() !== "briefing-snapshot-ready") return false
+        try {
+            if (mainWindowRef.prepareStartupBriefingForReveal) {
+                return mainWindowRef.prepareStartupBriefingForReveal() === true
+            }
+        } catch (e0) {
+            _lagLog("Phase 1 hidden Practice Briefing acknowledgement failed=" + e0)
+        }
+        return false
+    }
+
+    function _maybeOpenPhaseOneLaunchGate(reason) {
+        if (!_phaseOnePreloadStarted || _phaseOneFailureObserved || _launchGateOpen) return
+        var state = _phaseOneReadinessState()
+        if (state === "failed") {
+            _phaseOneFailureObserved = true
+            _lagLog("Phase 1 preload failed; native splash remains in place")
+            return
+        }
+        if (state === "briefing-snapshot-ready") {
+            _requestHiddenBriefingAcknowledgement(reason)
+            return
+        }
+        if (state !== "ready-to-reveal" || !mainWindowRef) return
+        _setStartupState("ready-to-reveal", "phase1:" + String(reason || "unknown"))
+        _beginPhaseTwoCinematicReveal("phase1-ready-to-reveal:" + String(reason || "unknown"))
+    }
+
+    function _beginPhaseTwoCinematicReveal(reason) {
+        if (_phaseTwoCinematicRequested || _phaseTwoCinematicReleased) return
+        _phaseTwoCinematicRequested = true
+        _setStartupState("cinematic-running", String(reason || "phase2"))
+        if (!nativeStartupCinematicActive) {
+            // Tray-only and diagnostics have no native splash.  They still
+            // obey the data gate, but move directly to Act III.
+            _lagLog("Phase 2 native cinematic unavailable; releasing bloom gate directly")
+            releaseCinematicLaunchGate()
+            return
+        }
+        _lagLog("Phase 2 ready; requesting native vortex and plasma sequence")
+        cinematicRevealRequested()
+    }
+
+    // main.py calls this first.  The native splash remains in front while the
+    // fully-hydrated shell completes its native show call at a 0.2% scale.
+    function prestageCinematicBloom() {
+        if (_phaseTwoCinematicReleased || _phaseTwoCinematicPrestageRequested) return
+        _phaseTwoCinematicPrestageRequested = true
+        _lagLog("Phase 2 prestaging QML pinpoint behind native splash")
+        if (!nativeStartupCinematicActive) {
+            releaseCinematicLaunchGate()
+            return
+        }
+        if (mainWindowRef) {
+            try {
+                mainWindowRef.startupCinematicBloomPrestageOnly = true
+            } catch (e0) {
+            }
+        }
+        _openLaunchGate("phase2-native-prestage")
+    }
+
+    // main.py calls this only after the native plasma reaches its implosion
+    // endpoint.  The QML pinpoint is already rendered behind it, so releasing
+    // the splash and beginning Act III are one contiguous visual handoff.
+    function releaseCinematicLaunchGate() {
+        if (_phaseTwoCinematicReleased) return
+        _phaseTwoCinematicReleased = true
+        if (!_launchGateOpen) {
+            _lagLog("Phase 2 native handoff fallback; opening Act III bloom gate")
+            _openLaunchGate("phase2-native-handoff-fallback")
+            return
+        }
+        _lagLog("Phase 2 native handoff complete; releasing prestaged Act III bloom")
+        try {
+            if (mainWindowRef && mainWindowRef.releaseStartupCinematicBloom) {
+                mainWindowRef.releaseStartupCinematicBloom()
+                return
+            }
+        } catch (e0) {
+            _lagLog("Phase 2 Act III release failed=" + e0)
+        }
+        _lagLog("Phase 2 Act III release fallback: main window unavailable")
+    }
+
+    function _bindPhaseOneMainWindow(windowRef) {
+        if (!windowRef || !windowRef.hiddenStartupBriefingPrepared) return
+        try {
+            windowRef.hiddenStartupBriefingPrepared.connect(function() {
+                bootstrap._lagLog("Phase 1 hidden Practice Briefing acknowledgement received")
+                bootstrap._maybeOpenPhaseOneLaunchGate("hidden-briefing-prepared")
+            })
+        } catch (e0) {
+            _lagLog("Phase 1 hidden main-window signal bind failed=" + e0)
+        }
+    }
+
+    function _beginPhaseOneStartupPreload() {
+        if (_phaseOnePreloadStarted) return
+        _phaseOnePreloadStarted = true
+        _setStartupState("phase1-preloading", "native-splash-visible")
+        _lagLog("Phase 1 beginning hidden Professional workspace preload")
+        try {
+            if (typeof app !== "undefined" && app && app.prepareStartupPracticeBriefing) {
+                app.prepareStartupPracticeBriefing()
+            } else {
+                _phaseOneFailureObserved = true
+                _lagLog("Phase 1 startup readiness API unavailable; retaining native splash")
+                return
+            }
+        } catch (e0) {
+            _phaseOneFailureObserved = true
+            _lagLog("Phase 1 startup readiness invocation failed=" + e0)
+            return
+        }
+        _preloadMainWindow()
+        _requestMainWindowCreate("phase1-hidden-window-preload", true)
     }
 
     function _tryCreateMainWindow(reason, allowPrewarm) {
@@ -602,14 +766,19 @@ Item {
         if (_launchGateOpen) {
             _setStartupState("main-created", reason)
         } else {
+            _setStartupState("hidden-window-created", reason)
             _lagLog("_tryCreateMainWindow prewarmed before gate reason=" + reason)
         }
         _bindMainWindowStartupSignals(created)
+        _bindPhaseOneMainWindow(created)
         _lagLog("_tryCreateMainWindow createObject success reason=" + reason
             + " createElapsedMs=" + createElapsedMs)
         mainWindowReady(created)
         if (_launchGateOpen) {
             _beginCoreLaunchOnce("main-created:" + reason)
+        }
+        if (_phaseOnePreloadStarted && !_launchGateOpen) {
+            _maybeOpenPhaseOneLaunchGate("hidden-window-created")
         }
         return true
     }
@@ -875,6 +1044,21 @@ Item {
         }
     }
 
+    Connections {
+        target: (typeof app !== "undefined" && app) ? app : null
+        ignoreUnknownSignals: true
+        function onStartupReadinessChanged() {
+            bootstrap._maybeOpenPhaseOneLaunchGate("controller-readiness-changed")
+        }
+        function onStartupBriefingSnapshotChanged() {
+            bootstrap._requestHiddenBriefingAcknowledgement("snapshot-changed")
+        }
+        function onStartupReadinessFailed(message) {
+            bootstrap._phaseOneFailureObserved = true
+            bootstrap._lagLog("Phase 1 readiness failed; withholding main window. message=" + String(message || ""))
+        }
+    }
+
     Component {
         id: splashComponent
         SplashOverlay {}
@@ -970,9 +1154,10 @@ Item {
 
 
     Component.onCompleted: {
-        // Do not instantiate SplashOverlay.qml here. Startup uses only the
-        // native PNG splash created in main.py; the main shell opens behind it
-        // and the PNG fades only after the shell reports its first pixel.
-        _openLaunchGate("native-png-splash-only")
+        // Do not instantiate SplashOverlay.qml here. Startup uses the native
+        // splash created in main.py while the Professional shell and its first
+        // data-backed workspace compose invisibly.  The normal launch gate is
+        // opened only after that hidden workspace acknowledges real data.
+        _beginPhaseOneStartupPreload()
     }
 }

@@ -1,5 +1,150 @@
 # Implementation History
 
+## 2026-08-17: Cinematic Opening — Phase 2 Vortex, Plasma, and Bloom
+
+- **Readiness-owned loader:** `CustomSplash` now receives progress directly
+  from `AppController.startupReadinessChanged`. It advances only toward real
+  milestones and reserves its final 100% fill for the already acknowledged
+  `ready-to-reveal` state; there is no timer that can claim completion early.
+- **Exact handoff choreography:** once the hidden shell is ready, native
+  painting owns Act I (550 ms accelerating 0°→1080° logo vortex/shrink) and
+  Act II (150 ms plasma expansion, 80 ms hold, 220 ms cubic implosion). The
+  splash hides before emitting its QML handoff. `DetachedShellWindow` then owns
+  Act III: its complete, pre-hydrated visual layer blooms from the launch
+  screen's centre point to its settled geometry in 400 ms with `OutCubic`.
+- **Immediate Act II -> Act III join:** the final window geometry is now
+  calculated while Acts I/II remain fully on-screen and the native splash emits
+  the bloom handoff in the same event turn in which it hides. The QML bloom
+  animation starts directly rather than through an additional queued callback,
+  eliminating the measured post-implosion geometry pause.
+- **Seamless reveal staging:** runtime timing showed Windows can block the
+  first QML `show()` for roughly 214 ms. The fully populated QML shell is now
+  rendered at its 0.2%-scale centre point behind the native splash before the
+  progress bar completes. The native vortex/plasma animation begins only after
+  that stage is ready; its final zero-scale frame hides the splash and releases
+  the already-rendered bloom in the same handoff. The plasma radius is reduced
+  from 88 px to 76 px per scale unit for a more restrained burst. Staging is
+  explicitly separate from genuine animation completion so a stopped staging
+  animation cannot reset the bloom to full scale before the release.
+- **Single visual owner for Act III:** the live Qt window is held at 0.1%
+  opacity while its final animation canvas is captured. After capture, the
+  native splash remains on top while a frozen GPU canvas replaces the live
+  canvas at 0.2% scale. Only that snapshot is scaled for the 400 ms bloom from
+  the actual screen centre; at full scale it swaps back to the identical live
+  canvas. This prevents an OS host activation or live-surface repaint from
+  becoming a competing flash during the cinematic handoff.
+- **Early-host flash and close-warning repair:** `onVisibilityChanged` had a
+  generic opacity restoration that overrode the cinematic prestage opacity the
+  moment the QML window was shown. It now defers to that prestage guard. The
+  `Archive Matter` and `Delete Matter` popups in `PlaceholderSubmenuView.qml`
+  now tolerate a null parent during engine teardown, eliminating their four
+  width/height TypeErrors.
+- **Foreground and liveness hardening:** the native `CustomSplash` now remains
+  explicitly topmost and is re-raised immediately before QML prestaging, so a
+  QQuickWindow activation cannot bury the CS logo or leak an app-sized frame.
+  The frozen-canvas readback also has a 6-second bounded fallback to the
+  already-supported live centre-bloom; a lost GPU callback therefore cannot
+  leave the splash frozen or prevent the main window from opening.
+- **First-frame repair:** `CustomSplash` no longer subclasses
+  `QSplashScreen`, whose intentionally empty source pixmap could compose as a
+  black square before the custom painter ran. It is now a transparent
+  `QWidget`; the opacity animation waits for one fully painted, invisible CS
+  frame, making the logo—not an unpainted native backing surface—the first
+  visible splash pixel.
+- **Local executable:** the complete PyInstaller build (main application,
+  recovery utility, governed templates, splash assets) was verified and
+  copy-promoted to `dist\CSPM\CSPM.exe`. Windows denied the builder's final
+  directory rename, so `promote_verified_release_package.py` performed the
+  governed fallback: source and installed 4,358-file manifests both equal
+  `E057B5687873859DBBB75818AA3FDA419546850105950113ADDE3EF06D5B85E3`.
+  The executable hash is
+  `6449FBBC00A99AD6AD4AD9F94D7D600D4C17EBAF382316CF569C86A593634D2A`,
+  bundled opening-related QML files match source byte-for-byte, and no
+  `Zone.Identifier` marker is present. The replaced package remains at
+  `to_delete\dist__manual_replaced_release_20260817_171930`.
+- **Skip and sound governance:** Space, Return/Enter, Escape, and pointer input
+  skip the current cinematic act only after readiness has been achieved;
+  earlier input is remembered by the native splash but never bypasses the data
+  gate. The bloom's existing `SfxBus` completion tone continues to honour the
+  persisted `soundEffectsEnabled` setting and its existing volume governance.
+  Dedicated turbine/plasma sound assets are not present in the repository, so
+  no mismatched substitute effects were introduced for Acts I/II.
+- **Teardown repair:** `MainContent.cancelAsyncStartupWork()` stops prewarm and
+  refresh timers and deactivates the four asynchronous lazy-page loaders before
+  `DetachedShellWindow` begins its close transition. This specifically targets
+  the previous engine-destruction message about items still being created.
+  The expected tray-resident `lastWindowClosed` signal is recorded at info
+  level, not as a warning.
+- **Files:** `src/python/main.py`, `src/qml/BootstrapRoot.qml`,
+  `src/qml/DetachedShellWindow.qml`, `src/qml/views/MainContent.qml`,
+  `tests/test_startup_briefing_readiness.py`, `task.md`, and this history.
+- **Validation:** sandbox-safe Python compilation passed; focused startup
+  readiness regression coverage passes (`5 passed`); `git diff --check`
+  passes. `scripts/qmllint.ps1` completed its repository-wide parse with the
+  existing warning-only diagnostics (including pre-existing unqualified-access
+  warnings); it reported no Phase 2 syntax error. Real WebEngine/QML foreground
+  playback has not been validated in this environment and needs the manual
+  source-launch check in `task.md`.
+
+## 2026-08-17: Cinematic Opening — Phase 1 Hidden Readiness Gate
+
+- **Problem addressed:** the existing native splash protected the main window's
+  first pixel, but `DetachedShellWindow` became visible before deferred workbook
+  boot and its first Professional landing surface could begin with a zero-value
+  placeholder payload. The user could therefore see a dashboard change from
+  empty values to live values after opening.
+- **Readiness contract:** `AppController` now exposes a one-way startup state
+  with settings, workbook boot, Practice Briefing snapshot, hidden-QML
+  acknowledgement, `ready-to-reveal`, and safe failure states. The data gate is
+  intentionally independent from legacy first-pixel/first-input telemetry.
+- **Hidden composition:** `BootstrapRoot.qml` starts the readiness work and
+  creates `DetachedShellWindow.qml` with `visible: false`. Both the named
+  Practice Briefing and the actual first Professional landing surface
+  (`DailyOperationsHome`) receive the exact prepared snapshot before QML can
+  acknowledge it and the ordinary launch gate may call the existing opening
+  sequence. Other workspaces remain lazy-loaded after reveal.
+- **Live-test correction:** the first source-launch validation reported
+  **WIP to review** changing from `$0` to `$10.1K`. The runtime log confirmed
+  that Phase 1 had prepared the snapshot before reveal, but it also showed that
+  `DailyOperationsHome` owns the visible WIP card and scheduled its own direct
+  briefing read 1.2 seconds later. It now consumes the prepared snapshot,
+  suppresses that initial timer while startup is active, and is part of the
+  hidden-frame acknowledgement contract.
+- **Native-startup hardening:** a subsequent source launch stopped with
+  `0xC0000005` (native access violation) while the startup log ended directly
+  after the optional `startup_metadata_warm` worker. No Python traceback, QML
+  error, Windows application crash event, or new crash dump was produced.
+  The old warm-up could run concurrently with Phase 1's authoritative snapshot
+  against the same Excel repository/cache. It is now deliberately deferred
+  until the snapshot is bound and `ready-to-reveal` has been granted; this
+  preserves the opening gate's single-reader contract and removes unnecessary
+  work from the critical path.
+- **No false empty state:** `PracticeBriefingView.qml` and
+  `DailyOperationsHome.qml` suppress their initial direct query while a startup
+  snapshot is pending, apply the prepared map before first visibility, and
+  retain normal later refresh behavior.
+- **Failure behavior:** a failed settings/workbook/snapshot preparation holds
+  the native splash and displays a safe message instead of revealing an empty
+  Practice Briefing. Retry/recovery controls and progress-bar choreography are
+  intentionally deferred to Phase 2.
+- **Files:** `src/python/backend/app_controller.py`, `src/python/main.py`,
+  `src/qml/BootstrapRoot.qml`, `src/qml/DetachedShellWindow.qml`,
+  `src/qml/views/MainContent.qml`, `src/qml/views/PracticeBriefingView.qml`,
+  `src/qml/components/DailyOperationsHome.qml`, and
+  `tests/test_startup_briefing_readiness.py`.
+- **Validation:** sandbox-safe Python compilation passed; the focused readiness
+  suite passes (`4 passed`); `scripts/qmllint.ps1` parsed the five relevant QML
+  files with warning-only existing diagnostics; and `git diff --check` passes
+  (line-ending notices only). The user completed a successful
+  real foreground source launch after the correction and confirmed that the
+  initial landing page is pre-hydrated with its real WIP value. The launcher
+  safely reclaimed the prior crashed process's same-PC checkout; its audit
+  contains lease metadata only and confirms cloud/local data already matched.
+  The remaining `lastWindowClosed` and in-progress-QML-loader messages are
+  teardown diagnostics, not data or startup failures. Phase 2 will explicitly
+  cancel lazy loader work on shutdown while replacing the existing baseline
+  splash/window overlap with the approved cinematic sequence.
+
 ## 2026-08-16: System Tray Animations, Cross-Monitor Targeting & Lifecycle Guards
 
 - **Cross-Monitor System Tray Geometry & Trajectory**: Added Windows native shell integration via `getSystemTrayGeometry` and `getTrayFlightInfo` in `tray_controller.py` to identify the monitor hosting the system tray notification area (`TrayNotifyWnd`). When right-clicking minimize from any monitor, the trajectory is computed toward the true system tray coordinates.
