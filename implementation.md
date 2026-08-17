@@ -1,5 +1,49 @@
 # Implementation History
 
+## 2026-08-17: GPU Maximize/Restore Phase 1A (Source, Pending Foreground Check)
+
+- **Frozen-surface Professional transition:** Professional maximize and restore
+  now capture `contentLayer` before changing native geometry. The resulting
+  scene-graph image remains perfectly registered to the source rectangle, then
+  interpolates its X/Y/width/height to the target in 205 ms with `OutCubic`
+  (120 ms in low-performance mode). The responsive live UI reflows underneath
+  while hidden and is shown only after the snapshot reaches the same final
+  rectangle, so all labels, panels, and chrome grow or contract as one surface.
+- **Restore host continuity:** the restore direction keeps a full-screen
+  transparent host envelope during the frozen-frame contraction. Only after
+  the final snapshot frame does the native host shrink back to the normal
+  window's input bounds; this avoids clipping the start of a full-screen
+  restore image.
+- **Single settlement gate:** `maximizeFxSequenceRunning()` and
+  `finishMaximizeFxSequence()` coordinate the Console and Professional paths,
+  so canvas state, monitoring, and settle audio reset only after the active
+  transform actually stops. This keeps the previously verified raw-native
+  monitor selection authoritative—including after Windows moves a maximized
+  window through `Win+Shift+Arrow`.
+- **Scope:** this is the proposed maximize/unmaximize frozen-frame engine
+  implemented inside CSPM's transparent main host; it has deliberately not
+  changed drag, resize, minimize, close, or monitor-placement logic. A later
+  phase may choose a separate top-level overlay only if real multi-monitor
+  testing demonstrates a compositor limitation that this in-host surface
+  cannot solve.
+- **Fallback and regression coverage:** if a GPU readback is unavailable or
+  exceeds 1.2 seconds, CSPM completes the command through the previous direct
+  transform rather than hanging. The focused regression test now asserts the
+  capture, image-cover readiness, full-rectangle animations, timing, and
+  active-animation settlement gate.
+- **Validation:** sandbox-safe targeted pytest passed (**4 passed**); governed
+  `scripts/qmllint.ps1 -Targets @('src/qml/DetachedShellWindow.qml')` completed
+  without errors (existing warning-only diagnostics remain); and
+  `git diff --check` passed. A real Qt/WebEngine foreground verification is
+  still required via
+  `./launch.ps1`; it must confirm one continuous visual morph with no flash
+  and preserve same-monitor restore after a `Win+Shift+Arrow` transfer.
+- **Local executable baseline:** the local `dist\CSPM\CSPM.exe` was built and
+  hash-verified before this uncompiled Phase 1A source addition. It contains
+  the monitor/ComboBox/close fixes (SHA-256
+  `ED382E9BCC0DFF14F811907AB403648223A3C71568A2BCB369DE7390D62931D5`),
+  but not this new source-only visual transition.
+
 ## 2026-08-17: Same-Monitor Restore and Readable Close Choreography
 
 - **Maximized restore correction:** the restore glyph formerly replayed the

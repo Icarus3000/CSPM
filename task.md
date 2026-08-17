@@ -69,11 +69,11 @@
   `dist\CSPM\CSPM.exe`. The normal builder completed both executables and
   templates but Windows denied its final directory rename; the repository's
   hash-verified promotion tool then installed the 4,358-file package manifest
-  `E057B5687873859DBBB75818AA3FDA419546850105950113ADDE3EF06D5B85E3`.
+  `110C8186E9A1896125C322F339EC93A1B0A9A336B1C0F49B490286D67B51CC54`.
   The executable SHA-256 is
-  `6449FBBC00A99AD6AD4AD9F94D7D600D4C17EBAF382316CF569C86A593634D2A`;
+  `ED382E9BCC0DFF14F811907AB403648223A3C71568A2BCB369DE7390D62931D5`;
   the prior local release is recoverable at
-  `to_delete\dist__manual_replaced_release_20260817_171930`.
+  `to_delete\dist__manual_replaced_release_20260817_193827`.
 - [x] Keep restore-from-maximized on the monitor that currently owns the
   maximized window. The restore glyph resolves the raw native `Window`
   x/y/width/height at click time (never internal canvas/content offsets), so a
@@ -91,6 +91,21 @@
 - [x] Add focused static regression coverage for same-monitor maximize restore
   and the close-act boundaries
   (`tests/test_maximized_restore_and_close_choreography.py`).
+- [x] GPU Maximize/Restore Phase 1A source implementation: Professional now
+  captures the fully composed pre-transition content frame and uses that single
+  GPU image as the only visible surface during a 205 ms (120 ms
+  low-performance) `OutCubic` rectangle tween. The live responsive hierarchy
+  reflows invisibly underneath and is revealed only at the matching final
+  frame; the reverse path temporarily retains its transparent monitor-sized
+  host until its snapshot has visibly contracted. This preserves the
+  live-native-monitor rule for a `Win+Shift+Arrow` transfer without stepped
+  resizing or intermediate content reflow.
+- [ ] Manual GPU Maximize/Restore Phase 1A verification: launch from source
+  with `./launch.ps1`; on each monitor, maximize and restore CSPM and confirm
+  a single 205 ms centre-out/centre-in visual morph with no flash, duplicate
+  motion, or monitor jump. While maximized, transfer it with
+  `Win+Shift+Arrow`, then click restore and confirm it remains on that current
+  monitor. This new source work is intentionally not yet compiled or pushed.
 - [ ] Manual Phase 2 foreground verification: launch via `./launch.ps1`; verify
   that no app pixels precede the splash's plasma implosion, that the bar holds
   below 100% until data readiness, that the landing values never change after

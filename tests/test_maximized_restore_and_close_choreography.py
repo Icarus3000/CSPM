@@ -53,6 +53,7 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     )
     assert "var commandScreen = screenOverride ? screenOverride : monitorOwningWindowControl();" in maximize
     assert "maximizedOwnerScreen = commandScreen;" in maximize
+    assert "professionalMaximizeFxAnimation.restart();" in maximize
 
     toggle = _function_body(
         shell,
@@ -98,6 +99,30 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     assert "var restoreDestination = !cursorAnchored ? restoreGlyphDestinationScreen() : null;" in restore
     assert "var restoreScreen = restoreDestination ? restoreDestination.screen : null;" in restore
     assert "adoptTargetScreen(restoreScreen, true);" in restore
+    assert "professionalRestoreMaxFxAnimation.restart();" in restore
+
+
+def test_professional_maximize_restore_uses_a_short_frozen_surface_transform() -> None:
+    shell = (PROJECT_ROOT / "src" / "qml" / "DetachedShellWindow.qml").read_text(
+        encoding="utf-8"
+    )
+
+    # The Professional shell captures the old completed content before it
+    # changes geometry. The snapshot, not a reflowing responsive tree, owns
+    # every intermediate frame through both directions.
+    assert "function beginProfessionalMaximizeSnapshotCapture(kind, context)" in shell
+    assert "contentLayer.grabToImage(function(result)" in shell
+    assert "function startProfessionalMaximizeSnapshotMotion(context, useFrozenSnapshot)" in shell
+    assert "professionalMaximizeSnapshotCoverReady" in shell
+    assert "id: professionalMaximizeFxAnimation" in shell
+    assert "id: professionalRestoreMaxFxAnimation" in shell
+    assert "id: professionalMaximizeSnapshotImage" in shell
+    assert "property: \"professionalMaximizeSnapshotRenderW\"" in shell
+    assert "property: \"professionalMaximizeSnapshotRenderH\"" in shell
+    assert "duration: mainWin.lowPerformanceMode ? 120 : 205" in shell
+    assert "easing.type: Easing.OutCubic" in shell
+    assert "running: mainWin.maximizeAnimInProgress && mainWin.maximizeFxSequenceRunning()" in shell
+    assert "!(mainWin.professionalMaximizeSnapshotActive" in shell
 
 
 def test_modern_combo_box_height_is_independent_of_its_implicit_height() -> None:
