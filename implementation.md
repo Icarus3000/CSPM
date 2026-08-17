@@ -1,5 +1,37 @@
 # Implementation History
 
+## 2026-08-17: Same-Monitor Restore and Readable Close Choreography
+
+- **Maximized restore correction:** the restore glyph formerly replayed the
+  saved normal window rectangle as absolute virtual-desktop coordinates. If a
+  normal window had begun on monitor A and was later maximized on monitor B,
+  clicking restore could therefore jump it back to A. `DetachedShellWindow`
+  resolves the monitor owning the raw native `Window` rectangle only (never
+  `canvasLocal` or `contentLocal` offsets) at restore-click time. This makes a
+  Windows `Win+Shift+Arrow` transfer authoritative even when it bypasses the
+  QML movement path; `maximizedOwnerScreen` is now fallback-only. The saved
+  centre is proportionally mapped and clamped within the live monitor's usable
+  bounds. It records the selected
+  destination in `logs/cspm.log` as `[RESTORE-MAX]` for future direct
+  verification. The cursor-anchored restore-on-drag path is intentionally
+  unchanged.
+- **Combo-height correction:** `ModernComboBox` no longer derives unlabelled
+  top/bottom padding from `control.height`. Fusion computes a ComboBox's
+  `implicitHeight` from that padding, so the previous dependency caused the
+  repeated `BulkDocketMovePanel` binding-loop warnings.
+- **Close correction:** direct in-place close now gives the live shell its own
+  unmistakable first act: 493 ms (44% of a 1,120 ms sequence) of opaque,
+  centre-point collapse. At the shared 44% boundary, the shell has reached its
+  pinpoint and only then does Canvas run the 146 ms plasma burst, 146 ms hold,
+  and 336 ms inward implosion. The source-monitor/content geometry is frozen
+  before close animation starts, without moving or resizing the native host.
+- **Regression coverage:** added
+  `tests/test_maximized_restore_and_close_choreography.py`; it protects both
+  the monitor-local restore mapping and the shared QML/Canvas close boundaries.
+- **Validation:** focused static QML contract tests and `git diff --check` are
+  required. Real WebEngine/QML foreground playback remains a manual validation
+  item because it cannot be exercised in this sandbox.
+
 ## 2026-08-17: Cinematic Opening — Phase 2 Vortex, Plasma, and Bloom
 
 - **Readiness-owned loader:** `CustomSplash` now receives progress directly

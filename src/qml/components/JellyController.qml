@@ -300,6 +300,7 @@ Item {
         transY = 0.0;
         rotationVal = 0.0;
         opacityVal = 1.0;
+        isFrozenAtIdentity = false;
         closeProgress = 0.0;
         
         isInSpringPhase = false;
@@ -805,7 +806,7 @@ Item {
     }
 
     // ============================================================
-    // CLOSING ANIMATION: Inward Suction -> Supernova Burst -> Extended Hang -> Center Fizzle
+    // CLOSING ANIMATION: visible-window shrink -> burst -> hold -> implosion
     // ============================================================
     SequentialAnimation {
         id: closeSeq
@@ -816,7 +817,7 @@ Item {
             property: "closeProgress"
             from: 0.0
             to: 1.0
-            duration: 860
+            duration: 1120
             easing.type: Easing.Linear
         }
 
@@ -833,9 +834,11 @@ Item {
         transX = 0.0;
         transY = 0.0;
 
-        // 2. Window UI Inward Suction (0.0 to 0.30)
-        if (p < 0.30) {
-            var suckP = p / 0.30;
+        // 2. Visible window shrink (0.0 to 0.44). This deliberately owns
+        // almost half the motion so the shell is unmistakably seen collapsing
+        // into its centre before any burst appears.
+        if (p < 0.44) {
+            var suckP = p / 0.44;
             if (suckP < 0.08) {
                 var breath = Math.sin((suckP / 0.08) * Math.PI) * 0.02;
                 scaleX = 1.0 - breath;
@@ -848,7 +851,8 @@ Item {
             }
             opacityVal = 1.0;
         } else {
-            // Window UI collapsed into singular center point while supernova burst/hang plays
+            // Window UI collapsed into its singular center point while the
+            // supernova burst, hold, and implosion acts play.
             scaleX = 0.001;
             scaleY = 0.001;
             opacityVal = 0.0;

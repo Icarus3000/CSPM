@@ -187,12 +187,23 @@ Window {
     property int osWinShiftSourceRectH: 1
     property bool closeMotionStarted: false
     property bool uiMaximized: false
+    // The monitor selected by the explicit maximize command. This is the
+    // authoritative home for its matching restore command.
+    property var maximizedOwnerScreen: null
     property bool restoreGeometryValid: false
     property bool startupRestoreMaximized: false
     property int restoreFinalX: 0
     property int restoreFinalY: 0
     property int restoreFinalW: 1
     property int restoreFinalH: 1
+    // The normal-window rectangle is remembered relative to the monitor on
+    // which it was saved. A later maximize on another monitor must restore
+    // the same shape onto that active monitor, not jump back to absolute
+    // desktop coordinates from the old one.
+    property int restoreSourceVisibleX: 0
+    property int restoreSourceVisibleY: 0
+    property int restoreSourceVisibleW: 1
+    property int restoreSourceVisibleH: 1
     property bool geometryTransitionSuppressed: false
     property bool userMoveInProgress: false
     property bool userResizeInProgress: false
@@ -6174,6 +6185,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             finalY = Math.round(destRect.y);
             finalW = Math.max(1, Math.round(destRect.w));
             finalH = Math.max(1, Math.round(destRect.h));
+            maximizedOwnerScreen = destScreen;
             phaseLog("MOVE", "Maximized monitor move -> " + fmtRect(finalX, finalY, finalW, finalH));
         } else {
             var minW = ratioToPixels(layoutRatios.resizeMinWidthPct, Math.max(1, destRect.w), Math.max(1, destRect.h), 1);
@@ -6866,14 +6878,25 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         return true;
     }
 
-    function rememberRestoreGeometry() {
+    function rememberRestoreGeometry(sourceScreenOverride) {
         if (animationPhase !== "settled" || isClosing || uiMaximized) return;
         if (!isFinite(finalX) || !isFinite(finalY) || !isFinite(finalW) || !isFinite(finalH)) return;
         if (finalW < 2 || finalH < 2) return;
+        if (sourceScreenOverride) {
+            adoptTargetScreen(sourceScreenOverride, true);
+        } else {
+            updateTargetScreenFromFinalCenter();
+        }
+        refreshActiveVisibleRect();
+        var sourceRect = activeVisibleRectForMaximize();
         restoreFinalX = Math.round(finalX);
         restoreFinalY = Math.round(finalY);
         restoreFinalW = Math.max(1, Math.round(finalW));
         restoreFinalH = Math.max(1, Math.round(finalH));
+        restoreSourceVisibleX = Math.round(sourceRect.x);
+        restoreSourceVisibleY = Math.round(sourceRect.y);
+        restoreSourceVisibleW = Math.max(1, Math.round(sourceRect.w));
+        restoreSourceVisibleH = Math.max(1, Math.round(sourceRect.h));
         restoreGeometryValid = true;
     }
 
@@ -6896,6 +6919,30 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             };
         }
         return rect;
+    }
+
+    function nativeHostRectForWindowControl() {
+        // The Window is the user-visible object receiving the maximize glyph.
+        // Its native rectangle is the sole authority for monitor ownership;
+        // internal canvas/content offsets can legitimately span or lag screens.
+        return {
+            "x": Math.round(mainWin.x),
+            "y": Math.round(mainWin.y),
+            "w": Math.max(1, Math.round(mainWin.width)),
+            "h": Math.max(1, Math.round(mainWin.height))
+        };
+    }
+
+    function monitorOwningWindowControl() {
+        var rect = nativeHostRectForWindowControl();
+        var centerX = rect.x + (rect.w / 2.0);
+        var centerY = rect.y + (rect.h / 2.0);
+        var screenObj = screenForPoint(centerX, centerY, null);
+        if (screenObj) return screenObj;
+        if (mainWin.screen) return mainWin.screen;
+        if (targetScreen) return targetScreen;
+        var screens = applicationScreensSafe();
+        return (screens && screens.length > 0) ? screens[0] : null;
     }
 
     function topEdgeSnapTargetForDragRelease() {
@@ -6949,10 +6996,15 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var sourceY = Math.round(finalY);
         var sourceW = Math.max(1, Math.round(finalW));
         var sourceH = Math.max(1, Math.round(finalH));
-        if (screenOverride) {
-            adoptTargetScreen(screenOverride);
+        var commandScreen = screenOverride ? screenOverride : monitorOwningWindowControl();
+        if (commandScreen) {
+            // Explicit window-control invariant: maximize exactly where the
+            // visible window is, and retain that same monitor for restore.
+            adoptTargetScreen(commandScreen);
+            maximizedOwnerScreen = commandScreen;
         } else {
             updateTargetScreenFromFinalCenter();
+            maximizedOwnerScreen = targetScreen;
         }
         refreshActiveVisibleRect();
         logGreenFrameGeometry("MAXIMIZE", "Post-screen-refresh snapshot");
@@ -6989,8 +7041,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         return true;
     }
 
-    function defaultRestoreRect() {
-        var rect = activeVisibleRectForMaximize();
+    function defaultRestoreRect(rectOverride) {
+        var rect = (rectOverride && rectOverride.w > 0 && rectOverride.h > 0)
+            ? rectOverride : activeVisibleRectForMaximize();
         var aspect = (typeof layoutRatios.contentAspect === "number" && layoutRatios.contentAspect > 0.01)
             ? layoutRatios.contentAspect : (1220.0 / 920.0);
         var h = Math.max(1, Math.round(rect.h * layoutRatios.contentHeightPct));
@@ -7011,15 +7064,94 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         };
     }
 
+    function restoreGlyphDestinationScreen() {
+        // The visible native host is authoritative. Windows can move a
+        // maximized window with Win+Shift+Arrow independently of our cached
+        // state, so restoring must follow where the window is *now*.
+        var nativeRect = nativeHostRectForWindowControl();
+        var liveScreen = screenForPoint(
+            nativeRect.x + (nativeRect.w / 2.0),
+            nativeRect.y + (nativeRect.h / 2.0),
+            null
+        );
+        if (liveScreen) {
+            return { "screen": liveScreen, "reason": "live-native-window-owner" };
+        }
+        if (mainWin.screen) {
+            return { "screen": mainWin.screen, "reason": "live-native-window-screen-fallback" };
+        }
+        // The cached owner is only a recovery fallback when native geometry
+        // is unavailable; it must never override a real Win+Shift move.
+        if (maximizedOwnerScreen) {
+            return { "screen": maximizedOwnerScreen, "reason": "maximize-owner-fallback" };
+        }
+        return {
+            "screen": monitorOwningWindowControl(),
+            "reason": "monitor-fallback"
+        };
+    }
+
     function resolveRestoreRectFromMaximized(cursorPos, cursorAnchored) {
+        var destination = null;
+        var destinationScreen = null;
+        var destinationInfo = null;
+        var destinationRect = null;
+        if (!cursorAnchored) {
+            destination = restoreGlyphDestinationScreen();
+            destinationScreen = destination ? destination.screen : null;
+            var destinationIndex = indexOfScreen(destinationScreen);
+            if (destinationIndex >= 0 && appRef && appRef.getScreenGeometry) {
+                destinationInfo = appRef.getScreenGeometry(destinationIndex);
+            }
+            destinationRect = destinationScreen
+                ? visibleRectForScreen(destinationScreen, destinationInfo)
+                : activeVisibleRectForMaximize();
+        }
+
         var restoreRect = restoreGeometryValid
             ? { "x": restoreFinalX, "y": restoreFinalY, "w": restoreFinalW, "h": restoreFinalH }
-            : defaultRestoreRect();
+            : defaultRestoreRect(destinationRect);
 
         var nextX = restoreRect.x;
         var nextY = restoreRect.y;
         var nextW = restoreRect.w;
         var nextH = restoreRect.h;
+
+        // Restore-button behavior is monitor-local. Preserve the remembered
+        // size and relative placement, but map it to the monitor that owns
+        // the maximized window. This also copes with mixed resolutions and
+        // DPI work areas without treating the saved X/Y as global authority.
+        if (!cursorAnchored && restoreGeometryValid) {
+            var sourceW = Math.max(1, restoreSourceVisibleW);
+            var sourceH = Math.max(1, restoreSourceVisibleH);
+            var destinationW = Math.max(1, Math.round(destinationRect.w));
+            var destinationH = Math.max(1, Math.round(destinationRect.h));
+            var savedCenterX = restoreFinalX + (restoreFinalW / 2.0);
+            var savedCenterY = restoreFinalY + (restoreFinalH / 2.0);
+            var relativeCenterX = clampNumber(
+                (savedCenterX - restoreSourceVisibleX) / sourceW, 0.0, 1.0);
+            var relativeCenterY = clampNumber(
+                (savedCenterY - restoreSourceVisibleY) / sourceH, 0.0, 1.0);
+
+            nextW = Math.min(Math.max(1, restoreFinalW), destinationW);
+            nextH = Math.min(Math.max(1, restoreFinalH), destinationH);
+            nextX = Math.round(destinationRect.x + (relativeCenterX * destinationW) - (nextW / 2.0));
+            nextY = Math.round(destinationRect.y + (relativeCenterY * destinationH) - (nextH / 2.0));
+            nextX = Math.round(clampNumber(nextX, destinationRect.x,
+                destinationRect.x + destinationW - nextW));
+            nextY = Math.round(clampNumber(nextY, destinationRect.y,
+                destinationRect.y + destinationH - nextH));
+            phaseLog("RESTORE-MAX", "Mapped saved normal rect from visible="
+                + fmtRect(restoreSourceVisibleX, restoreSourceVisibleY,
+                    restoreSourceVisibleW, restoreSourceVisibleH)
+                + " onto active maximized visible="
+                + fmtRect(destinationRect.x, destinationRect.y, destinationW, destinationH)
+                + " -> " + fmtRect(nextX, nextY, nextW, nextH));
+            lagLog("[RESTORE-MAX] destination=" + describeScreen(destinationScreen)
+                + " reason=" + (destination ? destination.reason : "cached-visible-rect")
+                + " nativeHost=" + fmtRect(mainWin.x, mainWin.y, mainWin.width, mainWin.height)
+                + " restore=" + fmtRect(nextX, nextY, nextW, nextH));
+        }
 
         if (cursorAnchored && cursorPos && isFinite(cursorPos.x) && isFinite(cursorPos.y)) {
             var vis = activeVisibleRectForMaximize();
@@ -7045,6 +7177,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var sourceY = Math.round(finalY);
         var sourceW = Math.max(1, Math.round(finalW));
         var sourceH = Math.max(1, Math.round(finalH));
+        var restoreDestination = !cursorAnchored ? restoreGlyphDestinationScreen() : null;
+        var restoreScreen = restoreDestination ? restoreDestination.screen : null;
 
         var targetRect = resolveRestoreRectFromMaximized(cursorPos, cursorAnchored);
         var nextX = targetRect.x;
@@ -7064,9 +7198,16 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         finalY = Math.round(nextY);
         finalW = Math.max(1, Math.round(nextW));
         finalH = Math.max(1, Math.round(nextH));
-        updateTargetScreenFromFinalCenter();
+        if (restoreScreen) {
+            // Enforce the stored maximize owner directly; do not allow a
+            // geometry-based monitor re-selection to undo the command pair.
+            adoptTargetScreen(restoreScreen, true);
+        } else {
+            updateTargetScreenFromFinalCenter();
+        }
         applyHostEnvelopeForTarget();
         updateCanvasGeometry();
+        maximizedOwnerScreen = null;
 
         if (appStyle !== "Professional") {
             maximizeAnimInProgress = true;
@@ -7104,6 +7245,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         applyHostEnvelopeForTarget();
         updateCanvasGeometry();
         geometryTransitionSuppressed = false;
+        maximizedOwnerScreen = null;
         return true;
     }
 
@@ -7150,8 +7292,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             return restored;
         }
         phaseLog("MAXIMIZE", "Toggle requested -> maximize");
-        rememberRestoreGeometry();
-        var maximized = maximizeWindowToVisibleRect();
+        var commandScreen = monitorOwningWindowControl();
+        // The window-control command owns its monitor. Use the same resolved
+        // screen for both the saved normal rectangle and the maximized target.
+        rememberRestoreGeometry(commandScreen);
+        var maximized = maximizeWindowToVisibleRect(commandScreen);
         if (maximized && !mainWin.detachedMode) {
             persistMainWindowLayout();
         }
@@ -8205,6 +8350,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (userMoveInProgress) {
             finishUserDrag();
         }
+
+        // Freeze the actual source monitor and settled content coordinates
+        // before the live scene begins collapsing. This is metadata only for
+        // the in-place path: it does not resize or reposition the native host.
+        clearClosingOverlayGeometry();
+        captureClosingOverlayGeometry();
 
         // Lock the exact settled host and content geometry in-place.
         // Zero window repositioning or host envelope resizing avoids DWM/FBO repaints.
@@ -10228,14 +10379,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                     }
                 }
             } else {
-                // CLOSE ANIMATION: White-Hot Supernova Flash with Rapid Prominent Fizzle Out
-                // 1. Inward Suction (0.0 to 0.30)
-                // 2. Supernova Detonation (0.30 to 0.42) - Scaled down 10% (~27.5px), same 28/72 ratio
-                // 3. Extended "Hang & Gentle Swell" (0.42 to 0.76) - Scaled down 10% (~32px max), glowing champagne plasma
-                // 4. Rapid Prominent Fizzle Out (0.76 to 1.0) - Fast optical fade-out and crisp suction into center
-                if (p < 0.30) {
+                // CLOSE ANIMATION: visible shrink -> supernova -> hold -> implosion.
+                // Keep these boundaries synchronized with JellyController so
+                // the burst cannot visually overtake window collapse.
+                if (p < 0.44) {
                     // Stage 1: Window UI and particle field get sucked straight into the center pinpoint
-                    var suckP = p / 0.30;
+                    var suckP = p / 0.44;
                     var auraAlpha = Math.min(1.0, suckP * 2.0);
                     var auraRadius = Math.max(9, (1.0 - suckP * 0.75) * Math.min(mainWin.finalW, mainWin.finalH) * 0.25);
 
@@ -10269,9 +10418,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         ctx.arc(pX, pY, pSize, 0, Math.PI * 2);
                         ctx.fill();
                     }
-                } else if (p < 0.42) {
+                } else if (p < 0.57) {
                     // Stage 2: Supernova Detonation (10% smaller radius, 28/72 ratio)
-                    var burstP = (p - 0.30) / 0.12; // 0.0 to 1.0
+                    var burstP = (p - 0.44) / 0.13; // 0.0 to 1.0
                     var burstEase = Math.sin(burstP * Math.PI * 0.5); // Explosive OutQuad expansion
                     var burstRadius = 2.5 + (burstEase * 25.0); // ~27.5px total footprint (-10%)
 
@@ -10307,9 +10456,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         ctx.fill();
                     }
 
-                } else if (p < 0.76) {
+                } else if (p < 0.70) {
                     // Stage 3: Extended "Hang & Gentle Swell" (10% smaller radius: ~32px max, 28/72 ratio)
-                    var hangP = (p - 0.42) / 0.34; // 0.0 to 1.0
+                    var hangP = (p - 0.57) / 0.13; // 0.0 to 1.0
                     var hangEase = Math.sin(hangP * Math.PI * 0.5);
                     var hangRadius = 27.5 + (hangEase * 4.5); // ~32px total footprint (-10%)
 
@@ -10358,7 +10507,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
                 } else {
                     // Stage 4: Rapid Prominent Fade-Out & Sucked into Center Pinpoint!
-                    var fizzleP = (p - 0.76) / 0.24; // 0.0 to 1.0
+                    var fizzleP = (p - 0.70) / 0.30; // 0.0 to 1.0
                     var shrinkFactor = Math.pow(1.0 - fizzleP, 2.8); // Snappy, crisp gravitational contraction
                     var fizzleAlpha = Math.pow(1.0 - fizzleP, 2.6); // Rapid, prominent optical fade-out
                     var fizzleRadius = Math.max(0.1, shrinkFactor * 32.0);

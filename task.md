@@ -74,12 +74,31 @@
   `6449FBBC00A99AD6AD4AD9F94D7D600D4C17EBAF382316CF569C86A593634D2A`;
   the prior local release is recoverable at
   `to_delete\dist__manual_replaced_release_20260817_171930`.
+- [x] Keep restore-from-maximized on the monitor that currently owns the
+  maximized window. The restore glyph resolves the raw native `Window`
+  x/y/width/height at click time (never internal canvas/content offsets), so a
+  Windows `Win+Shift+Arrow` monitor move is honored even if it bypasses QML's
+  cached maximize state. The cached maximize owner is recovery-only. The saved
+  normal rectangle is proportionally mapped/clamped within the live monitor;
+  cursor-anchored restore-on-drag remains unchanged.
+- [x] Remove the Fusion `ModernComboBox` implicit-height binding loop by keeping
+  unlabelled combo padding independent of `control.height`.
+- [x] Restore the readable close choreography: the live app remains fully
+  visible while it shrinks into its centre pinpoint for 493 ms of a 1,120 ms
+  sequence; only then do the 146 ms plasma burst, 146 ms hold, and 336 ms
+  inward implosion render. The close path also freezes the actual source-monitor
+  geometry before the first animation frame.
+- [x] Add focused static regression coverage for same-monitor maximize restore
+  and the close-act boundaries
+  (`tests/test_maximized_restore_and_close_choreography.py`).
 - [ ] Manual Phase 2 foreground verification: launch via `./launch.ps1`; verify
   that no app pixels precede the splash's plasma implosion, that the bar holds
   below 100% until data readiness, that the landing values never change after
   reveal, that the app begins blooming immediately from the implosion point,
-  that each skip input snaps safely to the hydrated UI, and that a normal close
-  no longer logs the in-progress-QML-item warning.
+  that each skip input snaps safely to the hydrated UI, that maximizing on one
+  monitor then clicking the restore glyph keeps CSPM on that monitor, that a
+  normal close visibly contracts the entire window before its burst, and that
+  no close logs the in-progress-QML-item warning.
 
 ## Strategic Roadmap Rebaseline (2026-08-16)
 
