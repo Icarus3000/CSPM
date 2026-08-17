@@ -65,12 +65,20 @@ Item {
     signal readyForHandoff()
     signal openFloorImpact(real strengthNorm)
     signal closeFinished()
+    signal minimizeFinished()
+    signal restoreFinished()
+    signal exitFromTrayFinished()
     
     property bool isFrozenAtIdentity: false
     property real closeProgress: 0.0
+    property real minimizeProgress: 0.0
+    property real exitFromTrayProgress: 0.0
+    property real taskbarTargetDistX: 0.0
+    property real taskbarTargetDistY: 0.0
+    property bool isExplicitAnimating: closeSeq.running || minimizeSeq.running || restoreSeq.running || exitFromTraySeq.running
 
     property point launchOrigin: Qt.point(0,0)
-    property bool isAnimating: openSeq.running || openBlobSeq.running || closeSeq.running
+    property bool isAnimating: openSeq.running || openBlobSeq.running || closeSeq.running || minimizeSeq.running || restoreSeq.running || exitFromTraySeq.running
     property bool isInSpringPhase: false
     property bool closeFinishEmitted: false
     property int openStabilityIntervalMs: 3
@@ -85,32 +93,32 @@ Item {
     // ============================================================
     Behavior on transY {
         id: physicsY
-        enabled: !closeSeq.running && root.isInSpringPhase && !root.reducedMotion
+        enabled: !isExplicitAnimating && root.isInSpringPhase && !root.reducedMotion
         SpringAnimation { spring: 0.3; mass: 2.0; damping: 0.073; epsilon: 0.002 }
     }
     
     Behavior on scaleX {
         id: physicsScale
-        enabled: !closeSeq.running && root.isInSpringPhase && !root.reducedMotion
+        enabled: !isExplicitAnimating && root.isInSpringPhase && !root.reducedMotion
         SpringAnimation { spring: 0.6; mass: 1.5; damping: 0.073; epsilon: 0.002 }
     }
     
     Behavior on scaleY {
-        enabled: !closeSeq.running && root.isInSpringPhase && !root.reducedMotion
+        enabled: !isExplicitAnimating && root.isInSpringPhase && !root.reducedMotion
         SpringAnimation { spring: 0.6; mass: 1.5; damping: 0.073; epsilon: 0.002 }
     }
     
     Behavior on transX {
-        enabled: !closeSeq.running && !openSeq.running && !openBlobSeq.running && root.isInSpringPhase && !root.reducedMotion
+        enabled: !isExplicitAnimating && !openSeq.running && !openBlobSeq.running && root.isInSpringPhase && !root.reducedMotion
         SpringAnimation { spring: 0.3; mass: 2.0; damping: 0.077; epsilon: 0.001 }
     }
     
     Behavior on rotationVal { 
-        enabled: !closeSeq.running && !root.reducedMotion  // Disable during closing or when reduced-motion requested
+        enabled: !isExplicitAnimating && !root.reducedMotion
         NumberAnimation { duration: 1500; easing.type: Easing.InOutBack }
     }
     Behavior on opacityVal { 
-        enabled: !closeSeq.running && !root.reducedMotion  // Disable during closing or when reduced-motion requested
+        enabled: !isExplicitAnimating && !root.reducedMotion
         NumberAnimation { duration: 600 } 
     }
     Behavior on blobRadius { enabled: !root.reducedMotion; NumberAnimation { duration: 1500; easing.type: Easing.OutQuad } }
@@ -797,7 +805,7 @@ Item {
     }
 
     // ============================================================
-    // CLOSING ANIMATION: Singularity Mathematical Collapse
+    // CLOSING ANIMATION: Inward Suction -> Supernova Burst -> Extended Hang -> Center Fizzle
     // ============================================================
     SequentialAnimation {
         id: closeSeq
@@ -808,8 +816,8 @@ Item {
             property: "closeProgress"
             from: 0.0
             to: 1.0
-            duration: 550
-            easing.type: Easing.InOutQuad
+            duration: 860
+            easing.type: Easing.Linear
         }
 
         onFinished: {
@@ -819,29 +827,246 @@ Item {
 
     onCloseProgressChanged: {
         var p = closeProgress;
-        // 1. Continuous Exponential Twist (720 deg)
-        rotationVal = Math.pow(p, 3.0) * 720.0;
 
-        // 2. Mathematical Tidal Spaghettification
-        if (p < 0.10) {
-            var breath = Math.sin((p / 0.10) * Math.PI) * 0.04;
-            scaleX = 1.0 - breath;
-            scaleY = 1.0 - breath;
-        } else {
-            var collapseP = (p - 0.10) / 0.90;
-            var stretchCurve = Math.sin(Math.pow(collapseP, 0.7) * Math.PI);
-            var tidalElongation = 1.0 + stretchCurve * 0.95;
-            var shrinkFactor = Math.pow(1.0 - collapseP, 2.2);
+        // 1. Pure Inward Suction - ZERO SPIN
+        rotationVal = 0.0;
+        transX = 0.0;
+        transY = 0.0;
 
-            scaleX = Math.max(0.001, shrinkFactor * tidalElongation);
-            scaleY = Math.max(0.001, shrinkFactor * (1.0 - Math.pow(collapseP, 0.6) * 0.82));
-        }
-
-        // 3. Smooth fade out near the end
-        if (p < 0.92) {
+        // 2. Window UI Inward Suction (0.0 to 0.30)
+        if (p < 0.30) {
+            var suckP = p / 0.30;
+            if (suckP < 0.08) {
+                var breath = Math.sin((suckP / 0.08) * Math.PI) * 0.02;
+                scaleX = 1.0 - breath;
+                scaleY = 1.0 - breath;
+            } else {
+                var collapseP = (suckP - 0.08) / 0.92;
+                var shrink = Math.pow(1.0 - collapseP, 2.4);
+                scaleX = Math.max(0.001, shrink);
+                scaleY = Math.max(0.001, shrink);
+            }
             opacityVal = 1.0;
         } else {
-            opacityVal = Math.max(0.0, 1.0 - ((p - 0.92) / 0.08));
+            // Window UI collapsed into singular center point while supernova burst/hang plays
+            scaleX = 0.001;
+            scaleY = 0.001;
+            opacityVal = 0.0;
+        }
+    }
+
+    // ============================================================
+    // MINIMIZE & RESTORE: Gravitational Siphon Engine
+    // ============================================================
+    function startMinimize(targetDistX, targetDistY) {
+        console.log("[JELLY] startMinimize targetDistX=" + targetDistX + " targetDistY=" + targetDistY);
+        taskbarTargetDistX = targetDistX;
+        taskbarTargetDistY = targetDistY;
+        if (root.reducedMotion) {
+            transX = 0.0;
+            transY = 0.0;
+            scaleX = 1.0;
+            scaleY = 1.0;
+            rotationVal = 0.0;
+            opacityVal = 1.0;
+            minimizeProgress = 1.0;
+            root.minimizeFinished();
+            return;
+        }
+        scaleX = 1.0;
+        scaleY = 1.0;
+        transX = 0.0;
+        transY = 0.0;
+        rotationVal = 0.0;
+        opacityVal = 1.0;
+        minimizeProgress = 0.0;
+        isInSpringPhase = false;
+
+        if (restoreSeq.running) restoreSeq.stop();
+        minimizeSeq.restart();
+    }
+
+    function startRestore(targetDistX, targetDistY) {
+        console.log("[JELLY] startRestore targetDistX=" + targetDistX + " targetDistY=" + targetDistY);
+        taskbarTargetDistX = targetDistX;
+        taskbarTargetDistY = targetDistY;
+        if (root.reducedMotion) {
+            transX = 0.0;
+            transY = 0.0;
+            scaleX = 1.0;
+            scaleY = 1.0;
+            rotationVal = 0.0;
+            opacityVal = 1.0;
+            minimizeProgress = 0.0;
+            root.restoreFinished();
+            return;
+        }
+        minimizeProgress = 0.0;
+        opacityVal = 0.0;
+        transX = 0.0;
+        transY = 0.0;
+        scaleX = 0.001;
+        scaleY = 0.001;
+        rotationVal = 0.0;
+        isInSpringPhase = false;
+
+        if (minimizeSeq.running) minimizeSeq.stop();
+        restoreSeq.restart();
+    }
+
+    SequentialAnimation {
+        id: minimizeSeq
+        running: false
+
+        NumberAnimation {
+            target: root
+            property: "minimizeProgress"
+            from: 0.0
+            to: 1.0
+            duration: 860
+            easing.type: Easing.Linear
+        }
+
+        onFinished: {
+            opacityVal = 0.0;
+            minimizeProgress = 1.0;
+            root.minimizeFinished();
+        }
+    }
+
+    SequentialAnimation {
+        id: restoreSeq
+        running: false
+
+        NumberAnimation {
+            target: root
+            property: "minimizeProgress"
+            from: 0.0
+            to: 1.0
+            duration: 860
+            easing.type: Easing.Linear
+        }
+
+        onFinished: {
+            // Snap cleanly to identity
+            transX = 0.0;
+            transY = 0.0;
+            scaleX = 1.0;
+            scaleY = 1.0;
+            rotationVal = 0.0;
+            opacityVal = 1.0;
+            root.restoreFinished();
+        }
+    }
+
+    function startExitFromTray(targetDistX, targetDistY) {
+        console.log("[JELLY] startExitFromTray targetDistX=" + targetDistX + " targetDistY=" + targetDistY);
+        taskbarTargetDistX = targetDistX;
+        taskbarTargetDistY = targetDistY;
+        if (root.reducedMotion) {
+            transX = 0.0;
+            transY = 0.0;
+            scaleX = 0.001;
+            scaleY = 0.001;
+            rotationVal = 0.0;
+            opacityVal = 0.0;
+            exitFromTrayProgress = 1.0;
+            root.exitFromTrayFinished();
+            return;
+        }
+        exitFromTrayProgress = 0.0;
+        opacityVal = 0.0;
+        transX = 0.0;
+        transY = 0.0;
+        scaleX = 0.001;
+        scaleY = 0.001;
+        rotationVal = 0.0;
+        isInSpringPhase = false;
+
+        if (minimizeSeq.running) minimizeSeq.stop();
+        if (restoreSeq.running) restoreSeq.stop();
+        if (closeSeq.running) closeSeq.stop();
+        exitFromTraySeq.restart();
+    }
+
+    SequentialAnimation {
+        id: exitFromTraySeq
+        running: false
+
+        NumberAnimation {
+            target: root
+            property: "exitFromTrayProgress"
+            from: 0.0
+            to: 1.0
+            duration: 1100
+            easing.type: Easing.Linear
+        }
+
+        onFinished: {
+            opacityVal = 0.0;
+            scaleX = 0.001;
+            scaleY = 0.001;
+            root.exitFromTrayFinished();
+        }
+    }
+
+    onExitFromTrayProgressChanged: {
+        scaleX = 0.001;
+        scaleY = 0.001;
+        opacityVal = 0.0;
+        rotationVal = 0.0;
+        transX = 0.0;
+        transY = 0.0;
+    }
+
+    onMinimizeProgressChanged: {
+        var rawP = minimizeProgress;
+        if (!minimizeSeq.running && !restoreSeq.running && rawP === 0.0) return;
+
+        // Clamp p to [0.0, 1.0]
+        var p = Math.max(0.0, Math.min(1.0, rawP));
+
+        rotationVal = 0.0;
+        transX = 0.0;
+        transY = 0.0;
+
+        if (restoreSeq.running) {
+            // 5-Stage Reverse Restore:
+            // Stages 1-4 (0.0 to 0.74): Comet climbs -> pauses in middle -> disappears into itself -> pauses at pinpoint
+            // Stage 5 (0.74 to 1.00): Bursts forth from center into final settled position
+            if (p < 0.74) {
+                scaleX = 0.001;
+                scaleY = 0.001;
+                opacityVal = 0.0;
+            } else {
+                var expandP = (p - 0.74) / 0.26; // 0.0 to 1.0
+                var bloom = Math.sin(expandP * Math.PI * 0.5);
+                scaleX = Math.max(0.001, Math.min(1.0, bloom));
+                scaleY = Math.max(0.001, Math.min(1.0, bloom));
+                opacityVal = Math.min(1.0, expandP * 2.5);
+            }
+        } else {
+            // Minimize handling:
+            // Stage 1 (0.0 to 0.30): Window UI sucked directly into center pinpoint (zero spin, zero transX/transY)
+            if (p < 0.30) {
+                var suckP = p / 0.30;
+                if (suckP < 0.08) {
+                    var breath = Math.sin((suckP / 0.08) * Math.PI) * 0.02;
+                    scaleX = 1.0 - breath;
+                    scaleY = 1.0 - breath;
+                } else {
+                    var collapseP = (suckP - 0.08) / 0.92;
+                    var shrink = Math.pow(1.0 - collapseP, 2.4);
+                    scaleX = Math.max(0.001, shrink);
+                    scaleY = Math.max(0.001, shrink);
+                }
+                opacityVal = 1.0;
+            } else {
+                // UI collapsed into singular center point while canvas executes burst -> hang -> comet -> taskbar
+                scaleX = 0.001;
+                scaleY = 0.001;
+                opacityVal = 0.0;
+            }
         }
     }
 
@@ -852,6 +1077,15 @@ Item {
         stopOpenAnimations()
         if (closeSeq.running) {
             closeSeq.stop()
+        }
+        if (minimizeSeq.running) {
+            minimizeSeq.stop()
+        }
+        if (restoreSeq.running) {
+            restoreSeq.stop()
+        }
+        if (exitFromTraySeq.running) {
+            exitFromTraySeq.stop()
         }
     }
 }

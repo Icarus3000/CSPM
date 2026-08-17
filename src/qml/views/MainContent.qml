@@ -3454,6 +3454,20 @@ Item {
                                     root.windowRef.showMinimized()
                                 }
                             }
+                        }
+                        onRightClicked: {
+                            root.playSfxUiClick("minimize", 0.42)
+                            if (root.isInteractive && root.windowRef) {
+                                try {
+                                    if (root.windowRef.requestMinimizeToTrayAnimation) {
+                                        root.windowRef.requestMinimizeToTrayAnimation()
+                                    } else if (!root.windowRef.requestMinimizeAnimation || !root.windowRef.requestMinimizeAnimation()) {
+                                        root.windowRef.showMinimized()
+                                    }
+                                } catch(e) {
+                                    root.windowRef.showMinimized()
+                                }
+                            }
                         } 
                         opacity: root.isInteractive ? 1.0 : 1.05
                     }

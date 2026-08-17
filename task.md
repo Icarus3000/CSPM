@@ -604,5 +604,23 @@ dependencies merely because an individual report or screen already exists.
   - Eliminated pre-animation flash/flicker by bypassing `applyClosingGeometryAtomically()` on in-place close, locking the settled host window envelope without DWM/FBO resize repaints, and maintaining seamless rounded-mask shader continuity.
   - Added Motion FX Studio launcher in `SettingsMenu.qml` and backend setting slots in `AppController`.
   - Promoted verified release package at `dist/CSPM/CSPM.exe` (SHA-256 `B7DB028380AD040253967F4C63AC2BC5457272A94D5120301082C6804AE2F693`).
-- [ ] Manual foreground verification: launch `dist/CSPM/CSPM.exe` and test standard window dragging, snapping, minimize/restore, and click `✕` to verify the seamless, flicker-free 550ms in-place Singularity twist, spaghettification collapse, and accretion particle swirl.
 
+## Gravitational Siphon Minimize & Restore Engine & Plasma Inward Close (2026-08-16)
+
+- [x] Implemented direct in-place Gravitational Siphon minimize and restore engine in `JellyController.qml` and `DetachedShellWindow.qml`:
+  - Configured strictly vertical downward host envelope extension (`hostX` and `hostY` do not move, `hostW` does not expand sideways, `hostH` extends from window top to taskbar), allowing the full gravitational Y descent all the way to the real Windows taskbar at the bottom of the screen (`targetDistY = screenBottomY - (finalY + finalH)`) without horizontal desktop click-blocking.
+  - Siphons downward into the top of the Windows taskbar with gravitational acceleration ($\text{transY} = p^{2.2} \times \text{targetDistY}$), a $360^\circ$ continuous cosmic spiral twist ($\theta = p^{2.2} \times 360^\circ$), asymmetric tidal tapering ($scaleX \to 0.002, scaleY \to 0.002$), and terminal fade.
+  - 380ms white-hole restore ejection ($1.0 \to 0.0$ reverse bloom out of the taskbar with 3% elastic settling bounce).
+  - Eliminated restore frame 0 flash/flicker by binding `wasWindowMinimized` state and initializing `opacityVal = 0.0`, `transY = targetDistY`, `scale = 0.002` on restore before frame 0 paints.
+  - Fixed `Math.pow(negative, 2.2)` `NaN` evaluation in `onMinimizeProgressChanged` during `Easing.OutBack` restore overshoot, completely eliminating the late-phase restore flicker.
+  - Completely disabled `Behavior on x/y/w/h` on the native OS window, ensuring single-frame instantaneous maximize/restore-from-maximize without continuous swapchain resize strobing.
+  - Integrated 250-particle accretion stream swirling down with `jelly.transY` to the top of the taskbar.
+  - Synchronized assets to `dist/CSPM/_internal/src/qml/`.
+- [x] Implemented Right-Click Minimize-to-Tray Comet Engine & Unobtrusive Toast:
+  - Right-click detection on minimize title bar buttons in `ProfessionalTopHeader.qml`, `MainContent.qml`, and `TitleBarButton.qml`.
+  - Dynamic System Tray / Clock coordinate calculation across multi-monitor setups (bottom taskbar tray, side/top taskbars, or bottom-right corner fallback).
+  - 2D vector-aware comet trajectory along angle $\theta = \text{atan2}(\Delta Y, \Delta X)$ with backwards-trailing incandescent plasma wake and sparks.
+  - Symmetrical reverse restore launched from the exact stored terminal coordinates back into center pinpoint and outward bloom.
+  - Unobtrusive floating glass toast notification informing the user that CSPM is running in the system tray, auto-dissolving with a smooth premium fade-out after ~3.2s.
+  - Synchronized assets to `dist/CSPM/_internal/src/qml/`.
+- [x] Manual foreground verification: launch `dist/CSPM/CSPM.exe` and test right-click minimize to tray and tray restore.

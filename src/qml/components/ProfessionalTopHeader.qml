@@ -436,42 +436,57 @@ Rectangle {
                 }
                 opacity: topHeaderRoot.app.isInteractive ? 1.0 : 0.70
             }
-            Button {
+            Rectangle {
                 id: minimizeButton
                 Layout.preferredWidth: topHeaderRoot.controlButtonSizePx
                 Layout.preferredHeight: topHeaderRoot.controlButtonSizePx
-                padding: 0
-                text: "\uE921"
-                hoverEnabled: true
-                background: Rectangle {
-                    radius: 3
-                    color: minimizeButton.down ? topHeaderRoot.controlPressedFill
-                        : (minimizeButton.hovered ? topHeaderRoot.controlHoverFill : "transparent")
-                    border.width: (minimizeButton.hovered || minimizeButton.down) ? 1 : 0
-                    border.color: topHeaderRoot.controlHoverBorder
-                }
-                contentItem: Text {
-                    text: minimizeButton.text
+                radius: 3
+                color: minimizeMouseArea.pressed ? topHeaderRoot.controlPressedFill
+                    : (minimizeMouseArea.containsMouse ? topHeaderRoot.controlHoverFill : "transparent")
+                border.width: (minimizeMouseArea.containsMouse || minimizeMouseArea.pressed) ? 1 : 0
+                border.color: topHeaderRoot.controlHoverBorder
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "\uE921"
                     font.family: "Segoe MDL2 Assets"
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
-                    color: (minimizeButton.hovered || minimizeButton.down)
+                    color: (minimizeMouseArea.containsMouse || minimizeMouseArea.pressed)
                         ? topHeaderRoot.controlHoverInk : topHeaderRoot.headerMutedInk
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
-                onClicked: {
-                    topHeaderRoot.app.playSfxUiClick("minimize", 0.42)
-                    if (topHeaderRoot.app.isInteractive && topHeaderRoot.app.windowRef) {
-                        try {
-                            if (!topHeaderRoot.app.windowRef.requestMinimizeAnimation || !topHeaderRoot.app.windowRef.requestMinimizeAnimation()) {
+                MouseArea {
+                    id: minimizeMouseArea
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: function(mouse) {
+                        topHeaderRoot.app.playSfxUiClick("minimize", 0.42)
+                        if (!topHeaderRoot.app || !topHeaderRoot.app.windowRef) return;
+                        if (mouse.button === Qt.RightButton) {
+                            try {
+                                if (topHeaderRoot.app.windowRef.requestMinimizeToTrayAnimation) {
+                                    topHeaderRoot.app.windowRef.requestMinimizeToTrayAnimation()
+                                } else if (!topHeaderRoot.app.windowRef.requestMinimizeAnimation || !topHeaderRoot.app.windowRef.requestMinimizeAnimation()) {
+                                    topHeaderRoot.app.windowRef.showMinimized()
+                                }
+                            } catch(e) {
                                 topHeaderRoot.app.windowRef.showMinimized()
                             }
-                        } catch(e) {
-                            topHeaderRoot.app.windowRef.showMinimized()
+                        } else {
+                            try {
+                                if (!topHeaderRoot.app.windowRef.requestMinimizeAnimation || !topHeaderRoot.app.windowRef.requestMinimizeAnimation()) {
+                                    topHeaderRoot.app.windowRef.showMinimized()
+                                }
+                            } catch(e) {
+                                topHeaderRoot.app.windowRef.showMinimized()
+                            }
                         }
                     }
                 }
-                opacity: topHeaderRoot.app.isInteractive ? 1.0 : 0.70
+                opacity: (topHeaderRoot.app && topHeaderRoot.app.isInteractive) ? 1.0 : 0.70
             }
             Button {
                 id: maximizeButton

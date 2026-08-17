@@ -508,6 +508,10 @@ def _qt_message_handler(mode: QtMsgType, context: Any, message: str) -> None:
     ):
         return
 
+    # Route QML tray diagnostics to the file logger
+    if mode == QtMsgType.QtWarningMsg and "[TRAY" in text:
+        logging.getLogger("QML").warning(text)
+        return
     if mode == QtMsgType.QtWarningMsg and "[SPLASH-LAG]" in text:
         try:
             now_perf = time.perf_counter()
@@ -1686,6 +1690,19 @@ def main() -> None:
         _drain_all_windows()
 
     def on_last_window_closed() -> None:
+        # If the app is living in the system tray, don't quit.
+        tray_icon = getattr(app, '_tray_icon', None)
+        tray_exit = getattr(app, '_tray_exit_requested', False)
+        logging.getLogger("startup").warning(
+            "lastWindowClosed: tray_icon=%s tray_exit=%s isVisible=%s",
+            tray_icon is not None, tray_exit,
+            tray_icon.isVisible() if tray_icon else "N/A"
+        )
+        if tray_icon is not None and not tray_exit:
+            logging.getLogger("startup").info(
+                "lastWindowClosed ignored: app is tray-resident"
+            )
+            return
         # Ignore transient startup window churn until the real runtime window hooks
         # are installed; otherwise releasing temporary bootstrap windows can tear
         # down splash/main windows before launch.
@@ -1695,6 +1712,12 @@ def main() -> None:
             )
 
             def _recheck_startup_window_closure() -> None:
+                # If app became tray-resident, stop the watchdog.
+                tray_icon = getattr(app, '_tray_icon', None)
+                tray_exit = getattr(app, '_tray_exit_requested', False)
+                if tray_icon is not None and not tray_exit:
+                    logging.getLogger("startup").info("Recheck aborted: tray-resident")
+                    return
                 if runtime_hook_state.get("installed", False):
                     return
                 try:
@@ -1842,9 +1865,11 @@ def main() -> None:
         tray_url = QUrl.fromLocalFile(str(PROJECT_ROOT / "src" / "qml" / "tray" / "TrayRoot.qml"))
         engine.load(tray_url)
         
-        # Native QSystemTrayIcon fallback
+        # Native QSystemTrayIcon
         app._tray_icon = QSystemTrayIcon(QIcon(str(PROJECT_ROOT / "src" / "assets" / "app_icon.ico")), app)
         tray_menu = QMenu()
+        open_action = tray_menu.addAction("Open CSPM")
+        open_action.triggered.connect(tray_controller.open_cspm)
         exit_action = tray_menu.addAction("Exit CSPM")
         exit_action.triggered.connect(tray_controller.exit_cspm)
         app._tray_icon.setContextMenu(tray_menu)
@@ -1852,6 +1877,8 @@ def main() -> None:
         def _on_tray_activated(reason):
             if reason == QSystemTrayIcon.Trigger:
                 tray_controller.calculate_flyout_geometry()
+            elif reason == QSystemTrayIcon.DoubleClick:
+                tray_controller.open_cspm()
         app._tray_icon.activated.connect(_on_tray_activated)
         app._tray_icon.show()
     except Exception as exc:

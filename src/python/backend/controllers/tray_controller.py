@@ -112,6 +112,9 @@ class TrayController(QObject):
     flyoutGeometryCalculated = Signal(int, int, int, int)
     navigateToModule = Signal(int, str, 'QVariantMap')
     openSettingsRequested = Signal()
+    showTrayToast = Signal(str)
+    requestRestoreFromTray = Signal()
+    requestExitFromTray = Signal()
     
     projectRoot = Property(str, lambda self: str(PROJECT_ROOT).replace('\\', '/'), constant=True)
 
@@ -387,34 +390,33 @@ class TrayController(QObject):
         
     @Slot()
     def open_cspm(self):
+        import logging
         try:
             app = QApplication.instance()
-            found = False
             for win in app.topLevelWindows():
                 if win.objectName() == "CSPMMainWindow":
-                    win.showNormal()
-                    try:
-                        if hasattr(self._app_controller, "forceWindowForeground"):
-                            self._app_controller.forceWindowForeground(win)
-                        else:
+                    logging.warning("[TRAY-PY] open_cspm: found CSPMMainWindow isVisible=%s", win.isVisible())
+                    if not win.isVisible():
+                        # Window is hidden (tray-resident) — trigger restore animation
+                        logging.warning("[TRAY-PY] open_cspm: emitting requestRestoreFromTray")
+                        self.requestRestoreFromTray.emit()
+                    else:
+                        # Window is visible — just bring to front
+                        logging.warning("[TRAY-PY] open_cspm: window visible, bringing to front")
+                        win.showNormal()
+                        try:
+                            if hasattr(self._app_controller, "forceWindowForeground"):
+                                self._app_controller.forceWindowForeground(win)
+                            else:
+                                win.requestActivate()
+                        except Exception:
                             win.requestActivate()
-                    except Exception:
-                        win.requestActivate()
-                    found = True
-                    break
-            
+                    return
             # If the main window wasn't found (e.g. started in tray-only mode), we must tell the engine to load it.
-            if not found:
-                # We can emit a signal that main.py listens to, or we can just access the engine if we have it.
-                # However, trayController is just a QObject. We can use the QGuiApplication instance to post an event,
-                # or better yet, since trayController has appController, we can emit a signal from appController.
-                # Actually, main.py didn't load Main.qml. So we can just load it now.
-                import logging
-                logging.info("Open CSPM: Main window not found. Emitting requestMainWindowLoad signal.")
-                if hasattr(self._app_controller, 'requestMainWindowLoad'):
-                    self._app_controller.requestMainWindowLoad.emit()
+            logging.warning("[TRAY-PY] open_cspm: Main window not found")
+            if hasattr(self._app_controller, 'requestMainWindowLoad'):
+                self._app_controller.requestMainWindowLoad.emit()
         except Exception as e:
-            import logging
             logging.error(f"Failed to open CSPM: {e}")
 
     @Slot()
@@ -452,6 +454,7 @@ class TrayController(QObject):
 
     @Slot()
     def exit_cspm(self):
+        import logging
         for t in list(self._timers):
             self.stop_timer(t.timer_id)
             
@@ -459,7 +462,14 @@ class TrayController(QObject):
         if missing:
             self.promptMissingDescriptions.emit()
         else:
-            self.force_exit()
+            # Mark intentional exit so the lifecycle guard allows quit
+            app = QApplication.instance()
+            if app:
+                app._tray_exit_requested = True
+            logging.warning("[TRAY-PY] exit_cspm: emitting requestExitFromTray")
+            self.requestExitFromTray.emit()
+            # Failsafe: if the QML animation doesn't complete within 8s, force quit
+            QTimer.singleShot(8000, self.force_exit)
             
 
     @Slot()
@@ -514,3 +524,89 @@ class TrayController(QObject):
         )
         
         self.flyoutGeometryCalculated.emit(res.flyout_rect.x, res.flyout_rect.y, res.flyout_rect.width, res.flyout_rect.height)
+
+    @Slot(result='QVariantMap')
+    def getSystemTrayGeometry(self):
+        """Return the global bounding rect of the system tray notification area.
+        Returns {x, y, width, height} or empty dict if unavailable."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+
+            # Find the main taskbar window (only one Shell_TrayWnd has TrayNotifyWnd)
+            hwnd = user32.FindWindowW("Shell_TrayWnd", None)
+            if not hwnd:
+                return {}
+            # Find the notification area within it
+            notify_hwnd = user32.FindWindowExW(hwnd, 0, "TrayNotifyWnd", None)
+            if not notify_hwnd:
+                return {}
+
+            rect = wintypes.RECT()
+            if not user32.GetWindowRect(notify_hwnd, ctypes.byref(rect)):
+                return {}
+
+            return {
+                "x": int(rect.left),
+                "y": int(rect.top),
+                "width": int(rect.right - rect.left),
+                "height": int(rect.bottom - rect.top),
+            }
+        except Exception:
+            return {}
+
+    @Slot(int, int, result='QVariantMap')
+    def getTrayFlightInfo(self, winCenterX, winCenterY):
+        """Return comprehensive flight geometry for cross-monitor tray animations.
+
+        Args:
+            winCenterX, winCenterY: Global coordinates of the window center.
+
+        Returns dict with:
+            available: bool — whether tray geometry was resolved
+            trayCenterX, trayCenterY: Tray center point (global)
+            sameMonitor: Whether tray is on the same monitor as the window
+            vdX, vdY, vdW, vdH: Virtual desktop bounding rect
+        """
+        tray_geo = self.getSystemTrayGeometry()
+        if not tray_geo:
+            return {"available": False}
+
+        tray_cx = tray_geo["x"] + tray_geo["width"] // 2
+        tray_cy = tray_geo["y"] + tray_geo["height"] // 2
+
+        app = QGuiApplication.instance()
+        from PySide6.QtCore import QPoint
+        tray_screen = app.screenAt(QPoint(tray_cx, tray_cy))
+        win_screen = app.screenAt(QPoint(int(winCenterX), int(winCenterY)))
+        same_monitor = (tray_screen is not None and win_screen is not None
+                        and tray_screen == win_screen)
+
+        # Virtual desktop bounding rect (union of all screens)
+        screens = app.screens()
+        if not screens:
+            return {"available": False}
+        min_x = min(s.geometry().x() for s in screens)
+        min_y = min(s.geometry().y() for s in screens)
+        max_x = max(s.geometry().x() + s.geometry().width() for s in screens)
+        max_y = max(s.geometry().y() + s.geometry().height() for s in screens)
+
+        return {
+            "available": True,
+            "trayCenterX": tray_cx,
+            "trayCenterY": tray_cy,
+            "sameMonitor": same_monitor,
+            "vdX": min_x,
+            "vdY": min_y,
+            "vdW": max_x - min_x,
+            "vdH": max_y - min_y,
+        }
+
+    @Slot(str)
+    def show_tray_toast(self, message):
+        try:
+            self.showTrayToast.emit(str(message))
+        except Exception as e:
+            import logging
+            logging.error(f"Error emitting showTrayToast: {e}")

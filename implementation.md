@@ -1,5 +1,16 @@
 # Implementation History
 
+## 2026-08-16: System Tray Animations, Cross-Monitor Targeting & Lifecycle Guards
+
+- **Cross-Monitor System Tray Geometry & Trajectory**: Added Windows native shell integration via `getSystemTrayGeometry` and `getTrayFlightInfo` in `tray_controller.py` to identify the monitor hosting the system tray notification area (`TrayNotifyWnd`). When right-clicking minimize from any monitor, the trajectory is computed toward the true system tray coordinates.
+- **Cross-Monitor Fullscreen Comet Overlay**: Implemented `CrossMonitorCometOverlay.qml` as a transparent virtual-desktop-spanning window that animates an incandescent plasma comet across multi-monitor displays seamlessly.
+- **Tray-Resident Lifecycle Protection**: Fixed startup watchdog and `lastWindowClosed` handlers in `main.py` and `DetachedShellWindow.qml` to prevent the application runtime from terminating when minimized to tray.
+- **Tray Icon Activation & Context Menu**:
+  - Left-clicking the tray icon immediately opens the timer / timekeeping flyout.
+  - Right-clicking the tray icon presents a native context menu with both **"Open CSPM"** (which triggers the 5-stage reverse comet restore animation) and **"Exit CSPM"** (which triggers the center comet launch, supernova hang, and singularity suck-in shutdown without the window UI flashing).
+  - Clicking "Open CSPM" from within the timekeeping flyout hides the flyout and initiates the full restore animation.
+- **Packaging & Promotion**: Rebuilt the frozen Python executable via PyInstaller and promoted the verified package to `dist/CSPM/CSPM.exe`.
+
 ## 2026-08-16: Strategic Roadmap Rebaseline
 
 - **Planning consolidation only:** established
@@ -1172,3 +1183,26 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
   - `scripts/qmllint.ps1` completed with 0 errors.
   - Runtime assets synchronized and verified at `dist/CSPM/_internal/src/qml/`.
   - Executable bundle hash verified at `dist/CSPM/CSPM.exe` (SHA-256: `B7DB028380AD040253967F4C63AC2BC5457272A94D5120301082C6804AE2F693`).
+
+## 2026-08-16: Direct In-Place Gravitational Siphon Minimize & Restore Engine & 4-Phase Plasma Burst Close
+
+- **Overview**:
+  - Replaced legacy `MinimizeOverlay.qml` window handoff and `grabToImage` bitmap capture with direct in-place GPU scene-graph transformations.
+  - **Minimize (`minimizeSeq`, ~420ms)**: Extends host envelope strictly downward to the taskbar (`hostX` and `hostY` do not move, `hostW` does not expand sideways), allowing the window to translate down along Y ($\text{transY} = p^{2.2} \times \text{targetDistY}$) directly to the top of the Windows taskbar (`targetDistY = screenBottomY - (finalY + finalH)`), while executing an asymmetric tidal funnel compression ($scaleX \to 0.002, scaleY \to 0.002$), a full $360^\circ$ cosmic spiral twist ($\theta = p^{2.2} \times 360^\circ$), and terminal fade.
+  - **Restore (`restoreSeq`, ~380ms)**: White-hole upward ejection blooming smoothly out of the taskbar with a subtle 3% elastic settling bounce.
+  - **Right-Click Minimize-to-Tray Comet Engine**:
+    - Right-click detection on minimize buttons across `ProfessionalTopHeader.qml`, `MainContent.qml`, and `TitleBarButton.qml`.
+    - Dynamic system tray / clock coordinate resolver on current active monitor (bottom taskbar tray, side/top taskbars, or bottom-right corner fallback).
+    - 2D vector-aware comet trajectory along angle $\theta = \text{atan2}(\Delta Y, \Delta X)$ with backwards-trailing incandescent plasma wake and sparks.
+    - Symmetrical reverse restore launched from the exact stored terminal coordinates back into center pinpoint and outward bloom.
+    - Unobtrusive floating glass toast notification informing the user that CSPM is running in the system tray, auto-dissolving with a smooth premium fade-out after ~3.2s.
+  - **White-Hot Supernova Flash with Rapid Prominent Fizzle Out Close**:
+    - Stage 1: Window UI and particle field get sucked directly straight into the center pinpoint ($p = 0.0 \to 0.30$, ~260ms, zero rotation).
+    - Stage 2: Supernova detonation ($p = 0.30 \to 0.42$, ~100ms, total footprint scaled down 10% to ~27.5px, exact 28/72 solid-to-plasma ratio preserved, 16 delicate white/champagne/amber embers).
+    - Stage 3: Extended "Hang & Gentle Swell" ($p = 0.42 \to 0.76$, ~290ms suspended glow, swells gently to ~32px max footprint with wide soft champagne plasma corona).
+    - Stage 4: Rapid Prominent Fade-Out & Fizzle ($p = 0.76 \to 1.0$, ~210ms, accelerated optical dissipation $fizzleAlpha = (1-p)^{2.6}$ and snappy suction into pinpoint void).
+  - **Native Window Resize Strobe Elimination**: Completely disabled `Behavior on x/y/w/h` on the native OS window, ensuring single-frame instantaneous maximize/restore-from-maximize without continuous swapchain resize strobing.
+- **Validation**:
+  - QML compilation test verified `Status.Ready` on `JellyController.qml` and `DetachedShellWindow.qml`.
+  - `scripts/qmllint.ps1` completed with 0 errors.
+  - Assets synchronized and verified at `dist/CSPM/_internal/src/qml/`.

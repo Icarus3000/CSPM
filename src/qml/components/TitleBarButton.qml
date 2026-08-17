@@ -1,9 +1,11 @@
 import QtQuick
-import QtQuick.Controls
 import "../standards/SemanticTheme.js" as SemanticTheme
 
-Button {
+Item {
     id: control
+    signal clicked()
+    signal rightClicked()
+    property string text: ""
     property var t
     property string appStyle: "Professional"
     property var metrics
@@ -62,42 +64,51 @@ Button {
 
     implicitWidth: buttonSizePx
     implicitHeight: buttonSizePx
-    padding: 0
-    hoverEnabled: true
 
-    background: Rectangle {
+    Rectangle {
+        anchors.fill: parent
         radius: Math.max(1, Math.round(control.buttonSizePx * 0.28))
-        color: control.down
+        color: btnMouseArea.pressed
             ? (control.danger
                 ? SemanticTheme.alpha(control.dangerFill, 0.90)
                 : SemanticTheme.alpha(control.accentColor, 0.30))
-            : (control.hovered
+            : (btnMouseArea.containsMouse
             ? (control.danger
                 ? control.dangerFill
                 : SemanticTheme.hoverOverlay(control.t, control.appStyle))
             : "transparent")
-        border.width: (control.hovered || control.down) ? Math.max(1, Math.round(control.buttonSizePx * 0.03)) : 0
+        border.width: (btnMouseArea.containsMouse || btnMouseArea.pressed) ? Math.max(1, Math.round(control.buttonSizePx * 0.03)) : 0
         border.color: control.danger
             ? control.dangerBorder
             : SemanticTheme.border(control.t, "tooltip", "neutral")
         Behavior on color { ColorAnimation { duration: 45 } }
     }
 
-    contentItem: Item {
-        implicitWidth: control.buttonSizePx
-        implicitHeight: control.buttonSizePx
-        
-        Text {
-            anchors.centerIn: parent
-            text: control.text
-            font.pixelSize: control.fontSize > 0 ? control.fontSize : control.autoFontSizePx
-            color: (control.hovered || control.down)
-                ? (control.danger ? control.dangerInk : control.hoverIconColor)
-                : control.baseTextColor
-            opacity: control.down ? 0.7 : 1.0
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            Behavior on color { ColorAnimation { duration: 100 } }
+    Text {
+        anchors.centerIn: parent
+        text: control.text
+        font.pixelSize: control.fontSize > 0 ? control.fontSize : control.autoFontSizePx
+        color: (btnMouseArea.containsMouse || btnMouseArea.pressed)
+            ? (control.danger ? control.dangerInk : control.hoverIconColor)
+            : control.baseTextColor
+        opacity: btnMouseArea.pressed ? 0.7 : 1.0
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        Behavior on color { ColorAnimation { duration: 100 } }
+    }
+
+    MouseArea {
+        id: btnMouseArea
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: function(mouse) {
+            if (mouse.button === Qt.RightButton) {
+                control.rightClicked();
+            } else {
+                control.clicked();
+            }
         }
     }
 }

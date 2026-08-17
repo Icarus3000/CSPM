@@ -70,6 +70,23 @@ Window {
     property bool isRestoringFromMinimize: false
     property bool maximizeAnimInProgress: false
     property bool wasWindowMinimized: false
+    property bool isMinimizingToTray: false
+    property bool isExitingFromTray: false
+    property real lastMinimizeTargetDistX: 0.0
+    property real lastMinimizeTargetDistY: 0.0
+    // Cross-monitor tray flight state
+    property bool _crossMonitorTrayFlight: false
+    property real _trayTargetGlobalX: 0
+    property real _trayTargetGlobalY: 0
+    property real _windowCenterGlobalX: 0
+    property real _windowCenterGlobalY: 0
+    property real _vdX: 0
+    property real _vdY: 0
+    property real _vdW: 0
+    property real _vdH: 0
+    property var  _crossMonitorOverlay: null
+    // Pending action after overlay flight completes: "restore" | "exit" | ""
+    property string _pendingTrayAction: ""
     property bool forceClose: false
     property bool launchConfigured: false
     property bool startupLaunchStarted: false
@@ -447,59 +464,11 @@ Window {
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint | Qt.WindowMinimizeButtonHint
     opacity: 1.0
     
-    // Window geometry animates smoothly as canvas size/position changes
-    Behavior on width {
-        enabled: mainWin.animationPhase === "settled"
-            && !mainWin.geometryTransitionSuppressed
-            && !mainWin.maximizeAnimInProgress
-            && !mainWin.isMinimizing
-            && !mainWin.isRestoringFromMinimize
-            && !mainWin.userMoveInProgress
-            && !mainWin.userResizeInProgress
-        NumberAnimation {
-            duration: mainWin.settledWindowBehaviorDuration()
-            easing.type: Easing.InOutQuad
-        }
-    }
-    Behavior on height {
-        enabled: mainWin.animationPhase === "settled"
-            && !mainWin.geometryTransitionSuppressed
-            && !mainWin.maximizeAnimInProgress
-            && !mainWin.isMinimizing
-            && !mainWin.isRestoringFromMinimize
-            && !mainWin.userMoveInProgress
-            && !mainWin.userResizeInProgress
-        NumberAnimation {
-            duration: mainWin.settledWindowBehaviorDuration()
-            easing.type: Easing.InOutQuad
-        }
-    }
-    Behavior on x {
-        enabled: mainWin.animationPhase === "settled"
-            && !mainWin.geometryTransitionSuppressed
-            && !mainWin.maximizeAnimInProgress
-            && !mainWin.isMinimizing
-            && !mainWin.isRestoringFromMinimize
-            && !mainWin.userMoveInProgress
-            && !mainWin.userResizeInProgress
-        NumberAnimation {
-            duration: mainWin.settledWindowBehaviorDuration()
-            easing.type: Easing.InOutQuad
-        }
-    }
-    Behavior on y {
-        enabled: mainWin.animationPhase === "settled"
-            && !mainWin.geometryTransitionSuppressed
-            && !mainWin.maximizeAnimInProgress
-            && !mainWin.isMinimizing
-            && !mainWin.isRestoringFromMinimize
-            && !mainWin.userMoveInProgress
-            && !mainWin.userResizeInProgress
-        NumberAnimation {
-            duration: mainWin.settledWindowBehaviorDuration()
-            easing.type: Easing.InOutQuad
-        }
-    }
+    // Native OS window geometry must snap atomically without continuous Behavior animation
+    Behavior on width { enabled: false }
+    Behavior on height { enabled: false }
+    Behavior on x { enabled: false }
+    Behavior on y { enabled: false }
 
     // During a normal settled state, the native window is only as large as the
     // visible canvas.  A monitor-sized transparent host blocks every other
@@ -6580,8 +6549,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             return;
         }
 
-        // The restore/maximize visual effect needs a monitor-sized envelope
-        // briefly.  It returns to the tight settled host when the effect ends.
+        // Maximize uses monitor-sized envelope
         if (mainWin.maximizeAnimInProgress || uiMaximized) {
             hostX = Math.round(rect.x);
             hostY = Math.round(rect.y);
@@ -6750,10 +6718,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (sfxBus && sfxBus.playWindowDeform) {
             sfxBus.playWindowDeform(0.74);
         }
-        maximizeAnimInProgress = true;
-        maximizeMonitorFrame = 0;
-        resetMaximizeFxState();
         uiMaximized = true;
+        resetMaximizeFxState();
         geometryTransitionSuppressed = true;
         finalX = Math.round(rect.x);
         finalY = Math.round(rect.y);
@@ -6761,23 +6727,19 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         finalH = Math.max(1, Math.round(rect.h));
         applyHostEnvelopeForTarget();
         updateCanvasGeometry();
-        seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
-        geometryTransitionSuppressed = false;
-        logGreenFrameGeometry("MAXIMIZE", "Post-geometry-apply snapshot");
-        Qt.callLater(function() {
-            if (!mainWin.maximizeAnimInProgress) return;
-            mainWin.logGreenFrameGeometry("MAXIMIZE", "Post-geometry next-tick snapshot");
-        });
-        if (appStyle === "Professional") {
-            Qt.callLater(function() {
-                if (!mainWin.maximizeAnimInProgress) return;
-                mainWin.resetMaximizeFxState();
-                mainWin.maximizeAnimInProgress = false;
-                mainWin.updateCanvasGeometry();
-            });
-        } else {
+
+        if (appStyle !== "Professional") {
+            maximizeAnimInProgress = true;
+            maximizeMonitorFrame = 0;
+            seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
             maximizeFxAnimation.restart();
+        } else {
+            maximizeAnimInProgress = false;
         }
+
+        Qt.callLater(function() {
+            mainWin.geometryTransitionSuppressed = false;
+        });
         return true;
     }
 
@@ -6849,10 +6811,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (sfxBus && sfxBus.playWindowDeform) {
             sfxBus.playWindowDeform(0.62);
         }
-        maximizeAnimInProgress = true;
-        restoreMaxMonitorFrame = 0;
-        resetMaximizeFxState();
         uiMaximized = false;
+        resetMaximizeFxState();
         geometryTransitionSuppressed = true;
         finalX = Math.round(nextX);
         finalY = Math.round(nextY);
@@ -6861,18 +6821,19 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         updateTargetScreenFromFinalCenter();
         applyHostEnvelopeForTarget();
         updateCanvasGeometry();
-        seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
-        geometryTransitionSuppressed = false;
-        if (appStyle === "Professional") {
-            Qt.callLater(function() {
-                if (!mainWin.maximizeAnimInProgress) return;
-                mainWin.resetMaximizeFxState();
-                mainWin.maximizeAnimInProgress = false;
-                mainWin.updateCanvasGeometry();
-            });
-        } else {
+
+        if (appStyle !== "Professional") {
+            maximizeAnimInProgress = true;
+            restoreMaxMonitorFrame = 0;
+            seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
             maximizeRestoreFxAnimation.restart();
+        } else {
+            maximizeAnimInProgress = false;
         }
+
+        Qt.callLater(function() {
+            mainWin.geometryTransitionSuppressed = false;
+        });
         return true;
     }
 
@@ -7920,8 +7881,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // Snap canvas envelope to final settled padding at handoff so there is
         // no residual settle-time host/canvas geometry morph.
         glowPadding = settledPaddingPx(Math.max(1, finalW), Math.max(1, finalH));
+        mainWin.geometryTransitionSuppressed = true;
         applyHostEnvelopeForTarget();
         updateCanvasGeometry();
+        Qt.callLater(function() {
+            mainWin.geometryTransitionSuppressed = false;
+        });
         phaseLog("SETTLED", "content=" + fmtRect(finalX, finalY, finalW, finalH)
             + " canvas=" + fmtRect(canvasX, canvasY, canvasW, canvasH));
         logCornerForensics("transition-to-settled");
@@ -8629,6 +8594,67 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         onCloseFinished: {
             mainWin.finalizeCloseSequence("jelly-close-finished");
         }
+
+        onExitFromTrayFinished: {
+            mainWin.phaseLog("EXIT", "jelly-exit-from-tray-finished -> finalizeCloseSequence");
+            mainWin.isExitingFromTray = false;
+            mainWin.finalizeCloseSequence("tray-exit-finished");
+        }
+
+        onMinimizeFinished: {
+            mainWin.phaseLog("MINIMIZE", "jelly-minimize-finished -> " + (mainWin.isMinimizingToTray ? "hide to tray" : "showMinimized"));
+            mainWin.isMinimizing = false;
+            mainWin.wasWindowMinimized = true;
+            if (mainWin.isMinimizingToTray) {
+                // Show keep-alive window BEFORE hiding — prevents lastWindowClosed
+                trayKeepAlive.visible = true;
+                mainWin.hide();
+                // Cross-monitor: launch overlay comet from window center to tray
+                if (mainWin._crossMonitorTrayFlight) {
+                    mainWin._pendingTrayAction = "";
+                    var overlay = mainWin._ensureCrossMonitorOverlay();
+                    if (overlay) {
+                        var dist = Math.sqrt(
+                            Math.pow(mainWin._trayTargetGlobalX - mainWin._windowCenterGlobalX, 2) +
+                            Math.pow(mainWin._trayTargetGlobalY - mainWin._windowCenterGlobalY, 2)
+                        );
+                        var durationMs = Math.round(Math.min(800, Math.max(400, dist * 0.3)));
+                        overlay.launchFlight(
+                            mainWin._windowCenterGlobalX, mainWin._windowCenterGlobalY,
+                            mainWin._trayTargetGlobalX,   mainWin._trayTargetGlobalY,
+                            mainWin._vdX, mainWin._vdY, mainWin._vdW, mainWin._vdH,
+                            durationMs
+                        );
+                    }
+                    mainWin._crossMonitorTrayFlight = false;
+                }
+                try {
+                    systemTrayToastWindow.showToast("CSPM is running in the system tray");
+                } catch(e) {
+                }
+                if (typeof trayController !== "undefined" && trayController.show_tray_toast) {
+                    trayController.show_tray_toast("CSPM is running in the system tray");
+                }
+            } else {
+                mainWin.showMinimized();
+            }
+        }
+
+        onRestoreFinished: {
+            mainWin.phaseLog("RESTORE", "jelly-restore-finished -> settled");
+            mainWin.isRestoringFromMinimize = false;
+            mainWin.wasWindowMinimized = false;
+            mainWin.minimizeRestorePending = false;
+            mainWin.geometryTransitionSuppressed = true;
+            mainWin.applyHostEnvelopeForTarget();
+            mainWin.updateCanvasGeometry();
+            Qt.callLater(function() {
+                mainWin.geometryTransitionSuppressed = false;
+            });
+            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playWindowSettle) {
+                mainWin.sfxBusRef.playWindowSettle("restore", 0.45);
+            }
+        }
     }
     
     // ============================================================
@@ -8637,6 +8663,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     
     Item {
         id: animationCanvasLayer
+        visible: !mainWin.isExitingFromTray
         // Canvas is a dynamic rectangle inside a fixed host window.
         x: mainWin.canvasLocalX
         y: mainWin.canvasLocalY
@@ -8657,19 +8684,22 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         Component.onCompleted: {
             mainWin.mainContentRoundedMaskActive = roundedClipActive;
         }
-        // Disable clip for opening/closing/fallback-drag/maximize-fx to avoid edge crop artifacts.
+        // Disable clip for opening/closing/minimizing/restoring/fallback-drag/maximize-fx to avoid edge crop artifacts.
         clip: !(mainWin.animationPhase === "opening"
             || mainWin.animationPhase === "closing"
+            || mainWin.isMinimizing
+            || mainWin.isRestoringFromMinimize
+            || mainWin.isExitingFromTray
             || (mainWin.animationPhase === "settled"
                 && (mainWin.userMoveInProgress || mainWin.userResizeInProgress))
             || (mainWin.animationPhase === "settled"
                 && mainWin.dragFxVisible())
             || (mainWin.animationPhase === "settled"
                 && mainWin.maximizeAnimInProgress))
-        layer.enabled: roundedClipActive
+        layer.enabled: roundedClipActive && !mainWin.isMinimizing && !mainWin.isRestoringFromMinimize && !mainWin.isClosing && !mainWin.isExitingFromTray
         layer.smooth: true
         layer.effect: MultiEffect {
-            maskEnabled: animationCanvasLayer.roundedClipActive
+            maskEnabled: animationCanvasLayer.roundedClipActive && !mainWin.isMinimizing && !mainWin.isRestoringFromMinimize && !mainWin.isClosing && !mainWin.isExitingFromTray
             maskSource: animationCanvasMaskSource
             maskThresholdMin: 0.74
             maskSpreadAtMin: 0.10
@@ -8707,29 +8737,39 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 origin.y: mainWin.contentLocalY + (mainWin.finalH / 2)
                 xScale: (mainWin.animationPhase === "opening")
                     ? 1.0
-                    : ((mainWin.animationPhase !== "settled") ? jelly.scaleX : mainWin.settledScaleX())
+                    : ((mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.wasWindowMinimized)
+                        ? jelly.scaleX
+                        : ((mainWin.animationPhase !== "settled") ? jelly.scaleX : mainWin.settledScaleX()))
                 yScale: (mainWin.animationPhase === "opening")
                     ? 1.0
-                    : ((mainWin.animationPhase !== "settled") ? jelly.scaleY : mainWin.settledScaleY())
+                    : ((mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.wasWindowMinimized)
+                        ? jelly.scaleY
+                        : ((mainWin.animationPhase !== "settled") ? jelly.scaleY : mainWin.settledScaleY()))
             },
             Translate {
                 x: (mainWin.animationPhase === "opening")
                     ? 0.0
-                    : ((mainWin.animationPhase !== "settled") ? jelly.transX : mainWin.settledTransX())
+                    : ((mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.wasWindowMinimized)
+                        ? jelly.transX
+                        : ((mainWin.animationPhase !== "settled") ? jelly.transX : mainWin.settledTransX()))
                 y: (mainWin.animationPhase === "opening")
                     ? 0.0
-                    : ((mainWin.animationPhase !== "settled") ? jelly.transY : mainWin.settledTransY())
+                    : ((mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.wasWindowMinimized)
+                        ? jelly.transY
+                        : ((mainWin.animationPhase !== "settled") ? jelly.transY : mainWin.settledTransY()))
             },
             Rotation {
                 origin.x: mainWin.contentLocalX + (mainWin.finalW / 2)
                 origin.y: mainWin.contentLocalY + (mainWin.finalH / 2)
                 angle: (mainWin.animationPhase === "opening")
                     ? 0.0
-                    : ((mainWin.animationPhase !== "settled") ? jelly.rotationVal : mainWin.settledRotate())
+                    : ((mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.wasWindowMinimized)
+                        ? jelly.rotationVal
+                        : ((mainWin.animationPhase !== "settled") ? jelly.rotationVal : mainWin.settledRotate()))
             }
         ]
 
-        opacity: (mainWin.animationPhase === "closing") ? jelly.opacityVal : 1.0
+        opacity: mainWin.isExitingFromTray ? 0.0 : ((mainWin.animationPhase === "closing" || mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.wasWindowMinimized) ? jelly.opacityVal : 1.0)
 
         // CONTENT LAYER - Position within canvas keeps window pixels fixed
         Item {
@@ -9227,86 +9267,819 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 }
             }
         }
+    }
 
-        Canvas {
-            id: closingAccretionCanvas
-            anchors.fill: parent
-            visible: mainWin.animationPhase === "closing" && jelly.closeProgress > 0.01 && jelly.closeProgress < 0.98
-            z: 99999
+    Canvas {
+        id: closingAccretionCanvas
+        x: 0
+        y: 0
+        width: mainWin.width
+        height: mainWin.height
+        visible: mainWin.isClosing || mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.isExitingFromTray
+        z: 999999
 
-            property var particles: []
-            property bool initialized: false
+        property var particles: []
+        property bool initialized: false
 
-            function initParticles() {
-                var pts = [];
-                for (var i = 0; i < 250; i++) {
-                    pts.push({
-                        "angle": Math.random() * Math.PI * 2,
-                        "distRatio": 0.15 + Math.random() * 0.85,
-                        "speed": 1.8 + Math.random() * 3.6,
-                        "size": 1.2 + Math.random() * 2.8,
-                        "alpha": 0.25 + Math.random() * 0.75
-                    });
-                }
-                particles = pts;
-                initialized = true;
+        function initParticles() {
+            var pts = [];
+            for (var i = 0; i < 250; i++) {
+                pts.push({
+                    "angle": Math.random() * Math.PI * 2,
+                    "distRatio": 0.15 + Math.random() * 0.85,
+                    "speed": 1.8 + Math.random() * 3.6,
+                    "size": 1.2 + Math.random() * 2.8,
+                    "alpha": 0.25 + Math.random() * 0.75
+                });
             }
+            particles = pts;
+            initialized = true;
+        }
 
-            Connections {
-                target: jelly
-                function onCloseProgressChanged() {
-                    if (closingAccretionCanvas.visible) {
-                        closingAccretionCanvas.requestPaint();
+        Connections {
+            target: jelly
+            function onCloseProgressChanged() {
+                closingAccretionCanvas.requestPaint();
+            }
+            function onMinimizeProgressChanged() {
+                closingAccretionCanvas.requestPaint();
+            }
+            function onExitFromTrayProgressChanged() {
+                closingAccretionCanvas.requestPaint();
+            }
+        }
+
+        onPaint: {
+            var ctx = getContext("2d");
+            if (!ctx) return;
+            var w = width;
+            var h = height;
+            ctx.clearRect(0, 0, w, h);
+
+            var isExitTray = mainWin.isExitingFromTray;
+            var isMin = mainWin.isMinimizing || mainWin.isRestoringFromMinimize;
+            var rawP = isExitTray ? jelly.exitFromTrayProgress : (isMin ? jelly.minimizeProgress : jelly.closeProgress);
+            var p = Math.max(0.0, Math.min(1.0, rawP));
+            if (p <= 0.0001 || p >= 0.9999) return;
+            if (!initialized) initParticles();
+
+            var centerSingX = mainWin.width / 2.0;
+            var centerSingY = mainWin.height / 2.0;
+            var singX = centerSingX;
+            var singY = centerSingY;
+
+            if (isExitTray) {
+                // ============================================================
+                // SYSTEM TRAY EXIT ENGINE (TRAY SHOOT -> CENTER BURST & HANG -> SINGULARITY SUCK -> CLOSE)
+                // ============================================================
+                var targetDistX = jelly.taskbarTargetDistX;
+                var targetDistY = jelly.taskbarTargetDistY;
+                var angleTheta = Math.atan2(targetDistY, targetDistX);
+                var cosA = Math.cos(angleTheta);
+                var sinA = Math.sin(angleTheta);
+
+                if (p < 0.35) {
+                    // Stage 1 (0.00 to 0.35): White comet launches from system tray and shoots along straight trajectory to center
+                    var upP = p / 0.35; // 0.0 to 1.0
+                    var upEase = Math.sin(upP * Math.PI * 0.5); // Smooth deceleration approaching center
+                    var curX = (centerSingX + targetDistX) - (upEase * targetDistX);
+                    var curY = (centerSingY + targetDistY) - (upEase * targetDistY);
+                    var cometRad = 16.0; // 16px comet head
+
+                    // Incandescent comet tail trailing backwards towards tray launch point
+                    var tailLen = Math.min(220, 24.0 + ((1.0 - upEase) * 180.0));
+                    var tailTipX = curX + (cosA * tailLen);
+                    var tailTipY = curY + (sinA * tailLen);
+
+                    var tailGrad = ctx.createLinearGradient(curX, curY, tailTipX, tailTipY);
+                    tailGrad.addColorStop(0.00, "rgba(255, 255, 255, 0.90)");
+                    tailGrad.addColorStop(0.20, "rgba(254, 240, 138, 0.75)");
+                    tailGrad.addColorStop(0.50, "rgba(251, 146, 60, 0.45)");
+                    tailGrad.addColorStop(0.80, "rgba(239, 68, 68, 0.15)");
+                    tailGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                    ctx.fillStyle = tailGrad;
+                    ctx.beginPath();
+                    var halfHead = cometRad * 0.90;
+                    var perpX = -sinA * halfHead;
+                    var perpY = cosA * halfHead;
+
+                    ctx.moveTo(curX + perpX, curY + perpY);
+                    ctx.quadraticCurveTo(curX + perpX * 0.4 + cosA * tailLen * 0.6, curY + perpY * 0.4 + sinA * tailLen * 0.6, tailTipX, tailTipY);
+                    ctx.quadraticCurveTo(curX - perpX * 0.4 + cosA * tailLen * 0.6, curY - perpY * 0.4 + sinA * tailLen * 0.6, curX - perpX, curY - perpY);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // Sparks trailing backwards along launch angle
+                    for (var st = 0; st < 14; st++) {
+                        var spDist = (st / 14) * tailLen * (0.8 + 0.2 * Math.sin(st * 3.7 + upP * 6.0));
+                        var spSpread = Math.sin(st * 5.1 + upP * 8.0) * (halfHead * (1.0 - (spDist / tailLen)));
+                        var spX = curX + (cosA * spDist) + (-sinA * spSpread);
+                        var spY = curY + (sinA * spDist) + (cosA * spSpread);
+                        var spAlpha = Math.max(0.0, 1.0 - (spDist / tailLen));
+                        ctx.fillStyle = (st % 2 === 0)
+                            ? "rgba(255, 255, 255, " + (spAlpha * 0.9).toFixed(3) + ")"
+                            : "rgba(251, 146, 60, " + (spAlpha * 0.8).toFixed(3) + ")";
+                        ctx.beginPath();
+                        ctx.arc(spX, spY, Math.max(0.5, 1.2 * spAlpha), 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                    // Hyper-dense white-hot comet head
+                    var headGrad = ctx.createRadialGradient(curX, curY, 0.5, curX, curY, cometRad);
+                    headGrad.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                    headGrad.addColorStop(0.35, "rgba(255, 255, 255, 0.98)");
+                    headGrad.addColorStop(0.60, "rgba(255, 250, 235, 0.80)");
+                    headGrad.addColorStop(0.82, "rgba(251, 146, 60, 0.40)");
+                    headGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                    ctx.fillStyle = headGrad;
+                    ctx.beginPath();
+                    ctx.arc(curX, curY, cometRad, 0, Math.PI * 2);
+                    ctx.fill();
+
+                } else if (p < 0.58) {
+                    // Stage 2 (0.35 to 0.58): Arrives at center, blooms from 16px -> 32px, and HANGS in the middle glowing
+                    var midP = (p - 0.35) / 0.23; // 0.0 to 1.0
+                    var midEase = Math.sin(midP * Math.PI * 0.5);
+                    var midRadius = 16.0 + (midEase * 16.0); // 16px -> 32px
+
+                    // Outer champagne plasma aura
+                    var midOuter = ctx.createRadialGradient(centerSingX, centerSingY, midRadius * 0.40, centerSingX, centerSingY, midRadius * 1.22);
+                    midOuter.addColorStop(0.00, "rgba(254, 215, 170, 0.28)");
+                    midOuter.addColorStop(0.60, "rgba(251, 146, 60, 0.12)");
+                    midOuter.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+                    ctx.fillStyle = midOuter;
+                    ctx.beginPath();
+                    ctx.arc(centerSingX, centerSingY, midRadius * 1.22, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Suspended Incandescent Supernova Core (28/72 ratio)
+                    var midGrad = ctx.createRadialGradient(centerSingX, centerSingY, 0.5, centerSingX, centerSingY, midRadius);
+                    midGrad.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                    midGrad.addColorStop(0.28, "rgba(255, 255, 255, 0.98)");
+                    midGrad.addColorStop(0.55, "rgba(255, 250, 235, 0.75)");
+                    midGrad.addColorStop(0.78, "rgba(254, 215, 170, 0.35)");
+                    midGrad.addColorStop(0.92, "rgba(251, 146, 60, 0.12)");
+                    midGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                    ctx.fillStyle = midGrad;
+                    ctx.beginPath();
+                    ctx.arc(centerSingX, centerSingY, midRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 16 shimmering ember sparks
+                    for (var mk = 0; mk < 16; mk++) {
+                        var mkAngle = (mk / 16) * Math.PI * 2 + (midP * 1.6);
+                        var mkDist = (midRadius * 0.58) * (0.30 + 0.70 * Math.sin(mk * 5.7 + midP * 4.0));
+                        var mkx = centerSingX + Math.cos(mkAngle) * mkDist;
+                        var mky = centerSingY + Math.sin(mkAngle) * mkDist;
+                        ctx.fillStyle = (mk % 4 === 0)
+                            ? "rgba(239, 68, 68, 0.75)"
+                            : (mk % 4 === 1)
+                                ? "rgba(251, 146, 60, 0.85)"
+                                : (mk % 4 === 2)
+                                    ? "rgba(254, 240, 138, 0.95)"
+                                    : "rgba(255, 255, 255, 0.95)";
+                        ctx.beginPath();
+                        ctx.arc(mkx, mky, 1.0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                } else if (p < 0.88) {
+                    // Stage 3 (0.58 to 0.88): Sucks into itself down to a microscopic center pinpoint (32px -> 0px)
+                    var selfSuckP = (p - 0.58) / 0.30; // 0.0 to 1.0
+                    var selfShrink = Math.pow(1.0 - selfSuckP, 2.6);
+                    var selfRadius = Math.max(0.1, selfShrink * 32.0);
+                    var selfAlpha = Math.pow(1.0 - selfSuckP, 2.2);
+
+                    var selfGrad = ctx.createRadialGradient(centerSingX, centerSingY, 0, centerSingX, centerSingY, selfRadius);
+                    selfGrad.addColorStop(0.00, "rgba(255, 255, 255, " + selfAlpha.toFixed(3) + ")");
+                    selfGrad.addColorStop(0.30, "rgba(255, 255, 255, " + (selfAlpha * 0.90).toFixed(3) + ")");
+                    selfGrad.addColorStop(0.65, "rgba(254, 215, 170, " + (selfAlpha * 0.30).toFixed(3) + ")");
+                    selfGrad.addColorStop(0.88, "rgba(251, 146, 60, " + (selfAlpha * 0.10).toFixed(3) + ")");
+                    selfGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                    ctx.fillStyle = selfGrad;
+                    ctx.beginPath();
+                    ctx.arc(centerSingX, centerSingY, selfRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Inward vortex accretion particles
+                    for (var vi = 0; vi < particles.length; vi++) {
+                        var pt = particles[vi];
+                        var pDistRatio = pt.distRatio * (1.0 - selfSuckP);
+                        var pDist = pDistRatio * 180.0;
+                        if (pDist <= 1.0) continue;
+                        var pAng = pt.angle + (selfSuckP * pt.speed * 2.0);
+                        var px = centerSingX + Math.cos(pAng) * pDist;
+                        var py = centerSingY + Math.sin(pAng) * pDist;
+                        var pAlpha = pt.alpha * (1.0 - selfSuckP) * Math.min(1.0, pDist / 30.0);
+
+                        ctx.fillStyle = "rgba(255, 255, 255, " + pAlpha.toFixed(3) + ")";
+                        ctx.beginPath();
+                        ctx.arc(px, py, pt.size * (1.0 - selfSuckP), 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                } else {
+                    // Stage 4 (0.88 to 1.00): Singular quantum annihilation flash -> pure darkness
+                    var finalP = (p - 0.88) / 0.12; // 0.0 to 1.0
+                    var finalPulse = Math.max(0.0, (1.0 - finalP) * 1.5);
+                    if (finalPulse > 0.01) {
+                        ctx.fillStyle = "rgba(255, 255, 255, " + (1.0 - finalP).toFixed(3) + ")";
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, finalPulse, 0, Math.PI * 2);
+                        ctx.fill();
                     }
                 }
+                return;
             }
 
-            onPaint: {
-                var ctx = getContext("2d");
-                if (!ctx) return;
-                var w = width;
-                var h = height;
-                ctx.clearRect(0, 0, w, h);
+            if (isMin) {
+                var targetDistX = jelly.taskbarTargetDistX;
+                var targetDistY = jelly.taskbarTargetDistY;
+                var flightDist = Math.sqrt(targetDistX * targetDistX + targetDistY * targetDistY);
+                var angleTheta = Math.atan2(targetDistY, targetDistX);
+                var cosA = Math.cos(angleTheta);
+                var sinA = Math.sin(angleTheta);
 
-                var p = jelly.closeProgress;
-                if (p <= 0.02 || p >= 1.0) return;
-                if (!initialized) initParticles();
+                if (mainWin.isRestoringFromMinimize) {
+                    // ============================================================
+                    // 5-STAGE REVERSE RESTORE ENGINE (2D VECTOR AWARE)
+                    // ============================================================
+                    // Stage 1 (0.00 to 0.28): Comet shoots UPWARD along straight trajectory vector to center
+                    // Stage 2 (0.28 to 0.46): Pauses in the middle, blooms to ~32px, and hangs glowing
+                    // Stage 3 (0.46 to 0.62): Disappears into itself down to a center pinpoint (32px -> 0px)
+                    // Stage 4 (0.62 to 0.74): Pauses at the microscopic pinpoint
+                    // Stage 5 (0.74 to 1.00): Bursts forth from center into final window position
 
-                var singX = mainWin.contentLocalX + (mainWin.finalW / 2.0);
-                var singY = mainWin.contentLocalY + (mainWin.finalH / 2.0);
+                    if (p < 0.28) {
+                        // Stage 1: Comet shoots from destination along trajectory angleTheta up to center
+                        var upP = p / 0.28; // 0.0 to 1.0
+                        var upEase = Math.sin(upP * Math.PI * 0.5); // Smooth deceleration approaching center
+                        var curX = (centerSingX + targetDistX) - (upEase * targetDistX);
+                        var curY = (centerSingY + targetDistY) - (upEase * targetDistY);
+                        var cometRad = 16.0; // 16px comet head
 
-                var discAlpha = Math.min(1.0, Math.pow(p * 1.4, 2.0));
-                var discRadius = Math.max(14, (1.0 - p * 0.65) * Math.min(mainWin.finalW, mainWin.finalH) * 0.45);
+                        // Incandescent comet tail trailing backwards towards launch point (angleTheta)
+                        var tailLen = Math.min(220, 24.0 + ((1.0 - upEase) * 180.0));
+                        var tailTipX = curX + (cosA * tailLen);
+                        var tailTipY = curY + (sinA * tailLen);
 
-                var grad = ctx.createRadialGradient(singX, singY, 4, singX, singY, discRadius);
-                grad.addColorStop(0.0, "rgba(56, 189, 248, " + (discAlpha * 0.85).toFixed(3) + ")");
-                grad.addColorStop(0.35, "rgba(129, 140, 248, " + (discAlpha * 0.50).toFixed(3) + ")");
-                grad.addColorStop(0.70, "rgba(244, 114, 182, " + (discAlpha * 0.22).toFixed(3) + ")");
-                grad.addColorStop(1.0, "rgba(56, 189, 248, 0.0)");
+                        var tailGrad = ctx.createLinearGradient(curX, curY, tailTipX, tailTipY);
+                        tailGrad.addColorStop(0.00, "rgba(255, 255, 255, 0.90)");
+                        tailGrad.addColorStop(0.20, "rgba(254, 240, 138, 0.75)");
+                        tailGrad.addColorStop(0.50, "rgba(251, 146, 60, 0.45)");
+                        tailGrad.addColorStop(0.80, "rgba(239, 68, 68, 0.15)");
+                        tailGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
 
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(singX, singY, discRadius, 0, Math.PI * 2);
-                ctx.fill();
+                        ctx.fillStyle = tailGrad;
+                        ctx.beginPath();
+                        // Perpendicular vector for the ribbon width
+                        var halfHead = cometRad * 0.90;
+                        var perpX = -sinA * halfHead;
+                        var perpY = cosA * halfHead;
 
-                for (var i = 0; i < particles.length; i++) {
-                    var pt = particles[i];
-                    pt.angle += (pt.speed * 0.035) / (pt.distRatio + 0.08);
-                    var currentDist = pt.distRatio * (1.0 - p * 0.86) * (Math.min(mainWin.finalW, mainWin.finalH) * 0.48);
-                    var px = singX + Math.cos(pt.angle) * currentDist;
-                    var py = singY + Math.sin(pt.angle) * currentDist;
+                        ctx.moveTo(curX + perpX, curY + perpY);
+                        ctx.quadraticCurveTo(curX + perpX * 0.4 + cosA * tailLen * 0.6, curY + perpY * 0.4 + sinA * tailLen * 0.6, tailTipX, tailTipY);
+                        ctx.quadraticCurveTo(curX - perpX * 0.4 + cosA * tailLen * 0.6, curY - perpY * 0.4 + sinA * tailLen * 0.6, curX - perpX, curY - perpY);
+                        ctx.closePath();
+                        ctx.fill();
 
-                    var ptAlpha = pt.alpha * discAlpha;
-                    var ptSize = Math.max(0.6, pt.size * (1.0 - p * 0.55));
+                        // Sparks trailing backwards along launch angle
+                        for (var st = 0; st < 14; st++) {
+                            var spDist = (st / 14) * tailLen * (0.8 + 0.2 * Math.sin(st * 3.7 + upP * 6.0));
+                            var spSpread = Math.sin(st * 5.1 + upP * 8.0) * (halfHead * (1.0 - (spDist / tailLen)));
+                            var spX = curX + (cosA * spDist) + (-sinA * spSpread);
+                            var spY = curY + (sinA * spDist) + (cosA * spSpread);
+                            var spAlpha = Math.max(0.0, 1.0 - (spDist / tailLen));
+                            ctx.fillStyle = (st % 2 === 0)
+                                ? "rgba(255, 255, 255, " + (spAlpha * 0.9).toFixed(3) + ")"
+                                : "rgba(251, 146, 60, " + (spAlpha * 0.8).toFixed(3) + ")";
+                            ctx.beginPath();
+                            ctx.arc(spX, spY, Math.max(0.5, 1.2 * spAlpha), 0, Math.PI * 2);
+                            ctx.fill();
+                        }
 
-                    ctx.fillStyle = (i % 3 === 0)
-                        ? "rgba(56, 189, 248, " + ptAlpha.toFixed(3) + ")"
-                        : (i % 3 === 1)
-                            ? "rgba(129, 140, 248, " + ptAlpha.toFixed(3) + ")"
-                            : "rgba(244, 114, 182, " + ptAlpha.toFixed(3) + ")";
+                        // Hyper-dense white-hot comet head
+                        var headGrad = ctx.createRadialGradient(curX, curY, 0.5, curX, curY, cometRad);
+                        headGrad.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                        headGrad.addColorStop(0.35, "rgba(255, 255, 255, 0.98)");
+                        headGrad.addColorStop(0.60, "rgba(255, 250, 235, 0.80)");
+                        headGrad.addColorStop(0.82, "rgba(251, 146, 60, 0.40)");
+                        headGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = headGrad;
+                        ctx.beginPath();
+                        ctx.arc(curX, curY, cometRad, 0, Math.PI * 2);
+                        ctx.fill();
+
+                    } else if (p < 0.46) {
+                        // Stage 2: Arrives at center, blooms from 16px -> 32px, and PAUSES in the middle glowing
+                        var midP = (p - 0.28) / 0.18; // 0.0 to 1.0
+                        var midEase = Math.sin(midP * Math.PI * 0.5);
+                        var midRadius = 16.0 + (midEase * 16.0); // 16px -> 32px
+
+                        // Outer champagne plasma aura
+                        var midOuter = ctx.createRadialGradient(centerSingX, centerSingY, midRadius * 0.40, centerSingX, centerSingY, midRadius * 1.22);
+                        midOuter.addColorStop(0.00, "rgba(254, 215, 170, 0.28)");
+                        midOuter.addColorStop(0.60, "rgba(251, 146, 60, 0.12)");
+                        midOuter.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+                        ctx.fillStyle = midOuter;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, midRadius * 1.22, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Suspended Incandescent Supernova Core (28/72 ratio)
+                        var midGrad = ctx.createRadialGradient(centerSingX, centerSingY, 0.5, centerSingX, centerSingY, midRadius);
+                        midGrad.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                        midGrad.addColorStop(0.28, "rgba(255, 255, 255, 0.98)");
+                        midGrad.addColorStop(0.55, "rgba(255, 250, 235, 0.75)");
+                        midGrad.addColorStop(0.78, "rgba(254, 215, 170, 0.35)");
+                        midGrad.addColorStop(0.92, "rgba(251, 146, 60, 0.12)");
+                        midGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = midGrad;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, midRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // 16 shimmering ember sparks
+                        for (var mk = 0; mk < 16; mk++) {
+                            var mkAngle = (mk / 16) * Math.PI * 2 + (midP * 1.6);
+                            var mkDist = (midRadius * 0.58) * (0.30 + 0.70 * Math.sin(mk * 5.7 + midP * 4.0));
+                            var mkx = centerSingX + Math.cos(mkAngle) * mkDist;
+                            var mky = centerSingY + Math.sin(mkAngle) * mkDist;
+                            ctx.fillStyle = (mk % 4 === 0)
+                                ? "rgba(239, 68, 68, 0.75)"
+                                : (mk % 4 === 1)
+                                    ? "rgba(251, 146, 60, 0.85)"
+                                    : (mk % 4 === 2)
+                                        ? "rgba(254, 240, 138, 0.95)"
+                                        : "rgba(255, 255, 255, 0.95)";
+                            ctx.beginPath();
+                            ctx.arc(mkx, mky, 1.0, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                    } else if (p < 0.62) {
+                        // Stage 3: Disappears into itself down to a center pinpoint (32px -> 0px)
+                        var selfSuckP = (p - 0.46) / 0.16; // 0.0 to 1.0
+                        var selfShrink = Math.pow(1.0 - selfSuckP, 2.6);
+                        var selfRadius = Math.max(0.1, selfShrink * 32.0);
+                        var selfAlpha = Math.pow(1.0 - selfSuckP, 2.2);
+
+                        var selfGrad = ctx.createRadialGradient(centerSingX, centerSingY, 0, centerSingX, centerSingY, selfRadius);
+                        selfGrad.addColorStop(0.00, "rgba(255, 255, 255, " + selfAlpha.toFixed(3) + ")");
+                        selfGrad.addColorStop(0.30, "rgba(255, 255, 255, " + (selfAlpha * 0.90).toFixed(3) + ")");
+                        selfGrad.addColorStop(0.65, "rgba(254, 215, 170, " + (selfAlpha * 0.30).toFixed(3) + ")");
+                        selfGrad.addColorStop(0.88, "rgba(251, 146, 60, " + (selfAlpha * 0.10).toFixed(3) + ")");
+                        selfGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = selfGrad;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, selfRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        if (selfRadius > 1.0) {
+                            for (var sm = 0; sm < 12; sm++) {
+                                var smAngle = (sm / 12) * Math.PI * 2 + (selfSuckP * 2.5);
+                                var smDist = selfRadius * 0.45 * (1.0 - selfSuckP * 0.5);
+                                var sx = centerSingX + Math.cos(smAngle) * smDist;
+                                var sy = centerSingY + Math.sin(smAngle) * smDist;
+                                ctx.fillStyle = (sm % 2 === 0)
+                                    ? "rgba(255, 255, 255, " + (selfAlpha * 0.95).toFixed(3) + ")"
+                                    : "rgba(251, 146, 60, " + (selfAlpha * 0.75).toFixed(3) + ")";
+                                ctx.beginPath();
+                                ctx.arc(sx, sy, Math.max(0.4, 1.0 * selfShrink), 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        }
+
+                    } else if (p < 0.74) {
+                        // Stage 4: Pauses again at the microscopic pinpoint (pregnant pause before the bloom)
+                        var holdPinP = (p - 0.62) / 0.12; // 0.0 to 1.0
+                        var pulseRad = 1.0 + (Math.sin(holdPinP * Math.PI * 2.0) * 0.6); // tiny quantum pulse
+                        ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, pulseRad, 0, Math.PI * 2);
+                        ctx.fill();
+
+                    } else {
+                        // Stage 5: Bursts forth from the center to final position (White-hole outward bloom)
+                        var burstP = (p - 0.74) / 0.26; // 0.0 to 1.0
+                        var bloomRadius = 2.0 + (Math.sin(burstP * Math.PI * 0.5) * 54.0); // expands 2px -> 56px
+                        var bloomAlpha = Math.max(0.0, 1.0 - (burstP * 1.3));
+
+                        if (bloomAlpha > 0.01) {
+                            var bloomGrad = ctx.createRadialGradient(centerSingX, centerSingY, 0.5, centerSingX, centerSingY, bloomRadius);
+                            bloomGrad.addColorStop(0.00, "rgba(255, 255, 255, " + bloomAlpha.toFixed(3) + ")");
+                            bloomGrad.addColorStop(0.35, "rgba(255, 250, 235, " + (bloomAlpha * 0.80).toFixed(3) + ")");
+                            bloomGrad.addColorStop(0.70, "rgba(254, 215, 170, " + (bloomAlpha * 0.35).toFixed(3) + ")");
+                            bloomGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                            ctx.fillStyle = bloomGrad;
+                            ctx.beginPath();
+                            ctx.arc(centerSingX, centerSingY, bloomRadius, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                } else {
+                    // ============================================================
+                    // 5-STAGE MINIMIZE TO TASKBAR / SYSTEM TRAY COMET ENGINE (2D VECTOR AWARE)
+                    // ============================================================
+                    // Stage 1 (0.00 to 0.30): Inward Suction into Center Pinpoint
+                    // Stage 2 (0.30 to 0.42): White-Hot Supernova Detonation at Center (~27.5px)
+                    // Stage 3 (0.42 to 0.65): Extended Supernova Hang & Gentle Swell (~32px max)
+                    // Stage 4 (0.65 to 0.88): Comet Contraction (half radius: 32px -> 16px) & Straight Siphon along angleTheta with Tail
+                    // Stage 5 (0.88 to 1.00): Disappears Behind the Taskbar/Tray [ISOLATED MODULAR STAGE]
+
+                    if (p < 0.30) {
+                        // Stage 1: Window UI and particle field get sucked straight into the center pinpoint
+                        var minSuckP = p / 0.30;
+                        var minAuraAlpha = Math.min(1.0, minSuckP * 2.0);
+                        var minAuraRadius = Math.max(9, (1.0 - minSuckP * 0.75) * Math.min(mainWin.finalW, mainWin.finalH) * 0.25);
+
+                        var minGrad1 = ctx.createRadialGradient(centerSingX, centerSingY, 2, centerSingX, centerSingY, minAuraRadius);
+                        minGrad1.addColorStop(0.00, "rgba(255, 255, 255, " + (minAuraAlpha * 0.95).toFixed(3) + ")");
+                        minGrad1.addColorStop(0.35, "rgba(255, 250, 235, " + (minAuraAlpha * 0.70).toFixed(3) + ")");
+                        minGrad1.addColorStop(0.70, "rgba(254, 215, 170, " + (minAuraAlpha * 0.25).toFixed(3) + ")");
+                        minGrad1.addColorStop(1.00, "rgba(251, 146, 60, 0.0)");
+
+                        ctx.fillStyle = minGrad1;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, minAuraRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        for (var mj = 0; mj < particles.length; mj++) {
+                            var mpItem = particles[mj];
+                            var mcurDist = mpItem.distRatio * (1.0 - Math.pow(minSuckP, 2.0)) * (Math.min(mainWin.finalW, mainWin.finalH) * 0.38);
+                            var mpX = centerSingX + Math.cos(mpItem.angle) * mcurDist;
+                            var mpY = centerSingY + Math.sin(mpItem.angle) * mcurDist;
+
+                            var mpAlpha = mpItem.alpha * minAuraAlpha;
+                            var mpSize = Math.max(0.6, mpItem.size * (1.0 - minSuckP * 0.4));
+
+                            ctx.fillStyle = (mj % 3 === 0)
+                                ? "rgba(255, 255, 255, " + mpAlpha.toFixed(3) + ")"
+                                : (mj % 3 === 1)
+                                    ? "rgba(254, 240, 138, " + mpAlpha.toFixed(3) + ")"
+                                    : "rgba(251, 146, 60, " + (mpAlpha * 0.8).toFixed(3) + ")";
+                            ctx.beginPath();
+                            ctx.arc(mpX, mpY, mpSize, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                    } else if (p < 0.42) {
+                        // Stage 2: Supernova Detonation (Identical white-hot core & champagne plasma aura)
+                        var minBurstP = (p - 0.30) / 0.12;
+                        var minBurstEase = Math.sin(minBurstP * Math.PI * 0.5);
+                        var minBurstRadius = 2.5 + (minBurstEase * 25.0); // ~27.5px
+
+                        var minGrad2 = ctx.createRadialGradient(centerSingX, centerSingY, 0.5, centerSingX, centerSingY, minBurstRadius);
+                        minGrad2.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                        minGrad2.addColorStop(0.28, "rgba(255, 255, 255, 0.98)");
+                        minGrad2.addColorStop(0.55, "rgba(255, 250, 235, 0.75)");
+                        minGrad2.addColorStop(0.78, "rgba(254, 215, 170, 0.35)");
+                        minGrad2.addColorStop(0.92, "rgba(251, 146, 60, 0.14)");
+                        minGrad2.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = minGrad2;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, minBurstRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        for (var mb = 0; mb < 16; mb++) {
+                            var mbAngle = (mb / 16) * Math.PI * 2 + (minBurstP * 1.5);
+                            var mbDist = (minBurstRadius * 0.55) * (0.25 + 0.75 * Math.sin(mb * 4.3 + minBurstP * 3.0));
+                            var mbx = centerSingX + Math.cos(mbAngle) * mbDist;
+                            var mby = centerSingY + Math.sin(mbAngle) * mbDist;
+                            ctx.fillStyle = (mb % 4 === 0)
+                                ? "rgba(239, 68, 68, 0.75)"
+                                : (mb % 4 === 1)
+                                    ? "rgba(251, 146, 60, 0.85)"
+                                    : (mb % 4 === 2)
+                                        ? "rgba(254, 240, 138, 0.95)"
+                                        : "rgba(255, 255, 255, 0.95)";
+                            ctx.beginPath();
+                            ctx.arc(mbx, mby, 0.9 + (minBurstEase * 0.3), 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                    } else if (p < 0.65) {
+                        // Stage 3: Extended Supernova Hang & Gentle Swell
+                        var minHangP = (p - 0.42) / 0.23;
+                        var minHangEase = Math.sin(minHangP * Math.PI * 0.5);
+                        var minHangRadius = 27.5 + (minHangEase * 4.5); // ~32px max
+
+                        var minOuterGrad = ctx.createRadialGradient(centerSingX, centerSingY, minHangRadius * 0.40, centerSingX, centerSingY, minHangRadius * 1.22);
+                        minOuterGrad.addColorStop(0.00, "rgba(254, 215, 170, 0.28)");
+                        minOuterGrad.addColorStop(0.60, "rgba(251, 146, 60, 0.12)");
+                        minOuterGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+                        ctx.fillStyle = minOuterGrad;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, minHangRadius * 1.22, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        var minGrad3 = ctx.createRadialGradient(centerSingX, centerSingY, 0.5, centerSingX, centerSingY, minHangRadius);
+                        minGrad3.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                        minGrad3.addColorStop(0.28, "rgba(255, 255, 255, 0.98)");
+                        minGrad3.addColorStop(0.55, "rgba(255, 250, 235, 0.75)");
+                        minGrad3.addColorStop(0.78, "rgba(254, 215, 170, 0.35)");
+                        minGrad3.addColorStop(0.92, "rgba(251, 146, 60, 0.12)");
+                        minGrad3.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = minGrad3;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, minHangRadius, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        for (var mk = 0; mk < 16; mk++) {
+                            var mkAngle = (mk / 16) * Math.PI * 2 + (minHangP * 1.6);
+                            var mkDist = (minHangRadius * 0.58) * (0.30 + 0.70 * Math.sin(mk * 5.7 + minHangP * 4.0));
+                            var mkx = centerSingX + Math.cos(mkAngle) * mkDist;
+                            var mky = centerSingY + Math.sin(mkAngle) * mkDist;
+                            ctx.fillStyle = (mk % 4 === 0)
+                                ? "rgba(239, 68, 68, 0.75)"
+                                : (mk % 4 === 1)
+                                    ? "rgba(251, 146, 60, 0.85)"
+                                    : (mk % 4 === 2)
+                                        ? "rgba(254, 240, 138, 0.95)"
+                                        : "rgba(255, 255, 255, 0.95)";
+                            ctx.beginPath();
+                            ctx.arc(mkx, mky, 1.0, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                    } else if (p < 0.88) {
+                        // Stage 4: Comet Contraction (Radius halved: 32px -> 16px) & Straight Siphon along angleTheta with Glowing Tail
+                        var cometP = (p - 0.65) / 0.23; // 0.0 to 1.0
+                        var cometContract = 32.0 - (cometP * 16.0); // 32px -> 16px
+                        var cometEase = Math.pow(cometP, 2.4); // Gravitational acceleration along straight trajectory line
+                        var headX = centerSingX + (cometEase * targetDistX);
+                        var headY = centerSingY + (cometEase * targetDistY);
+
+                        // Draw Glowing Incandescent Comet Tail (Trailing backwards from flight angle)
+                        var tailLength = Math.min(220, 24.0 + (cometEase * 180.0));
+                        var tailTipX = headX - (cosA * tailLength);
+                        var tailTipY = headY - (sinA * tailLength);
+
+                        var tailGrad = ctx.createLinearGradient(headX, headY, tailTipX, tailTipY);
+                        tailGrad.addColorStop(0.00, "rgba(255, 255, 255, 0.90)");
+                        tailGrad.addColorStop(0.20, "rgba(254, 240, 138, 0.75)");
+                        tailGrad.addColorStop(0.50, "rgba(251, 146, 60, 0.45)");
+                        tailGrad.addColorStop(0.80, "rgba(239, 68, 68, 0.15)");
+                        tailGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = tailGrad;
+                        ctx.beginPath();
+                        // Tapered aerodynamic comet tail ribbon perpendicular to flight path
+                        var halfHeadW = cometContract * 0.90;
+                        var perpX = -sinA * halfHeadW;
+                        var perpY = cosA * halfHeadW;
+
+                        ctx.moveTo(headX + perpX, headY + perpY);
+                        ctx.quadraticCurveTo(headX + perpX * 0.4 - cosA * tailLength * 0.6, headY + perpY * 0.4 - sinA * tailLength * 0.6, tailTipX, tailTipY);
+                        ctx.quadraticCurveTo(headX - perpX * 0.4 - cosA * tailLength * 0.6, headY - perpY * 0.4 - sinA * tailLength * 0.6, headX - perpX, headY - perpY);
+                        ctx.closePath();
+                        ctx.fill();
+
+                        // Trailing sparks and plasma embers streaming backwards along flight wake
+                        for (var t = 0; t < 16; t++) {
+                            var sparkDist = (t / 16) * tailLength * (0.8 + 0.2 * Math.sin(t * 3.7 + cometP * 6.0));
+                            var sparkSpread = (Math.sin(t * 5.1 + cometP * 8.0) * (halfHeadW * (1.0 - (sparkDist / tailLength))));
+                            var spX = headX - (cosA * sparkDist) + (-sinA * sparkSpread);
+                            var spY = headY - (sinA * sparkDist) + (cosA * sparkSpread);
+                            var spAlpha = Math.max(0.0, 1.0 - (sparkDist / tailLength));
+                            ctx.fillStyle = (t % 2 === 0)
+                                ? "rgba(255, 255, 255, " + (spAlpha * 0.9).toFixed(3) + ")"
+                                : "rgba(251, 146, 60, " + (spAlpha * 0.8).toFixed(3) + ")";
+                            ctx.beginPath();
+                            ctx.arc(spX, spY, Math.max(0.5, 1.2 * spAlpha), 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                        // Hyper-Dense White-Hot Comet Head (16px)
+                        var headGrad = ctx.createRadialGradient(headX, headY, 0.5, headX, headY, cometContract);
+                        headGrad.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                        headGrad.addColorStop(0.35, "rgba(255, 255, 255, 0.98)");
+                        headGrad.addColorStop(0.60, "rgba(255, 250, 235, 0.80)");
+                        headGrad.addColorStop(0.82, "rgba(251, 146, 60, 0.40)");
+                        headGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = headGrad;
+                        ctx.beginPath();
+                        ctx.arc(headX, headY, cometContract, 0, Math.PI * 2);
+                        ctx.fill();
+
+                    } else {
+                        // ============================================================
+                        // STAGE 5: DISAPPEARS BEHIND DESTINATION HORIZON (ISOLATED MODULAR STAGE)
+                        // ============================================================
+                        var stage5P = (p - 0.88) / 0.12; // 0.0 to 1.0
+                        var destHorizonX = centerSingX + targetDistX;
+                        var destHorizonY = centerSingY + targetDistY;
+                        var s5HeadX = destHorizonX + (cosA * stage5P * 24.0);
+                        var s5HeadY = destHorizonY + (sinA * stage5P * 24.0);
+                        var s5Alpha = Math.max(0.0, 1.0 - Math.pow(stage5P, 1.8)); // Clean disappearance
+                        var s5Radius = Math.max(0.5, 16.0 * (1.0 - (stage5P * 0.5)));
+
+                        // Dissipating tail wake above destination horizon
+                        var s5TailLen = Math.max(10, 120.0 * (1.0 - stage5P));
+                        var s5TipX = destHorizonX - (cosA * s5TailLen);
+                        var s5TipY = destHorizonY - (sinA * s5TailLen);
+                        var s5TailGrad = ctx.createLinearGradient(destHorizonX, destHorizonY, s5TipX, s5TipY);
+                        s5TailGrad.addColorStop(0.00, "rgba(254, 240, 138, " + (s5Alpha * 0.7).toFixed(3) + ")");
+                        s5TailGrad.addColorStop(0.50, "rgba(251, 146, 60, " + (s5Alpha * 0.4).toFixed(3) + ")");
+                        s5TailGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = s5TailGrad;
+                        ctx.beginPath();
+                        var s5PerpX = -sinA * 12;
+                        var s5PerpY = cosA * 12;
+                        ctx.moveTo(destHorizonX + s5PerpX, destHorizonY + s5PerpY);
+                        ctx.quadraticCurveTo(destHorizonX + s5PerpX * 0.3 - cosA * s5TailLen * 0.5, destHorizonY + s5PerpY * 0.3 - sinA * s5TailLen * 0.5, s5TipX, s5TipY);
+                        ctx.quadraticCurveTo(destHorizonX - s5PerpX * 0.3 - cosA * s5TailLen * 0.5, destHorizonY - s5PerpY * 0.3 - sinA * s5TailLen * 0.5, destHorizonX - s5PerpX, destHorizonY - s5PerpY);
+                        ctx.closePath();
+                        ctx.fill();
+
+                        // Submerging Comet Head
+                        var s5Grad = ctx.createRadialGradient(s5HeadX, s5HeadY, 0.5, s5HeadX, s5HeadY, s5Radius);
+                        s5Grad.addColorStop(0.00, "rgba(255, 255, 255, " + s5Alpha.toFixed(3) + ")");
+                        s5Grad.addColorStop(0.40, "rgba(255, 250, 235, " + (s5Alpha * 0.85).toFixed(3) + ")");
+                        s5Grad.addColorStop(0.80, "rgba(251, 146, 60, " + (s5Alpha * 0.35).toFixed(3) + ")");
+                        s5Grad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                        ctx.fillStyle = s5Grad;
+                        ctx.beginPath();
+                        ctx.arc(s5HeadX, s5HeadY, s5Radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            } else {
+                // CLOSE ANIMATION: White-Hot Supernova Flash with Rapid Prominent Fizzle Out
+                // 1. Inward Suction (0.0 to 0.30)
+                // 2. Supernova Detonation (0.30 to 0.42) - Scaled down 10% (~27.5px), same 28/72 ratio
+                // 3. Extended "Hang & Gentle Swell" (0.42 to 0.76) - Scaled down 10% (~32px max), glowing champagne plasma
+                // 4. Rapid Prominent Fizzle Out (0.76 to 1.0) - Fast optical fade-out and crisp suction into center
+                if (p < 0.30) {
+                    // Stage 1: Window UI and particle field get sucked straight into the center pinpoint
+                    var suckP = p / 0.30;
+                    var auraAlpha = Math.min(1.0, suckP * 2.0);
+                    var auraRadius = Math.max(9, (1.0 - suckP * 0.75) * Math.min(mainWin.finalW, mainWin.finalH) * 0.25);
+
+                    var grad1 = ctx.createRadialGradient(singX, singY, 2, singX, singY, auraRadius);
+                    grad1.addColorStop(0.00, "rgba(255, 255, 255, " + (auraAlpha * 0.95).toFixed(3) + ")");
+                    grad1.addColorStop(0.35, "rgba(255, 250, 235, " + (auraAlpha * 0.70).toFixed(3) + ")");
+                    grad1.addColorStop(0.70, "rgba(254, 215, 170, " + (auraAlpha * 0.25).toFixed(3) + ")");
+                    grad1.addColorStop(1.00, "rgba(251, 146, 60, 0.0)");
+
+                    ctx.fillStyle = grad1;
                     ctx.beginPath();
-                    ctx.arc(px, py, ptSize, 0, Math.PI * 2);
+                    ctx.arc(singX, singY, auraRadius, 0, Math.PI * 2);
                     ctx.fill();
+
+                    // Particles stream straight inward towards the center point
+                    for (var j = 0; j < particles.length; j++) {
+                        var pItem = particles[j];
+                        var curDist = pItem.distRatio * (1.0 - Math.pow(suckP, 2.0)) * (Math.min(mainWin.finalW, mainWin.finalH) * 0.38);
+                        var pX = singX + Math.cos(pItem.angle) * curDist;
+                        var pY = singY + Math.sin(pItem.angle) * curDist;
+
+                        var pAlpha = pItem.alpha * auraAlpha;
+                        var pSize = Math.max(0.6, pItem.size * (1.0 - suckP * 0.4));
+
+                        ctx.fillStyle = (j % 3 === 0)
+                            ? "rgba(255, 255, 255, " + pAlpha.toFixed(3) + ")"
+                            : (j % 3 === 1)
+                                ? "rgba(254, 240, 138, " + pAlpha.toFixed(3) + ")"
+                                : "rgba(251, 146, 60, " + (pAlpha * 0.8).toFixed(3) + ")";
+                        ctx.beginPath();
+                        ctx.arc(pX, pY, pSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                } else if (p < 0.42) {
+                    // Stage 2: Supernova Detonation (10% smaller radius, 28/72 ratio)
+                    var burstP = (p - 0.30) / 0.12; // 0.0 to 1.0
+                    var burstEase = Math.sin(burstP * Math.PI * 0.5); // Explosive OutQuad expansion
+                    var burstRadius = 2.5 + (burstEase * 25.0); // ~27.5px total footprint (-10%)
+
+                    // Concentrated core with large soft glowing plasma falloff
+                    var grad2 = ctx.createRadialGradient(singX, singY, 0.5, singX, singY, burstRadius);
+                    grad2.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                    grad2.addColorStop(0.28, "rgba(255, 255, 255, 0.98)"); // small solid center (~7.5px)
+                    grad2.addColorStop(0.55, "rgba(255, 250, 235, 0.75)"); // wide glowing champagne plasma
+                    grad2.addColorStop(0.78, "rgba(254, 215, 170, 0.35)"); // delicate warm amber plasma
+                    grad2.addColorStop(0.92, "rgba(251, 146, 60, 0.14)"); // faint solar warmth
+                    grad2.addColorStop(1.00, "rgba(239, 68, 68, 0.00)"); // outer fade
+
+                    ctx.fillStyle = grad2;
+                    ctx.beginPath();
+                    ctx.arc(singX, singY, burstRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Internal delicate ember dots
+                    for (var b = 0; b < 16; b++) {
+                        var bAngle = (b / 16) * Math.PI * 2 + (burstP * 1.5);
+                        var bDist = (burstRadius * 0.55) * (0.25 + 0.75 * Math.sin(b * 4.3 + burstP * 3.0));
+                        var bx = singX + Math.cos(bAngle) * bDist;
+                        var by = singY + Math.sin(bAngle) * bDist;
+                        ctx.fillStyle = (b % 4 === 0)
+                            ? "rgba(239, 68, 68, 0.75)"      // subtle crimson accent
+                            : (b % 4 === 1)
+                                ? "rgba(251, 146, 60, 0.85)"  // soft amber
+                                : (b % 4 === 2)
+                                    ? "rgba(254, 240, 138, 0.95)" // pale champagne
+                                    : "rgba(255, 255, 255, 0.95)"; // white spark
+                        ctx.beginPath();
+                        ctx.arc(bx, by, 0.9 + (burstEase * 0.3), 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                } else if (p < 0.76) {
+                    // Stage 3: Extended "Hang & Gentle Swell" (10% smaller radius: ~32px max, 28/72 ratio)
+                    var hangP = (p - 0.42) / 0.34; // 0.0 to 1.0
+                    var hangEase = Math.sin(hangP * Math.PI * 0.5);
+                    var hangRadius = 27.5 + (hangEase * 4.5); // ~32px total footprint (-10%)
+
+                    // Wide ethereal plasma aura fading seamlessly towards exterior
+                    var outerGrad = ctx.createRadialGradient(singX, singY, hangRadius * 0.40, singX, singY, hangRadius * 1.22);
+                    outerGrad.addColorStop(0.00, "rgba(254, 215, 170, 0.28)");
+                    outerGrad.addColorStop(0.60, "rgba(251, 146, 60, 0.12)");
+                    outerGrad.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+                    ctx.fillStyle = outerGrad;
+                    ctx.beginPath();
+                    ctx.arc(singX, singY, hangRadius * 1.22, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Concentrated Core with dominant glowing champagne plasma aura
+                    var grad3 = ctx.createRadialGradient(singX, singY, 0.5, singX, singY, hangRadius);
+                    grad3.addColorStop(0.00, "rgba(255, 255, 255, 1.0)");
+                    grad3.addColorStop(0.28, "rgba(255, 255, 255, 0.98)"); // solid center (~9px)
+                    grad3.addColorStop(0.55, "rgba(255, 250, 235, 0.75)"); // wide glowing champagne plasma (~72% area)
+                    grad3.addColorStop(0.78, "rgba(254, 215, 170, 0.35)"); // delicate warm amber plasma
+                    grad3.addColorStop(0.92, "rgba(251, 146, 60, 0.12)"); // faint solar warmth
+                    grad3.addColorStop(1.00, "rgba(239, 68, 68, 0.00)"); // seamless fade to transparent
+
+                    ctx.fillStyle = grad3;
+                    ctx.beginPath();
+                    ctx.arc(singX, singY, hangRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 16 delicate ember dots shimmering inside the core and glowing plasma
+                    for (var k = 0; k < 16; k++) {
+                        var emberAngle = (k / 16) * Math.PI * 2 + (hangP * 1.6);
+                        var emberDist = (hangRadius * 0.58) * (0.30 + 0.70 * Math.sin(k * 5.7 + hangP * 4.0));
+                        var epX = singX + Math.cos(emberAngle) * emberDist;
+                        var epY = singY + Math.sin(emberAngle) * emberDist;
+
+                        ctx.fillStyle = (k % 4 === 0)
+                            ? "rgba(239, 68, 68, 0.75)"      // subtle crimson accent
+                            : (k % 4 === 1)
+                                ? "rgba(251, 146, 60, 0.85)"  // soft amber
+                                : (k % 4 === 2)
+                                    ? "rgba(254, 240, 138, 0.95)" // pale champagne
+                                    : "rgba(255, 255, 255, 0.95)"; // white spark
+                        ctx.beginPath();
+                        ctx.arc(epX, epY, 1.0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+
+                } else {
+                    // Stage 4: Rapid Prominent Fade-Out & Sucked into Center Pinpoint!
+                    var fizzleP = (p - 0.76) / 0.24; // 0.0 to 1.0
+                    var shrinkFactor = Math.pow(1.0 - fizzleP, 2.8); // Snappy, crisp gravitational contraction
+                    var fizzleAlpha = Math.pow(1.0 - fizzleP, 2.6); // Rapid, prominent optical fade-out
+                    var fizzleRadius = Math.max(0.1, shrinkFactor * 32.0);
+
+                    var grad4 = ctx.createRadialGradient(singX, singY, 0, singX, singY, fizzleRadius);
+                    grad4.addColorStop(0.00, "rgba(255, 255, 255, " + fizzleAlpha.toFixed(3) + ")");
+                    grad4.addColorStop(0.30, "rgba(255, 255, 255, " + (fizzleAlpha * 0.90).toFixed(3) + ")");
+                    grad4.addColorStop(0.65, "rgba(254, 215, 170, " + (fizzleAlpha * 0.30).toFixed(3) + ")");
+                    grad4.addColorStop(0.88, "rgba(251, 146, 60, " + (fizzleAlpha * 0.10).toFixed(3) + ")");
+                    grad4.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+
+                    ctx.fillStyle = grad4;
+                    ctx.beginPath();
+                    ctx.arc(singX, singY, fizzleRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Embers getting drawn rapidly into the pinpoint hole
+                    if (fizzleRadius > 1.0) {
+                        for (var m = 0; m < 12; m++) {
+                            var retAngle = (m / 12) * Math.PI * 2 + (fizzleP * 2.5);
+                            var retDist = fizzleRadius * 0.45 * (1.0 - fizzleP * 0.5);
+                            var rx = singX + Math.cos(retAngle) * retDist;
+                            var ry = singY + Math.sin(retAngle) * retDist;
+                            ctx.fillStyle = (m % 2 === 0)
+                                ? "rgba(255, 255, 255, " + (fizzleAlpha * 0.95).toFixed(3) + ")"
+                                : "rgba(251, 146, 60, " + (fizzleAlpha * 0.75).toFixed(3) + ")";
+                            ctx.beginPath();
+                            ctx.arc(rx, ry, Math.max(0.4, 1.0 * shrinkFactor), 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
                 }
             }
         }
@@ -9521,33 +10294,234 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
 
         mainWin.isMinimizing = true;
+        mainWin.isMinimizingToTray = false;
+        mainWin.minimizeRestorePending = true;
         if (!mainWin.uiMaximized) {
             mainWin.rememberRestoreGeometry();
         }
-        mainWin.updateTargetScreenFromFinalCenter();
-        mainWin.refreshActiveVisibleRect();
+        var targetDistX = 0.0;
+        var targetDistY = (mainWin.finalH / 2.0) + mainWin.glowPadding;
 
-        // The Professional transition is intentionally retained, but a
-        // high-DPI frame capture must not delay its first frame.  Its overlay
-        // renders the live read-only shell for this short handoff instead.
-        if (mainWin.appStyle === "Professional") {
-            if (mainWin.createMinimizeOverlayWithSnapshot("")) {
-                return true;
+        mainWin.lastMinimizeTargetDistX = targetDistX;
+        mainWin.lastMinimizeTargetDistY = targetDistY;
+
+        jelly.startMinimize(targetDistX, targetDistY);
+        return true;
+    }
+
+    function requestMinimizeToTrayAnimation() {
+        if (mainWin.forceClose || mainWin.isClosing || mainWin.isMinimizing || mainWin.isRestoringFromMinimize || mainWin.maximizeAnimInProgress) return false;
+        if (dragFxReleaseAnimation.running) {
+            dragFxReleaseAnimation.stop();
+        }
+        resetDragFxState();
+        mainWin.phaseLog("MINIMIZE", "Minimize to System Tray requested via right-click");
+        if (sfxBus && sfxBus.playWindowDeform) {
+            sfxBus.playWindowDeform(0.56);
+        }
+        mainWin.clearMinimizeRestoreState();
+
+        if (mainWin.userMoveInProgress) {
+            mainWin.finishUserDrag();
+        }
+        if (mainWin.userResizeInProgress) {
+            mainWin.finishUserResize();
+        }
+
+        mainWin.isMinimizing = true;
+        mainWin.isMinimizingToTray = true;
+        mainWin.minimizeRestorePending = true;
+        if (!mainWin.uiMaximized) {
+            mainWin.rememberRestoreGeometry();
+        }
+
+        // Query the actual system tray location for angle-correct comet flight
+        var targetDistX, targetDistY;
+        mainWin._crossMonitorTrayFlight = false;
+        if (typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
+            var winCX = Math.round(mainWin.x + mainWin.width / 2.0);
+            var winCY = Math.round(mainWin.y + mainWin.height / 2.0);
+            var info = trayController.getTrayFlightInfo(winCX, winCY);
+            console.warn("[TRAY-GEOM] getTrayFlightInfo result: available=" + (info ? info.available : "null")
+                + " trayCenterX=" + (info ? info.trayCenterX : "?") + " trayCenterY=" + (info ? info.trayCenterY : "?")
+                + " sameMonitor=" + (info ? info.sameMonitor : "?") + " winCX=" + winCX + " winCY=" + winCY);
+            if (info && info.available) {
+                // Store for cross-monitor overlay use
+                mainWin._trayTargetGlobalX = info.trayCenterX;
+                mainWin._trayTargetGlobalY = info.trayCenterY;
+                mainWin._windowCenterGlobalX = winCX;
+                mainWin._windowCenterGlobalY = winCY;
+                mainWin._vdX = info.vdX;
+                mainWin._vdY = info.vdY;
+                mainWin._vdW = info.vdW;
+                mainWin._vdH = info.vdH;
+                mainWin._crossMonitorTrayFlight = !info.sameMonitor;
+
+                // Compute angle-corrected in-window targetDist
+                var angle = Math.atan2(info.trayCenterY - winCY, info.trayCenterX - winCX);
+                var mag = Math.sqrt(Math.pow(mainWin.finalW / 2.0 + mainWin.glowPadding, 2)
+                                  + Math.pow(mainWin.finalH / 2.0 + mainWin.glowPadding, 2));
+                targetDistX = Math.cos(angle) * mag;
+                targetDistY = Math.sin(angle) * mag;
+            } else {
+                // Fallback: bottom-right of current monitor
+                targetDistX = (mainWin.finalW / 2.0) + mainWin.glowPadding;
+                targetDistY = (mainWin.finalH / 2.0) + mainWin.glowPadding;
+            }
+        } else {
+            targetDistX = (mainWin.finalW / 2.0) + mainWin.glowPadding;
+            targetDistY = (mainWin.finalH / 2.0) + mainWin.glowPadding;
+        }
+
+        mainWin.lastMinimizeTargetDistX = targetDistX;
+        mainWin.lastMinimizeTargetDistY = targetDistY;
+
+        jelly.startMinimize(targetDistX, targetDistY);
+        return true;
+    }
+
+    function requestExitFromTrayAnimation() {
+        mainWin.phaseLog("EXIT", "Exit from System Tray animation requested");
+        if (mainWin.isClosing && !mainWin.isExitingFromTray) return false;
+
+        // Check if tray is on a different monitor — fly overlay comet first
+        if (typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
+            var winCX = Math.round(mainWin.x + mainWin.width / 2.0);
+            var winCY = Math.round(mainWin.y + mainWin.height / 2.0);
+            var info = trayController.getTrayFlightInfo(winCX, winCY);
+            if (info && info.available && !info.sameMonitor) {
+                mainWin._pendingTrayAction = "exit";
+                var overlay = mainWin._ensureCrossMonitorOverlay();
+                if (overlay) {
+                    var dist = Math.sqrt(
+                        Math.pow(winCX - info.trayCenterX, 2) +
+                        Math.pow(winCY - info.trayCenterY, 2)
+                    );
+                    var durationMs = Math.round(Math.min(800, Math.max(400, dist * 0.3)));
+                    overlay.launchFlight(
+                        info.trayCenterX, info.trayCenterY,
+                        winCX, winCY,
+                        info.vdX, info.vdY, info.vdW, info.vdH,
+                        durationMs
+                    );
+                    return true;
+                }
             }
         }
 
-        if (mainWin.beginMinimizeOverlayHandoff()) {
-            return true;
+        mainWin._startExitFromTrayInWindow();
+        return true;
+    }
+
+    function _startExitFromTrayInWindow() {
+        console.warn("[TRAY-ANIM] _startExitFromTrayInWindow called");
+        trayKeepAlive.visible = false;
+        mainWin.animationPhase = "closing";
+        mainWin.clearMinimizeRestoreState();
+        mainWin.isClosing = true;
+        mainWin.isExitingFromTray = true;
+        mainWin.isMinimizing = false;
+        mainWin.isRestoringFromMinimize = false;
+        mainWin.wasWindowMinimized = false;
+
+        mainWin.applyHostEnvelopeForTarget();
+        mainWin.updateCanvasGeometry();
+
+        mainWin.opacity = 1.0;
+        mainWin.showNormal();
+        mainWin.requestActivate();
+
+        var targetDistX = (mainWin.finalW / 2.0) + mainWin.glowPadding;
+        var targetDistY = (mainWin.finalH / 2.0) + mainWin.glowPadding;
+
+        console.warn("[TRAY-ANIM]   calling jelly.startExitFromTray distX=" + targetDistX + " distY=" + targetDistY);
+        jelly.startExitFromTray(targetDistX, targetDistY);
+    }
+
+    function requestRestoreFromTrayAnimation() {
+        mainWin.phaseLog("RESTORE", "Restore from System Tray animation requested");
+        if (mainWin.isClosing) return false;
+
+        // Check if tray is on a different monitor — fly overlay comet first
+        if (typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
+            var winCX = Math.round(mainWin.x + mainWin.width / 2.0);
+            var winCY = Math.round(mainWin.y + mainWin.height / 2.0);
+            var info = trayController.getTrayFlightInfo(winCX, winCY);
+            if (info && info.available && !info.sameMonitor) {
+                mainWin._pendingTrayAction = "restore";
+                var overlay = mainWin._ensureCrossMonitorOverlay();
+                if (overlay) {
+                    var dist = Math.sqrt(
+                        Math.pow(winCX - info.trayCenterX, 2) +
+                        Math.pow(winCY - info.trayCenterY, 2)
+                    );
+                    var durationMs = Math.round(Math.min(800, Math.max(400, dist * 0.3)));
+                    overlay.launchFlight(
+                        info.trayCenterX, info.trayCenterY,
+                        winCX, winCY,
+                        info.vdX, info.vdY, info.vdW, info.vdH,
+                        durationMs
+                    );
+                    return true;
+                }
+            }
         }
 
-        mainWin.phaseLog("MINIMIZE", "Overlay handoff unavailable; minimizing directly");
-        mainWin.isMinimizing = false;
-        mainWin.clearMinimizeRestoreState();
-        if (sfxBus && sfxBus.playWindowSettle) {
-            sfxBus.playWindowSettle("minimize", 0.50);
-        }
-        mainWin.showMinimized();
+        mainWin._startRestoreFromTrayInWindow();
         return true;
+    }
+
+    function _startRestoreFromTrayInWindow() {
+        console.warn("[TRAY-ANIM] _startRestoreFromTrayInWindow called");
+        trayKeepAlive.visible = false;
+        console.warn("[TRAY-ANIM]   isClosing=" + mainWin.isClosing + " isMinimizing=" + mainWin.isMinimizing
+            + " isRestoringFromMinimize=" + mainWin.isRestoringFromMinimize + " wasWindowMinimized=" + mainWin.wasWindowMinimized
+            + " animationPhase=" + mainWin.animationPhase + " isVisible=" + mainWin.visible);
+        mainWin.clearMinimizeRestoreState();
+        mainWin.isClosing = false;
+        mainWin.isExitingFromTray = false;
+        mainWin.isMinimizing = false;
+        mainWin.isRestoringFromMinimize = true;
+        mainWin.wasWindowMinimized = false;
+
+        mainWin.applyHostEnvelopeForTarget();
+        mainWin.updateCanvasGeometry();
+
+        mainWin.opacity = 1.0;
+        mainWin.showNormal();
+        mainWin.requestActivate();
+
+        var targetDistX = (mainWin.lastMinimizeTargetDistX !== 0.0) ? mainWin.lastMinimizeTargetDistX : ((mainWin.finalW / 2.0) + mainWin.glowPadding);
+        var targetDistY = (mainWin.lastMinimizeTargetDistY !== 0.0) ? mainWin.lastMinimizeTargetDistY : ((mainWin.finalH / 2.0) + mainWin.glowPadding);
+
+        console.warn("[TRAY-ANIM]   calling jelly.startRestore distX=" + targetDistX + " distY=" + targetDistY);
+        jelly.startRestore(targetDistX, targetDistY);
+    }
+
+    function _ensureCrossMonitorOverlay() {
+        if (mainWin._crossMonitorOverlay) return mainWin._crossMonitorOverlay;
+        try {
+            var comp = Qt.createComponent("components/CrossMonitorCometOverlay.qml");
+            if (comp.status === Component.Ready) {
+                mainWin._crossMonitorOverlay = comp.createObject(null);
+                mainWin._crossMonitorOverlay.flightFinished.connect(mainWin._onCrossMonitorFlightFinished);
+            } else if (comp.status === Component.Error) {
+                console.warn("[TRAY] CrossMonitorCometOverlay load error: " + comp.errorString());
+            }
+        } catch (e) {
+            console.warn("[TRAY] Failed to create CrossMonitorCometOverlay: " + e);
+        }
+        return mainWin._crossMonitorOverlay;
+    }
+
+    function _onCrossMonitorFlightFinished() {
+        var action = mainWin._pendingTrayAction;
+        mainWin._pendingTrayAction = "";
+        if (action === "restore") {
+            mainWin._startRestoreFromTrayInWindow();
+        } else if (action === "exit") {
+            mainWin._startExitFromTrayInWindow();
+        }
     }
 
     function finalizeCloseSequence(reason) {
@@ -9647,6 +10621,132 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         message: mainWin.appNotificationMessage
         isActive: mainWin.appNotificationActive
         tone: mainWin.appNotificationTone
+    }
+
+    Window {
+        id: systemTrayToastWindow
+        flags: Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus | Qt.WindowStaysOnTopHint
+        color: "transparent"
+        width: 350
+        height: 60
+        visible: false
+
+        property string toastMessage: "CSPM is running in the system tray"
+
+        function showToast(msg) {
+            if (msg && msg.length > 0) {
+                toastMessage = msg;
+            }
+            var targetScreenObj = mainWin.targetScreen || (Qt.application.screens ? Qt.application.screens[0] : null);
+            var sw = (targetScreenObj && targetScreenObj.width > 0) ? targetScreenObj.width : 1920;
+            var sh = (targetScreenObj && targetScreenObj.height > 0) ? targetScreenObj.height : 1080;
+            var sx = (targetScreenObj && typeof targetScreenObj.x === "number") ? targetScreenObj.x : 0;
+            var sy = (targetScreenObj && typeof targetScreenObj.y === "number") ? targetScreenObj.y : 0;
+
+            systemTrayToastWindow.x = sx + sw - systemTrayToastWindow.width - 20;
+            systemTrayToastWindow.y = sy + sh - systemTrayToastWindow.height - 54;
+            systemTrayToastWindow.show();
+            standaloneToastAnim.restart();
+        }
+
+        Rectangle {
+            id: standaloneToastBubble
+            anchors.fill: parent
+            anchors.margins: 4
+            radius: 12
+            color: "#0F172A"
+            border.color: "#334155"
+            border.width: 1
+            opacity: 0.0
+
+            SequentialAnimation {
+                id: standaloneToastAnim
+                running: false
+
+                NumberAnimation {
+                    target: standaloneToastBubble
+                    property: "opacity"
+                    from: 0.0
+                    to: 0.96
+                    duration: 220
+                    easing.type: Easing.OutQuad
+                }
+
+                PauseAnimation {
+                    duration: 3200
+                }
+
+                NumberAnimation {
+                    target: standaloneToastBubble
+                    property: "opacity"
+                    from: 0.96
+                    to: 0.0
+                    duration: 650
+                    easing.type: Easing.InQuad
+                }
+
+                onFinished: {
+                    systemTrayToastWindow.hide();
+                }
+            }
+
+            Row {
+                anchors.fill: parent
+                anchors.leftMargin: 14
+                anchors.rightMargin: 14
+                spacing: 12
+                layoutDirection: Qt.LeftToRight
+
+                Rectangle {
+                    width: 28
+                    height: 28
+                    radius: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: "#2638BDF8"
+                    border.color: "#6638BDF8"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "▲"
+                        font.pixelSize: 11
+                        color: "#38BDF8"
+                    }
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    width: parent.width - 48
+
+                    Text {
+                        text: systemTrayToastWindow.toastMessage
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        color: "#F8FAFC"
+                        elide: Text.ElideRight
+                        width: parent.width
+                    }
+
+                    Text {
+                        text: "Click the system tray icon to restore"
+                        font.pixelSize: 11
+                        color: "#94A3B8"
+                        elide: Text.ElideRight
+                        width: parent.width
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    standaloneToastAnim.stop();
+                    standaloneToastBubble.opacity = 0.0;
+                    systemTrayToastWindow.hide();
+                }
+            }
+        }
     }
 
     TextEdit {
@@ -9900,11 +11000,6 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 if (mainWin.isMinimizing) {
                     mainWin.isMinimizing = false;
                 }
-                if (mainWin.isRestoringFromMinimize) {
-                    mainWin.isRestoringFromMinimize = false;
-                }
-                mainWin.destroyMinimizeOverlay();
-                mainWin.opacity = mainWin.minimizeRestorePending ? 0.0 : 1.0;
                 return;
             }
 
@@ -9914,22 +11009,20 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             }
 
             var resumedFromTaskbar = mainWin.wasWindowMinimized;
-            mainWin.wasWindowMinimized = false;
             if (resumedFromTaskbar && !mainWin.isClosing) {
-                if (mainWin.minimizeRestorePending) {
-                    mainWin.phaseLog("RESTORE", "Taskbar restore detected; replaying minimize in reverse");
-                    mainWin.opacity = 0.0;
-                    try { if (mainWin.showNormal) mainWin.showNormal(); } catch (e) {}
-                    try { if (mainWin.show) mainWin.show(); } catch (e) {}
-                    if (mainWin.beginRestoreFromMinimize()) {
-                        return;
-                    }
-                } else {
-                    try { if (mainWin.showNormal) mainWin.showNormal(); } catch (e) {}
-                    try { if (mainWin.show) mainWin.show(); } catch (e) {}
+                mainWin.phaseLog("RESTORE", "Taskbar/Tray restore detected; running Gravitational Siphon restore");
+                mainWin.isRestoringFromMinimize = true;
+                mainWin.wasWindowMinimized = false;
+
+                var targetDistX = mainWin.lastMinimizeTargetDistX;
+                var targetDistY = mainWin.lastMinimizeTargetDistY;
+                if (!isFinite(targetDistY) || targetDistY <= 0.0) {
+                    targetDistY = (mainWin.finalH / 2.0) + mainWin.glowPadding;
+                    targetDistX = 0.0;
                 }
-                try { if (mainWin.raise) mainWin.raise(); } catch (e) {}
-                try { mainWin._requestActivateIfFocusable(mainWin); } catch (e) {}
+
+                jelly.startRestore(targetDistX, targetDistY);
+                return;
             }
 
             if (mainWin.isRestoringFromMinimize) {
@@ -10114,6 +11207,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         target: typeof trayController !== "undefined" ? trayController : null
         enabled: !mainWin.detachedMode
         ignoreUnknownSignals: true
+        function onRequestRestoreFromTray() {
+            console.warn("[TRAY-SIGNAL] onRequestRestoreFromTray received in QML");
+            mainWin.requestRestoreFromTrayAnimation();
+        }
+        function onRequestExitFromTray() {
+            console.log("[TRAY-SIGNAL] onRequestExitFromTray received in QML");
+            mainWin.requestExitFromTrayAnimation();
+        }
         function onNavigateToModule(tileIndex, nodeId, state) {
             mainWin.showNormal();
             mainWin.requestActivate();
@@ -10959,5 +12060,17 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 mainWin.opacity = 1.0;
             }
         }
+    }
+
+    // Invisible keep-alive window — prevents frozen PyInstaller lastWindowClosed
+    // from killing the app while the main window is hidden in the system tray.
+    Window {
+        id: trayKeepAlive
+        visible: false
+        width: 1; height: 1
+        x: -9999; y: -9999
+        flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowTransparentForInput
+        color: "transparent"
+        title: "CSPMTrayKeepAlive"
     }
 }
