@@ -1,5 +1,34 @@
 # Implementation History
 
+## 2026-08-18: Native CS Splash 0% Startup Stall (Source and Local EXE, Pending Foreground Check)
+
+- **Observed package behavior:** the fresh `dist\\logs\\cspm.log` showed the
+  native CS frame at `t+3.664s`, followed by no `BEGIN: loading Main.qml
+  dynamically`, Bootstrap Phase 1, or Practice Briefing work. The process
+  remained responsive and Windows recorded no `CSPM.exe`/`python314.dll` crash.
+  A later fallback settings/check-out load was the only activity, not the
+  source of the splash hold.
+- **Cause and repair:** `CustomSplash.show_first_frame()` correctly stops the
+  legacy fade animation to paint the logo immediately. Main startup, however,
+  still waited for that stopped animation's `finished` signal before calling
+  `load_main_window()`. The signal could never arrive, so the logo stayed at
+  0% forever. The painted native frame now invokes `load_main_window()`
+  directly before `TrayRoot` loads, preserving the primary Bootstrap root and
+  its native-splash signal bindings.
+- **Validation/release:** sandbox-safe Python compilation and focused startup
+  and window tests passed (**11 passed**); `git diff --check` passed (only
+  existing line-ending notices). The builder completed both PyInstaller
+  packages but Windows denied the final rename; the verified candidate was
+  copy-promoted. The installed EXE SHA-256 is
+  `8C4A92D00501108528AC97FE5F469099FA91597A29F302D82ED123EC3AFFDD6B` and
+  the complete 4,272-file package tree SHA-256 is
+  `7ECD6D8A50BB3AD8A415C71F4BA74361BAA957E43F228AC96DE7B1D51F4391D8`.
+  The former package remains at
+  `to_delete\\dist__manual_replaced_release_20260818_075453`.
+- **Manual check required:** real Qt/WebEngine launch behavior is not validated
+  in this environment. Launch the newly promoted EXE and confirm the bar leaves
+  zero and advances through the Practice Briefing readiness path.
+
 ## 2026-08-18: Practice Briefing-First Idle Loading (Source, Pending Foreground Check)
 
 - **Observed startup policy conflict:** after the ready-to-reveal Practice

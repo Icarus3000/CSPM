@@ -196,6 +196,16 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("def show_first_frame(self) -> None:", main_py)
         self.assertIn("Native CS splash first frame primed", main_py)
         self.assertIn("custom_splash.show_first_frame()", main_py)
+        self.assertIn("leaving the splash at 0% forever", main_py)
+        self.assertNotIn("custom_splash.anim_in.finished.connect", main_py)
+        launch_block_start = main_py.index("if not is_tray_only:")
+        tray_load_start = main_py.index("tray_url = QUrl.fromLocalFile", launch_block_start)
+        launch_block = main_py[launch_block_start:tray_load_start]
+        self.assertIn("load_main_window()", launch_block)
+        self.assertLess(
+            launch_block.index("load_main_window()"),
+            main_py.index("tray_url = QUrl.fromLocalFile", launch_block_start),
+        )
         self.assertIn("def _request_skip(self) -> None:", main_py)
         self.assertIn(
             'if self._cinematic_mode not in {"completing-bar", "vortex", "plasma"}:',

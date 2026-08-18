@@ -2096,13 +2096,14 @@ def main() -> None:
 
     if not is_tray_only:
         if custom_splash is not None:
-            # Let the native PNG have one fully uninterrupted, visible reveal
-            # before QML begins its synchronous main-window construction.  The
-            # main shell then appears underneath it, and its first painted
-            # pixel starts the PNG's fade-out immediately.
-            custom_splash.anim_in.finished.connect(
-                lambda: QTimer.singleShot(0, load_main_window)
-            )
+            # ``show_first_frame`` intentionally stops the legacy fade-in
+            # animation after it has painted a complete native CS frame. Do
+            # not wait on that animation's ``finished`` signal here: it will
+            # never fire after ``stop()``, leaving the splash at 0% forever.
+            # Build the main root now, while the painted logo is already on
+            # screen. This also preserves the established root-load ordering:
+            # BootstrapRoot must be the primary QML root before TrayRoot loads.
+            load_main_window()
         else:
             load_main_window()
 
