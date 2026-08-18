@@ -2100,10 +2100,15 @@ def main() -> None:
             # animation after it has painted a complete native CS frame. Do
             # not wait on that animation's ``finished`` signal here: it will
             # never fire after ``stop()``, leaving the splash at 0% forever.
-            # Build the main root now, while the painted logo is already on
-            # screen. This also preserves the established root-load ordering:
-            # BootstrapRoot must be the primary QML root before TrayRoot loads.
-            load_main_window()
+            # Run the QML load on the first event-loop turn.  Calling it
+            # synchronously here starts Qt Quick while QApplication is still
+            # completing its setup; that is capable of crashing the source
+            # process with an access violation.  This introduces no timed
+            # delay: the native CS frame has already been painted and the
+            # queued callback runs as soon as app.exec() begins.  The existing
+            # objectCreated handler binds BootstrapRoot even though TrayRoot
+            # has been created first.
+            QTimer.singleShot(0, load_main_window)
         else:
             load_main_window()
 

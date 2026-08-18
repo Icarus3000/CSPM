@@ -201,9 +201,10 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         launch_block_start = main_py.index("if not is_tray_only:")
         tray_load_start = main_py.index("tray_url = QUrl.fromLocalFile", launch_block_start)
         launch_block = main_py[launch_block_start:tray_load_start]
-        self.assertIn("load_main_window()", launch_block)
+        self.assertIn("QTimer.singleShot(0, load_main_window)", launch_block)
+        self.assertIn("engine.objectCreated.connect(on_object_created)", main_py)
         self.assertLess(
-            launch_block.index("load_main_window()"),
+            launch_block.index("QTimer.singleShot(0, load_main_window)"),
             main_py.index("tray_url = QUrl.fromLocalFile", launch_block_start),
         )
         self.assertIn("def _request_skip(self) -> None:", main_py)

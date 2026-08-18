@@ -1,26 +1,32 @@
 # CSPM Task And Validation Ledger
 
-## Native CS Splash 0% Startup Stall (2026-08-18)
+## Native CS Splash 0% Startup Stall and Source Crash (2026-08-18)
 
 - [x] Diagnose the latest packaged launch from `dist\logs\cspm.log`: the
   process was alive and responsive, with no Windows crash event, but never
   loaded `Main.qml`, entered Bootstrap, or began Practice Briefing readiness.
   The native logo was first painted at 3.66 s and remained at 0% indefinitely.
 - [x] Close the verified stuck local `dist\CSPM\CSPM.exe` process (PID 75108).
-- [x] Restore the startup trigger: `show_first_frame()` intentionally stops
-  the legacy fade animation after its painted frame, so waiting for that
-  animation's `finished` signal left Main.qml permanently unrequested. CSPM
-  now loads Main.qml directly after the native first frame and before TrayRoot,
-  preserving Bootstrap's primary-root signal bindings.
+- [x] Restore a reliable startup trigger: `show_first_frame()` intentionally
+  stops the legacy fade animation after its painted frame, so waiting for that
+  animation's `finished` signal left Main.qml permanently unrequested.
+- [x] Diagnose and repair the subsequent source launch crash. The fresh root
+  runtime log reached `briefing-snapshot-loading` then exited with
+  `0xC0000005`; the shared-data checkout message merely put the session in its
+  intended safe read-only mode. Loading Main.qml synchronously while Qt was
+  still completing pre-event-loop setup was unsafe. It is now queued for the
+  first event-loop turn (`QTimer.singleShot(0, ...)`): no timed delay is added,
+  and the existing `objectCreated` hook binds Bootstrap even though TrayRoot
+  has already been created.
 - [x] Add a regression guard that prohibits the stopped animation being used as
   the Main.qml trigger. Python compilation and focused startup/window tests
   passed (**11 passed**).
 - [x] Rebuild and copy-promote the complete local package. `dist\CSPM\CSPM.exe`
-  SHA-256 is `8C4A92D00501108528AC97FE5F469099FA91597A29F302D82ED123EC3AFFDD6B`;
+  SHA-256 is `F9637A540573C1EE6A555CFD1AF4FC59F781F107721D8B535A456810FFA0F819`;
   the post-promotion 4,272-file package tree matches candidate SHA-256
-  `7ECD6D8A50BB3AD8A415C71F4BA74361BAA957E43F228AC96DE7B1D51F4391D8`.
+  `36C584F3540560CCA5B14B491C07029113C6693CB9B2DEB6E9E5A621EFD8933E`.
   The prior package is retained at
-  `to_delete\dist__manual_replaced_release_20260818_075453`.
+  `to_delete\dist__manual_replaced_release_20260818_081028`.
 - [ ] Manual foreground check: launch the new `dist\CSPM\CSPM.exe`. Confirm
   that the CS splash begins QML/bootstrap work immediately after its first
   painted frame, progress leaves 0%, and the Practice Briefing appears without
