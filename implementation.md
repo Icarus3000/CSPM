@@ -38,11 +38,13 @@
   still required via
   `./launch.ps1`; it must confirm one continuous visual morph with no flash
   and preserve same-monitor restore after a `Win+Shift+Arrow` transfer.
-- **Local executable baseline:** the local `dist\CSPM\CSPM.exe` was built and
-  hash-verified before this uncompiled Phase 1A source addition. It contains
-  the monitor/ComboBox/close fixes (SHA-256
-  `ED382E9BCC0DFF14F811907AB403648223A3C71568A2BCB369DE7390D62931D5`),
-  but not this new source-only visual transition.
+- **Local executable:** the committed frozen-surface transition was rebuilt
+  with `scripts/build_release.py --validate` and promoted to
+  `dist\CSPM\CSPM.exe`. Its SHA-256 is
+  `711D29CBCC7A89006A51C277C96DED2B80063789F223409D05C6660CF6D40E24`;
+  the bundled `DetachedShellWindow.qml` matches source byte-for-byte. The
+  previous package is recoverable at
+  `to_delete\dist__replaced_release_20260817_200142`.
 
 ## 2026-08-17: Same-Monitor Restore and Readable Close Choreography
 

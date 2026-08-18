@@ -67,13 +67,12 @@
   dissolve only after its custom logo frame has been painted while invisible.
 - [x] Build and copy-promote the complete cinematic-opening release at
   `dist\CSPM\CSPM.exe`. The normal builder completed both executables and
-  templates but Windows denied its final directory rename; the repository's
-  hash-verified promotion tool then installed the 4,358-file package manifest
-  `110C8186E9A1896125C322F339EC93A1B0A9A336B1C0F49B490286D67B51CC54`.
+  templates, validated the package, and safely quarantined the replaced
+  release before promoting the new directory.
   The executable SHA-256 is
-  `ED382E9BCC0DFF14F811907AB403648223A3C71568A2BCB369DE7390D62931D5`;
+  `711D29CBCC7A89006A51C277C96DED2B80063789F223409D05C6660CF6D40E24`;
   the prior local release is recoverable at
-  `to_delete\dist__manual_replaced_release_20260817_193827`.
+  `to_delete\dist__replaced_release_20260817_200142`.
 - [x] Keep restore-from-maximized on the monitor that currently owns the
   maximized window. The restore glyph resolves the raw native `Window`
   x/y/width/height at click time (never internal canvas/content offsets), so a
@@ -105,7 +104,8 @@
   a single 205 ms centre-out/centre-in visual morph with no flash, duplicate
   motion, or monitor jump. While maximized, transfer it with
   `Win+Shift+Arrow`, then click restore and confirm it remains on that current
-  monitor. This new source work is intentionally not yet compiled or pushed.
+  monitor. The local EXE contains this transition; the foreground check is
+  still required because it cannot be validated inside this environment.
 - [ ] Manual Phase 2 foreground verification: launch via `./launch.ps1`; verify
   that no app pixels precede the splash's plasma implosion, that the bar holds
   below 100% until data readiness, that the landing values never change after
