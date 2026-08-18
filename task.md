@@ -1,5 +1,78 @@
 # CSPM Task And Validation Ledger
 
+## Practice Briefing-First Idle Loading (2026-08-18)
+
+- [x] Audit the normal startup path: `MainContent` was starting a timer that
+  eagerly loaded all four unopened workspace stacks after the landing screen
+  appeared, because the existing deferred queue was disabled by default.
+- [x] Make the Practice Briefing snapshot and its landing consumer the only
+  required opening data path. Unopened module stacks are no longer prewarmed;
+  they load only when the user opens their module/tab.
+- [x] Enable the existing post-settle queue for optional current-screen work
+  and require a 900 ms quiet window before it may execute. Every click,
+  keypress, touch, or wheel input refreshes the quiet window, so pending work
+  cannot compete with active use. `CSPM_STARTUP_BACKGROUND_IDLE_MS` remains an
+  explicit 250–10,000 ms tuning override.
+- [x] Add controller/source regression coverage for repeated activity updates,
+  the idle queue policy, and the disabled unopened-workspace prewarm.
+- [x] Rebuild and hash-verify the local package at `dist\CSPM\CSPM.exe`
+  (SHA-256 `458AB6B6808EB26AA127023A56E292224C905BCE008049F5048F27D85C0ACD78`).
+  The normal builder completed both bundles and validation; Windows denied its
+  final rename, so its complete candidate was copy-promoted only after a
+  matching 4,272-file / 674,098,975-byte tree hash check
+  (`189FB91A4DC58E1E55415CA3C156B77251D4352E51DE9C946B8EBA3D354C4B55`).
+  The replaced release is retained at
+  `to_delete\dist__manual_replaced_release_20260818_000744`.
+- [ ] Manual foreground check: launch with `./launch.ps1`, confirm the Practice
+  Briefing is responsive immediately, then open a module while clicking or
+  typing. No background task should run until roughly one quiet second after
+  the final interaction; newly opened modules must load only their own data.
+
+## Native Splash / QML Prestage Flash (2026-08-17)
+
+- [x] Diagnose the full-screen flash immediately before the native splash
+  reaches 100% from the fresh packaged runtime log. The 0.2% QML pre-stage
+  emitted its usual first-pixel signal, whose generic handler requested QML
+  foreground focus above the still-visible native splash.
+- [x] Keep the native splash foreground through the pre-rendered QML centre
+  pinpoint. Its first-pixel signal is now a staging acknowledgement only;
+  it never requests focus or releases a normal splash. The native plasma
+  handoff releases that pre-rendered canvas directly, avoiding both the flash
+  and the post-implosion QML host-creation delay.
+- [x] Preserve the native CS spin/shrink/plasma animation: ignore mouse/key
+  input received during loading instead of remembering it as a future skip.
+  Input can still skip a cinematic act only after that act has visibly begun.
+- [x] Add regression coverage that requires the hidden prestage acknowledgement
+  and its focus-holding `phase2-native-prestage` launch gate.
+- [ ] Rebuild and hash-verify the repaired local package at
+  `dist\CSPM\CSPM.exe`.
+- [ ] Manually launch the repaired package and confirm there is no whole-screen
+  flash before 100%, the CS spin/shrink/plasma burst is visible, and the
+  native implosion hands directly to the QML centre-out bloom. Do not advance
+  the UI audit until this exact visual check is confirmed.
+
+## Packaged Professional Startup Crash Guard (2026-08-17)
+
+- [x] Diagnose the local packaged startup crash: Windows Error Reporting
+  recorded `CSPM.exe` access violation `0xC0000005` in bundled
+  `python314.dll` immediately after the Professional hidden-shell preload
+  began. The governed workbook checkout and backend boot completed normally;
+  this was not a live-data failure.
+- [x] Serialize Phase 1 startup so the authoritative Practice Briefing worker
+  completes and returns to the main event loop before the heavyweight hidden
+  `DetachedShellWindow` begins compiling/creating. This removes the observed
+  native worker/shell-preload overlap while retaining the no-empty-dashboard
+  readiness gate.
+- [x] Rebuild and hash-verify the guarded package at
+  `dist\CSPM\CSPM.exe` (SHA-256
+  `3BF375C7D336684421F0E76484AD466C6F76D462EBB2FDDB524DF1C0A3E7C34E`).
+  The 4,272-file installed tree matches its candidate exactly; the prior
+  package remains recoverable at
+  `to_delete\dist__manual_replaced_release_20260817_212137`.
+- [ ] Manually launch `dist\CSPM\CSPM.exe`; confirm it reaches the hydrated
+  Professional landing screen without an access violation. Do not continue the
+  UI audit until this exact startup check is confirmed.
+
 ## Cinematic Opening Sequence — Phase 1 Readiness Gate (2026-08-17)
 
 - [x] Establish a data-backed, hidden **ready-to-reveal** gate for the first
@@ -41,27 +114,11 @@
   while the native vortex/plasma sequence remains on-screen. The final plasma
   frame hides and emits its handoff in the same event turn, and Act III starts
   its deliberate 400 ms centre-point bloom without an extra queued callback.
-- [x] Phase 2 seamless joining: the QML shell is now fully rendered at its
-  0.2%-scale centre pinpoint behind the native splash *before* the final
-  progress fill and vortex begin. The native splash stays above it until the
-  plasma reaches zero, then exposes and releases the bloom in one handoff;
-  the plasma burst radius is reduced from 88 px to 76 px per scale unit. The
-  staging completion is now isolated from the true bloom completion so the
-  complete centre-out growth is always visible.
-- [x] Phase 2 visual-surface correction: Act III now uses a frozen GPU canvas
-  captured behind the native splash. The live QML host remains effectively
-  transparent during capture, then the frozen complete app surface—not an
-  independently composited host—grows from the exact screen-centre pinpoint
-  for 400 ms before swapping back to the matching live shell.
-- [x] Prevent an early full-host flash: the ordinary Qt visibility-recovery
-  handler now preserves the cinematic prestage's near-zero host opacity until
-  the frozen canvas is ready. Also guard the two close-time Matter-popup
-  centring bindings against a destroyed `parent`.
-- [x] Harden the native/QML cinematic boundary: while the frozen Act III frame
-  is prepared, the native splash is explicitly topmost and re-raised before
-  QML is shown. A bounded 6-second QML GPU-capture fallback switches to the
-  existing live centre-bloom rather than allowing a missing capture callback
-  to hold startup forever.
+- [x] Phase 2 flash-free joining: the QML shell is fully hydrated and rendered
+  at a 0.2% frozen centre pinpoint during the native acts, but its first-pixel
+  staging signal never takes focus. The native splash remains above it through
+  the final progress fill, vortex, and plasma sequence, then releases the
+  prepared 400 ms centre-out bloom in the same handoff turn.
 - [x] Remove the pre-logo native flash: replace the empty-pixmap
   `QSplashScreen` base with a transparent `QWidget`, and begin the logo
   dissolve only after its custom logo frame has been painted while invisible.

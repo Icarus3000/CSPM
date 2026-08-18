@@ -5,7 +5,8 @@ function evaluatePauseState(state) {
         "reason": "",
         "startupPostSettleReadyEpochMs": Number(state && state.startupPostSettleReadyEpochMs || 0),
         "startupQueueInputTimeoutReleased": !!(state && state.startupQueueInputTimeoutReleased === true),
-        "inputGateElapsedMs": -1
+        "inputGateElapsedMs": -1,
+        "pauseDelayMs": 0
     }
 
     if (!(state && state.startupDeferredQueueEnabled === true)) {
@@ -40,6 +41,23 @@ function evaluatePauseState(state) {
             return result
         }
         result.startupQueueInputTimeoutReleased = true
+    }
+
+    // Optional work is allowed only after the visible workspace has been quiet
+    // for a short interval. The post-settle timestamp supplies the initial
+    // quiet period; every mouse/key/touch/wheel action resets it immediately.
+    var idleAnchorEpochMs = Math.max(
+        Number(state.startupPostSettleReadyEpochMs || 0),
+        Number(state.startupLastUserActivityEpochMs || 0)
+    )
+    if (idleAnchorEpochMs > 0) {
+        var idleRequiredMs = Math.max(250, Number(state.startupBackgroundIdleMs || 900))
+        var idleElapsedMs = Math.max(0, nowEpochMs - idleAnchorEpochMs)
+        if (idleElapsedMs < idleRequiredMs) {
+            result.reason = "recent-user-input"
+            result.pauseDelayMs = Math.max(1, Math.ceil(idleRequiredMs - idleElapsedMs))
+            return result
+        }
     }
 
     if (

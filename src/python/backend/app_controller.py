@@ -240,6 +240,7 @@ class AppController(QObject):
     keepTrayAliveChanged = Signal()
     homeDashboardSummaryUpdated = Signal(dict)
     startupFirstInputSeenChanged = Signal()
+    startupUserActivityChanged = Signal()
     # Opening readiness is deliberately independent from "first pixel".  The
     # cinematic startup sequence may reveal the shell only after the first
     # workspace has real data bound to it while the window is still hidden.
@@ -419,6 +420,7 @@ class AppController(QObject):
         self._startup_lag_trace_active = True
         self._startup_lag_trace_auto_off_ms = 45000
         self._startup_first_input_seen = False
+        self._startup_user_activity_epoch_ms = 0.0
         self._startup_readiness_state = "idle"
         self._startup_readiness_progress = 0.0
         self._startup_readiness_error = ""
@@ -648,6 +650,18 @@ class AppController(QObject):
     @Property(bool, notify=startupFirstInputSeenChanged)
     def startupFirstInputSeen(self) -> bool:
         return bool(self._startup_first_input_seen)
+
+    @Property(float, notify=startupUserActivityChanged)
+    def startupUserActivityEpochMs(self) -> float:
+        """Latest real user input, used to keep optional work off the active path."""
+        return float(self._startup_user_activity_epoch_ms)
+
+    @Slot(str)
+    def markStartupUserActivity(self, input_type: str = "") -> None:
+        """Record every meaningful input while preserving the one-time startup trace."""
+        self._startup_user_activity_epoch_ms = time.time() * 1000.0
+        self.startupUserActivityChanged.emit()
+        self.markStartupFirstInputSeen(input_type)
 
     @Slot(str)
     def markStartupFirstInputSeen(self, input_type: str = "") -> None:

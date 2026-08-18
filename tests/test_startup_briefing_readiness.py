@@ -128,6 +128,45 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertTrue(controller.startupReadyToReveal)
         controller._queue_startup_metadata_warm.assert_called_once_with()
 
+    def test_all_user_input_refreshes_the_background_idle_deadline(self):
+        controller = self._controller()
+        controller.markStartupUserActivity("mouse-press")
+        first_activity = controller.startupUserActivityEpochMs
+
+        time.sleep(0.002)
+        controller.markStartupUserActivity("key-press")
+
+        self.assertTrue(controller.startupFirstInputSeen)
+        self.assertGreater(controller.startupUserActivityEpochMs, first_activity)
+
+    def test_startup_queue_defers_unopened_workspaces_and_honors_user_idle(self):
+        main_py = (ROOT_DIR / "src" / "python" / "main.py").read_text(encoding="utf-8")
+        config_py = (ROOT_DIR / "src" / "python" / "backend" / "runtime_config.py").read_text(
+            encoding="utf-8"
+        )
+        shell_qml = (ROOT_DIR / "src" / "qml" / "DetachedShellWindow.qml").read_text(
+            encoding="utf-8"
+        )
+        bridge_js = (ROOT_DIR / "src" / "qml" / "standards" / "StartupQueueBridge.js").read_text(
+            encoding="utf-8"
+        )
+        main_content_qml = (ROOT_DIR / "src" / "qml" / "views" / "MainContent.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"CSPM_STARTUP_DEFERRED_QUEUE_MODE", "on"', main_py)
+        self.assertIn("startup_background_idle_ms", main_py)
+        self.assertIn("_startup_input_notify_callback = controller.markStartupUserActivity", main_py)
+        self.assertIn("def markStartupUserActivity", (ROOT_DIR / "src" / "python" / "backend" / "app_controller.py").read_text(encoding="utf-8"))
+        self.assertIn("def startupBackgroundIdleMs", config_py)
+        self.assertIn("property bool startupWorkspacePrewarmEnabled: false", main_content_qml)
+        self.assertIn("if (!startupWorkspacePrewarmEnabled) return", main_content_qml)
+        self.assertIn("property double startupLastUserActivityEpochMs", shell_qml)
+        self.assertIn("function onStartupUserActivityChanged()", shell_qml)
+        self.assertIn('"recent-user-input"', bridge_js)
+        self.assertIn("startupBackgroundIdleMs", bridge_js)
+        self.assertIn("pauseDelayMs", bridge_js)
+
     def test_phase_two_keeps_the_native_acts_ahead_of_the_qml_bloom(self):
         """The 100% handoff must never let the main window overlap the splash."""
         main_py = (ROOT_DIR / "src" / "python" / "main.py").read_text(encoding="utf-8")
@@ -154,10 +193,51 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("_ACT_II_IMPLODE_MS = 220", main_py)
         self.assertIn("self.hide()", main_py)
         self.assertIn("self.cinematicRevealReady.emit", main_py)
+        self.assertIn("def show_first_frame(self) -> None:", main_py)
+        self.assertIn("Native CS splash first frame primed", main_py)
+        self.assertIn("custom_splash.show_first_frame()", main_py)
+        self.assertIn("def _request_skip(self) -> None:", main_py)
+        self.assertIn(
+            'if self._cinematic_mode not in {"completing-bar", "vortex", "plasma"}:',
+            main_py,
+        )
+        self.assertIn(
+            "It must not be remembered and then erase the visible CS spin/shrink",
+            main_py,
+        )
+        self.assertNotIn("self._skip_requested", main_py)
         self.assertIn("signal cinematicRevealRequested()", bootstrap_qml)
         self.assertIn("signal cinematicBloomPrestageComplete()", bootstrap_qml)
         self.assertIn("function prestageCinematicBloom()", bootstrap_qml)
         self.assertIn("function releaseCinematicLaunchGate()", bootstrap_qml)
+        prestage_start = bootstrap_qml.index("function prestageCinematicBloom()")
+        handoff_start = bootstrap_qml.index("function releaseCinematicLaunchGate()")
+        prestage_function = bootstrap_qml[prestage_start:handoff_start]
+        self.assertIn(
+            "Phase 2 prestaging QML pinpoint while native splash retains focus",
+            prestage_function,
+        )
+        self.assertIn("startupCinematicBloomPrestageOnly = true", prestage_function)
+        self.assertIn('_openLaunchGate("phase2-native-prestage")', prestage_function)
+        self.assertIn(
+            "Phase 2 QML pinpoint ready; holding native splash focus until plasma handoff",
+            bootstrap_qml,
+        )
+        focus_hold_index = bootstrap_qml.index(
+            "Phase 2 QML pinpoint ready; holding native splash focus until plasma handoff"
+        )
+        focus_request_index = bootstrap_qml.index("windowRef.forceLaunchFocus()")
+        self.assertLess(focus_hold_index, focus_request_index)
+        self.assertIn("function _scheduleHiddenWindowPreloadAfterSnapshot(reason)", bootstrap_qml)
+        self.assertIn("function _beginHiddenWindowPreloadAfterSnapshot()", bootstrap_qml)
+        self.assertIn(
+            "Phase 1 snapshot complete; serializing hidden shell preload",
+            bootstrap_qml,
+        )
+        self.assertIn(
+            "_scheduleHiddenWindowPreloadAfterSnapshot(\"controller-readiness-changed\")",
+            bootstrap_qml,
+        )
         self.assertIn("property bool startupCinematicBloomActive", shell_qml)
         self.assertIn("function prepareStartupCinematicGeometry()", shell_qml)
         self.assertIn("signal startupCinematicBloomStaged()", shell_qml)

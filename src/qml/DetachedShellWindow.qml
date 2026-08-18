@@ -159,6 +159,7 @@ Window {
     property double startupPostSettleReadyEpochMs: 0
     property bool startupCheckpointPending: false
     property bool startupQueueInputTimeoutReleased: false
+    property int startupDeferredQueuePauseDelayMs: 0
     property bool startupLaunchScreenLocked: false
     property bool startupDeferredQueueEnabled: (!mainWin.detachedMode)
         && (mainWin.startupDeferredQueueMode === "on"
@@ -812,8 +813,13 @@ Window {
     property bool startupQueueWaitForFirstInput: !(runtimeConfigRef && runtimeConfigRef.startupQueueWaitForFirstInput === false)
     property int startupQueueInputFallbackMs: ((runtimeConfigRef && typeof runtimeConfigRef.startupQueueInputFallbackMs === "number")
         && isFinite(runtimeConfigRef.startupQueueInputFallbackMs))
-        ? Math.max(0, Math.round(runtimeConfigRef.startupQueueInputFallbackMs)) : 1400
+        ? Math.max(0, Math.round(runtimeConfigRef.startupQueueInputFallbackMs)) : 0
     property bool startupFirstInputSeen: !!(appRef && appRef.startupFirstInputSeen === true)
+    property double startupLastUserActivityEpochMs: (appRef && typeof appRef.startupUserActivityEpochMs === "number")
+        ? Number(appRef.startupUserActivityEpochMs) : 0
+    property int startupBackgroundIdleMs: ((runtimeConfigRef && typeof runtimeConfigRef.startupBackgroundIdleMs === "number")
+        && isFinite(runtimeConfigRef.startupBackgroundIdleMs))
+        ? Math.max(250, Math.round(runtimeConfigRef.startupBackgroundIdleMs)) : 900
     property int startupSplashFallStartMs: ((runtimeConfigRef && typeof runtimeConfigRef.startupSplashFallStartMs === "number")
         && isFinite(runtimeConfigRef.startupSplashFallStartMs))
         ? Math.max(0, Math.round(runtimeConfigRef.startupSplashFallStartMs)) : 0
@@ -4145,6 +4151,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             "startupQueueInputTimeoutReleased": startupQueueInputTimeoutReleased,
             "startupPostSettleReadyEpochMs": startupPostSettleReadyEpochMs,
             "startupQueueInputFallbackMs": startupQueueInputFallbackMs,
+            "startupLastUserActivityEpochMs": startupLastUserActivityEpochMs,
+            "startupBackgroundIdleMs": startupBackgroundIdleMs,
             "isClosing": isClosing,
             "isMinimizing": isMinimizing,
             "isRestoringFromMinimize": isRestoringFromMinimize,
@@ -4163,6 +4171,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var hadTimeoutRelease = startupQueueInputTimeoutReleased;
         startupPostSettleReadyEpochMs = pauseState.startupPostSettleReadyEpochMs;
         startupQueueInputTimeoutReleased = pauseState.startupQueueInputTimeoutReleased === true;
+        startupDeferredQueuePauseDelayMs = Math.max(0, Number(pauseState.pauseDelayMs || 0));
         if (!hadTimeoutRelease && startupQueueInputTimeoutReleased) {
             lagLog("startup queue first-input gate released by timeout elapsedMs="
                 + pauseState.inputGateElapsedMs
@@ -4241,13 +4250,15 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             }
             startupDeferredQueueTimer.interval = Math.max(
                 24,
-                Math.max(startupDeferredQueueTickMs, startupHeavyWorkDelayMs())
+                Math.max(startupDeferredQueueTickMs,
+                    Math.max(startupHeavyWorkDelayMs(), startupDeferredQueuePauseDelayMs))
             );
             startupDeferredQueueTimer.start();
             return;
         }
 
         startupDeferredTaskPauseLogCount = 0;
+        startupDeferredQueuePauseDelayMs = 0;
         var task = queue.shift();
         startupDeferredTaskQueue = queue;
         if (!task) {
@@ -8763,6 +8774,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
         function onStartupFirstInputSeenChanged() {
             mainWin.requestStartupDeferredQueuePump("startup-first-input-seen");
+        }
+        function onStartupUserActivityChanged() {
+            mainWin.requestStartupDeferredQueuePump("startup-user-activity");
         }
         function onToast(message) {
             if (!mainWin.visible) return;

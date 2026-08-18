@@ -1,5 +1,102 @@
 # Implementation History
 
+## 2026-08-18: Practice Briefing-First Idle Loading (Source, Pending Foreground Check)
+
+- **Observed startup policy conflict:** after the ready-to-reveal Practice
+  Briefing handoff, `MainContent` scheduled a 220 ms fallback timer which
+  loaded every unopened workspace stack (`2`, `1`, `3`, then `4`). The intended
+  deferred queue was normally disabled, so these unrelated QML/data surfaces
+  could contend with the newly interactive landing screen.
+- **Scoped policy repair:** only the saved rules, workbook boot, and one
+  Practice Briefing snapshot remain required before reveal. MainContent no
+  longer prewarms unopened workspace stacks. Selecting a module/tab remains
+  the sole path that constructs that screen; its own optional work can use the
+  existing post-settle queue once visible.
+- **Idle-only optional work:** the queue is enabled by default and has a 900 ms
+  quiet requirement. The application event filter now records every meaningful
+  mouse press/double-click, key press, touch begin, or wheel action. The
+  controller exposes that timestamp to QML; `StartupQueueBridge` blocks queued
+  work as `recent-user-input` until the quiet window expires, including the
+  initial post-settle period. `CSPM_STARTUP_BACKGROUND_IDLE_MS` permits a
+  250–10,000 ms diagnostic/tuning override.
+- **Sandbox-safe validation:** Python compilation passed for `main.py`,
+  `app_controller.py`, and `runtime_config.py`; focused startup and window
+  tests passed (**11 passed**); and the governed QML lint wrapper completed for
+  `BootstrapRoot.qml`, `DetachedShellWindow.qml`, and `MainContent.qml` with
+  the existing warning-only diagnostics. `git diff --check` passed (line-ending
+  notices only). This did not perform real Qt WebEngine/window validation.
+- **Manual check required:** rebuild then run `./launch.ps1` outside this
+  environment. Confirm the Practice Briefing is immediately interactive,
+  activity postpones optional work until the user has been idle for about one
+  second, and opening a new module loads its needed screen without preloading
+  the remaining modules.
+- **Local executable:** `scripts/build_release.py --validate` completed both
+  PyInstaller bundles. Windows denied the builder's final directory rename, so
+  its verified 4,272-file / 674,098,975-byte candidate was copy-promoted using
+  `scripts/promote_verified_release_package.py`; its tree SHA-256 is
+  `189FB91A4DC58E1E55415CA3C156B77251D4352E51DE9C946B8EBA3D354C4B55`.
+  `dist\CSPM\CSPM.exe` is SHA-256
+  `458AB6B6808EB26AA127023A56E292224C905BCE008049F5048F27D85C0ACD78`.
+  The bundled idle-queue, shell, and MainContent QML assets match source. The
+  prior package is recoverable at
+  `to_delete\dist__manual_replaced_release_20260818_000744`.
+
+## 2026-08-17: Native Splash / QML Prestage Flash (Pending Foreground Check)
+
+- **Observed behavior:** the fresh packaged runtime log showed the native
+  splash request QML "prestage" at the end of its progress bar. The 0.2%-scale
+  QML host then emitted its ordinary first-pixel signal, whose generic handler
+  called `forceLaunchFocus()`. That foreground request briefly raised the
+  host above the native splash, producing the reported whole-screen flash
+  before the native vortex/plasma sequence began.
+- **Scoped repair:** retain the pre-rendered 0.2% centre pinpoint, but treat
+  its first pixel as a cinematic staging acknowledgement—not a normal launch
+  handoff. The handler now preserves native splash focus until the plasma
+  implodes. The staged frozen canvas is released in the same native handoff
+  turn, removing both the foreground flash and the measured ~155 ms
+  post-implosion gap before Act III begins.
+- **Cinematic preservation:** the subsequent source-run log recorded the QML
+  handoff only 21 ms after readiness: a mouse/key event received while the
+  splash was still loading had been remembered as a future skip. Pre-cinematic
+  input is now ignored, so the CS logo always completes its 100% fill, spin,
+  shrink, and plasma burst. Input can still skip an act that is already
+  visibly running.
+- **Sandbox-safe validation:** `py_compile` passed for `main.py`; focused
+  startup/window regression coverage passed (**9 passed**); and the governed
+  QML lint wrapper completed for `BootstrapRoot.qml` and
+  `DetachedShellWindow.qml` with the existing warning-only diagnostics.
+  `git diff --check` passed.
+- **Manual check required:** rebuild and launch the package outside this
+  environment. Confirm the progress bar reaches 100% without a full-screen
+  flash, the CS logo completes its spin/shrink/plasma burst, and the QML
+  centre-out bloom begins on the next visible handoff frame.
+
+## 2026-08-17: Packaged Professional Startup Crash Guard (Pending Foreground Check)
+
+- **Observed package failure:** the freshly built executable reached governed
+  checkout and backend boot, then Windows Error Reporting recorded native
+  access violation `0xC0000005` in bundled `python314.dll` as the hidden
+  Professional shell loaded. `dist\logs\cspm.log` showed no workbook or QML
+  error before the process stopped.
+- **Scoped guard:** `BootstrapRoot.qml` now defers the hidden
+  `DetachedShellWindow` preload until the Practice Briefing snapshot worker
+  has published its result and the event loop has had 120 ms to settle. This
+  preserves the authoritative pre-hydrated first workspace while removing its
+  startup overlap with native shell compilation.
+- **Sandbox-safe validation:** `scripts/qmllint.ps1` completed for
+  `BootstrapRoot.qml` and `DetachedShellWindow.qml` with existing warnings
+  only; focused startup/window tests passed (**9 passed**); and an offscreen
+  `DetachedShellWindow` component compile/create probe passed. Real packaged
+  Qt/WebEngine validation remains required after the rebuilt executable is
+  launched outside this environment.
+- **Local executable:** the guarded package was rebuilt and hash-verified at
+  `dist\CSPM\CSPM.exe` (SHA-256
+  `3BF375C7D336684421F0E76484AD466C6F76D462EBB2FDDB524DF1C0A3E7C34E`).
+  Its 4,272-file installed tree exactly matches the candidate and includes the
+  pywin32 runtime hooks plus `pythoncom314.dll` and `pywintypes314.dll` under
+  `_internal\pywin32_system32`. The previous package is preserved at
+  `to_delete\dist__manual_replaced_release_20260817_212137`.
+
 ## 2026-08-17: GPU Maximize/Restore Phase 1A (Source, Pending Foreground Check)
 
 - **Frozen-surface Professional transition:** Professional maximize and restore
@@ -141,9 +238,9 @@
   `Zone.Identifier` marker is present. The replaced package remains at
   `to_delete\dist__manual_replaced_release_20260817_171930`.
 - **Skip and sound governance:** Space, Return/Enter, Escape, and pointer input
-  skip the current cinematic act only after readiness has been achieved;
-  earlier input is remembered by the native splash but never bypasses the data
-  gate. The bloom's existing `SfxBus` completion tone continues to honour the
+  skip the current cinematic act only after it is visibly running; input during
+  loading is ignored and cannot erase the later CS animation. The bloom's
+  existing `SfxBus` completion tone continues to honour the
   persisted `soundEffectsEnabled` setting and its existing volume governance.
   Dedicated turbine/plasma sound assets are not present in the repository, so
   no mismatched substitute effects were introduced for Acts I/II.

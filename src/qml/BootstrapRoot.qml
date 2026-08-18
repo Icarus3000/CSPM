@@ -45,6 +45,12 @@ Item {
     // controller and the hidden QML tree both acknowledge readiness.
     property bool _phaseOnePreloadStarted: false
     property bool _phaseOneFailureObserved: false
+    // The workbook-backed briefing read and the very large hidden shell must
+    // not overlap.  On Windows, that concurrent first-use path has produced
+    // a native Python access violation before QML can report an error.  Hold
+    // shell compilation until the snapshot worker has returned to the main
+    // event loop, then continue the same hidden hydration contract.
+    property bool _hiddenWindowPreloadQueued: false
     // Phase 2 is separate from the data gate: the hidden shell can be ready
     // while the native splash still owns the vortex and plasma acts.
     property bool _phaseTwoCinematicRequested: false
@@ -493,6 +499,16 @@ Item {
             if (windowRef.startupFirstPixelVisible) {
                 windowRef.startupFirstPixelVisible.connect(function() {
                     if (_firstPixelHandoffSeen) return
+                    // The pre-rendered Act III pinpoint emits its first-pixel
+                    // signal while the native splash is intentionally still
+                    // in front.  Never focus the QML host at that point: a
+                    // native activation request can briefly raise its full
+                    // window above the CS logo.  Its frozen canvas will be
+                    // released by the native plasma handoff instead.
+                    if (windowRef.startupCinematicBloomPrestageOnly) {
+                        _lagLog("Phase 2 QML pinpoint ready; holding native splash focus until plasma handoff")
+                        return
+                    }
                     _firstPixelHandoffSeen = true
                     _lagLog("startupFirstPixelVisible received; releasing splash only now")
                     try {
@@ -597,6 +613,10 @@ Item {
             return
         }
         if (state === "briefing-snapshot-ready") {
+            if (!mainWindowRef) {
+                _scheduleHiddenWindowPreloadAfterSnapshot(reason)
+                return
+            }
             _requestHiddenBriefingAcknowledgement(reason)
             return
         }
@@ -620,12 +640,15 @@ Item {
         cinematicRevealRequested()
     }
 
-    // main.py calls this first.  The native splash remains in front while the
-    // fully-hydrated shell completes its native show call at a 0.2% scale.
+    // main.py calls this immediately before its native vortex/plasma sequence.
+    // Pre-render Act III at a 0.2% centre pinpoint so the final native frame
+    // can hand directly to the QML bloom.  The first-pixel signal deliberately
+    // retains native focus (see _bindMainWindowStartupSignals) so Windows
+    // cannot raise the pre-rendered host above the CS logo for a frame.
     function prestageCinematicBloom() {
         if (_phaseTwoCinematicReleased || _phaseTwoCinematicPrestageRequested) return
         _phaseTwoCinematicPrestageRequested = true
-        _lagLog("Phase 2 prestaging QML pinpoint behind native splash")
+        _lagLog("Phase 2 prestaging QML pinpoint while native splash retains focus")
         if (!nativeStartupCinematicActive) {
             releaseCinematicLaunchGate()
             return
@@ -640,14 +663,14 @@ Item {
     }
 
     // main.py calls this only after the native plasma reaches its implosion
-    // endpoint.  The QML pinpoint is already rendered behind it, so releasing
-    // the splash and beginning Act III are one contiguous visual handoff.
+    // endpoint.  Act III is already rendered as a centre pinpoint behind the
+    // splash; release it in the same handoff turn for no visible dead frame.
     function releaseCinematicLaunchGate() {
         if (_phaseTwoCinematicReleased) return
         _phaseTwoCinematicReleased = true
         if (!_launchGateOpen) {
-            _lagLog("Phase 2 native handoff fallback; opening Act III bloom gate")
-            _openLaunchGate("phase2-native-handoff-fallback")
+            _lagLog("Phase 2 native handoff complete; opening Act III bloom after splash closes")
+            _openLaunchGate("phase2-native-handoff")
             return
         }
         _lagLog("Phase 2 native handoff complete; releasing prestaged Act III bloom")
@@ -692,8 +715,30 @@ Item {
             _lagLog("Phase 1 startup readiness invocation failed=" + e0)
             return
         }
+        // The snapshot worker owns workbook/cache startup first.  Loading the
+        // heavyweight shell begins only after it publishes the snapshot, via
+        // _scheduleHiddenWindowPreloadAfterSnapshot().
+    }
+
+    function _scheduleHiddenWindowPreloadAfterSnapshot(reason) {
+        if (!_phaseOnePreloadStarted || _phaseOneFailureObserved || mainWindowRef) return
+        var readiness = _phaseOneReadinessState()
+        if (readiness !== "briefing-snapshot-ready" && readiness !== "ready-to-reveal") return
+        if (_mainComponent || _hiddenWindowPreloadQueued) return
+        _hiddenWindowPreloadQueued = true
+        _lagLog("Phase 1 snapshot complete; serializing hidden shell preload reason="
+            + String(reason || "unknown"))
+        hiddenWindowPreloadDelayTimer.restart()
+    }
+
+    function _beginHiddenWindowPreloadAfterSnapshot() {
+        _hiddenWindowPreloadQueued = false
+        if (!_phaseOnePreloadStarted || _phaseOneFailureObserved || mainWindowRef || _mainComponent) return
+        var readiness = _phaseOneReadinessState()
+        if (readiness !== "briefing-snapshot-ready" && readiness !== "ready-to-reveal") return
+        _lagLog("Phase 1 starting hidden shell preload after briefing worker settled")
         _preloadMainWindow()
-        _requestMainWindowCreate("phase1-hidden-window-preload", true)
+        _requestMainWindowCreate("phase1-hidden-window-after-briefing", true)
     }
 
     function _tryCreateMainWindow(reason, allowPrewarm) {
@@ -1048,15 +1093,24 @@ Item {
         target: (typeof app !== "undefined" && app) ? app : null
         ignoreUnknownSignals: true
         function onStartupReadinessChanged() {
+            bootstrap._scheduleHiddenWindowPreloadAfterSnapshot("controller-readiness-changed")
             bootstrap._maybeOpenPhaseOneLaunchGate("controller-readiness-changed")
         }
         function onStartupBriefingSnapshotChanged() {
+            bootstrap._scheduleHiddenWindowPreloadAfterSnapshot("snapshot-changed")
             bootstrap._requestHiddenBriefingAcknowledgement("snapshot-changed")
         }
         function onStartupReadinessFailed(message) {
             bootstrap._phaseOneFailureObserved = true
             bootstrap._lagLog("Phase 1 readiness failed; withholding main window. message=" + String(message || ""))
         }
+    }
+
+    Timer {
+        id: hiddenWindowPreloadDelayTimer
+        interval: 120
+        repeat: false
+        onTriggered: bootstrap._beginHiddenWindowPreloadAfterSnapshot()
     }
 
     Component {

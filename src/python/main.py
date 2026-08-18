@@ -1,7 +1,6 @@
 import os
 import sys
 import argparse
-from backend.controllers.ap_controller import APController
 os.environ["QML_DISABLE_DISK_CACHE"] = "1"
 os.environ["QML_FORCE_DISK_CACHE_DISABLE"] = "1"
 import re
@@ -68,9 +67,9 @@ from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QTimer, QVariantAnimation,
 class CustomSplash(QWidget):
     """Native, readiness-driven splash and the first two opening acts.
 
-    The fully hydrated QML window is prestaged at an invisible centre point
-    behind the native splash before Act I starts.  That eliminates the native
-    ``show()`` pause between the plasma implosion and Act III.
+    The QML shell is fully hydrated and rendered at a frozen centre pinpoint
+    while the native splash remains focused.  The plasma implosion can then
+    hand directly to QML's centre-out bloom without a dead frame or host flash.
     """
 
     cinematicBloomPrestageRequested = QtCore.Signal()
@@ -84,10 +83,9 @@ class CustomSplash(QWidget):
     _PROGRESS_MAX_RATE_PER_SEC = 0.20
 
     def __init__(self, pixmap_path):
-        # This splash deliberately owns the visual foreground until the QML
-        # pinpoint has been staged and the plasma implodes.  Without the
-        # topmost hint, showing the pre-rendered QML host can briefly raise a
-        # full application frame above the still-loading logo.
+        # This splash deliberately owns the visual foreground until the plasma
+        # implodes.  The pre-hydrated QML host stays hidden until that point,
+        # so Windows cannot raise a full application frame over this logo.
         splash_flags = (
             Qt.Window
             | Qt.FramelessWindowHint
@@ -145,7 +143,6 @@ class CustomSplash(QWidget):
         self._logo_scale = 1.0
         self._plasma_scale = 0.0
         self._show_progress_bar = True
-        self._skip_requested = False
         self._cinematic_complete = False
         self._fade_in_waiting_for_first_paint = False
         self.progress_timer = QTimer(self)
@@ -173,37 +170,31 @@ class CustomSplash(QWidget):
         self.update()
 
     def begin_cinematic_reveal(self) -> None:
-        """Prestage Act III only after the hidden briefing has real data."""
+        """Begin native Acts I/II only after the hidden briefing has real data."""
         if self._startup_error_message or self._cinematic_complete:
             return
         if self._cinematic_mode not in {"loading", "completing-bar", "prestage"}:
             return
         if self._cinematic_mode == "prestage":
             return
-        # The visible animation must not begin until the already-hydrated QML
-        # layer has completed its (potentially blocking) native show call
-        # behind this splash.  The user sees a continuous native sequence,
-        # followed by an already-rendered QML pinpoint with no empty gap.
+        # The visible animation must not begin until the QML shell has staged
+        # its centre pinpoint without activating its top-level host.  The
+        # plasma implosion then releases the prepared bloom directly.
         self._cinematic_mode = "prestage"
-        # Reassert this before the QML host is shown.  On Windows a normal
-        # activation during QQuickWindow creation can otherwise bury the
-        # native splash for a frame or two.
+        # Keep the native splash visibly above all other windows while it owns
+        # the first two opening acts.
         self.raise_()
         self.activateWindow()
         self.cinematicBloomPrestageRequested.emit()
 
     def confirm_cinematic_bloom_prestaged(self) -> None:
-        """Start the visible native choreography after QML is ready behind it."""
+        """Start the native choreography after QML stages its hidden pinpoint."""
         if self._startup_error_message or self._cinematic_complete:
             return
         if self._cinematic_mode != "prestage":
             return
-        if self._skip_requested:
-            self._finish_cinematic_to_bloom()
-            return
-        # QML's native show may have activated its window while it was being
-        # prestaged.  Keep this splash visually above it until the exact
-        # implosion endpoint; focus returns to QML after the bloom begins.
+        # The native splash remains focused above the 0.2% QML pinpoint until
+        # the exact implosion endpoint; focus returns after the bloom begins.
         self.raise_()
         self.activateWindow()
         self._progress_target = 1.0
@@ -229,9 +220,9 @@ class CustomSplash(QWidget):
         self._logo_scale = 0.0
         self._plasma_scale = 0.0
         self.progress_timer.stop()
-        # QML is already composed at a centre pinpoint behind this native
-        # window.  Hide first, then release its animation in this same turn so
-        # no black frame can appear between the implosion and the bloom.
+        # Hide first, then release the already staged QML bloom in this same
+        # turn.  The QML pre-stage intentionally did not request focus, so it
+        # never raised a full application frame above this splash.
         self.hide()
         self.cinematicRevealReady.emit()
 
@@ -419,6 +410,42 @@ class CustomSplash(QWidget):
         self.setFocus(Qt.ActiveWindowFocusReason)
         self._fade_in_waiting_for_first_paint = True
 
+    def show_first_frame(self) -> None:
+        """Present a painted CS frame before synchronous startup work begins.
+
+        The normal Qt event loop starts only after Python has finished loading
+        the controller and QML engine.  Calling ``show()`` alone before that
+        point leaves a newly-created transparent native surface unpainted,
+        which Windows can display as a black square.  Prime that surface at
+        zero opacity, then reveal its completed CS/logo/progress frame
+        immediately instead of waiting for the main event loop.
+        """
+        if self._cinematic_complete:
+            return
+        self._progress = 0.0
+        self._progress_target = 0.0
+        self._progress_clock.invalidate()
+        self._progress_started = True
+        self._fade_in_waiting_for_first_paint = False
+        self.anim_in.stop()
+        self.setWindowOpacity(0.0)
+        self.show()
+        # ``repaint`` guarantees the backing image exists; processing the
+        # expose/paint events while still fully transparent prevents a native
+        # default (black) client rectangle from reaching the desktop.
+        self.repaint()
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+        self.setWindowOpacity(1.0)
+        self._start_progress_after_visible_paint()
+        self.raise_()
+        self.activateWindow()
+        self.setFocus(Qt.ActiveWindowFocusReason)
+        self.repaint()
+        if app is not None:
+            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
     def start_fade_out(self):
         """Compatibility fallback for legacy callers; never overlap the main UI."""
         self._finish_cinematic_to_bloom()
@@ -433,9 +460,13 @@ class CustomSplash(QWidget):
         self.update()
 
     def _request_skip(self) -> None:
-        self._skip_requested = True
-        if self._cinematic_mode in {"completing-bar", "vortex", "plasma"}:
-            self._finish_cinematic_to_bloom()
+        # Mouse/key input commonly arrives while the user is launching CSPM.
+        # It must not be remembered and then erase the visible CS spin/shrink
+        # and plasma burst once readiness completes.  Only a deliberate input
+        # during a currently visible cinematic act may skip its remainder.
+        if self._cinematic_mode not in {"completing-bar", "vortex", "plasma"}:
+            return
+        self._finish_cinematic_to_bloom()
 
     def keyPressEvent(self, event) -> None:
         if event.key() in {Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape}:
@@ -816,8 +847,6 @@ class _StartupInputProbe(QObject):
     def eventFilter(self, watched: QObject, event: Any) -> bool:
         del watched
         global _startup_first_input_perf, _startup_first_input_label
-        if self._captured:
-            return False
         if event is None:
             return False
 
@@ -840,35 +869,36 @@ class _StartupInputProbe(QObject):
         else:
             return False
 
-        self._captured = True
-        now_perf = None
-        elapsed_s = None
-        try:
-            now_perf = time.perf_counter()
-            _startup_first_input_perf = now_perf
-            _startup_first_input_label = label
-            elapsed_s = max(0.0, now_perf - t0)
-        except Exception:
-            pass
+        if not self._captured:
+            self._captured = True
+            now_perf = None
+            elapsed_s = None
+            try:
+                now_perf = time.perf_counter()
+                _startup_first_input_perf = now_perf
+                _startup_first_input_label = label
+                elapsed_s = max(0.0, now_perf - t0)
+            except Exception:
+                pass
 
-        startup_log = logging.getLogger("startup")
-        if elapsed_s is not None:
-            startup_log.info("startup first input: [%.3fs] type=%s", elapsed_s, label)
-        else:
-            startup_log.info("startup first input: [n/a] type=%s", label)
+            startup_log = logging.getLogger("startup")
+            if elapsed_s is not None:
+                startup_log.info("startup first input: [%.3fs] type=%s", elapsed_s, label)
+            else:
+                startup_log.info("startup first input: [n/a] type=%s", label)
 
-        if _splash_first_pixel_perf is not None and now_perf is not None:
-            startup_log.info(
-                "first-pixel->first-input latency: [%.3fs]",
-                max(0.0, now_perf - _splash_first_pixel_perf),
-            )
-        elif _splash_gone_perf is not None and now_perf is not None:
-            startup_log.info(
-                "splash-gone->first-input latency: [%.3fs]",
-                max(0.0, now_perf - _splash_gone_perf),
-            )
-        else:
-            startup_log.info("first-pixel->first-input latency: [n/a]")
+            if _splash_first_pixel_perf is not None and now_perf is not None:
+                startup_log.info(
+                    "first-pixel->first-input latency: [%.3fs]",
+                    max(0.0, now_perf - _splash_first_pixel_perf),
+                )
+            elif _splash_gone_perf is not None and now_perf is not None:
+                startup_log.info(
+                    "splash-gone->first-input latency: [%.3fs]",
+                    max(0.0, now_perf - _splash_gone_perf),
+                )
+            else:
+                startup_log.info("first-pixel->first-input latency: [n/a]")
         try:
             callback = _startup_input_notify_callback
             if callable(callback):
@@ -1392,8 +1422,11 @@ def main() -> None:
                 )
         except Exception as exc:
             _report_nonfatal_startup_failure("nativeSplash.positionTargetScreen", exc)
-        custom_splash.show()
-        custom_splash.start_fade_in()
+        # The process continues with synchronous engine/controller setup next.
+        # Prime and reveal a completed native CS frame now, so Windows never
+        # shows an unpainted black splash rectangle during that work.
+        custom_splash.show_first_frame()
+        _boot_log("Native CS splash first frame primed")
 
     # Expose to QML Engine
 
@@ -1464,7 +1497,7 @@ def main() -> None:
         native_splash_main_window = main_window
 
     def _prestage_cinematic_bloom() -> None:
-        """Ask QML to render Act III's pinpoint behind the native splash."""
+        """Ask QML to stage Act III's pinpoint without taking native focus."""
         root_obj = native_splash_bootstrap_root
         if root_obj is None:
             _report_nonfatal_startup_failure(
@@ -1482,7 +1515,7 @@ def main() -> None:
             _report_nonfatal_startup_failure("nativeSplash.prestageCinematicBloom", exc)
 
     def _release_cinematic_launch_gate() -> None:
-        """Release the already-rendered QML pinpoint when the plasma reaches zero."""
+        """Release QML's staged bloom after the native plasma reaches zero."""
         root_obj = native_splash_bootstrap_root
         if root_obj is None:
             _report_nonfatal_startup_failure(
@@ -1619,7 +1652,7 @@ def main() -> None:
     splash_fall_start_ms = _env_int("CSPM_SPLASH_FALL_START_MS", splash_total_ms, 0, 30000)
     splash_sound_start_ms = _env_int("CSPM_SPLASH_SOUND_START_MS", splash_sound_start_default_ms, 0, 30000)
     startup_deferred_queue_mode = os.environ.get(
-        "CSPM_STARTUP_DEFERRED_QUEUE_MODE", "internal"
+        "CSPM_STARTUP_DEFERRED_QUEUE_MODE", "on"
     ).strip().lower()
     if startup_deferred_queue_mode not in {"off", "internal", "on"}:
         startup_deferred_queue_mode = "internal"
@@ -1640,10 +1673,13 @@ def main() -> None:
         "CSPM_STARTUP_FAST_LAUNCH_FOCUS", True
     )
     startup_queue_wait_for_first_input = _env_flag(
-        "CSPM_STARTUP_QUEUE_WAIT_FOR_FIRST_INPUT", True
+        "CSPM_STARTUP_QUEUE_WAIT_FOR_FIRST_INPUT", False
     )
     startup_queue_input_fallback_ms = _env_int(
-        "CSPM_STARTUP_QUEUE_INPUT_FALLBACK_MS", 1400, 0, 10000
+        "CSPM_STARTUP_QUEUE_INPUT_FALLBACK_MS", 0, 0, 10000
+    )
+    startup_background_idle_ms = _env_int(
+        "CSPM_STARTUP_BACKGROUND_IDLE_MS", 900, 250, 10000
     )
     startup_defer_settings_load = _env_flag(
         "CSPM_STARTUP_DEFER_SETTINGS_LOAD", True
@@ -1721,6 +1757,7 @@ def main() -> None:
         startup_fast_launch_focus_enabled=startup_fast_launch_focus_enabled,
         startup_queue_wait_for_first_input=startup_queue_wait_for_first_input,
         startup_queue_input_fallback_ms=startup_queue_input_fallback_ms,
+        startup_background_idle_ms=startup_background_idle_ms,
     )
     _boot_log("END: created RuntimeConfig")
     
@@ -1749,7 +1786,7 @@ def main() -> None:
         except Exception as exc:
             _report_nonfatal_startup_failure("nativeSplash.bindStartupReadinessFailure", exc)
     global _startup_input_notify_callback
-    _startup_input_notify_callback = controller.markStartupFirstInputSeen
+    _startup_input_notify_callback = controller.markStartupUserActivity
 
     # AP is composed on AppController (app.apController), matching docketing/billing.
     # Keep a context-property alias for older QML resolution paths during transition.

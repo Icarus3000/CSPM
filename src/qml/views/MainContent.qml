@@ -82,6 +82,10 @@ Item {
     property int _startupPrewarmStackCursor: 0
     property bool _startupPrewarmComplete: false
     property bool _startupPrewarmQueuedToWindow: false
+    // Opening another workspace at startup creates its entire QML/data surface
+    // and competes with real user work. Pages load only when their module/tab
+    // is requested; per-screen optional work may use the idle queue later.
+    property bool startupWorkspacePrewarmEnabled: false
     property int _startupPrewarmStepMs: 220
     // Set by the host before the QML engine is released.  Loader.active is
     // bound to this flag so asynchronous page creation is cancelled cleanly
@@ -1811,6 +1815,7 @@ Item {
     }
 
     function scheduleStartupStackPrewarm(reason) {
+        if (!startupWorkspacePrewarmEnabled) return
         if (shutdownRequested || root.detachedWindow || _startupPrewarmComplete) return
         if (startupQueueEnabled()) {
             queueStartupStackPrewarm(reason)

@@ -43,7 +43,7 @@ class RuntimeConfig(QObject):
         search_bar_debug_enabled: bool = False,
         debug_frames_enabled: bool = False,
         verbose_logging_enabled: bool = False,
-        startup_deferred_queue_mode: str = "off",
+        startup_deferred_queue_mode: str = "on",
         startup_deferred_queue_internal_enabled: bool = False,
         startup_deferred_queue_tick_ms: int = 180,
         startup_main_object_prewarm_enabled: bool = False,
@@ -51,6 +51,7 @@ class RuntimeConfig(QObject):
         startup_fast_launch_focus_enabled: bool = True,
         startup_queue_wait_for_first_input: bool = False,
         startup_queue_input_fallback_ms: int = 0,
+        startup_background_idle_ms: int = 900,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -88,7 +89,7 @@ class RuntimeConfig(QObject):
         self._verbose_logging_enabled = bool(verbose_logging_enabled)
         mode_text = str(startup_deferred_queue_mode or "").strip().lower()
         if mode_text not in {"off", "internal", "on"}:
-            mode_text = "internal"
+            mode_text = "on"
         self._startup_deferred_queue_mode = mode_text
         self._startup_deferred_queue_internal_enabled = bool(startup_deferred_queue_internal_enabled)
         self._startup_deferred_queue_tick_ms = max(24, int(startup_deferred_queue_tick_ms))
@@ -97,6 +98,7 @@ class RuntimeConfig(QObject):
         self._startup_fast_launch_focus_enabled = bool(startup_fast_launch_focus_enabled)
         self._startup_queue_wait_for_first_input = bool(startup_queue_wait_for_first_input)
         self._startup_queue_input_fallback_ms = max(0, int(startup_queue_input_fallback_ms))
+        self._startup_background_idle_ms = max(250, int(startup_background_idle_ms))
 
     @Property(str, constant=True)
     def startupSplashLogoUrl(self) -> str:
@@ -257,3 +259,8 @@ class RuntimeConfig(QObject):
     @Property(int, constant=True)
     def startupQueueInputFallbackMs(self) -> int:
         return self._startup_queue_input_fallback_ms
+
+    @Property(int, constant=True)
+    def startupBackgroundIdleMs(self) -> int:
+        """Quiet period required before optional background work may run."""
+        return self._startup_background_idle_ms
