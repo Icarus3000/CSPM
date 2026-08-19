@@ -3,6 +3,16 @@ import sys
 import argparse
 os.environ["QML_DISABLE_DISK_CACHE"] = "1"
 os.environ["QML_FORCE_DISK_CACHE_DISABLE"] = "1"
+
+# The startup Practice Briefing parser runs in this small helper mode before
+# QApplication, WebEngine, the single-instance gate, or any splash work is
+# created.  A native openpyxl/XML fault is therefore contained in the child
+# process rather than terminating the visible application.
+if "--startup-briefing-worker" in sys.argv:
+    from backend.startup_briefing_worker import run_from_argv
+
+    raise SystemExit(run_from_argv())
+
 import re
 import atexit
 import ctypes
@@ -35,7 +45,7 @@ except Exception:
     pass
 
 bootstrap_logging_and_qt_bridge()
-logging.info("=== CSPM APPLICATION START ===")
+logging.getLogger("startup").info("Runtime bootstrap initialized")
 
 install_global_exception_hooks()
 
@@ -67,9 +77,9 @@ from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QTimer, QVariantAnimation,
 class CustomSplash(QWidget):
     """Native, readiness-driven splash and the first two opening acts.
 
-    The QML shell is fully hydrated and rendered at a frozen centre pinpoint
-    while the native splash remains focused.  The plasma implosion can then
-    hand directly to QML's centre-out bloom without a dead frame or host flash.
+    The QML shell is fully hydrated but remains an unshown native window while
+    the native splash owns the loading and plasma acts. After the plasma closes
+    the splash, QML's first visible state is its centre-out bloom.
     """
 
     cinematicBloomPrestageRequested = QtCore.Signal()
@@ -80,6 +90,10 @@ class CustomSplash(QWidget):
     _ACT_II_HOLD_MS = 80
     _ACT_II_IMPLODE_MS = 220
     _BAR_COMPLETION_MS = 180
+    # Let Windows consume the native hide request before QML creates another
+    # top-level surface.  One full desktop frame prevents the two surfaces
+    # from being composed together at the plasma implosion endpoint.
+    _NATIVE_SPLASH_HANDOFF_DELAY_MS = 32
     _PROGRESS_MAX_RATE_PER_SEC = 0.20
 
     def __init__(self, pixmap_path):
@@ -144,6 +158,7 @@ class CustomSplash(QWidget):
         self._plasma_scale = 0.0
         self._show_progress_bar = True
         self._cinematic_complete = False
+        self._cinematic_handoff_scheduled = False
         self._fade_in_waiting_for_first_paint = False
         self.progress_timer = QTimer(self)
         self.progress_timer.timeout.connect(self._update_progress)
@@ -177,9 +192,9 @@ class CustomSplash(QWidget):
             return
         if self._cinematic_mode == "prestage":
             return
-        # The visible animation must not begin until the QML shell has staged
-        # its centre pinpoint without activating its top-level host.  The
-        # plasma implosion then releases the prepared bloom directly.
+        # The visible animation must not begin until the QML shell is fully
+        # hydrated. Its native host stays unshown through the full sequence;
+        # the plasma handoff releases QML only after the splash has closed.
         self._cinematic_mode = "prestage"
         # Keep the native splash visibly above all other windows while it owns
         # the first two opening acts.
@@ -220,10 +235,28 @@ class CustomSplash(QWidget):
         self._logo_scale = 0.0
         self._plasma_scale = 0.0
         self.progress_timer.stop()
-        # Hide first, then release the already staged QML bloom in this same
-        # turn.  The QML pre-stage intentionally did not request focus, so it
-        # never raised a full application frame above this splash.
+        # ``hide`` updates Qt synchronously but Windows/DWM presents it on a
+        # later composition pass.  Do not release QML in this same turn: doing
+        # so lets its full-size native host race the last splash frame.
         self.hide()
+        self._cinematic_handoff_scheduled = True
+        logging.getLogger("startup").info(
+            "Native CS splash hidden; delaying QML bloom release for %d ms",
+            self._NATIVE_SPLASH_HANDOFF_DELAY_MS,
+        )
+        QTimer.singleShot(
+            self._NATIVE_SPLASH_HANDOFF_DELAY_MS,
+            self._emit_cinematic_reveal_after_splash_hidden,
+        )
+
+    def _emit_cinematic_reveal_after_splash_hidden(self) -> None:
+        """Release QML only after the native splash has left the compositor."""
+        if not self._cinematic_handoff_scheduled:
+            return
+        self._cinematic_handoff_scheduled = False
+        logging.getLogger("startup").info(
+            "Native CS splash compositor handoff complete; releasing QML bloom"
+        )
         self.cinematicRevealReady.emit()
 
     def _update_progress(self) -> None:
@@ -1532,8 +1565,12 @@ def main() -> None:
         except Exception as exc:
             _report_nonfatal_startup_failure("nativeSplash.releaseCinematicGate", exc)
             return
-        # The shell receives one normal Qt activation request after the bloom
-        # is dispatched.  It never uses topmost or Win32 foreground forcing.
+        # QML raises and activates before its first pixel. Queue one matching
+        # Qt request immediately after that synchronous release returns, then
+        # retain the short reassertion for a slow Windows foreground handoff.
+        # Neither request makes CSPM permanently topmost or uses Win32 focus
+        # forcing.
+        QTimer.singleShot(0, _restore_main_foreground_after_native_splash)
         QTimer.singleShot(460, _restore_main_foreground_after_native_splash)
 
     if custom_splash is not None:
@@ -1767,6 +1804,7 @@ def main() -> None:
         defer_settings_load=startup_defer_settings_load,
         startup_launch_context=startup_launch_context,
     )
+    app.aboutToQuit.connect(controller.cancelStartupPracticeBriefingProcess)
     _boot_log("END: created AppController")
     if custom_splash is not None:
         try:
@@ -1983,7 +2021,7 @@ def main() -> None:
                     "Startup stall detected: no visible windows before runtime hooks install"
                 )
                 _report_terminal_failure(
-                    "Startup stalled before a visible window was established. See logs/cspm.log."
+                    "Startup stalled before a visible window was established. See the CSPM diagnostic log."
                 )
                 app.quit()
 
@@ -2046,7 +2084,7 @@ def main() -> None:
         if len(engine.rootObjects()) <= root_count_before_load:
             main_window_load_requested = False
             logging.getLogger("startup").error("Main QML component failed to load: %s", qml_url.toString())
-            _report_terminal_failure("Startup failed: main QML component did not load. See logs/cspm.log.")
+            _report_terminal_failure("Startup failed: main QML component did not load. See the CSPM diagnostic log.")
             sys.exit(1)
 
     controller.requestMainWindowLoad.connect(load_main_window)
@@ -2105,18 +2143,63 @@ def main() -> None:
             # completing its setup; that is capable of crashing the source
             # process with an access violation.  This introduces no timed
             # delay: the native CS frame has already been painted and the
-            # queued callback runs as soon as app.exec() begins.  The existing
-            # objectCreated handler binds BootstrapRoot even though TrayRoot
-            # has been created first.
+            # queued callback runs as soon as app.exec() begins.  The
+            # objectCreated handler binds BootstrapRoot directly; tray QML is
+            # deliberately deferred until after the cinematic handoff.
             QTimer.singleShot(0, load_main_window)
         else:
             load_main_window()
 
+    tray_url = QUrl.fromLocalFile(str(PROJECT_ROOT / "src" / "qml" / "tray" / "TrayRoot.qml"))
+    tray_qml_loaded = False
+    tray_qml_loading = False
+    tray_qml_ready_callbacks = []
+
+    def _ensure_tray_qml_loaded(on_ready=None) -> None:
+        """Load flyout/toast QML only after the splash-critical path is over."""
+        nonlocal tray_qml_loaded, tray_qml_loading
+        if callable(on_ready):
+            tray_qml_ready_callbacks.append(on_ready)
+        if tray_qml_loaded:
+            callbacks = tray_qml_ready_callbacks[:]
+            tray_qml_ready_callbacks.clear()
+            for callback in callbacks:
+                try:
+                    callback()
+                except Exception:
+                    logging.getLogger("startup").debug("Deferred tray callback failed", exc_info=True)
+            return
+        if tray_qml_loading:
+            return
+        tray_qml_loading = True
+        before_count = len(engine.rootObjects())
+        try:
+            _boot_log("BEGIN: loading deferred TrayRoot.qml")
+            engine.load(tray_url)
+            tray_qml_loaded = len(engine.rootObjects()) > before_count
+            if not tray_qml_loaded:
+                raise RuntimeError("TrayRoot.qml did not create a root object.")
+            _boot_log("END: loaded deferred TrayRoot.qml")
+        except Exception as exc:
+            logging.getLogger("startup").exception("Failed to load deferred TrayRoot.qml")
+            tray_qml_ready_callbacks.clear()
+            _report_nonfatal_startup_failure("tray.deferredQmlLoad", exc)
+            return
+        finally:
+            tray_qml_loading = False
+
+        callbacks = tray_qml_ready_callbacks[:]
+        tray_qml_ready_callbacks.clear()
+        for callback in callbacks:
+            try:
+                callback()
+            except Exception:
+                logging.getLogger("startup").debug("Deferred tray callback failed", exc_info=True)
+
     try:
-        tray_url = QUrl.fromLocalFile(str(PROJECT_ROOT / "src" / "qml" / "tray" / "TrayRoot.qml"))
-        engine.load(tray_url)
-        
-        # Native QSystemTrayIcon
+        # Keep the native tray affordance available immediately, but do not
+        # create TrayRoot's additional QML Windows while the CS splash is the
+        # only intended visible surface.
         app._tray_icon = QSystemTrayIcon(QIcon(str(PROJECT_ROOT / "src" / "assets" / "app_icon.ico")), app)
         tray_menu = QMenu()
         open_action = tray_menu.addAction("Open CSPM")
@@ -2127,19 +2210,25 @@ def main() -> None:
         
         def _on_tray_activated(reason):
             if reason == QSystemTrayIcon.Trigger:
-                tray_controller.calculate_flyout_geometry()
+                _ensure_tray_qml_loaded(tray_controller.calculate_flyout_geometry)
             elif reason == QSystemTrayIcon.DoubleClick:
                 tray_controller.open_cspm()
         app._tray_icon.activated.connect(_on_tray_activated)
         app._tray_icon.show()
     except Exception as exc:
-        logging.getLogger("startup").exception("Failed to load TrayRoot.qml")
+        logging.getLogger("startup").exception("Failed to initialize native system tray")
 
-    try:
-        root = engine.rootObjects()[0]
-    except Exception as exc:
-        _report_nonfatal_startup_failure("engine.rootObjects.first", exc)
-        root = None
+    if custom_splash is not None:
+        custom_splash.cinematicRevealReady.connect(
+            lambda: QTimer.singleShot(1200, _ensure_tray_qml_loaded)
+        )
+    else:
+        QTimer.singleShot(1200, _ensure_tray_qml_loaded)
+
+    root = next(
+        (candidate for candidate in engine.rootObjects() if getattr(candidate, "mainWindowReady", None) is not None),
+        None,
+    )
 
     if root is not None:
         if not native_splash_signal_bound:
@@ -2173,31 +2262,39 @@ def main() -> None:
         app._splash_skip_filter = _splash_skip_filter # type: ignore[attr-defined]
 
     def _resolve_hook_target_window():
+        nonlocal root
         if root is None:
-            return None
-        candidate = root
-        try:
-            win_id_fn = getattr(candidate, "winId", None)
-            if callable(win_id_fn):
-                win_id = win_id_fn()
-                if win_id is not None:
-                    return candidate
-        except Exception:
-            pass
-        try:
-            candidate = root.property("mainWindowRef")
-        except Exception:
-            candidate = None
-        if candidate is None:
-            return None
-        try:
-            win_id_fn = getattr(candidate, "winId", None)
-            if callable(win_id_fn):
-                win_id = win_id_fn()
-                if win_id is not None:
-                    return candidate
-        except Exception:
-            pass
+            root = next(
+                (
+                    item
+                    for item in engine.rootObjects()
+                    if getattr(item, "mainWindowReady", None) is not None
+                ),
+                None,
+            )
+        if root is not None:
+            candidate = root
+            try:
+                win_id_fn = getattr(candidate, "winId", None)
+                if callable(win_id_fn):
+                    win_id = win_id_fn()
+                    if win_id is not None:
+                        return candidate
+            except Exception:
+                pass
+            try:
+                candidate = root.property("mainWindowRef")
+            except Exception:
+                candidate = None
+            if candidate is not None:
+                try:
+                    win_id_fn = getattr(candidate, "winId", None)
+                    if callable(win_id_fn):
+                        win_id = win_id_fn()
+                        if win_id is not None:
+                            return candidate
+                except Exception:
+                    pass
         for candidate in _top_level_windows_safe():
             try:
                 obj_name = str(candidate.objectName() or "")
@@ -2321,5 +2418,5 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         logging.getLogger("startup").exception("Fatal startup failure")
-        _report_terminal_failure(f"Fatal startup failure: {exc}. See logs/cspm.log.")
+        _report_terminal_failure(f"Fatal startup failure: {exc}. See the CSPM diagnostic log.")
         raise

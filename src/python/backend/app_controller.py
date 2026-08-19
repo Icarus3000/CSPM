@@ -88,6 +88,22 @@ def _restart_command(
     return [app_executable, str(Path(app_argv[0]).resolve()), *app_argv[1:]]
 
 
+def _startup_briefing_worker_command(
+    request_path: Path,
+    result_path: Path,
+    *,
+    executable: Optional[str] = None,
+    frozen: Optional[bool] = None,
+) -> list[str]:
+    """Return a GUI-free command for the crash-isolated startup snapshot."""
+    app_executable = str(executable or sys.executable)
+    is_frozen = bool(getattr(sys, "frozen", False) if frozen is None else frozen)
+    arguments = ["--startup-briefing-worker", str(request_path), str(result_path)]
+    if is_frozen:
+        return [app_executable, *arguments]
+    return [app_executable, str(Path(__file__).resolve().parents[1] / "main.py"), *arguments]
+
+
 def _powershell_wait_and_launch_script(parent_pid: int, command: list[str], working_dir: str) -> str:
     """Build a Windows-only, injection-safe delayed relaunch script."""
     if not command:
@@ -427,6 +443,12 @@ class AppController(QObject):
         self._startup_briefing_snapshot: Dict[str, Any] = {}
         self._startup_briefing_preparation_started = False
         self._startup_briefing_frame_marked = False
+        self._startup_briefing_process_state: Optional[Dict[str, Any]] = None
+        self._startup_briefing_process_poll_timer = QTimer(self)
+        self._startup_briefing_process_poll_timer.setInterval(40)
+        self._startup_briefing_process_poll_timer.timeout.connect(
+            self._poll_startup_briefing_process
+        )
         self._expert_preview_process = None
         
         startup_logger.info("%s AppController loading dashboard cache", _elapsed())
@@ -1024,13 +1046,13 @@ class AppController(QObject):
         filters = dict(self.getPracticeBriefingFilters() or {})
         self._set_startup_readiness("briefing-snapshot-loading", 0.62)
 
-        def _do_load() -> Dict[str, Any]:
-            payload = self._excel_repo.practice_briefing(filters)
-            if not isinstance(payload, dict) or not bool(payload.get("ok")):
-                raise RuntimeError("The Practice Briefing data snapshot could not be read.")
-            return dict(payload)
-
         def _on_loaded(payload: Dict[str, Any]) -> None:
+            if not isinstance(payload, dict) or not bool(payload.get("ok")):
+                self._fail_startup_readiness(
+                    RuntimeError("The Practice Briefing data snapshot could not be read."),
+                    context="startup.briefing.snapshot",
+                )
+                return
             self._startup_briefing_snapshot = dict(payload or {})
             self.startupBriefingSnapshotChanged.emit()
             self._set_startup_readiness("briefing-snapshot-ready", 0.86)
@@ -1043,13 +1065,174 @@ class AppController(QObject):
             _, exc, _ = err_tuple
             self._fail_startup_readiness(exc, context="startup.briefing.snapshot")
 
-        self._start_background_worker(
-            _do_load,
-            name="startup_practice_briefing",
-            on_result=_on_loaded,
-            on_error=_on_failed,
-            priority=self._background_low_priority,
+        self._start_isolated_startup_briefing_process(filters, _on_loaded, _on_failed)
+
+    def _start_isolated_startup_briefing_process(
+        self,
+        filters: Dict[str, Any],
+        on_result,
+        on_error,
+    ) -> None:
+        """Read the first Practice Briefing snapshot outside the GUI process.
+
+        A malformed workbook or native ``openpyxl`` parser fault must never be
+        able to take down the splash/main process.  The child receives a copied
+        data package, so defensive repository schema work cannot mutate the
+        active workbook either.
+        """
+        if self._startup_briefing_process_state is not None:
+            return
+        workspace = (
+            self._paths.runtime_dir()
+            / "startup_briefing"
+            / f"{int(time.time() * 1000)}_{uuid.uuid4().hex}"
         )
+        copied_data_dir = workspace / "data"
+        request_path = workspace / "request.json"
+        result_path = workspace / "result.json"
+        try:
+            source_data_dir = self._paths.data_dir()
+            source_workbook = source_data_dir / "CSPM.xlsm"
+            if not source_workbook.is_file():
+                raise FileNotFoundError(f"Startup workbook is unavailable: {source_workbook}")
+            copied_data_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_workbook, copied_data_dir / source_workbook.name)
+            dockets_workbook = source_data_dir / "Dockets.xlsm"
+            if dockets_workbook.is_file():
+                shutil.copy2(dockets_workbook, copied_data_dir / dockets_workbook.name)
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "root": str(self._paths.root),
+                        "dataDir": str(copied_data_dir),
+                        "filters": dict(filters or {}),
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            command = _startup_briefing_worker_command(request_path, result_path)
+            creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform.startswith("win") else 0
+            process = subprocess.Popen(
+                command,
+                cwd=str(self._paths.root),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creation_flags,
+            )
+        except Exception as exc:
+            shutil.rmtree(workspace, ignore_errors=True)
+            on_error((type(exc), exc, exc.__traceback__))
+            return
+
+        self._startup_briefing_process_state = {
+            "process": process,
+            "workspace": workspace,
+            "resultPath": result_path,
+            "startedAt": time.monotonic(),
+            "onResult": on_result,
+            "onError": on_error,
+        }
+        logging.getLogger("startup").info(
+            "[STARTUP-READINESS] isolated Practice Briefing worker started pid=%s",
+            process.pid,
+        )
+        self._startup_briefing_process_poll_timer.start()
+
+    def _poll_startup_briefing_process(self) -> None:
+        state = self._startup_briefing_process_state
+        if not isinstance(state, dict):
+            self._startup_briefing_process_poll_timer.stop()
+            return
+        process = state.get("process")
+        if process is None:
+            self._complete_startup_briefing_process_error(
+                state,
+                RuntimeError("Startup Practice Briefing worker was unavailable."),
+            )
+            return
+        timeout_seconds = 120.0
+        if process.poll() is None:
+            if time.monotonic() - float(state.get("startedAt", 0.0)) <= timeout_seconds:
+                return
+            try:
+                process.kill()
+            except Exception:
+                pass
+            self._complete_startup_briefing_process_error(
+                state,
+                TimeoutError("Startup Practice Briefing worker exceeded the 120-second readiness limit."),
+            )
+            return
+
+        result_path = Path(state.get("resultPath"))
+        return_code = process.returncode
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if not isinstance(result, dict):
+                raise ValueError("Startup Practice Briefing worker returned an invalid response.")
+            if return_code == 0 and bool(result.get("ok")) and isinstance(result.get("payload"), dict):
+                self._complete_startup_briefing_process_result(state, dict(result["payload"]))
+                return
+            detail = str(result.get("error") or "worker did not produce a valid snapshot")
+            worker_traceback = str(result.get("traceback") or "").strip()
+            if worker_traceback:
+                logging.getLogger("startup").error(
+                    "[STARTUP-READINESS] isolated Practice Briefing worker traceback:\n%s",
+                    worker_traceback,
+                )
+        except Exception as exc:
+            detail = f"worker exit={return_code}; response unavailable: {exc}"
+        logging.getLogger("startup").error(
+            "[STARTUP-READINESS] isolated Practice Briefing worker failed exit=%s detail=%s",
+            return_code,
+            detail,
+        )
+        self._complete_startup_briefing_process_error(
+            state,
+            RuntimeError(f"Startup Practice Briefing worker failed ({detail})."),
+        )
+
+    def _complete_startup_briefing_process_result(
+        self,
+        state: Dict[str, Any],
+        payload: Dict[str, Any],
+    ) -> None:
+        self._finish_startup_briefing_process(state)
+        callback = state.get("onResult")
+        if callable(callback):
+            callback(payload)
+
+    def _complete_startup_briefing_process_error(
+        self,
+        state: Dict[str, Any],
+        exc: BaseException,
+    ) -> None:
+        self._finish_startup_briefing_process(state)
+        callback = state.get("onError")
+        if callable(callback):
+            callback((type(exc), exc, exc.__traceback__))
+
+    def _finish_startup_briefing_process(self, state: Dict[str, Any]) -> None:
+        self._startup_briefing_process_poll_timer.stop()
+        if self._startup_briefing_process_state is state:
+            self._startup_briefing_process_state = None
+        workspace = state.get("workspace")
+        if workspace:
+            shutil.rmtree(Path(workspace), ignore_errors=True)
+
+    def cancelStartupPracticeBriefingProcess(self) -> None:
+        """Stop an in-flight isolated startup read during application teardown."""
+        state = self._startup_briefing_process_state
+        if not isinstance(state, dict):
+            return
+        process = state.get("process")
+        try:
+            if process is not None and process.poll() is None:
+                process.kill()
+        except Exception:
+            pass
+        self._finish_startup_briefing_process(state)
 
     @Slot()
     def markStartupBriefingFrameReady(self) -> None:
@@ -1477,8 +1660,21 @@ class AppController(QObject):
 
     def _default_main_window_layout(self) -> Dict[str, Any]:
         return {
+            "version": 2,
             "ok": False,
             "maximized": False,
+            # The percentage fields preserve a sensible layout if a monitor is
+            # removed or its work area changes.  The exact rectangle is the
+            # primary restore path when the same desktop work area remains.
+            "hasExactRect": False,
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "workAreaX": 0,
+            "workAreaY": 0,
+            "workAreaWidth": 0,
+            "workAreaHeight": 0,
             "widthPct": 0.0,
             "heightPct": 0.0,
             "centerXPct": 0.5,
@@ -1506,6 +1702,44 @@ class AppController(QObject):
         sanitized["heightPct"] = _safe_float("heightPct", 0.0, 1.0, 0.0)
         sanitized["centerXPct"] = _safe_float("centerXPct", 0.0, 1.0, 0.5)
         sanitized["centerYPct"] = _safe_float("centerYPct", 0.0, 1.0, 0.5)
+
+        def _finite_int(key: str, minimum: int, maximum: int) -> Optional[int]:
+            try:
+                value = float(payload[key])
+            except (KeyError, TypeError, ValueError):
+                return None
+            if not math.isfinite(value):
+                return None
+            rounded = int(round(value))
+            if rounded < minimum or rounded > maximum:
+                return None
+            return rounded
+
+        # Keep absolute desktop coordinates only when every component is
+        # present and sane. This prevents a corrupt preferences file from
+        # placing the main window off-screen on the next launch.
+        exact_x = _finite_int("x", -100000, 100000)
+        exact_y = _finite_int("y", -100000, 100000)
+        exact_w = _finite_int("width", 1, 30000)
+        exact_h = _finite_int("height", 1, 30000)
+        work_x = _finite_int("workAreaX", -100000, 100000)
+        work_y = _finite_int("workAreaY", -100000, 100000)
+        work_w = _finite_int("workAreaWidth", 1, 30000)
+        work_h = _finite_int("workAreaHeight", 1, 30000)
+        has_exact_rect = bool(payload.get("hasExactRect", False)) and all(
+            value is not None
+            for value in (exact_x, exact_y, exact_w, exact_h, work_x, work_y, work_w, work_h)
+        )
+        sanitized["hasExactRect"] = has_exact_rect
+        if has_exact_rect:
+            sanitized["x"] = exact_x
+            sanitized["y"] = exact_y
+            sanitized["width"] = exact_w
+            sanitized["height"] = exact_h
+            sanitized["workAreaX"] = work_x
+            sanitized["workAreaY"] = work_y
+            sanitized["workAreaWidth"] = work_w
+            sanitized["workAreaHeight"] = work_h
         return sanitized
 
     @Slot(result=dict)
@@ -1521,8 +1755,7 @@ class AppController(QObject):
             clean = self._sanitize_main_window_layout(dict(payload or {}))
             clean["ok"] = True
             self._settings_data[MAIN_WINDOW_LAYOUT_KEY] = clean
-            self.save_settings()
-            return True
+            return bool(self.save_settings())
         except Exception:
             return False
 
@@ -3553,7 +3786,7 @@ class AppController(QObject):
             )
         else:
             theme_logger.warning("save_settings failed to atomically write to path=%s", str(target_path))
-        return
+        return success
 
 
 

@@ -53,6 +53,6 @@ def test_delayed_windows_restart_waits_for_current_single_instance_to_exit():
 def test_native_splash_progress_clock_starts_after_visible_paint():
     source = (SOURCE_ROOT / "main.py").read_text(encoding="utf-8")
 
-    assert "def _start_progress_after_visible_paint(self):" in source
+    assert "def _start_progress_after_visible_paint(self) -> None:" in source
     assert "self._progress_clock.invalidate()" in source
     assert "self._start_progress_after_visible_paint()" in source

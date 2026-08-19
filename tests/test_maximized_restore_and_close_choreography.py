@@ -107,22 +107,22 @@ def test_professional_maximize_restore_uses_a_short_frozen_surface_transform() -
         encoding="utf-8"
     )
 
-    # The Professional shell captures the old completed content before it
-    # changes geometry. The snapshot, not a reflowing responsive tree, owns
-    # every intermediate frame through both directions.
-    assert "function beginProfessionalMaximizeSnapshotCapture(kind, context)" in shell
-    assert "contentLayer.grabToImage(function(result)" in shell
-    assert "function startProfessionalMaximizeSnapshotMotion(context, useFrozenSnapshot)" in shell
-    assert "professionalMaximizeSnapshotCoverReady" in shell
+    # The Professional shell uses direct GPU hardware-accelerated texture transforms
+    # on contentLayer with zero-latency cubic easing.
+    assert "property real maximizeRenderX: 0.0" in shell
+    assert "property real maximizeRenderY: 0.0" in shell
+    assert "property real maximizeRenderW: 1.0" in shell
+    assert "property real maximizeRenderH: 1.0" in shell
+    assert "property real maximizeStartFinalX: 0.0" in shell
+    assert "property real maximizeTargetFinalX: 0.0" in shell
     assert "id: professionalMaximizeFxAnimation" in shell
     assert "id: professionalRestoreMaxFxAnimation" in shell
-    assert "id: professionalMaximizeSnapshotImage" in shell
-    assert "property: \"professionalMaximizeSnapshotRenderW\"" in shell
-    assert "property: \"professionalMaximizeSnapshotRenderH\"" in shell
-    assert "duration: mainWin.lowPerformanceMode ? 120 : 205" in shell
+    assert 'property: "maximizeRenderX"' in shell
+    assert 'property: "maximizeRenderY"' in shell
+    assert 'property: "maximizeRenderW"' in shell
+    assert 'property: "maximizeRenderH"' in shell
+    assert "layer.enabled: mainWin.userResizeInProgress || mainWin.maximizeAnimInProgress" in shell
     assert "easing.type: Easing.OutCubic" in shell
-    assert "running: mainWin.maximizeAnimInProgress && mainWin.maximizeFxSequenceRunning()" in shell
-    assert "!(mainWin.professionalMaximizeSnapshotActive" in shell
 
 
 def test_modern_combo_box_height_is_independent_of_its_implicit_height() -> None:
@@ -169,3 +169,18 @@ def test_close_keeps_the_window_visible_until_it_reaches_the_center_pinpoint() -
     assert "var burstP = (p - 0.44) / 0.13;" in shell
     assert "var hangP = (p - 0.57) / 0.13;" in shell
     assert "var fizzleP = (p - 0.70) / 0.30;" in shell
+
+
+def test_startup_screen_is_locked_to_splash_monitor_until_settled() -> None:
+    shell = (PROJECT_ROOT / "src" / "qml" / "DetachedShellWindow.qml").read_text(
+        encoding="utf-8"
+    )
+    # resolveTargetScreen must strictly select the startup launch screen where
+    # the CS splash was launched until the main window has settled.
+    resolve = _function_body(
+        shell,
+        "    function resolveTargetScreen() {",
+        "    function persistMainWindowLayout() {",
+    )
+    assert "if (!mainWin.isSettled && mainWin.startupLaunchScreenLocked && mainWin.targetScreen)" in resolve
+    assert "return mainWin.targetScreen;" in resolve

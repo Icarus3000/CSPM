@@ -58,6 +58,14 @@ class TestStartupBriefingReadiness(unittest.TestCase):
                 on_result(result)
 
         controller._start_background_worker = run_inline
+
+        def run_isolated_snapshot(filters, on_result, on_error):
+            try:
+                on_result(controller._excel_repo.practice_briefing(filters))
+            except Exception as exc:
+                on_error((type(exc), exc, exc.__traceback__))
+
+        controller._start_isolated_startup_briefing_process = run_isolated_snapshot
         return controller
 
     def test_snapshot_must_be_bound_before_ready_to_reveal(self):
@@ -186,6 +194,8 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("Qt.WindowStaysOnTopHint", main_py)
         self.assertIn("class CustomSplash(QWidget)", main_py)
         self.assertIn("self.setAttribute(Qt.WA_NoSystemBackground)", main_py)
+        self.assertIn("self.setAttribute(Qt.WA_TranslucentBackground)", main_py)
+        self.assertIn("self.setAutoFillBackground(False)", main_py)
         self.assertIn("_begin_fade_in_after_first_paint", main_py)
         self.assertIn("radius = 76.0 * self._plasma_scale", main_py)
         self.assertIn("_ACT_I_VORTEX_MS = 550", main_py)
@@ -225,22 +235,21 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         handoff_start = bootstrap_qml.index("function releaseCinematicLaunchGate()")
         prestage_function = bootstrap_qml[prestage_start:handoff_start]
         self.assertIn(
-            "Phase 2 prestaging QML pinpoint while native splash retains focus",
+            "Phase 2 shell hydrated; retaining visible:false until native plasma handoff",
             prestage_function,
         )
-        self.assertIn("startupCinematicBloomPrestageOnly = true", prestage_function)
-        self.assertIn('_openLaunchGate("phase2-native-prestage")', prestage_function)
-        self.assertIn(
-            "Phase 2 QML pinpoint ready; holding native splash focus until plasma handoff",
-            bootstrap_qml,
-        )
-        focus_hold_index = bootstrap_qml.index(
-            "Phase 2 QML pinpoint ready; holding native splash focus until plasma handoff"
-        )
-        focus_request_index = bootstrap_qml.index("windowRef.forceLaunchFocus()")
-        self.assertLess(focus_hold_index, focus_request_index)
+        self.assertNotIn('_openLaunchGate("phase2-native-prestage")', prestage_function)
+        self.assertIn("cinematicBloomPrestageComplete()", prestage_function)
         self.assertIn("function _scheduleHiddenWindowPreloadAfterSnapshot(reason)", bootstrap_qml)
         self.assertIn("function _beginHiddenWindowPreloadAfterSnapshot()", bootstrap_qml)
+        self.assertIn("function _preloadShellComponentDuringIsolatedBriefing(reason)", bootstrap_qml)
+        self.assertIn("readiness !== \"briefing-snapshot-loading\"", bootstrap_qml)
+        self.assertIn("compiling hidden shell alongside isolated briefing worker", bootstrap_qml)
+        self.assertIn("requesting hidden object from precompiled shell", bootstrap_qml)
+        self.assertIn(
+            "bootstrap._preloadShellComponentDuringIsolatedBriefing(\"controller-readiness-changed\")",
+            bootstrap_qml,
+        )
         self.assertIn(
             "Phase 1 snapshot complete; serializing hidden shell preload",
             bootstrap_qml,
@@ -249,6 +258,18 @@ class TestStartupBriefingReadiness(unittest.TestCase):
             "_scheduleHiddenWindowPreloadAfterSnapshot(\"controller-readiness-changed\")",
             bootstrap_qml,
         )
+        self.assertIn(
+            "The heavyweight shell is intentionally not created until the",
+            bootstrap_qml,
+        )
+        self.assertIn(
+            "_scheduleHiddenWindowPreloadAfterSnapshot(\"phase1-wait-hidden-window:",
+            bootstrap_qml,
+        )
+        self.assertIn("def _start_isolated_startup_briefing_process(", (ROOT_DIR / "src" / "python" / "backend" / "app_controller.py").read_text(encoding="utf-8"))
+        self.assertIn("--startup-briefing-worker", main_py)
+        self.assertIn("def _ensure_tray_qml_loaded(on_ready=None) -> None:", main_py)
+        self.assertIn("BEGIN: loading deferred TrayRoot.qml", main_py)
         self.assertIn("property bool startupCinematicBloomActive", shell_qml)
         self.assertIn("function prepareStartupCinematicGeometry()", shell_qml)
         self.assertIn("signal startupCinematicBloomStaged()", shell_qml)
@@ -260,6 +281,18 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("Act III snapshot capture timed out; using live bloom fallback", shell_qml)
         self.assertIn("function prestageStartupCinematicBloom()", shell_qml)
         self.assertIn("id: startupCinematicBloomSnapshot", shell_qml)
+        self.assertIn(
+            "mainWin.opacity = mainWin.startupCinematicBloomPrestageOnly ? 0.0 : 1.0;",
+            shell_qml,
+        )
+        self.assertNotIn(
+            "mainWin.opacity = mainWin.startupCinematicBloomPrestageOnly ? 0.001 : 1.0;",
+            shell_qml,
+        )
+        self.assertIn(
+            'mainWin.markStartupFirstPixelVisible("professional-cinematic-bloom-release")',
+            shell_qml,
+        )
         self.assertIn("!mainWin.startupCinematicBloomPrestageOnly", shell_qml)
         self.assertIn("hidden final window geometry prepared during native splash", shell_qml)
         self.assertIn("duration: 400", shell_qml)

@@ -45,11 +45,11 @@ Item {
     // controller and the hidden QML tree both acknowledge readiness.
     property bool _phaseOnePreloadStarted: false
     property bool _phaseOneFailureObserved: false
-    // The workbook-backed briefing read and the very large hidden shell must
-    // not overlap.  On Windows, that concurrent first-use path has produced
-    // a native Python access violation before QML can report an error.  Hold
-    // shell compilation until the snapshot worker has returned to the main
-    // event loop, then continue the same hidden hydration contract.
+    // The hidden window object remains serialized behind the authoritative
+    // briefing snapshot. Its component compilation may safely overlap the
+    // GUI-free, isolated worker process, however: that overlap removes a
+    // large avoidable launch delay without returning to the unsafe in-process
+    // Python/QML first-use concurrency that previously crashed CSPM.
     property bool _hiddenWindowPreloadQueued: false
     // Phase 2 is separate from the data gate: the hidden shell can be ready
     // while the native splash still owns the vortex and plasma acts.
@@ -589,11 +589,16 @@ Item {
 
     function _requestHiddenBriefingAcknowledgement(reason) {
         if (!_phaseOnePreloadStarted || _phaseOneFailureObserved) return false
+        // The heavyweight shell is intentionally not created until the
+        // isolated briefing worker has completed.  Requesting it before that
+        // point only creates a rapid no-component retry loop that competes
+        // with startup rendering without making the data arrive sooner.
+        var readiness = _phaseOneReadinessState()
+        if (readiness !== "briefing-snapshot-ready" && readiness !== "ready-to-reveal") return false
         if (!mainWindowRef) {
-            _requestMainWindowCreate("phase1-wait-hidden-window:" + String(reason || "unknown"), true)
+            _scheduleHiddenWindowPreloadAfterSnapshot("phase1-wait-hidden-window:" + String(reason || "unknown"))
             return false
         }
-        if (_phaseOneReadinessState() !== "briefing-snapshot-ready") return false
         try {
             if (mainWindowRef.prepareStartupBriefingForReveal) {
                 return mainWindowRef.prepareStartupBriefingForReveal() === true
@@ -641,30 +646,33 @@ Item {
     }
 
     // main.py calls this immediately before its native vortex/plasma sequence.
-    // Pre-render Act III at a 0.2% centre pinpoint so the final native frame
-    // can hand directly to the QML bloom.  The first-pixel signal deliberately
-    // retains native focus (see _bindMainWindowStartupSignals) so Windows
-    // cannot raise the pre-rendered host above the CS logo for a frame.
+    // The fully hydrated QML object remains visible:false through the complete
+    // native sequence.  On some Windows compositors, showing even a fully
+    // transparent top-level QML host can briefly compose its full-size client
+    // surface around the compact CS splash.  Acknowledge readiness here, but
+    // do not show or stage the native QML host until the plasma has closed the
+    // native splash.
     function prestageCinematicBloom() {
         if (_phaseTwoCinematicReleased || _phaseTwoCinematicPrestageRequested) return
         _phaseTwoCinematicPrestageRequested = true
-        _lagLog("Phase 2 prestaging QML pinpoint while native splash retains focus")
+        _lagLog("Phase 2 shell hydrated; retaining visible:false until native plasma handoff")
         if (!nativeStartupCinematicActive) {
             releaseCinematicLaunchGate()
             return
         }
         if (mainWindowRef) {
             try {
-                mainWindowRef.startupCinematicBloomPrestageOnly = true
+                mainWindowRef.startupCinematicBloomPrestageOnly = false
             } catch (e0) {
             }
         }
-        _openLaunchGate("phase2-native-prestage")
+        _phaseTwoCinematicPrestageCompleted = true
+        cinematicBloomPrestageComplete()
     }
 
     // main.py calls this only after the native plasma reaches its implosion
-    // endpoint.  Act III is already rendered as a centre pinpoint behind the
-    // splash; release it in the same handoff turn for no visible dead frame.
+    // endpoint and has hidden the native splash.  Only then may Act III show
+    // the QML host, whose first prepared visual state is its centre pinpoint.
     function releaseCinematicLaunchGate() {
         if (_phaseTwoCinematicReleased) return
         _phaseTwoCinematicReleased = true
@@ -715,16 +723,34 @@ Item {
             _lagLog("Phase 1 startup readiness invocation failed=" + e0)
             return
         }
-        // The snapshot worker owns workbook/cache startup first.  Loading the
-        // heavyweight shell begins only after it publishes the snapshot, via
-        // _scheduleHiddenWindowPreloadAfterSnapshot().
+        // Component compilation starts once the isolated worker is active.
+        // The heavy Window object itself still cannot be created until the
+        // worker has returned its complete snapshot.
+    }
+
+    function _preloadShellComponentDuringIsolatedBriefing(reason) {
+        if (!_phaseOnePreloadStarted || _phaseOneFailureObserved || mainWindowRef || _mainComponent) return
+        var readiness = _phaseOneReadinessState()
+        if (readiness !== "briefing-snapshot-loading") return
+        _lagLog("Phase 1 compiling hidden shell alongside isolated briefing worker reason="
+            + String(reason || "unknown"))
+        _preloadMainWindow()
     }
 
     function _scheduleHiddenWindowPreloadAfterSnapshot(reason) {
         if (!_phaseOnePreloadStarted || _phaseOneFailureObserved || mainWindowRef) return
         var readiness = _phaseOneReadinessState()
         if (readiness !== "briefing-snapshot-ready" && readiness !== "ready-to-reveal") return
-        if (_mainComponent || _hiddenWindowPreloadQueued) return
+        // The component may already be compiling beside the isolated data
+        // read. Retain the object-creation request so its Ready callback can
+        // create the hidden hydrated window as soon as both requirements meet.
+        if (_mainComponent) {
+            _lagLog("Phase 1 snapshot complete; requesting hidden object from precompiled shell reason="
+                + String(reason || "unknown"))
+            _requestMainWindowCreate("phase1-hidden-window-after-briefing", true)
+            return
+        }
+        if (_hiddenWindowPreloadQueued) return
         _hiddenWindowPreloadQueued = true
         _lagLog("Phase 1 snapshot complete; serializing hidden shell preload reason="
             + String(reason || "unknown"))
@@ -940,7 +966,7 @@ Item {
         _componentLoadStartedAtMs = Date.now()
         _componentReadyAtMs = 0
         _lagLog("_preloadMainWindow createComponent begin")
-        _mainComponent = Qt.createComponent("DetachedShellWindow.qml", Component.Asynchronous)
+        _mainComponent = Qt.createComponent("DetachedShellWindow.qml", Component.PreferSynchronous)
         if (!_mainComponent) {
             console.warn("[BOOT] Failed to allocate main component")
             return
@@ -1093,6 +1119,7 @@ Item {
         target: (typeof app !== "undefined" && app) ? app : null
         ignoreUnknownSignals: true
         function onStartupReadinessChanged() {
+            bootstrap._preloadShellComponentDuringIsolatedBriefing("controller-readiness-changed")
             bootstrap._scheduleHiddenWindowPreloadAfterSnapshot("controller-readiness-changed")
             bootstrap._maybeOpenPhaseOneLaunchGate("controller-readiness-changed")
         }

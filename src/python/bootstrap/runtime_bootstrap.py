@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 import threading
-from logging.handlers import RotatingFileHandler
+from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any, TextIO
@@ -12,33 +12,29 @@ from typing import Any, TextIO
 from PySide6.QtCore import QtMsgType, qInstallMessageHandler
 
 
-class SafeRotatingFileHandler(RotatingFileHandler):
-    """RotatingFileHandler that tolerates Windows file-lock rollover failures."""
-
-    def doRollover(self) -> None:  # noqa: N802 - stdlib override name
-        try:
-            super().doRollover()
-        except PermissionError:
-            if self.stream is None and not self.delay:
-                self.stream = self._open()
-        except OSError as exc:
-            if getattr(exc, "winerror", None) == 32:
-                if self.stream is None and not self.delay:
-                    self.stream = self._open()
-            else:
-                raise
-
-    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802 - stdlib override name
-        # Prevent Python's internal "--- Logging error ---" traceback flood.
-        return
-
 _fault_log_stream: TextIO | None = None
 
 
 def _resolve_log_dir(log_dir: Path | None = None) -> Path:
     if log_dir is not None:
         return Path(log_dir)
+    configured_log_dir = os.environ.get("CSPM_LOG_DIR", "").strip()
+    if configured_log_dir:
+        return Path(configured_log_dir)
+    # A packaged app must never write diagnostics below ``dist``: release
+    # promotion replaces that directory. Keep the chronological diagnostic
+    # record beside the other per-user CSPM state instead.
+    if getattr(sys, "frozen", False):
+        local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+        if local_app_data:
+            return Path(local_app_data) / "CSPM" / "logs"
+        return Path.home() / ".cspm_data" / "logs"
     return Path(__file__).resolve().parents[3] / "logs"
+
+
+def _session_stamp() -> str:
+    """Return a human-readable local timestamp for durable log boundaries."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def setup_global_logging(log_dir: Path | None = None) -> logging.Logger:
@@ -49,7 +45,9 @@ def setup_global_logging(log_dir: Path | None = None) -> logging.Logger:
     level = logging.DEBUG if trace_mode else logging.INFO
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-    # Do not let logging handler rollover issues flood the terminal.
+    # Keep every normal application run in one chronological record.  Startup
+    # and crash diagnosis depends on being able to compare this launch with
+    # earlier launches, so deliberately do not rotate or prune this file.
     logging.raiseExceptions = False
 
     root_logger = logging.getLogger()
@@ -57,11 +55,9 @@ def setup_global_logging(log_dir: Path | None = None) -> logging.Logger:
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
 
-    file_handler = SafeRotatingFileHandler(
+    file_handler = logging.FileHandler(
         str(log_file),
-        mode='w',
-        maxBytes=5 * 1024 * 1024,
-        backupCount=3,
+        mode="a",
         encoding="utf-8",
     )
     file_handler.setFormatter(formatter)
@@ -74,6 +70,12 @@ def setup_global_logging(log_dir: Path | None = None) -> logging.Logger:
 
     root_logger.addHandler(file_handler)
     root_logger.addHandler(stream_handler)
+    root_logger.info(
+        "=== CSPM APPLICATION START %s | pid=%s | executable=%s ===",
+        _session_stamp(),
+        os.getpid(),
+        sys.executable,
+    )
     return root_logger
 
 
@@ -164,6 +166,11 @@ def install_global_exception_hooks(log_dir: Path | None = None) -> None:
         resolved_log_dir.mkdir(parents=True, exist_ok=True)
         fault_log = resolved_log_dir / "faults.log"
         _fault_log_stream = open(fault_log, "a", encoding="utf-8")
+        _fault_log_stream.write(
+            "\n=== CSPM FAULT CAPTURE SESSION START "
+            f"{_session_stamp()} | pid={os.getpid()} ===\n"
+        )
+        _fault_log_stream.flush()
         faulthandler.enable(file=_fault_log_stream, all_threads=True)
     except Exception:
         logging.getLogger("crash").debug("Could not enable faulthandler.", exc_info=True)

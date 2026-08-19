@@ -314,3 +314,7 @@ user_settings.json
 dist_staging_*/
 *.zip
 CSPM_PROJECT_TEXT_DUMP_*
+.cspm_*
+checkout_recovery/
+release_candidates/
+startup_briefing/

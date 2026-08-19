@@ -1,6 +1,210 @@
 # CSPM Task And Validation Ledger
 
+## Smooth GPU-Accelerated Maximize & Restore Animation (2026-08-19)
+
+- [x] Diagnose the maximize window jumping and flickering. Asynchronous `grabToImage`
+  readbacks, host envelope DWM resizing races with `mainWin.x/y` subtraction, and
+  temporary snapshot Image swapping caused multi-frame visual hops across the screen.
+- [x] Replaced snapshot image capture with a direct, hardware-accelerated GPU texture
+  pipeline: `layer.enabled: true` on `contentLayer` during maximize and restore motion.
+- [x] Implement pure host-relative geometric scale and translation transforms with
+  zero-latency start (0ms), smooth `Easing.OutCubic` 220ms interpolation, and pixel-perfect
+  alignment at frame 0 and frame 1.
+- [x] Invariant preservation: Multi-monitor destination tracking via
+  `restoreGlyphDestinationScreen()` and `monitorOwningWindowControl()` is fully retained.
+- [x] Update choreography tests in `tests/test_maximized_restore_and_close_choreography.py`
+  and verify with sandbox-safe `pytest` and `scripts/qmllint.ps1`.
+- [ ] Manual source verification: Launch with `launch.ps1`, click Maximize and Restore
+  in both Dark and Light themes across monitors; confirm buttery smooth 60/120fps GPU
+  transition with zero jumping, zero lag, and zero coordinate hop.
+
+## Exact Main-Window Layout Persistence (2026-08-19)
+
+- [x] Persist the main window's final desktop `x`, `y`, `width`, and `height`
+  at close in the authoritative app settings (`mainWindowLayout`), alongside
+  the originating usable work area and the prior proportional fallback.
+- [x] Restore that exact rectangle as the destination of the usual launch
+  animation when the saved work area still matches. If a monitor was removed,
+  rearranged, or resized, preserve the existing safe proportional fallback
+  rather than allowing an off-screen window.
+- [x] Make the layout save result observable in the close-phase log and return
+  the atomic settings-write result from `saveMainWindowLayout`.
+- [x] Add backend/QML regression coverage for exact layout persistence,
+  negative desktop coordinates, invalid-record fallback, and matching-work-area
+  restoration.
+- [ ] Manual source verification: resize and move the app, close it, then run
+  `launch.ps1`; confirm the standard opening animation settles at exactly that
+  same size and position.
+
+## Native Splash Main-Host Flash Hardening (2026-08-19)
+
+- [x] Re-check the fresh runtime evidence. The reported run was `launch.ps1`
+  using `.venv_CORY_CorySchneider\Scripts\python.exe`; its 06:54 session
+  confirms the old pre-stage path still called `mainWin.show()` while the
+  native CS splash was active. An earlier `dist\CSPM\CSPM.exe` session was
+  separate and must not be used to characterize this reproduction.
+- [x] Remove the more fundamental risk from the source startup sequence: the
+  fully hydrated main QML object now remains `visible: false` throughout the
+  CS progress, vortex, and plasma acts. The native handoff opens it only after
+  `CustomSplash.hide()`; its bloom scale is set to 0.2% before that first
+  native `show()` call.
+- [x] Add `tests/test_splash_host_visibility_contract.py` to reject a future
+  `phase2-native-prestage` launch gate and require the pinpoint state to be
+  configured before `mainWin.show()`.
+- [x] Separate the final native hide from the QML reveal by one compositor
+  frame (32 ms), then explicitly raise and activate the main window at its
+  first 0.2%-bloom frame. CSPM remains an ordinary, non-topmost app after
+  that initial foreground presentation.
+- [ ] Rebuild and hash-verify `dist\CSPM\CSPM.exe` with this source change.
+- [ ] Manual source foreground verification: run `launch.ps1` and confirm no
+  portion of the main app window appears at any point while the CS progress,
+  vortex, or plasma animation is running. The first main-window pixels must
+  be the 0.2%-to-full bloom after the native splash has disappeared, and that
+  first frame must be in front of other applications.
+
+## Absolute Desktop Screen Mapping & Startup Splash Monitor Invariant (2026-08-18)
+
+- [x] Lock main app opening monitor to the native CS splash monitor:
+  - *Diagnosis*: `resolveTargetScreen()` and `currentCursorScreenIndex()` queried `appRef.getCursorScreenIndex()`, so if the user moved their mouse to another monitor during startup, the main window would bloom and settle on that other monitor instead of the splash monitor.
+  - *Fix*: Updated `resolveTargetScreen()` and `currentCursorScreenIndex()` to strictly lock to `startupLaunchScreenIndexSafe(0)` throughout the startup sequence (`!mainWin.isSettled`), guaranteeing that the main window always opens on the exact monitor where the CS logo splash started animating.
+- [x] Eliminate Maximize Jump and Restore Flicker:
+  - *Diagnosis*: Local coordinate offsets calculated against `hostX/Y` assumed the native OS window moved synchronously. Because Windows DWM moves native windows asynchronously, local offsets produced a 1-2 frame jump on maximize and flicker on restore before native `SetWindowPos` processed.
+  - *Fix*:
+    1. Snapshot backdrop and image properties (`professionalMaximizeSnapshotRenderX/Y`, `professionalMaximizeSnapshotImageX/Y`) now store absolute desktop screen coordinates and bind to `(screenCoord - mainWin.x)` / `(screenCoord - mainWin.y)`. Because `mainWin.x + (screenCoord - mainWin.x) = screenCoord`, the snapshot mathematically renders at the exact physical desktop pixel location regardless of OS message queue latency.
+    2. Added `professionalRestoreSettleTimer` (60ms) to keep the snapshot active while the native OS window settles its restored geometry on restore.
+- [x] Verified pytest choreography regression suite (**7 passed**), `py_compile` clean pass, governed `qmllint.ps1` clean pass, and rebuilding release package `dist\CSPM\CSPM.exe`.
+- [ ] Manual foreground test `dist\CSPM\CSPM.exe`: verify CS splash and main window always open on the same monitor, and verify Maximize/Restore operate as a single smooth cinematic motion with zero jumping or flickering.
+
+## Stable Professional Maximize Origin and Startup Splash Hardening (2026-08-18)
+
+- [x] Diagnose the reported maximize jump from the persistent application log
+  and the Professional animation path. The frozen frame was positioned using
+  `mainWin.x/y` immediately after changing its host screen; Windows publishes
+  those native coordinates asynchronously, so one or more frames could be
+  calculated against a stale monitor origin.
+- [x] Anchor every frozen-frame source and target coordinate to the synchronous
+  `hostX/hostY` model origin instead. One durable `[MAXIMIZE]` or
+  `[RESTORE-MAX]` diagnostic line now records that origin and both local
+  rectangles for any foreground retry.
+- [x] Prevent transparent corners of the native CS splash artwork from being
+  compositor-flattened to black by applying the artwork's rounded alpha mask
+  as a native top-level window mask.
+- [x] Start compiling the hidden QML shell while the separate GUI-free
+  Practice Briefing worker reads the snapshot; it remains uncreated and
+  invisible until the complete snapshot has arrived. This removes the known
+  serial wait without weakening the no-stale-data launch gate.
+- [x] Run sandbox-safe Python compilation, focused maximize/startup tests
+  (**15 passed**), governed QML lint (existing warning-level diagnostics only),
+  and `git diff --check`.
+- [x] Rebuild and promote the local CSPM EXE with the host-origin and splash
+  corrections. The installed prior package SHA-256 is
+  `69002B7E26BC3B9D770E782B9581CC204D3DEB2B5B8619B8F07AFA759CF5FB00`.
+- [x] Diagnose the remaining visible hop from its foreground runtime log. Both
+  paths logged `Unable to assign [undefined] to double` for the frozen image
+  X/Y animation target. The outer backdrop moved while that image did not,
+  followed by a live-layout handoff at a third position.
+- [x] Replace the dynamic JavaScript context X/Y targets with persistent
+  numeric QML properties and add a regression assertion that the undefined
+  target fields cannot return.
+- [x] Rebuild and promote the local CSPM EXE with the frozen-image target
+  correction. `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `4FB1272BA03EABB9F3B4B2051A4C8982B7D3D20C5261A71A9EDD9540D27F2B97` and
+  its bundled `DetachedShellWindow.qml` exactly matches source. The preceding
+  package is recoverable at `to_delete\\dist__replaced_release_20260818_155521`.
+- [ ] Manual foreground test `dist\\CSPM\\CSPM.exe`: maximize repeatedly on
+  every monitor. The app surface must originate in-place and smoothly scale to
+  the active monitor without an intermediate jump. Also confirm the splash has
+  no rectangular black corners and reaches its progress gate promptly.
+
+## Symmetric Professional Maximize/Restore Surface Morph (2026-08-18)
+
+- [x] Replace the Professional frozen-frame rectangle stretch with one
+  centre-preserving GPU scale for both axes.  Internal panels, text, charts,
+  and chrome retain their proportions throughout maximize and restore rather
+  than being cropped or independently stretched.
+- [x] Use an independently morphing outer backdrop for differing normal and
+  maximized aspect ratios; render the frozen image at the larger endpoint
+  size; then softly hand off to the final hidden reflow only at the exact
+  destination rectangle.
+- [x] Run sandbox-safe maximize/restore and readiness regression tests
+  (**11 passed**), governed QML lint (existing warning-level diagnostics only),
+  and `git diff --check`.
+- [x] Rebuild and promote the local CSPM and Recovery package. The installed
+  `dist\CSPM\CSPM.exe` SHA-256 is
+  `03157E36EF371A8DE6AEDE95856538916C5B5B679E44B7472910812FA918D68D` and its
+  bundled `DetachedShellWindow.qml` exactly matches source. The prior release
+  remains recoverable at `to_delete\dist__replaced_release_20260818_140332`.
+- [ ] Manual foreground-test `dist\CSPM\CSPM.exe`: maximize and restore from
+  several normal sizes on each monitor. Confirm the internal UI always scales
+  uniformly from the centre without clipping, the final handoff has no visible
+  jump, and the existing Win+Shift+Arrow restore-on-current-monitor rule
+  remains intact.
+
+## Isolated Startup Briefing Read and Splash-Critical Deferral (2026-08-18)
+
+- [x] Diagnose the latest packaged crash from the durable local log and fault
+  capture.  The visible process reached `briefing-snapshot-loading`, then a
+  pooled worker hit a native access violation while `openpyxl` parsed the
+  Practice Briefing workbook; the native splash paint thread was healthy.
+- [x] Move the initial Practice Briefing read into a short-lived, GUI-free
+  helper process operating on a private copy of the workbook data.  Its JSON
+  result is accepted only when complete and valid; a worker exception, native
+  exit, or 120-second timeout now fails the readiness gate safely instead of
+  taking down CSPM.
+- [x] Preserve useful diagnostics for that isolated path: the parent records
+  the worker PID, exit code, response failure detail, and any Python traceback
+  in the durable application log.
+- [x] Keep `TrayRoot.qml` and its auxiliary QML windows off the splash-critical
+  path.  The native tray remains available, while TrayRoot is loaded only after
+  the cinematic handoff (or on an explicit tray click), preventing its hidden
+  windows from producing a background flash during splash loading.
+- [x] Rebuild and validate the repaired local EXE.  Standard promotion
+  succeeded; `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `8FA6B2CD0E4B66FB420185045EC61C45328953E8EFF58D6E034FD895651C82AE`.
+  The full 4,357-file / 678,563,551-byte installed tree manifest is
+  `3CC470576E16A62F68866EE4547A1A8FF29F94D4CA973B06771B6A5ABAD578B4`,
+  and both splash-critical packaged QML files exactly match source.  The prior
+  package is recoverable at
+  `to_delete\\dist__replaced_release_20260818_120539`.
+- [x] Diagnose and eliminate the remaining pre-bloom full-window flicker from
+  fresh packaged logs.  At `ready-to-reveal`, the staged full-size QML host was
+  shown with `opacity: 0.001` before its frozen pinpoint snapshot existed;
+  Windows can quantize that value into one visible live-content compositor
+  frame.  The host now stays at exactly zero opacity through prestage, and it
+  becomes compositable only at the native plasma handoff after the 0.2%
+  snapshot/fallback is already in place.  First-pixel accounting also moves to
+  that real release point.
+- [x] Rebuild and hash-verified copy-promote the anti-flicker EXE after Windows
+  denied the normal final directory rename.  `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `C2CBF78B7403D1F272753CCCD3B3F9AF33C2F0F6CA58E3C0105F99857A58D305`; its
+  full 4,357-file / 678,564,228-byte manifest is
+  `FCBC237B654ECE74F3AD01D162AA000FE707E9B3E48CD9195E025D7AEF111E58`.
+  The prior package remains recoverable at
+  `to_delete\\dist__manual_replaced_release_20260818_125930`.
+- [ ] Manual foreground verification: launch `dist\\CSPM\\CSPM.exe`. Confirm
+  progress leaves 0% promptly, no black auxiliary window flashes behind the CS
+  logo, the worker reaches a hydrated briefing snapshot, and the full cinematic
+  sequence completes.  If it fails, review `%LOCALAPPDATA%\\CSPM\\logs\\cspm.log`
+  for the isolated-worker result rather than expecting the main process to
+  crash.
+
 ## Native CS Splash 0% Startup Stall and Source Crash (2026-08-18)
+
+- [x] Make the application diagnostic log durable: development runs append to
+  `logs/cspm.log`; packaged runs append to the release-independent
+  `%LOCALAPPDATA%\CSPM\logs\cspm.log`. Each launch records an ISO-timestamped
+  application-start boundary, with no automatic rotation or retention
+  deletion. `faults.log` likewise records a timestamped fault-capture session
+  boundary.
+- [x] Rebuild and promote the pulled source to `dist\CSPM\CSPM.exe`. The
+  promoted 4,357-file package manifest is
+  `61E84C0FA3D2BC082FF598DB19C1FFA14B6497E5040612160B7C9C7E761DD2A9`
+  and the EXE SHA-256 is
+  `B47230E863B32B535464771433257E6C01F13AA57DE8480FD6D23402820DE686`.
+- [ ] Manual foreground verification after the rebuilt package is promoted:
+  launch `dist\CSPM\CSPM.exe`, confirm the full cinematic readiness sequence,
+  then confirm `%LOCALAPPDATA%\CSPM\logs\cspm.log` contains both the prior
+  launch and the new timestamped session rather than replacing either.
 
 - [x] Diagnose the latest packaged launch from `dist\logs\cspm.log`: the
   process was alive and responsive, with no Windows crash event, but never

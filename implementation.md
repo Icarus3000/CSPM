@@ -1,6 +1,258 @@
 # Implementation History
 
+## 2026-08-19: Smooth GPU-Accelerated Maximize & Restore Animation (Source)
+
+- Replaced the jumpy, multi-frame `grabToImage` snapshot capture and dynamic `Image` overlay with a direct hardware-accelerated GPU texture transform pipeline.
+- `contentLayer` enables `layer.enabled: true` and `layer.smooth: true` during `maximizeAnimInProgress`, caching the live window surface in GPU VRAM with zero layout reflow overhead during motion.
+- Scale and translate transforms (`maximizeFxScaleX/Y`, `maximizeFxTransX/Y`) are animated via `Easing.OutCubic` over 220ms (140ms in low-performance mode) directly in the Qt Quick Scene Graph.
+- Geometry calculation uses pure host-relative offsets (`sourceX - targetX`), eliminating DWM message pump race conditions with `mainWin.x/y` subtraction.
+- Multi-monitor destination tracking and monitor selection invariants (`restoreGlyphDestinationScreen()`, `monitorOwningWindowControl()`) are fully preserved.
+- Sandbox-safe validation: Choreography suite passed (**5 tests**); Python compilation passed; governed QML lint (`scripts/qmllint.ps1`) completed cleanly with 0 errors.
+
+## 2026-08-19: Professional Maximize Glyph Recovery (Source)
+
+- The Professional glyph's frozen-frame path referred to
+  `mainWin.professionalMaximizeSnapshotTimer`, but the timer is a lexical QML
+  object rather than a `Window` property. That invalid access stopped the
+  command before the maximize state or native current-monitor envelope could
+  be applied; consequently Restore could not be reached either.
+- `beginProfessionalMaximizeSnapshotCapture()` now uses the timer id directly
+  for its sequence and start calls. It retains the current native-window owner
+  selection used by `monitorOwningWindowControl()`, and the same path supports
+  the Restore toggle.
+- Sandbox-safe validation: maximize/restore choreography, exact-layout,
+  splash-host, and restart contracts passed (**13 tests**); Python compilation
+  passed; governed QML lint completed with existing warnings only and no longer
+  reports `professionalMaximizeSnapshotTimer` as a missing `Window` member.
+  Real Qt/WebEngine interaction remains a manual `launch.ps1` check.
+
+## 2026-08-19: Exact Main-Window Layout Persistence (Source)
+
+- `mainWindowLayout` in the authoritative LocalAppData settings now stores a
+  versioned exact final rectangle (`x`, `y`, `width`, `height`) and the usable
+  desktop work area that produced it. This is saved as the first action of the
+  normal close transition, before the window's closing animation changes any
+  geometry.
+- On a later launch, `DetachedShellWindow` uses that exact rectangle as the
+  destination of the normal opening bloom if the work area still matches. The
+  existing proportional rectangle remains the deliberately safe fallback when
+  a display was removed, repositioned, or resized. Maximized launches retain
+  their existing persisted-maximized behavior.
+- `AppController.saveMainWindowLayout()` now reports the actual atomic-write
+  outcome; the close-phase log includes the saved status and final rectangle.
+- Sandbox-safe validation: the new layout persistence tests plus the focused
+  splash/restart contracts passed (**8 tests**); Python compilation passed; and
+  governed QML lint completed with existing warning-only diagnostics. Real
+  Qt/WebEngine visual verification remains a manual `launch.ps1` check.
+
+## 2026-08-19: Native Splash Main-Host Flash Hardening (Source; Package Rebuild Pending)
+
+- Fresh log review established that the reported reproduction ran
+  `launch.ps1` using `.venv_CORY_CorySchneider\Scripts\python.exe`. Its 06:54
+  session confirms the source pre-stage still called `mainWin.show()` while
+  the native CS splash was active. An earlier package launch was a separate
+  session and does not explain this source reproduction.
+- The source no longer shows the hydrated main host during the CS progress,
+  vortex, or plasma acts. `BootstrapRoot.prestageCinematicBloom()` now only
+  acknowledges hidden-shell readiness. `CustomSplash.hide()` now receives a
+  full 32 ms compositor handoff before it emits the QML release signal; only
+  then does the launch gate open. `DetachedShellWindow` configures its live
+  canvas to the 0.2% bloom scale before the first `mainWin.show()` call, then
+  raises and activates that first visible frame. Python queues a second normal
+  Qt foreground request in the next event turn (plus a brief resilience
+  reassertion), so CSPM opens in front without staying topmost.
+  This removes the Windows top-level-window composition event that could flash
+  a full-size application frame despite zero window opacity.
+- Sandbox-safe validation: `tests/test_splash_host_visibility_contract.py` and
+  `tests/test_startup_restart_contract.py` passed (5 tests); Python compilation
+  passed; and the governed QML lint wrapper completed with existing warnings
+  only. Real Qt/WebEngine foreground validation and an updated package build
+  remain pending.
+
+## 2026-08-18: Absolute Desktop Screen Mapping & Startup Splash Monitor Invariant (Source & Local EXE Rebuilt)
+
+- **Startup Launch Monitor Invariant:**
+  - *Diagnosis*: `resolveTargetScreen()` and `currentCursorScreenIndex()` consulted `appRef.getCursorScreenIndex()`. When the user moved their mouse across monitors during the 2-second splash sequence, the QML shell would target the other monitor, causing the main window to open on a different monitor than the splash.
+  - *Fix*: Locked `resolveTargetScreen()` and `currentCursorScreenIndex()` strictly to `startupLaunchScreenIndexSafe(0)` throughout the pre-settle startup cycle (`!mainWin.isSettled`). The window now always blooms and settles on the exact monitor where the CS logo splash started.
+- **Maximize Jump and Restore Flicker Resolution:**
+  - *Diagnosis*: Local coordinate offsets calculated against `hostX/Y` assumed the native OS window moved synchronously. When Windows DWM delayed native `SetWindowPos` execution by 1-2 frames, local offsets produced an offset jump on maximize and a brief flicker on restore.
+  - *Fix*:
+    - Snapshot properties now store absolute desktop screen coordinates (`context.sourceX`, `finalX`, etc.) and bind visually to `(screenCoord - mainWin.x)` and `(screenCoord - mainWin.y)`. Because `mainWin.x + (screenCoord - mainWin.x) = screenCoord`, the snapshot mathematically renders at the exact physical desktop pixel location regardless of OS message queue latency.
+    - Added `professionalRestoreSettleTimer` (60ms) to keep the frozen snapshot active while the native OS window settles its restored geometry on restore before revealing the live canvas.
+- **Validation:**
+  - Sandbox-safe validation: `python -m py_compile` passed, focused pytest tests (**7 passed** in `test_maximized_restore_and_close_choreography.py` and `test_closing_overlay_monitor_contract.py`), governed `scripts\qmllint.ps1` passed cleanly, and `git diff --check` passed cleanly.
+  - Full build validation: `python scripts/build_release.py --validate` completed successfully, producing and promoting `dist\CSPM\CSPM.exe`.
+
+## 2026-08-18: Stable Maximize Origin and Native Splash Hardening (Source, Local EXE Rebuild Pending)
+
+- **Maximize-jump repair:** the Professional frozen-frame animation changed
+  the host monitor and then converted global source/target rectangles using
+  `mainWin.x/y`. Windows updates those native `Window` coordinates
+  asynchronously, allowing a stale monitor origin to place the surface in a
+  visibly wrong intermediate location. The conversion now exclusively uses
+  the synchronous `hostX/hostY` model origin after the envelope change. One
+  durable per-command log line records that fixed origin plus source/target
+  local coordinates, making any remaining monitor-specific failure directly
+  auditable from the append-only runtime log.
+- **Native splash black-corner repair:** `app_icon_preview.png` intentionally
+  has transparent corner pixels. A Windows compositor path can flatten such
+  a translucent top-level tool window to a black rectangle before its alpha
+  is respected. `CustomSplash` now applies the rounded artwork alpha mask as
+  the actual native window mask, so transparent corner pixels are outside the
+  window rather than relying on compositor transparency.
+- **Launch-delay improvement:** after the isolated, GUI-free Practice
+  Briefing worker starts, Bootstrap begins compiling (but does not create or
+  show) the heavy QML shell in parallel. The complete snapshot remains the
+  strict gate for hidden-window creation and every cinematic act, therefore
+  no zero/stale figures can leak into the first visible frame. This removes
+  the confirmed serial worker-then-component wait; a foreground run will
+  determine whether any separate cold QML compilation cost remains.
+- **Sandbox-safe validation:** `python -m py_compile src\\python\\main.py`,
+  focused startup/maximize/restart tests (**15 passed**), the governed
+  `scripts\\qmllint.ps1` checks (existing warning-only diagnostics), and
+  `git diff --check` all passed. Qt/WebEngine foreground behavior has not been
+  validated in this environment; it requires the rebuilt local EXE manual
+  check.
+- **Release:** the full CSPM and Recovery PyInstaller build and validation
+  completed, then the staged package was promoted. The installed
+  `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `69002B7E26BC3B9D770E782B9581CC204D3DEB2B5B8619B8F07AFA759CF5FB00`.
+  Packaged `DetachedShellWindow.qml` and `BootstrapRoot.qml` exactly match
+  source (`E065310B…E288` and `1A31990D…2222`, respectively). The replaced
+  local package remains recoverable at
+  `to_delete\\dist__replaced_release_20260818_143955`.
+- **Follow-up runtime diagnosis (source repair awaiting rebuilt EXE):** the
+  next foreground log conclusively recorded four `Unable to assign
+  [undefined] to double` warnings, precisely at the frozen image X/Y
+  `NumberAnimation` targets—twice for restore and twice for maximize. Those
+  targets were being read from fields dynamically added to a JavaScript
+  context object. The backdrop had valid numeric targets, but the image did
+  not, so the two visual layers followed different paths before the live
+  window took over. Dedicated `real` QML target-X/Y properties now own the
+  values from before animation start through completion; regression coverage
+  rejects the old dynamic-field pattern. Focused tests remain **15 passed**
+  and governed QML lint remains warning-only.
+- **Follow-up release:** the detached full CSPM/Recovery builder completed its
+  own validation and promoted the fixed package. The installed
+  `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `4FB1272BA03EABB9F3B4B2051A4C8982B7D3D20C5261A71A9EDD9540D27F2B97`.
+  Its bundled `DetachedShellWindow.qml` hash exactly equals source
+  (`15BC77C3763CAD78F05413B4EEFD06FC4335250A7232C741380B583730022C1C`).
+  The prior release remains recoverable at
+  `to_delete\\dist__replaced_release_20260818_155521`.
+
+## 2026-08-18: Symmetric Professional Maximize/Restore Surface Morph (Source and Local EXE)
+
+- **Observed visual defect:** the prior Professional transition animated the
+  frozen application image by independently interpolating its width and
+  height.  A maximized work area rarely has the same aspect ratio as a normal
+  window, so labels, panels, and charts could visibly stretch or appear to be
+  cropped while the outer window changed shape.
+- **Repair:** the frozen app surface now has one centre-preserving GPU scale
+  applied equally on both axes.  A separate dark shell backdrop carries the
+  necessary outer aspect-ratio change, leaving every visible internal element
+  proportional and uncropped.  The source frame is rendered at the larger of
+  the source/destination sizes for a crisp expansion, and a 48 ms terminal
+  blend reveals the already-reflowed final layout only after the surface has
+  reached its destination.
+- **Sandbox-safe validation:** focused maximize/restore and startup readiness
+  tests passed (**11 passed**); governed QML lint completed with the existing
+  warning-only diagnostics; `git diff --check` passed.  Real Qt/WebEngine
+  foreground validation remains manual after the local EXE is rebuilt.
+- **Release:** the full CSPM and Recovery PyInstaller package was rebuilt and
+  promoted. `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `03157E36EF371A8DE6AEDE95856538916C5B5B679E44B7472910812FA918D68D`.
+  The installed `DetachedShellWindow.qml` SHA-256 exactly matches source
+  (`9B264EB3CF0D5011E9795A89C248467CB38012AFAECEBC6A1EE46CCA5CA69E20`);
+  the prior release remains recoverable at
+  `to_delete\\dist__replaced_release_20260818_140332`.
+
+## 2026-08-18: Isolated Practice Briefing Startup Repair (Source, Local EXE Rebuild Pending)
+
+- **Evidence-led diagnosis:** the persistent packaged application log showed a
+  real QML/bootstrap start at `t+6.416s`, successful settings and workbook boot,
+  and the failure immediately after `briefing-snapshot-loading`.  The matching
+  persistent fault capture identified a `0xC0000005` native access violation in
+  a pooled worker while `openpyxl` / `ElementTree` parsed the Practice Briefing
+  workbook.  It was not a splash-animation failure.
+- **Crash containment:** `AppController` now copies the startup workbook data
+  to a private runtime directory and launches `--startup-briefing-worker`, a
+  GUI-free mode which returns the complete JSON snapshot atomically.  The main
+  process polls that helper and advances readiness only for a valid successful
+  response.  Parser faults, ordinary exceptions, and timeouts leave the splash
+  gate closed with a diagnosable readiness failure instead of terminating CSPM.
+  The parent records the child PID, exit code, failure detail, and returned
+  Python traceback in the append-only durable log.
+- **Splash-path cleanup:** `TrayRoot.qml` is no longer synchronously loaded
+  before the event loop.  Its hidden flyout/toast windows load after the native
+  cinematic handoff, or when a user explicitly clicks the system-tray icon.
+  This removes the verified source of the unintended background auxiliary-window
+  creation during the CS splash.
+- **Sandbox-safe validation:** Python compilation and focused startup,
+  worker-isolation, restart-contract, and durable-logging tests passed
+  (**15 passed**); governed QML lint completed with warning-level diagnostics
+  only.  Real Qt/WebEngine foreground validation remains manual after the
+  rebuilt package is promoted.
+- **Release:** the standard PyInstaller promotion completed successfully.  The
+  installed `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `8FA6B2CD0E4B66FB420185045EC61C45328953E8EFF58D6E034FD895651C82AE`;
+  the complete 4,357-file / 678,563,551-byte package manifest is
+  `3CC470576E16A62F68866EE4547A1A8FF29F94D4CA973B06771B6A5ABAD578B4`.
+  The packaged `BootstrapRoot.qml` and `DetachedShellWindow.qml` exactly match
+  their source counterparts.  The previous release was safely retained at
+  `to_delete\\dist__replaced_release_20260818_120539`.
+
+## 2026-08-18: Native-to-QML Handoff Flicker Removal (Source and Local EXE)
+
+- **Evidence:** fresh packaged sessions completed the isolated briefing read
+  successfully, but logs showed the main QML host's first pixel at
+  `ready-to-reveal`, before native plasma handoff.  The host had been shown at
+  final size with `opacity: 0.001` while its frozen Act III snapshot was still
+  being captured.  Windows compositor precision can quantize that tiny opacity
+  to a visible full-size frame, which matches the reported near-100% flicker.
+- **Repair:** the QML host now remains exactly transparent throughout prestage.
+  It becomes opaque only when main.py has hidden the native splash at the
+  plasma implosion endpoint and QML has a prepared 0.2% frozen snapshot (or
+  equivalently scaled live fallback).  First-pixel telemetry is emitted at that
+  release—not while the fully sized host is hidden—so later diagnostics match
+  what was actually visible.
+- **Validation/release:** focused startup tests passed (**15 passed**) and
+  governed QML lint completed with existing warning-level diagnostics only.
+  PyInstaller built both executables.  Windows denied standard directory rename,
+  so the repository's hash-verified copy-promotion preserved the prior package
+  and installed the matching 4,357-file / 678,564,228-byte tree manifest
+  `FCBC237B654ECE74F3AD01D162AA000FE707E9B3E48CD9195E025D7AEF111E58`.
+  `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `C2CBF78B7403D1F272753CCCD3B3F9AF33C2F0F6CA58E3C0105F99857A58D305`;
+  the packaged `DetachedShellWindow.qml` exactly matches source.  The prior
+  EXE package remains recoverable at
+  `to_delete\\dist__manual_replaced_release_20260818_125930`.
+
 ## 2026-08-18: Native CS Splash 0% Startup Stall and Source Crash (Source and Local EXE, Pending Foreground Check)
+
+- **Durable diagnostics:** normal runtime logging no longer opens
+  `cspm.log` with overwrite/rotating retention. It is now one append-only,
+  timestamped chronological log with a distinct ISO-timestamped application
+  start boundary (including PID and interpreter) on every launch. Packaged
+  CSPM writes to `%LOCALAPPDATA%\\CSPM\\logs`, outside the replaceable `dist`
+  package; development runs retain the repository `logs` location. `faults.log`
+  adds the same durable session boundary before faulthandler starts. This is
+  intentionally unbounded: the application does not remove previous log
+  information automatically. Focused regression coverage verifies two startup
+  initializations retain both prior entries and both session markers, and that
+  a frozen runtime resolves the release-independent path.
+- **Release:** PyInstaller completed the final full CSPM and Recovery build
+  and standard promotion succeeded; its predecessor remains recoverable at
+  `to_delete\\dist__replaced_release_20260818_113101`. The installed
+  4,357-file package manifest is
+  `61E84C0FA3D2BC082FF598DB19C1FFA14B6497E5040612160B7C9C7E761DD2A9`;
+  `dist\\CSPM\\CSPM.exe` SHA-256 is
+  `B47230E863B32B535464771433257E6C01F13AA57DE8480FD6D23402820DE686`.
+  The packaged `DetachedShellWindow.qml` exactly matches source. Sandbox-safe
+  Python compilation, focused startup/logging tests (**13 passed**), and the
+  governed two-file opening-shell QML lint completed with only existing
+  warning-level diagnostics. Real foreground Qt/WebEngine validation remains
+  the required manual next check.
 
 - **Observed package behavior:** the fresh `dist\\logs\\cspm.log` showed the
   native CS frame at `t+3.664s`, followed by no `BEGIN: loading Main.qml
@@ -235,8 +487,9 @@
   from 88 px to 76 px per scale unit for a more restrained burst. Staging is
   explicitly separate from genuine animation completion so a stopped staging
   animation cannot reset the bloom to full scale before the release.
-- **Single visual owner for Act III:** the live Qt window is held at 0.1%
-  opacity while its final animation canvas is captured. After capture, the
+- **Single visual owner for Act III:** the live Qt window is held at exactly
+  zero opacity before final-layout work and while its final animation canvas
+  is captured. After capture, the
   native splash remains on top while a frozen GPU canvas replaces the live
   canvas at 0.2% scale. Only that snapshot is scaled for the 400 ms bloom from
   the actual screen centre; at full scale it swaps back to the identical live
@@ -1560,3 +1813,10 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
   - QML compilation test verified `Status.Ready` on `JellyController.qml` and `DetachedShellWindow.qml`.
   - `scripts/qmllint.ps1` completed with 0 errors.
   - Assets synchronized and verified at `dist/CSPM/_internal/src/qml/`.
+
+## Startup Animation & Maximize/Tray Comet Fixes (2026-08-18)
+
+- Fixed startupCinematicBloomPrestageOnly 'black box' visual bug and missing first-pixel handshake signal by correcting the animationCanvasLayer visibility constraints and signal emission location.
+- Repaired professionalMaximizeSnapshotRenderX/Y coordinate bounds arithmetic to properly record the unmaximized state before the native host envelope expands, allowing the frozen QML image surface to perfectly counteract the asynchronous OS resize jump.
+- Corrected double comet artifact on cross-monitor tray minimize by matching the final window-bound coordinates of the overlay comet to the exact local QML comet boundary offsets.
+- Added applyHostEnvelopeForTarget() call inside professionalRestoreSettleTimer to properly collapse the native DWM envelope tight to the restored app window instead of leaving a transparent invisible 1920x1080 bounding box.
