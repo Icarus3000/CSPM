@@ -12,6 +12,18 @@ such as "proceed with next task", every AI agent must read these files in order:
 3. `implementation.md` — latest implementation snapshot, completed work, validation notes, and manual checks still needed.
 4. `docs/CSPM_Option_3_Interface_Rebuild_Brief.md` — canonical Option 3 interface rebuild brief.
 
+## Current User-Directed Visual FX Priority (2026-08-20)
+
+After the required startup reading, read
+`docs/VISUAL_FX_AUDIT_AND_HANDOFF_2026-08-20.md` before beginning visual,
+motion, or animation work. This is the user's current next-priority workstream.
+
+- Begin with its P0 Professional maximize/restore manual acceptance gate.
+- Do not move to another visual state machine until the user confirms the
+  current maximize/restore path is clean in the real application.
+- This user-directed priority supersedes the default manual-audit starting
+  point below until that acceptance gate is complete.
+
 Current manual audit priority:
 
 - Open `docs/MANUAL_SCREEN_REPORT_AUDIT.md` after the startup reading above.
