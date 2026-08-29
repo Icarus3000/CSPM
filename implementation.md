@@ -1,5 +1,13 @@
 # Implementation History
 
+## 2026-08-29: Accepted Payment Filter and Launcher Release Checkpoint
+
+- Cory manually accepted the real governed `launch.ps1` route and confirmed the Make Payment unpaid-invoice filter works. This checkpoint does not authorize or include conflict-checking, courtesy-discount, visual-motion, workbook, or any other unrelated working-tree change.
+- Source checkpoint: `5f7e3c49531b8eae8947ea03f60a24f16e9dab79` on `main`, containing only `launch.ps1`, `scripts/ensure_venv.ps1`, `src/python/repositories/excel_repo.py`, `src/qml/views/PaymentEntryView.qml`, and `tests/test_payment_invoice_filtering.py`. It fixes the launcher resolver failure and delivers the shared, read-only eligible-invoice filter with matter/billing/invoice/Balance (inclusive ±5%) search.
+- Verification: focused payment/invoice regression suite **41 passed in 11.63s**; `py_compile src/python/repositories/excel_repo.py`; PowerShell parser/setup checks for the governed launcher path; and `scripts/qmllint.ps1` for Payment Entry (existing warnings only, no syntax errors). The actual source launch and feature behavior have Cory's outside-sandbox acceptance. No strict-sandbox WebEngine launch was counted as a validation result.
+- Release artifact: version **2.4.0 / Phase 9 / build 1** was built with canonical `scripts/build_release.py` in a clean detached worktree at exactly `5f7e3c4`. Main and recovery executables, templates, and splash assets were present. The builder confirmed both bundled templates differ from the live production workbooks. Windows rejected its directory rename, so canonical `scripts/promote_verified_release_package.py` copy-promoted and hash-verified the package to `dist`.
+- Promoted manifest: **4,358 files**, **678,587,001 bytes**, tree SHA-256 `9C8F6141B43032C5A13CC368BB7349DEC27E26E80EE0AF904A61615556274717`. `dist\\CSPM\\CSPM.exe` SHA-256: `876C7C62BD57B53BEDC940C64748C9685093551D6D590F0D14E5E4D9BC8C89AE`; `CSPM_Recovery.exe` SHA-256: `9A4F348ADC0AC17CC05DED34A348254BF091105EFB11BE9D958E80B7070DCCA4`. The preceding package is recoverable at `to_delete\\dist__manual_replaced_release_20260829_174402`, with audit `to_delete\\release_promotion_20260829_174402.json`. Packaged interactive WebEngine smoke remains unrun in this strict sandbox; the source path is user-accepted and the package is structurally/hash verified.
+
 ## 2026-08-19: Smooth GPU-Accelerated Maximize & Restore Animation (Source)
 
 - Replaced the jumpy, multi-frame `grabToImage` snapshot capture and dynamic `Image` overlay with a direct hardware-accelerated GPU texture transform pipeline.

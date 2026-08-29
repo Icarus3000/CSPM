@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## Accepted Payment Filter and Launcher Release Checkpoint (2026-08-29)
+
+- [x] Cory accepted the governed `launch.ps1` path in the real application and manually confirmed the Make Payment unpaid-invoice filtering behavior.
+- [x] Committed only the accepted scope as `5f7e3c49531b8eae8947ea03f60a24f16e9dab79` (`Improve payment invoice filtering and harden launcher venv resolution`): `launch.ps1`, `scripts/ensure_venv.ps1`, `src/python/repositories/excel_repo.py`, `src/qml/views/PaymentEntryView.qml`, and `tests/test_payment_invoice_filtering.py`.
+- [x] Release validation: focused payment/invoice regressions (**41 passed in 11.63s**), Python compilation, PowerShell launcher/parser/setup validation, and governed QML lint (warning-only; no syntax errors). The source launch has real user acceptance; no sandbox WebEngine result was used as a pass signal.
+- [x] Built version **2.4.0 / Phase 9 / build 1** from a clean detached worktree at that exact commit with `scripts/build_release.py`. Both executables, governed templates, and splash assets were produced; the build's confidential-workbook check passed (neither bundle template matches the live workbook).
+- [x] Windows denied the builder's final directory rename, so `scripts/promote_verified_release_package.py` performed the documented hash-verified promotion. `dist` matches the source package: **4,358 files**, **678,587,001 bytes**, tree SHA-256 `9C8F6141B43032C5A13CC368BB7349DEC27E26E80EE0AF904A61615556274717`. `dist\\CSPM\\CSPM.exe` SHA-256: `876C7C62BD57B53BEDC940C64748C9685093551D6D590F0D14E5E4D9BC8C89AE`; recovery EXE SHA-256: `9A4F348ADC0AC17CC05DED34A348254BF091105EFB11BE9D958E80B7070DCCA4`. The prior package is recoverable at `to_delete\\dist__manual_replaced_release_20260829_174402`; the promotion audit is `to_delete\\release_promotion_20260829_174402.json`.
+- [x] Packaged interactive WebEngine smoke was not run in the strict sandbox. It is not required to re-prove the already accepted source launch; the promoted executable was structurally and hash verified.
+
 ## Smooth GPU-Accelerated Maximize & Restore Animation (2026-08-19)
 
 - [x] Diagnose the maximize window jumping and flickering. Asynchronous `grabToImage`
