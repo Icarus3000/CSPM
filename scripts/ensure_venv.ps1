@@ -272,6 +272,38 @@ function Update-VSCodePythonSettings {
     }
 }
 
+function Get-FileSha256Hex {
+    param([string]$FilePath)
+
+    if ([string]::IsNullOrWhiteSpace($FilePath)) {
+        throw "Cannot calculate a requirements hash because no file path was provided."
+    }
+    if (-not [System.IO.File]::Exists($FilePath)) {
+        throw "Cannot calculate a requirements hash because the file does not exist: $FilePath"
+    }
+
+    $stream = $null
+    $sha256 = $null
+    try {
+        $stream = [System.IO.File]::Open(
+            $FilePath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite
+        )
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $digest = $sha256.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($digest)).Replace("-", "")
+    } finally {
+        if ($null -ne $sha256) {
+            $sha256.Dispose()
+        }
+        if ($null -ne $stream) {
+            $stream.Dispose()
+        }
+    }
+}
+
 function Install-RequirementFile {
     param(
         [string]$PythonExe,
@@ -284,7 +316,7 @@ function Install-RequirementFile {
         return
     }
 
-    $RequirementsHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $RequirementsFilePath).Hash
+    $RequirementsHash = Get-FileSha256Hex -FilePath $RequirementsFilePath
     $RequirementsStamp = Join-Path $SelectedVenvDir (".requirements_" + $StampSuffix + ".sha256")
     $ExistingHash = ""
 
@@ -313,6 +345,13 @@ function Test-VenvPython {
         [string]$PythonExe,
         [switch]$RequirePip
     )
+
+    # This is a candidate probe, so an empty candidate is simply unusable.
+    # Guard it before Test-Path so a failed resolver cannot turn into an
+    # unhelpful LiteralPath parameter-binding error in launch.ps1.
+    if ([string]::IsNullOrWhiteSpace($PythonExe)) {
+        return $false
+    }
 
     if (-not (Test-Path -LiteralPath $PythonExe)) {
         return $false

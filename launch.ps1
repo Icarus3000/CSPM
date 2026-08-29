@@ -20,7 +20,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " CSPM Launcher ($env:COMPUTERNAME / $env:USERNAME)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
-if (-not (Test-Path -LiteralPath $EnsureScript)) {
+if (-not [System.IO.File]::Exists($EnsureScript)) {
     Write-Error "Missing ensure script: $EnsureScript"
     exit 1
 }
@@ -152,12 +152,23 @@ try {
     if ([string]::IsNullOrWhiteSpace($PythonExe)) {
         $PythonExe = [string]$pythonOutput
     }
+    if ([string]::IsNullOrWhiteSpace($PythonExe)) {
+        throw "The governed environment resolver returned no Python interpreter path. Expected scripts\ensure_venv.ps1 -PassThruPython to return the project venv's Scripts\python.exe path."
+    }
     $PythonExe = $PythonExe.Trim()
-    if (-not $PythonExe -or -not (Test-Path -LiteralPath $PythonExe)) {
-        throw "Unable to resolve a working project Python interpreter."
+    if (-not [System.IO.File]::Exists($PythonExe)) {
+        throw "The governed environment resolver returned a Python interpreter path that does not exist: $PythonExe"
     }
 } catch {
-    Write-Error $_
+    $setupError = $_
+    $source = [string]$setupError.InvocationInfo.ScriptName
+    $line = [int]$setupError.InvocationInfo.ScriptLineNumber
+    $location = if (-not [string]::IsNullOrWhiteSpace($source) -and $line -gt 0) {
+        " ($source`:$line)"
+    } else {
+        ""
+    }
+    Write-Error "CSPM environment setup failed$location`: $($setupError.Exception.Message)"
     Read-Host "Launch failed. Press Enter to close..."
     exit 1
 }
@@ -184,16 +195,6 @@ $env:CSPM_SPLASH_WEBVIEW = "0"
 $env:CSPM_SPLASH_LOGO_VARIANT = "animated"
 $env:CSPM_PREINIT_WEBENGINE = "1"
 $env:CSPM_SPLASH_TOTAL_MS = "500"
-
-trap {
-    if (Test-Path -LiteralPath $transcriptPath) {
-        $transcriptContent = Get-Content -LiteralPath $transcriptPath -ErrorAction SilentlyContinue
-        if ($transcriptContent) {
-            try { $transcriptContent -join "`r`n" | Set-Clipboard } catch {}
-        }
-    }
-    continue
-}
 
 try {
     Write-Host "Launching application..." -ForegroundColor Cyan

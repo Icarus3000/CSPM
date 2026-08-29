@@ -117,7 +117,16 @@ Item {
 
     function invoiceCellText(row, column) {
         var key = _clean(column && column.key)
-        if (key === "client") return _clean(row && (row.client || row.billingClient))
+        if (key === "client") {
+            var client = _clean(row && (row.client || row.billingClient))
+            var matter = _clean(row && (row.matter || row.matterDescription))
+            var billingClient = _clean(row && row.billingClient)
+            var context = client
+            if (matter.length > 0) context += (context.length > 0 ? " · " : "") + matter
+            if (billingClient.length > 0 && billingClient.toLowerCase() !== client.toLowerCase())
+                context += (context.length > 0 ? " · Bill to " : "Bill to ") + billingClient
+            return context
+        }
         if (key === "ageDays") return _clean(row && row.ageDays) + " days"
         if (key === "balance") return money(row && row.balance)
         return _clean(row && row[key])
@@ -319,6 +328,9 @@ Item {
         try {
             rows = root.appRef.listOpenPaymentInvoices({ "query": _clean(searchInput.text) })
         } catch (e) {
+            console.warn("[Payment Entry] unpaid-invoice lookup failed", e)
+            lastSaveOk = false
+            saveMessage = "Could not load eligible unpaid invoices. Please retry; if the problem continues, review the CSPM log."
             rows = []
         }
         if (!rows || rows.length === undefined) rows = []

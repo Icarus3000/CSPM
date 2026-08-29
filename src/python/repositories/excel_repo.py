@@ -178,6 +178,68 @@ def _clean_text(value: Any) -> str:
     return str(value).strip()
 
 
+_PAYMENT_AMOUNT_QUERY_RE = re.compile(
+    r"^[+-]?(?:\$\s*)?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d*)?$"
+)
+
+
+def _parse_payment_amount_query(value: Any) -> Optional[Decimal]:
+    """Parse one human-entered payment-search amount without float arithmetic.
+
+    A trailing decimal point is deliberately accepted while the user is
+    typing. Other incomplete or malformed currency text is left to ordinary
+    text matching rather than being coerced to zero or raising an error.
+    """
+
+    text = _clean_text(value)
+    if not text or not _PAYMENT_AMOUNT_QUERY_RE.fullmatch(text):
+        return None
+    normalized = re.sub(r"[\s$,]", "", text)
+    try:
+        return Decimal(normalized)
+    except Exception:
+        return None
+
+
+def _payment_invoice_matches_query(row: Dict[str, Any], raw_query: Any) -> bool:
+    """Match one eligible payment row against text and its displayed balance.
+
+    Text matching is intentionally independent from amount matching so a
+    numeric search can still locate an invoice number or a textual field.
+    """
+
+    query = _clean_text(raw_query)
+    if not query:
+        return True
+
+    normalized_query = query.casefold()
+    text_values = (
+        row.get("invoice"),
+        row.get("invoiceNumber"),
+        row.get("client"),
+        row.get("workClient"),
+        row.get("billingClient"),
+        row.get("matter"),
+        row.get("matterDescription"),
+    )
+    if any(normalized_query in _clean_text(value).casefold() for value in text_values):
+        return True
+
+    target = _parse_payment_amount_query(query)
+    if target is None:
+        # Currency punctuation by itself is not a meaningful search term. Do
+        # not turn a partially entered "$" into an accidental empty result.
+        return not any(character.isalnum() for character in query)
+
+    try:
+        displayed_balance = Decimal(str(row.get("balance") or 0))
+    except Exception:
+        return False
+    lower_bound = target * Decimal("0.95")
+    upper_bound = target * Decimal("1.05")
+    return lower_bound <= displayed_balance <= upper_bound
+
+
 def _normalize_us_phone(value: Any) -> str:
     text = _clean_text(value)
     if not text:
@@ -2542,20 +2604,71 @@ class ExcelRepo:
         
         return {"ok": True, "invoice": f"{orig_invoice}-A", "message": f"Successfully reversed and re-issued as {orig_invoice}-A"}
 
+    def _payment_invoice_matter_contexts(self, as_of_date: Any) -> Dict[str, str]:
+        """Return read-only matter labels from the canonical invoice context.
+
+        Receivables remains the source of payment eligibility and balance. The
+        canonical A/R ledger already resolves the non-Receivables work-client
+        and matter links used by statements, so reuse it rather than creating a
+        second workbook lookup or adding a Receivables column.
+        """
+
+        context_report = self._canonical_ar_ledger({"asOfDate": as_of_date})
+        if not context_report.get("ok"):
+            message = _clean_text(context_report.get("message")) or "Could not load invoice matter context."
+            logger.error("Payment invoice context lookup failed: %s", message)
+            raise RuntimeError(message)
+
+        contexts: Dict[str, List[str]] = {}
+        for event in list(context_report.get("events") or []):
+            if not isinstance(event, dict):
+                continue
+            invoice = _clean_text(event.get("invoice") or event.get("reference"))
+            if not invoice:
+                continue
+            values = event.get("workContexts") or []
+            if isinstance(values, dict):
+                values = [values]
+            labels = contexts.setdefault(invoice.casefold(), [])
+            for value in values:
+                if not isinstance(value, dict):
+                    continue
+                label = _clean_text(
+                    value.get("matter")
+                    or value.get("matterDescription")
+                    or value.get("matterName")
+                )
+                if label and label not in labels:
+                    labels.append(label)
+        return {invoice: ", ".join(labels) for invoice, labels in contexts.items() if labels}
+
     def list_open_payment_invoices(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Return open invoice rows shaped for the Payment Entry workspace."""
+        """Return eligible payment invoices, filtered without mutating workbooks."""
 
         payload = dict(filters or {})
+        as_of_date = payload.get("asOfDate") or payload.get("as_of_date") or date.today().isoformat()
+        raw_query = payload.get("query") or payload.get("searchText") or payload.get("search") or ""
         report = self.ar_aging_report(
             {
-                "asOfDate": payload.get("asOfDate") or payload.get("as_of_date") or date.today().isoformat(),
-                "query": payload.get("query") or payload.get("searchText") or payload.get("search") or "",
+                "asOfDate": as_of_date,
+                # Payment Entry owns its broader search contract. Do not let
+                # the A/R report's narrower text filter remove matter or
+                # amount matches before this shared backend filter can assess
+                # them.
+                "query": "",
                 "groupBy": payload.get("groupBy") or payload.get("group_by") or "client",
             }
         )
         if not report.get("ok"):
-            return []
+            message = _clean_text(report.get("message")) or "Could not load open invoices."
+            logger.error("Payment invoice lookup failed: %s", message)
+            raise RuntimeError(message)
 
+        matter_by_invoice = self._payment_invoice_matter_contexts(as_of_date)
+        ineligible_statuses = {
+            "paid", "closed", "void", "voided", "cancelled", "canceled",
+            "reversed", "reversal", "superseded",
+        }
         rows: List[Dict[str, Any]] = []
         for row in list(report.get("rows") or []):
             invoice = _clean_text(row.get("invoice"))
@@ -2564,26 +2677,34 @@ class ExcelRepo:
             client = _clean_text(row.get("client"))
             billing_client = _clean_text(row.get("billingClient"))
             balance = self._money_round(row.get("balance"))
+            status = _clean_text(row.get("status"))
+            if balance <= 0 or status.casefold() in ineligible_statuses:
+                continue
             invoice_total = self._money_round(row.get("invoiceTotal"))
             paid = self._money_round(row.get("paid"))
-            rows.append(
-                {
-                    "invoice": invoice,
-                    "invoiceNumber": invoice,
-                    "date": _clean_text(row.get("date")),
-                    "client": client,
-                    "billingClient": billing_client,
-                    "workClient": _clean_text(row.get("workClient")) or client,
-                    "status": _clean_text(row.get("status")),
-                    "ageDays": int(row.get("ageDays") or 0),
-                    "bucketLabel": _clean_text(row.get("bucketLabel")),
-                    "invoiceTotal": invoice_total,
-                    "paid": paid,
-                    "credits": self._money_round(row.get("credits")),
-                    "balance": balance,
-                    "display": f"{invoice} | {client or billing_client} | ${balance:,.2f}",
-                }
-            )
+            matter = matter_by_invoice.get(invoice.casefold(), "")
+            payment_row = {
+                "invoice": invoice,
+                "invoiceNumber": invoice,
+                "date": _clean_text(row.get("date")),
+                "client": client,
+                "billingClient": billing_client,
+                "workClient": _clean_text(row.get("workClient")) or client,
+                "matter": matter,
+                "matterDescription": matter,
+                "status": status,
+                "ageDays": int(row.get("ageDays") or 0),
+                "bucketLabel": _clean_text(row.get("bucketLabel")),
+                "invoiceTotal": invoice_total,
+                "paid": paid,
+                "credits": self._money_round(row.get("credits")),
+                # This is the exact Balance field shown in Payment Entry and
+                # is therefore the only amount used by its ±5% search.
+                "balance": balance,
+                "display": f"{invoice} | {client or billing_client} | ${balance:,.2f}",
+            }
+            if _payment_invoice_matches_query(payment_row, raw_query):
+                rows.append(payment_row)
         return rows
 
     def _list_ap_setoff_invoice_activity(self, invoice_ref: str) -> List[Dict[str, Any]]:
