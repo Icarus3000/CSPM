@@ -1577,6 +1577,19 @@ def main() -> None:
         custom_splash.cinematicBloomPrestageRequested.connect(_prestage_cinematic_bloom)
         custom_splash.cinematicRevealReady.connect(_release_cinematic_launch_gate)
 
+    def _handle_main_window_load_failure(message: str) -> None:
+        """End a deterministic QML shell failure instead of leaving a stuck splash."""
+        detail = str(message or "Unable to load the CSPM application shell.").strip()
+        logging.getLogger("startup").error("Fatal main-window QML load failure: %s", detail)
+        _report_terminal_failure(
+            "Startup failed while loading the CSPM application shell. See the CSPM diagnostic log."
+        )
+        if custom_splash is not None:
+            custom_splash.show_startup_error(detail)
+        # Give the native splash a short opportunity to paint the diagnostic;
+        # never leave the packaged process cycling invisibly in the background.
+        QTimer.singleShot(1500, app.quit)
+
     def on_object_created(obj, obj_url):
         nonlocal native_splash_signal_bound, native_splash_bootstrap_root
         if obj is None or native_splash_signal_bound:
@@ -1591,6 +1604,9 @@ def main() -> None:
             if main_window_ready is None:
                 return
             main_window_ready.connect(_bind_native_splash_to_main_window)
+            main_window_load_failed = getattr(obj, "mainWindowLoadFailed", None)
+            if main_window_load_failed is not None:
+                main_window_load_failed.connect(_handle_main_window_load_failure)
             native_splash_bootstrap_root = obj
             if custom_splash is not None:
                 cinematic_reveal = getattr(obj, "cinematicRevealRequested", None)
@@ -2237,6 +2253,9 @@ def main() -> None:
                 main_window_ready = getattr(root, "mainWindowReady", None)
                 if main_window_ready is not None:
                     main_window_ready.connect(_bind_native_splash_to_main_window)
+                    main_window_load_failed = getattr(root, "mainWindowLoadFailed", None)
+                    if main_window_load_failed is not None:
+                        main_window_load_failed.connect(_handle_main_window_load_failure)
                     native_splash_bootstrap_root = root
                     if custom_splash is not None:
                         cinematic_reveal = getattr(root, "cinematicRevealRequested", None)
