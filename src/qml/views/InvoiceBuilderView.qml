@@ -1940,7 +1940,6 @@ Item {
                 color: addFeeDialog.validationMessage !== "" ? "#D14343" : root.mutedColor
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
-                background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
             }
 
             Item { Layout.fillHeight: true }

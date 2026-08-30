@@ -393,3 +393,16 @@ def test_qml_and_controller_use_request_identity_pending_guard_and_real_matter()
     assert "_custom_fee_requests_in_progress" in controller
     assert '"matterOptions": matter_options' in controller
     assert "COL_DISB_INVOICE_REF" in controller
+
+
+def test_custom_fee_help_text_does_not_assign_control_background_property():
+    view = (PROJECT_ROOT / "src" / "qml" / "views" / "InvoiceBuilderView.qml").read_text(
+        encoding="utf-8"
+    )
+    message_marker = 'text: addFeeDialog.validationMessage !== ""'
+    marker_index = view.index(message_marker)
+    text_start = view.rfind("Text {", 0, marker_index)
+    text_end = view.index("\n            }", marker_index)
+    help_text_block = view[text_start:text_end]
+
+    assert "background:" not in help_text_block
