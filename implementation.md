@@ -1,5 +1,12 @@
 # Implementation History
 
+## 2026-08-30: Packaged Startup Hang Hotfix Candidate
+
+- The promoted Custom Fee package was reported as frozen during startup. The live process had completed its startup synchronization but had not created a usable shell; historical runtime evidence separately showed the bootstrap's `Component.Error` retry loop could hold a splash screen in an apparent hang.
+- Isolated hotfix commit `7fda5e9ae89d2b648859edc659696c9941b7487b` changes only packaged-startup behavior: `BootstrapRoot.qml` uses asynchronous heavyweight-shell compilation and reports a deterministic QML component failure once; `main.py` paints that error on the native splash, records it, then quits instead of silently cycling retries.
+- Sandbox-safe checks: Python compilation passed; `tests/test_startup_shell_failure_contract.py`, `tests/test_splash_host_visibility_contract.py`, and `tests/test_startup_briefing_readiness.py` passed (**9 tests**); approved `scripts/qmllint.ps1` reported warnings only and no QML syntax failure.
+- A hash-verified candidate is ready at `release_candidate_custom_fee_startup_hotfix_20260830_7fda5e9_b\\CSPM\\CSPM.exe`. Real Qt/WebEngine startup was **not validated in this environment**. Manually run that executable outside the sandbox; only after it opens responsively and the Custom Fee flow is checked may it replace `dist` and be merged/pushed.
+
 ## 2026-08-30: Invoice Builder Custom Fee Idempotency and Draft Ownership
 
 - Root cause: Invoice Builder submitted Add Custom Fee through the generic synchronous docket append path with literal `MatterID = "Custom Fee"`. The service generated a random entry ID on every invocation, had no logical request identity or controller/QML re-entry guard, and draft deletion released the synthetic fee as ordinary unbilled WIP. Finalization was atomically saved but was not serialized across lifecycle commands and could not recognize a completed write whose acknowledgement was lost.

@@ -17,6 +17,14 @@
 - [x] Promoted the hash-verified candidate to `dist` with the standard promotion utility; the post-promotion manifest matched exactly and the prior package was preserved at `to_delete/dist__manual_replaced_release_20260830_145052`. No supported noninteractive packaged smoke is available; WebEngine EXE launch was not validated in this sandbox.
 - [x] Scope guard: conflict checking remains inactive; the seven unrelated workbook warnings were not addressed; no workbook mutation occurred. All unrelated dirty source, visual FX, discount, launcher, workbook, staging, and prior release-candidate work remains outside this checkpoint.
 
+## Packaged Startup Hang Hotfix Candidate (2026-08-30)
+
+- [x] Treated the reported frozen `dist\\CSPM\\CSPM.exe` launch as a release blocker. Fresh fault-capture evidence showed the packaged process entered startup and completed sync, but never created a WebEngine helper or usable application shell. Historical startup diagnostics also proved that a QML `Component.Error` could repeatedly retry and leave the splash looking frozen.
+- [x] Built the isolated hotfix commit `7fda5e9ae89d2b648859edc659696c9941b7487b` (`Prevent packaged startup shell hangs`) on top of the Custom Fee checkpoint. It compiles the heavyweight `DetachedShellWindow` asynchronously during the native splash, rather than blocking a cold package launch, and turns deterministic component errors into a logged, short visible diagnostic followed by app exit instead of 180 retries.
+- [x] Sandbox-safe validation: `py_compile` passed; startup/splash contracts passed **9 tests**; governed `scripts/qmllint.ps1 -Targets src/qml/BootstrapRoot.qml` completed with existing warning-level diagnostics only and no syntax error; `git diff --check` passed.
+- [x] Rebuilt a separate candidate at `release_candidate_custom_fee_startup_hotfix_20260830_7fda5e9_b\\CSPM` without changing promoted `dist`: **4,358 files / 678,617,620 bytes**, tree SHA-256 `125FCB96FA5A859A800A8DAB2D1FAAD367007537C757D87B06E68A0DD1ACF568`; `CSPM.exe` SHA-256 `FF435C45286A1A24B2413348361D3D59642078101F31CF92436679C5A34E9FBB`.
+- [ ] Required outside-sandbox acceptance: launch `release_candidate_custom_fee_startup_hotfix_20260830_7fda5e9_b\\CSPM\\CSPM.exe`, confirm it reaches the usable main window promptly and that Invoice Builder's Custom Fee flow remains available. Do not replace `dist` or merge/push this hotfix until this desktop gate passes.
+
 ## Governed Repository-Only Orphan-Record Repair (2026-08-30)
 
 - [x] Recorded Cory's factual authority for a repository-only repair of stable matter ID `17bcaa4f-658d-48b0-84e7-01c4411ce135` and time-entry IDs `T_9a77764a3b` / `T_38a43a4197`. No `MatterNumber` was created, no record was reassigned, and protected invoice `26-0080` was not changed.
