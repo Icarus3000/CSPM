@@ -3,6 +3,8 @@ import re
 import logging
 
 import time
+import uuid
+
 
 from decimal import Decimal
 
@@ -85,6 +87,8 @@ class BillingController(QObject):
     draftsDeleted = Signal('QVariantMap')
 
     draftFinalized = Signal('QVariantMap')
+    customFeeLineCompleted = Signal('QVariantMap')
+
 
     draftsLoaded = Signal('QVariantList')
 
@@ -166,6 +170,7 @@ class BillingController(QObject):
         self._finalized_invoice_load_in_progress = False
         self._invoice_directory_detail_requests = set()
         self._draft_workspace_requests = set()
+        self._custom_fee_requests_in_progress = set()
         self._invoice_reversal_in_progress = False
 
     # ── Worker helpers ───────────────────────────────────────────────────────
@@ -710,6 +715,16 @@ class BillingController(QObject):
 
             from repositories.excel_repo import TBL_TIME
 
+            matters = self._excel_repo._read_table_rows(sc.TBL_MATTERS)
+            matter_display = {}
+            for matter in matters:
+                matter_id = str(matter.get(sc.COL_MATTER_ID) or "").strip()
+                if not matter_id:
+                    continue
+                matter_number = str(matter.get(sc.COL_MATTER_NUMBER) or "").strip()
+                matter_name = str(matter.get(sc.COL_MATTER_NAME) or "").strip()
+                label = " • ".join(value for value in (matter_number, matter_name) if value)
+                matter_display[matter_id.casefold()] = label or matter_id
             rows = self._excel_repo._read_table_rows(TBL_TIME)
 
             items = []
@@ -732,6 +747,19 @@ class BillingController(QObject):
                     except (ValueError, TypeError):
 
                         hours = 0.0
+                    try:
+                        rate = float(row.get(sc.COL_TIME_RATE) or 0)
+                    except (ValueError, TypeError):
+                        rate = 0.0
+
+                    lock_audit = str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower()
+                    matter_id = str(row.get(sc.COL_TIME_MATTER_ID) or "").strip()
+                    is_fee = (
+                        "entrytype:fee" in lock_audit
+                        or "feeorigin:invoicedraft" in lock_audit
+                        or (hours == 0.0 and rate == 0.0 and net > 0.0)
+                    )
+
 
                     items.append({
 
@@ -743,13 +771,15 @@ class BillingController(QObject):
 
                         "hours": round(hours, 2),
 
-                        "rate": float(row.get(sc.COL_TIME_RATE) or 0),
+                        "rate": rate,
 
                         "amount": round(net, 2),
 
-                        "isFee": "entrytype:fee" in str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower(),
+                        "isFee": is_fee,
 
-                        "matterId": str(row.get(sc.COL_TIME_MATTER_ID) or ""),
+                        "matterId": matter_id,
+
+                        "matterDisplay": matter_display.get(matter_id.casefold(), matter_id),
 
                     })
 
@@ -784,11 +814,15 @@ class BillingController(QObject):
 
         try:
 
-            self._draft_svc.update_line_item(str(entry_id), data)
+            result = self._draft_svc.update_line_item(
+                str(draft_num),
+                str(entry_id),
+                dict(data or {}),
+            )
 
             self.draftUpdated.emit({})
 
-            self.toast.emit("Docket updated")
+            self.toast.emit("Custom fee updated" if data.get("isFee") else "Docket updated")
 
         except Exception as exc:
 
@@ -801,11 +835,19 @@ class BillingController(QObject):
 
         try:
 
-            self._draft_svc.remove_line_item(str(entry_id), delete_completely)
+            result = self._draft_svc.remove_line_item(
+                str(draft_num),
+                str(entry_id),
+                bool(delete_completely),
+            )
 
             self.draftUpdated.emit({})
 
-            self.toast.emit("Docket removed")
+            self.toast.emit(
+                "Custom fee removed"
+                if result.get("removedCustomFee")
+                else "Docket returned to unbilled WIP"
+            )
 
         except Exception as exc:
 
@@ -815,6 +857,10 @@ class BillingController(QObject):
 
     def addDraftLineItem(self, draft_num, data):
         self._payload_cache.pop(f"{draft_num}_True_None", None)
+        if bool((data or {}).get("isFee")):
+            self.addDraftCustomFee(str(draft_num), dict(data or {}))
+            return
+
 
         try:
 
@@ -827,6 +873,81 @@ class BillingController(QObject):
         except Exception as exc:
 
             self.error.emit(f"Could not add docket: {exc}")
+    @Slot(result=str)
+    def newCustomFeeRequestId(self):
+        """Return one opaque logical-action identity for Add Custom Fee."""
+        return f"CFR_{uuid.uuid4().hex}"
+
+    @Slot(str, 'QVariantMap')
+    def addDraftCustomFee(self, draft_num, data):
+        """Persist a custom fee off the QML thread with backend idempotency."""
+        request = dict(data or {})
+        request_id = str(request.get("requestId") or "").strip()
+        draft_key = str(draft_num or "").strip().casefold()
+        request_key = (draft_key, request_id.casefold())
+        if not request_id:
+            result = {
+                "ok": False,
+                "requestId": "",
+                "message": "The custom-fee request is missing its action identifier. Reopen the dialog.",
+            }
+            self.error.emit(result["message"])
+            self.customFeeLineCompleted.emit(result)
+            return
+        if request_key in self._custom_fee_requests_in_progress:
+            logger.info("Duplicate in-flight custom fee controller request ignored request_id=%s", request_id)
+            return
+
+        self._payload_cache.pop(f"{draft_num}_True_None", None)
+        self._custom_fee_requests_in_progress.add(request_key)
+        worker = Worker(
+            self._draft_svc.add_custom_fee_line,
+            str(draft_num),
+            request,
+            name="addDraftCustomFee",
+        )
+        worker.signals.result.connect(
+            partial(self._on_custom_fee_line_completed, worker, request_key)
+        )
+        worker.signals.error.connect(
+            partial(self._on_custom_fee_line_error, worker, request_key, request_id)
+        )
+        self._start_worker(worker)
+
+    def _on_custom_fee_line_completed(self, worker, request_key, result):
+        try:
+            payload = dict(result or {})
+            payload.setdefault("ok", True)
+            self.draftUpdated.emit({})
+            self.toast.emit(
+                "Custom fee already recorded"
+                if payload.get("alreadyCreated")
+                else "Custom fee added"
+            )
+            self.customFeeLineCompleted.emit(payload)
+        finally:
+            self._custom_fee_requests_in_progress.discard(request_key)
+            self._release_worker(worker)
+
+    def _on_custom_fee_line_error(self, worker, request_key, request_id, err_tuple):
+        try:
+            exctype, value, tb_str = err_tuple
+            message = f"Could not add custom fee: {value}"
+            logger.error(
+                "Custom fee controller request failed request_id=%s error_type=%s",
+                request_id,
+                getattr(exctype, "__name__", str(exctype)),
+            )
+            self.error.emit(message)
+            self.customFeeLineCompleted.emit({
+                "ok": False,
+                "requestId": request_id,
+                "message": message,
+            })
+        finally:
+            self._custom_fee_requests_in_progress.discard(request_key)
+            self._release_worker(worker)
+
 
     # ── Discount ─────────────────────────────────────────────────────────────
 
@@ -1183,9 +1304,21 @@ class BillingController(QObject):
 
         try:
 
-            self.toast.emit(f"Invoice {invoice_num} finalized successfully!")
+            payload = dict(result) if isinstance(result, dict) else {}
 
-            self.draftFinalized.emit({"ok": True, "invoiceNum": invoice_num})
+            already_finalized = bool(payload.get("alreadyFinalized"))
+
+            self.toast.emit(
+                f"Invoice {invoice_num} was already finalized; its completed records were verified."
+                if already_finalized
+                else f"Invoice {invoice_num} finalized successfully!"
+            )
+
+            self.draftFinalized.emit({
+                "ok": True,
+                "invoiceNum": payload.get("invoiceNum", invoice_num),
+                "alreadyFinalized": already_finalized,
+            })
 
         finally:
 
@@ -2561,6 +2694,7 @@ class BillingController(QObject):
         started = time.perf_counter()
         from repositories.excel_repo import (
             TBL_CLIENTS,
+            TBL_DISBURSEMENTS,
             TBL_CLIENT_PROFILES,
             TBL_DRAFT_INVOICES,
             TBL_INVOICE_LOG,
@@ -2574,6 +2708,7 @@ class BillingController(QObject):
         # use ExcelRepo's in-memory rows instead of reopening the macro file.
         self._excel_repo._read_table_rows_bulk([
             TBL_DRAFT_INVOICES,
+            TBL_DISBURSEMENTS,
             TBL_TIME,
             TBL_CLIENTS,
             TBL_CLIENT_PROFILES,
@@ -2584,6 +2719,36 @@ class BillingController(QObject):
         draft = self._draft_svc.get_draft(draft_num)
         if not draft:
             raise ValueError(f"Draft {draft_num} was not found.")
+
+        matter_rows = self._excel_repo._read_table_rows(TBL_MATTERS)
+        matter_by_id = {
+            str(row.get(sc.COL_MATTER_ID) or "").strip().casefold(): row
+            for row in matter_rows
+            if str(row.get(sc.COL_MATTER_ID) or "").strip()
+        }
+        represented_matter_ids = []
+        seen_matter_ids = set()
+
+        def add_represented_matter(raw_matter_id):
+            matter_id = str(raw_matter_id or "").strip()
+            key = matter_id.casefold()
+            if matter_id and key not in seen_matter_ids and key in matter_by_id:
+                seen_matter_ids.add(key)
+                represented_matter_ids.append(matter_id)
+
+        for line in line_items or []:
+            add_represented_matter(line.get("matterId"))
+        for disbursement in self._excel_repo._read_table_rows(TBL_DISBURSEMENTS):
+            if str(disbursement.get(sc.COL_DISB_INVOICE_REF) or "").strip() == draft_num:
+                add_represented_matter(disbursement.get(sc.COL_DISB_MATTER_ID))
+
+        matter_options = []
+        for matter_id in represented_matter_ids:
+            matter = matter_by_id[matter_id.casefold()]
+            matter_number = str(matter.get(sc.COL_MATTER_NUMBER) or "").strip()
+            matter_name = str(matter.get(sc.COL_MATTER_NAME) or "").strip()
+            label = " • ".join(value for value in (matter_number, matter_name) if value)
+            matter_options.append({"matterId": matter_id, "label": label or matter_id})
 
         line_items = self.getDraftLineItems(draft_num)
         html = self._generate_preview_impl(draft_num, template_name)
@@ -2596,6 +2761,7 @@ class BillingController(QObject):
         )
         return {
             "draft": dict(draft),
+            "matterOptions": matter_options,
             "lineItems": list(line_items or []),
             "html": str(html or ""),
         }

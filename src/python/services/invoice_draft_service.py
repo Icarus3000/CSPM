@@ -1,4 +1,7 @@
 import uuid
+import math
+import re
+import threading
 import logging
 import time
 from datetime import datetime, UTC
@@ -11,6 +14,12 @@ from repositories.excel_repo import ExcelRepo
 
 
 logger = logging.getLogger(__name__)
+
+_DRAFT_LIFECYCLE_LOCK = threading.RLock()
+
+
+CUSTOM_FEE_ORIGIN = "InvoiceDraft"
+
 
 class InvoiceDraftService:
     def __init__(self, repo: ExcelRepo):
@@ -57,6 +66,167 @@ class InvoiceDraftService:
             return
         for table, rows in table_rows.items():
             self.repo._write_table_rows(table, rows)
+
+    def _read_tables_once(self, tables: List[Any]) -> Dict[Any, List[Dict[str, Any]]]:
+        """Read one coherent workbook snapshot when the repository supports it."""
+        read_bulk = getattr(self.repo, "_read_table_rows_bulk", None)
+        if callable(read_bulk):
+            return read_bulk(tables)
+        return {table: self.repo._read_table_rows(table) for table in tables}
+
+    @classmethod
+    def _audit_markers(cls, row: Dict[str, Any]) -> Dict[str, str]:
+        markers: Dict[str, str] = {}
+        raw = cls._text(row.get(sc.COL_TIME_LOCK_AUDIT))
+        for part in raw.split("||"):
+            token = part.strip()
+            if not token or ":" not in token:
+                continue
+            key, value = token.split(":", 1)
+            normalized_key = key.strip().casefold()
+            if normalized_key and normalized_key not in markers:
+                markers[normalized_key] = value.strip()
+        return markers
+
+    @classmethod
+    def _is_draft_custom_fee(cls, row: Dict[str, Any]) -> bool:
+        markers = cls._audit_markers(row)
+        return (
+            markers.get("entrytype", "").casefold() == "fee"
+            and markers.get("feeorigin", "").casefold() == CUSTOM_FEE_ORIGIN.casefold()
+        )
+
+    @staticmethod
+    def _validate_custom_fee_request_id(request_id: Any) -> str:
+        value = str(request_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{8,128}", value):
+            raise ValueError(
+                "The custom-fee request identifier is missing or invalid. Reopen Add Custom Fee and try again."
+            )
+        return value
+
+    @staticmethod
+    def _custom_fee_line_id(draft_id: str, request_id: str) -> str:
+        stable = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"cspm:invoice-draft-custom-fee:{draft_id}:{request_id}",
+        )
+        return f"CF_{stable.hex[:20]}"
+
+    @staticmethod
+    def _custom_fee_lock_audit(
+        *,
+        draft_id: str,
+        draft_num: str,
+        request_id: str,
+        line_id: str,
+        state: str,
+        final_invoice_num: str = "",
+    ) -> str:
+        parts = [
+            "EntryType:Fee",
+            f"FeeOrigin:{CUSTOM_FEE_ORIGIN}",
+            f"DraftOwnerID:{draft_id}",
+            f"DraftRef:{draft_num}",
+            f"RequestID:{request_id}",
+            f"CustomFeeLineID:{line_id}",
+            f"CustomFeeState:{state}",
+        ]
+        if final_invoice_num:
+            parts.append(f"FinalInvoice:{final_invoice_num}")
+        return " || ".join(parts)
+
+    @classmethod
+    def _custom_fee_result(
+        cls,
+        row: Dict[str, Any],
+        *,
+        already_created: bool,
+        recovered: bool = False,
+        already_finalized: bool = False,
+    ) -> Dict[str, Any]:
+        markers = cls._audit_markers(row)
+        return {
+            "ok": True,
+            "entryId": cls._text(row.get(sc.COL_TIME_ENTRY_ID)),
+            "customFeeLineId": markers.get("customfeelineid", ""),
+            "requestId": markers.get("requestid", ""),
+            "draftId": markers.get("draftownerid", ""),
+            "state": markers.get("customfeestate", "Draft") or "Draft",
+            "alreadyCreated": bool(already_created),
+            "alreadyFinalized": bool(already_finalized),
+            "recovered": bool(recovered),
+        }
+
+    @classmethod
+    def _matching_custom_fee_requests(
+        cls,
+        rows: List[Dict[str, Any]],
+        request_id: str,
+    ) -> List[Dict[str, Any]]:
+        request_key = request_id.casefold()
+        return [
+            row
+            for row in rows
+            if cls._is_draft_custom_fee(row)
+            and cls._audit_markers(row).get("requestid", "").casefold() == request_key
+        ]
+
+    @classmethod
+    def _assert_custom_fee_owner(
+        cls,
+        row: Dict[str, Any],
+        *,
+        draft_id: str,
+        draft_num: str,
+    ) -> None:
+        markers = cls._audit_markers(row)
+        if markers.get("draftownerid", "").casefold() != draft_id.casefold():
+            raise ValueError("The custom-fee request belongs to a different invoice draft.")
+        if markers.get("draftref", "").casefold() != draft_num.casefold():
+            raise ValueError("The custom-fee ownership reference does not match this draft.")
+
+    @classmethod
+    def _custom_fee_dependency_reasons(
+        cls,
+        row: Dict[str, Any],
+        *,
+        draft_num: str,
+        financial_tables: Dict[Any, List[Dict[str, Any]]],
+    ) -> List[str]:
+        reasons: List[str] = []
+        entry_id = cls._text(row.get(sc.COL_TIME_ENTRY_ID))
+        invoice_ref = cls._text(row.get(sc.COL_TIME_INVOICE_REF))
+        invoice_status = cls._text(row.get(sc.COL_TIME_INVOICE_STATUS)).casefold()
+        status = cls._text(row.get(sc.COL_TIME_STATUS)).casefold()
+        payment_status = cls._text(row.get(sc.COL_TIME_PAYMENT_STATUS)).casefold()
+
+        if invoice_ref.casefold() != draft_num.casefold():
+            reasons.append("invoice-reference")
+        if invoice_status not in {"", "draft"}:
+            reasons.append("invoice-status")
+        if status not in {"", "draft", "unbilled"}:
+            reasons.append("record-status")
+        if payment_status:
+            reasons.append("payment-status")
+        if cls._text(row.get(sc.COL_TIME_REISSUE_INVOICE_NUM)):
+            reasons.append("reissue-reservation")
+        for column, label in (
+            (sc.COL_TIME_INVOICE_TOTAL, "invoice-total"),
+            (sc.COL_TIME_INVOICE_AMOUNT_PAID, "invoice-payment"),
+            (sc.COL_TIME_INVOICE_BALANCE_DUE, "invoice-balance"),
+        ):
+            if cls._money(row.get(column)) != Decimal("0.00"):
+                reasons.append(label)
+
+        exact_tokens = {entry_id.casefold(), draft_num.casefold()} - {""}
+        for table, table_rows in financial_tables.items():
+            for candidate in table_rows:
+                values = {cls._text(value).casefold() for value in candidate.values()}
+                if exact_tokens.intersection(values):
+                    reasons.append(f"financial-reference:{getattr(table, 'table', table)}")
+                    break
+        return sorted(set(reasons))
 
     def _recalculate_draft_totals_in_memory(
         self,
@@ -489,12 +659,13 @@ class InvoiceDraftService:
         """
         Applies a percentage or flat discount to the draft.
         """
+        norm_type = self._normalize_discount_type(discount_type)
         drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
         now_str = datetime.now().astimezone().isoformat()
         
         for row in drafts:
             if row.get(sc.COL_DRAFT_INVOICE_NUM) == draft_num:
-                row[sc.COL_DRAFT_DISCOUNT_TYPE] = discount_type
+                row[sc.COL_DRAFT_DISCOUNT_TYPE] = norm_type
                 row[sc.COL_DRAFT_DISCOUNT_VALUE] = str(discount_value)
                 row[sc.COL_DRAFT_UPDATED_AT] = now_str
                 break
@@ -556,92 +727,270 @@ class InvoiceDraftService:
                 
         self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
 
-    def update_line_item(self, entry_id: str, data: Dict[str, Any]):
-        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
-        draft_num = None
-        for row in time_entries:
-            if str(row.get(sc.COL_TIME_ENTRY_ID) or "") == entry_id:
-                if "date" in data:
-                    row[sc.COL_TIME_DATE] = data["date"]
-                if "description" in data:
-                    row[sc.COL_TIME_DESC] = data["description"]
-                is_fee = "entrytype:fee" in str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower()
-                if is_fee:
-                    if "amount" in data:
-                        amount = float(data["amount"])
-                        if amount < 0:
-                            raise ValueError("Fee amount cannot be negative.")
-                        row[sc.COL_TIME_HOURS] = "0.0"
-                        row[sc.COL_TIME_RATE] = "0.0"
-                        hst = round(amount * 0.13, 2)
-                        row[sc.COL_TIME_GROSS] = str(round(amount, 2))
-                        row[sc.COL_TIME_NET] = str(round(amount, 2))
-                        row[sc.COL_TIME_HST] = str(hst)
-                        row[sc.COL_TIME_TOTAL] = str(round(amount + hst, 2))
-                elif "hours" in data or "rate" in data:
-                    hrs = float(data.get("hours", row.get(sc.COL_TIME_HOURS) or 0))
-                    rate = float(data.get("rate", row.get(sc.COL_TIME_RATE) or 0))
-                    if hrs < 0 or rate < 0:
-                        raise ValueError("Hours and hourly rate cannot be negative.")
-                    net = round(hrs * rate, 2)
-                    hst = round(net * 0.13, 2)
-                    row[sc.COL_TIME_HOURS] = str(hrs)
-                    row[sc.COL_TIME_RATE] = str(rate)
-                    row[sc.COL_TIME_GROSS] = str(net)
-                    row[sc.COL_TIME_NET] = str(net)
-                    row[sc.COL_TIME_HST] = str(hst)
-                    row[sc.COL_TIME_TOTAL] = str(round(net + hst, 2))
-                draft_num = str(row.get(sc.COL_TIME_INVOICE_REF) or "")
-                break
-        self.repo._write_table_rows(sc.TBL_TIME, time_entries)
-        if draft_num:
-            self.recalculate_draft_totals(draft_num)
+    def update_line_item(
+        self,
+        draft_num: str,
+        entry_id: Any = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        with _DRAFT_LIFECYCLE_LOCK:
+            # Compatibility for callers from before the draft number became an
+            # explicit ownership boundary: update_line_item(entry_id, data).
+            if data is None and isinstance(entry_id, dict):
+                data = dict(entry_id)
+                legacy_entry_id = self._text(draft_num)
+                owner_matches = [
+                    row
+                    for row in self.repo._read_table_rows(sc.TBL_TIME)
+                    if self._text(row.get(sc.COL_TIME_ENTRY_ID)).casefold()
+                    == legacy_entry_id.casefold()
+                ]
+                if len(owner_matches) != 1:
+                    raise ValueError("The selected draft line could not be resolved uniquely.")
+                draft_num = self._text(owner_matches[0].get(sc.COL_TIME_INVOICE_REF))
+                entry_id = legacy_entry_id
+            draft_num = self._text(draft_num)
+            entry_id = self._text(entry_id)
+            tables = self._read_tables_once([
+                sc.TBL_DRAFT_INVOICES,
+                sc.TBL_TIME,
+                sc.TBL_DISBURSEMENTS,
+                sc.TBL_RECEIVABLES,
+                sc.TBL_INVOICE_LOG,
+                sc.TBL_LEDGER,
+                sc.TBL_TRANSACTIONS_MASTER,
+            ])
+            drafts = tables[sc.TBL_DRAFT_INVOICES]
+            draft = next(
+                (
+                    row
+                    for row in drafts
+                    if self._text(row.get(sc.COL_DRAFT_INVOICE_NUM)).casefold()
+                    == draft_num.casefold()
+                ),
+                None,
+            )
+            if not draft:
+                raise ValueError("The invoice draft no longer exists. Refresh Invoice Builder.")
 
-    def remove_line_item(self, entry_id: str, delete_completely: bool):
-        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
-        drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
-        draft_num = None
-        if delete_completely:
-            to_remove = None
-            for row in time_entries:
-                if str(row.get(sc.COL_TIME_ENTRY_ID) or "") == entry_id:
-                    draft_num = str(row.get(sc.COL_TIME_INVOICE_REF) or "")
-                    to_remove = row
-                    break
-            if to_remove:
-                time_entries.remove(to_remove)
-        else:
-            for row in time_entries:
-                if str(row.get(sc.COL_TIME_ENTRY_ID) or "") == entry_id:
-                    draft_num = str(row.get(sc.COL_TIME_INVOICE_REF) or "")
-                    row[sc.COL_TIME_INVOICE_REF] = ""
-                    row[sc.COL_TIME_INVOICE_STATUS] = "Unbilled"
-                    # A returned docket can be deliberately removed from a
-                    # correction draft so it can be billed separately. Once
-                    # it leaves that draft it must not keep the old invoice
-                    # number as a replacement suggestion.
-                    draft = next(
-                        (
-                            item
-                            for item in drafts
-                            if self._text(item.get(sc.COL_DRAFT_INVOICE_NUM))
-                            == self._text(draft_num)
-                        ),
-                        {},
+            time_entries = tables[sc.TBL_TIME]
+            matches = [
+                row
+                for row in time_entries
+                if self._text(row.get(sc.COL_TIME_ENTRY_ID)).casefold() == entry_id.casefold()
+            ]
+            if len(matches) != 1:
+                raise ValueError("The selected draft line could not be resolved uniquely.")
+            row = matches[0]
+            if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold() != draft_num.casefold():
+                raise ValueError("The selected line no longer belongs to this invoice draft.")
+
+            changes = dict(data or {})
+            if "date" in changes:
+                date_text = self._text(changes.get("date"))
+                try:
+                    parsed_date = datetime.strptime(date_text, "%Y-%m-%d")
+                except ValueError as exc:
+                    raise ValueError("Enter the line date as YYYY-MM-DD.") from exc
+                if parsed_date.strftime("%Y-%m-%d") != date_text:
+                    raise ValueError("Enter a valid line date as YYYY-MM-DD.")
+                row[sc.COL_TIME_DATE] = date_text
+            if "description" in changes:
+                description = self._text(changes.get("description"))
+                if not description:
+                    raise ValueError("Line description cannot be blank.")
+                row[sc.COL_TIME_DESC] = description
+
+            is_fee = "entrytype:fee" in self._text(row.get(sc.COL_TIME_LOCK_AUDIT)).casefold()
+            if is_fee:
+                if self._is_draft_custom_fee(row):
+                    draft_id = self._text(draft.get(sc.COL_DRAFT_ID))
+                    self._assert_custom_fee_owner(
+                        row,
+                        draft_id=draft_id,
+                        draft_num=draft_num,
                     )
-                    suggested_reissue_num = self._text(
-                        draft.get(sc.COL_DRAFT_REISSUE_INVOICE_NUM)
+                    financial_tables = {
+                        table: tables[table]
+                        for table in (
+                            sc.TBL_RECEIVABLES,
+                            sc.TBL_INVOICE_LOG,
+                            sc.TBL_LEDGER,
+                            sc.TBL_TRANSACTIONS_MASTER,
+                        )
+                    }
+                    reasons = self._custom_fee_dependency_reasons(
+                        row,
+                        draft_num=draft_num,
+                        financial_tables=financial_tables,
                     )
-                    if (
-                        suggested_reissue_num
-                        and self._text(row.get(sc.COL_TIME_REISSUE_INVOICE_NUM)).casefold()
-                        == suggested_reissue_num.casefold()
-                    ):
-                        row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
-                    break
-        self.repo._write_table_rows(sc.TBL_TIME, time_entries)
-        if draft_num:
-            self.recalculate_draft_totals(draft_num)
+                    if reasons:
+                        raise ValueError(
+                            "This custom fee has a financial dependency and cannot be edited. "
+                            f"Run Support Diagnostics ({', '.join(reasons)})."
+                        )
+                if "amount" in changes:
+                    try:
+                        amount = Decimal(str(changes.get("amount"))).quantize(
+                            Decimal("0.01"),
+                            rounding=ROUND_HALF_UP,
+                        )
+                    except Exception as exc:
+                        raise ValueError("Enter a valid fee amount.") from exc
+                    if not amount.is_finite() or amount <= Decimal("0.00"):
+                        raise ValueError("Fee amount must be greater than zero.")
+                    hst = self._money(amount * Decimal("0.13"))
+                    row[sc.COL_TIME_HOURS] = "0.0"
+                    row[sc.COL_TIME_RATE] = "0.0"
+                    row[sc.COL_TIME_GROSS] = str(amount)
+                    row[sc.COL_TIME_NET] = str(amount)
+                    row[sc.COL_TIME_HST] = str(hst)
+                    row[sc.COL_TIME_TOTAL] = str(amount + hst)
+            elif "hours" in changes or "rate" in changes:
+                hrs = float(changes.get("hours", row.get(sc.COL_TIME_HOURS) or 0))
+                rate = float(changes.get("rate", row.get(sc.COL_TIME_RATE) or 0))
+                if not math.isfinite(hrs) or not math.isfinite(rate) or hrs < 0 or rate < 0:
+                    raise ValueError("Hours and hourly rate cannot be negative or invalid.")
+                net = self._money(Decimal(str(hrs)) * Decimal(str(rate)))
+                hst = self._money(net * Decimal("0.13"))
+                row[sc.COL_TIME_HOURS] = str(hrs)
+                row[sc.COL_TIME_RATE] = str(rate)
+                row[sc.COL_TIME_GROSS] = str(net)
+                row[sc.COL_TIME_NET] = str(net)
+                row[sc.COL_TIME_HST] = str(hst)
+                row[sc.COL_TIME_TOTAL] = str(net + hst)
+
+            self._recalculate_draft_totals_in_memory(
+                draft,
+                time_entries,
+                tables[sc.TBL_DISBURSEMENTS],
+            )
+            self._write_tables_once({
+                sc.TBL_TIME: time_entries,
+                sc.TBL_DRAFT_INVOICES: drafts,
+            })
+            return {"ok": True, "entryId": entry_id, "draftNum": draft_num}
+
+    def remove_line_item(
+        self,
+        draft_num: str,
+        entry_id: Optional[str] = None,
+        delete_completely: bool = False,
+    ) -> Dict[str, Any]:
+        with _DRAFT_LIFECYCLE_LOCK:
+            # Compatibility for callers from before the draft number became an
+            # explicit ownership boundary: remove_line_item(entry_id, ...).
+            if entry_id is None:
+                legacy_entry_id = self._text(draft_num)
+                owner_matches = [
+                    row
+                    for row in self.repo._read_table_rows(sc.TBL_TIME)
+                    if self._text(row.get(sc.COL_TIME_ENTRY_ID)).casefold()
+                    == legacy_entry_id.casefold()
+                ]
+                if len(owner_matches) != 1:
+                    raise ValueError("The selected draft line could not be resolved uniquely.")
+                draft_num = self._text(owner_matches[0].get(sc.COL_TIME_INVOICE_REF))
+                entry_id = legacy_entry_id
+            draft_num = self._text(draft_num)
+            entry_id = self._text(entry_id)
+            tables = self._read_tables_once([
+                sc.TBL_DRAFT_INVOICES,
+                sc.TBL_TIME,
+                sc.TBL_DISBURSEMENTS,
+                sc.TBL_RECEIVABLES,
+                sc.TBL_INVOICE_LOG,
+                sc.TBL_LEDGER,
+                sc.TBL_TRANSACTIONS_MASTER,
+            ])
+            drafts = tables[sc.TBL_DRAFT_INVOICES]
+            draft = next(
+                (
+                    row
+                    for row in drafts
+                    if self._text(row.get(sc.COL_DRAFT_INVOICE_NUM)).casefold()
+                    == draft_num.casefold()
+                ),
+                None,
+            )
+            if not draft:
+                raise ValueError("The invoice draft no longer exists. Refresh Invoice Builder.")
+
+            time_entries = tables[sc.TBL_TIME]
+            matches = [
+                row
+                for row in time_entries
+                if self._text(row.get(sc.COL_TIME_ENTRY_ID)).casefold() == entry_id.casefold()
+            ]
+            if len(matches) != 1:
+                raise ValueError("The selected draft line could not be resolved uniquely.")
+            row = matches[0]
+            if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold() != draft_num.casefold():
+                raise ValueError("The selected line no longer belongs to this invoice draft.")
+
+            removed_custom_fee = self._is_draft_custom_fee(row)
+            if removed_custom_fee:
+                draft_id = self._text(draft.get(sc.COL_DRAFT_ID))
+                self._assert_custom_fee_owner(
+                    row,
+                    draft_id=draft_id,
+                    draft_num=draft_num,
+                )
+                financial_tables = {
+                    table: tables[table]
+                    for table in (
+                        sc.TBL_RECEIVABLES,
+                        sc.TBL_INVOICE_LOG,
+                        sc.TBL_LEDGER,
+                        sc.TBL_TRANSACTIONS_MASTER,
+                    )
+                }
+                reasons = self._custom_fee_dependency_reasons(
+                    row,
+                    draft_num=draft_num,
+                    financial_tables=financial_tables,
+                )
+                if reasons:
+                    raise ValueError(
+                        "This custom fee has a financial dependency and cannot be removed. "
+                        f"Run Support Diagnostics ({', '.join(reasons)})."
+                    )
+                time_entries.remove(row)
+            else:
+                if delete_completely:
+                    raise ValueError(
+                        "Only an exclusively draft-owned custom fee can be deleted. "
+                        "Use Remove to return an ordinary docket to unbilled WIP."
+                    )
+                row[sc.COL_TIME_INVOICE_REF] = ""
+                row[sc.COL_TIME_INVOICE_STATUS] = "Unbilled"
+                row[sc.COL_TIME_STATUS] = "Unbilled"
+                suggested_reissue_num = self._text(
+                    draft.get(sc.COL_DRAFT_REISSUE_INVOICE_NUM)
+                )
+                if (
+                    suggested_reissue_num
+                    and self._text(row.get(sc.COL_TIME_REISSUE_INVOICE_NUM)).casefold()
+                    == suggested_reissue_num.casefold()
+                ):
+                    row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
+
+            self._recalculate_draft_totals_in_memory(
+                draft,
+                time_entries,
+                tables[sc.TBL_DISBURSEMENTS],
+            )
+            self._write_tables_once({
+                sc.TBL_TIME: time_entries,
+                sc.TBL_DRAFT_INVOICES: drafts,
+            })
+            return {
+                "ok": True,
+                "entryId": entry_id,
+                "draftNum": draft_num,
+                "removedCustomFee": removed_custom_fee,
+                "releasedToWip": not removed_custom_fee,
+            }
 
     def release_draft_reissue_suggestion(self, draft_num: str) -> Dict[str, Any]:
         """Turn a separate correction-derived draft back into ordinary WIP.
@@ -702,11 +1051,270 @@ class InvoiceDraftService:
             "disbursementCount": released_disbursements,
         }
 
+    def _recover_custom_fee_request(
+        self,
+        *,
+        draft_id: str,
+        draft_num: str,
+        request_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        matches = self._matching_custom_fee_requests(
+            self.repo._read_table_rows(sc.TBL_TIME),
+            request_id,
+        )
+        if len(matches) > 1:
+            raise RuntimeError(
+                "Custom-fee recovery found duplicate request records. Stop and run Support Diagnostics."
+            )
+        if not matches:
+            return None
+        self._assert_custom_fee_owner(
+            matches[0],
+            draft_id=draft_id,
+            draft_num=draft_num,
+        )
+        markers = self._audit_markers(matches[0])
+        if (
+            markers.get("customfeestate", "").casefold() != "draft"
+            or self._text(matches[0].get(sc.COL_TIME_INVOICE_REF)).casefold()
+            != draft_num.casefold()
+            or self._text(matches[0].get(sc.COL_TIME_INVOICE_STATUS)).casefold()
+            != "draft"
+            or self._text(matches[0].get(sc.COL_TIME_STATUS)).casefold() != "draft"
+        ):
+            raise RuntimeError(
+                "Custom-fee recovery found a billed-and-draft state mismatch. "
+                "Stop and run Support Diagnostics."
+            )
+        return self._custom_fee_result(
+            matches[0],
+            already_created=True,
+            recovered=True,
+        )
+
+    def add_custom_fee_line(self, draft_num: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create or recover one draft-owned custom fee for one logical request."""
+        with _DRAFT_LIFECYCLE_LOCK:
+            request = dict(data or {})
+            request_id = self._validate_custom_fee_request_id(request.get("requestId"))
+            draft_num = self._text(draft_num)
+            if not draft_num:
+                raise ValueError("Select an invoice draft before adding a custom fee.")
+
+            tables = self._read_tables_once([
+                sc.TBL_DRAFT_INVOICES,
+                sc.TBL_TIME,
+                sc.TBL_DISBURSEMENTS,
+                sc.TBL_MATTERS,
+            ])
+            drafts = tables[sc.TBL_DRAFT_INVOICES]
+            time_entries = tables[sc.TBL_TIME]
+            disbursements = tables[sc.TBL_DISBURSEMENTS]
+            matters = tables[sc.TBL_MATTERS]
+            draft = next(
+                (
+                    row
+                    for row in drafts
+                    if self._text(row.get(sc.COL_DRAFT_INVOICE_NUM)).casefold()
+                    == draft_num.casefold()
+                ),
+                None,
+            )
+            if not draft:
+                raise ValueError("The selected invoice draft no longer exists. Refresh Invoice Builder.")
+
+            draft_id = self._text(draft.get(sc.COL_DRAFT_ID))
+            if not draft_id:
+                raise ValueError("The selected invoice draft is missing its stable DraftID.")
+
+            existing = self._matching_custom_fee_requests(time_entries, request_id)
+            if len(existing) > 1:
+                raise RuntimeError(
+                    "This custom-fee request has duplicate records. Stop and run Support Diagnostics."
+                )
+            if existing:
+                self._assert_custom_fee_owner(
+                    existing[0],
+                    draft_id=draft_id,
+                    draft_num=draft_num,
+                )
+                state = self._audit_markers(existing[0]).get("customfeestate", "Draft")
+                if (
+                    state.casefold() != "draft"
+                    or self._text(existing[0].get(sc.COL_TIME_INVOICE_REF)).casefold()
+                    != draft_num.casefold()
+                    or self._text(existing[0].get(sc.COL_TIME_INVOICE_STATUS)).casefold()
+                    != "draft"
+                    or self._text(existing[0].get(sc.COL_TIME_STATUS)).casefold() != "draft"
+                ):
+                    raise RuntimeError(
+                        "This custom-fee request has an inconsistent billed-and-draft state. "
+                        "Stop and run Support Diagnostics."
+                    )
+                logger.info(
+                    "Custom fee request resolved idempotently draft_id=%s request_id=%s state=%s",
+                    draft_id,
+                    request_id,
+                    state,
+                )
+                return self._custom_fee_result(
+                    existing[0],
+                    already_created=True,
+                )
+
+            date_text = self._text(request.get("date"))
+            try:
+                parsed_date = datetime.strptime(date_text, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ValueError("Enter the custom-fee date as YYYY-MM-DD.") from exc
+            if parsed_date.strftime("%Y-%m-%d") != date_text:
+                raise ValueError("Enter a valid custom-fee date as YYYY-MM-DD.")
+
+            description = self._text(request.get("description"))
+            if not description:
+                raise ValueError("Enter a description for the custom fee.")
+
+            try:
+                amount = Decimal(str(request.get("amount"))).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            except Exception as exc:
+                raise ValueError("Enter a valid custom-fee amount.") from exc
+            if not amount.is_finite() or amount <= Decimal("0.00"):
+                raise ValueError("Custom-fee amount must be greater than zero.")
+
+            matter_id = self._text(request.get("matterId"))
+            matter = next(
+                (
+                    row
+                    for row in matters
+                    if self._text(row.get(sc.COL_MATTER_ID)).casefold() == matter_id.casefold()
+                ),
+                None,
+            )
+            if not matter_id or not matter:
+                raise ValueError("Select a valid matter for the custom fee.")
+
+            draft_client_id = self._text(draft.get(sc.COL_DRAFT_CLIENT_ID))
+            matter_client_id = self._text(matter.get(sc.COL_MATTER_CLIENT_ID))
+            if not draft_client_id or matter_client_id.casefold() != draft_client_id.casefold():
+                raise ValueError("The selected matter does not belong to this invoice draft's work client.")
+
+            represented_matter_ids = {
+                self._text(row.get(sc.COL_TIME_MATTER_ID)).casefold()
+                for row in time_entries
+                if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold() == draft_num.casefold()
+                and self._text(row.get(sc.COL_TIME_MATTER_ID))
+            }
+            represented_matter_ids.update(
+                self._text(row.get(sc.COL_DISB_MATTER_ID)).casefold()
+                for row in disbursements
+                if self._text(row.get(sc.COL_DISB_INVOICE_REF)).casefold() == draft_num.casefold()
+                and self._text(row.get(sc.COL_DISB_MATTER_ID))
+            )
+            if matter_id.casefold() not in represented_matter_ids:
+                raise ValueError("Select a matter already represented by this invoice draft.")
+
+            line_id = self._custom_fee_line_id(draft_id, request_id)
+            line_id_matches = [
+                row
+                for row in time_entries
+                if self._text(row.get(sc.COL_TIME_ENTRY_ID)).casefold() == line_id.casefold()
+            ]
+            if line_id_matches:
+                raise RuntimeError(
+                    "The stable custom-fee line identifier is already in use. Stop and run Support Diagnostics."
+                )
+
+            tax = self._money(amount * Decimal("0.13"))
+            now_stamp = datetime.now().astimezone().isoformat()
+            new_row = {
+                sc.COL_TIME_ENTRY_ID: line_id,
+                sc.COL_TIME_DATE: date_text,
+                sc.COL_TIME_CLIENT_ID: matter_client_id,
+                sc.COL_TIME_MATTER_ID: matter_id,
+                sc.COL_TIME_PARENT_ID: self._text(matter.get(sc.COL_MATTER_PARENT_ID)),
+                sc.COL_TIME_DESC: description,
+                sc.COL_TIME_HOURS: "0.0",
+                sc.COL_TIME_RATE: "0.0",
+                sc.COL_TIME_SHARE_PCT: "100.0",
+                sc.COL_TIME_GROSS: str(amount),
+                sc.COL_TIME_NET: str(amount),
+                sc.COL_TIME_HST: str(tax),
+                sc.COL_TIME_TOTAL: str(amount + tax),
+                sc.COL_TIME_SECONDS: "0",
+                sc.COL_TIME_STATUS: "Draft",
+                sc.COL_TIME_INVOICE_REF: draft_num,
+                sc.COL_TIME_INVOICE_STATUS: "Draft",
+                sc.COL_TIME_PAYMENT_STATUS: "",
+                sc.COL_TIME_INVOICE_TOTAL: "0.00",
+                sc.COL_TIME_INVOICE_AMOUNT_PAID: "0.00",
+                sc.COL_TIME_INVOICE_BALANCE_DUE: "0.00",
+                sc.COL_TIME_INVOICE_DATE: "",
+                sc.COL_TIME_REISSUE_INVOICE_NUM: "",
+                sc.COL_TIME_LOCK_AUDIT: self._custom_fee_lock_audit(
+                    draft_id=draft_id,
+                    draft_num=draft_num,
+                    request_id=request_id,
+                    line_id=line_id,
+                    state="Draft",
+                ),
+                sc.COL_TIME_CREATED: now_stamp,
+            }
+            time_entries.append(new_row)
+            self._recalculate_draft_totals_in_memory(draft, time_entries, disbursements)
+
+            try:
+                self._write_tables_once({
+                    sc.TBL_TIME: time_entries,
+                    sc.TBL_DRAFT_INVOICES: drafts,
+                })
+            except Exception as exc:
+                logger.error(
+                    "Custom fee write result uncertain draft_id=%s request_id=%s error_type=%s",
+                    draft_id,
+                    request_id,
+                    type(exc).__name__,
+                )
+                recovered = self._recover_custom_fee_request(
+                    draft_id=draft_id,
+                    draft_num=draft_num,
+                    request_id=request_id,
+                )
+                if recovered:
+                    return recovered
+                raise RuntimeError(
+                    "The custom fee could not be verified after the workbook write. Retry this same request."
+                ) from exc
+
+            recovered = self._recover_custom_fee_request(
+                draft_id=draft_id,
+                draft_num=draft_num,
+                request_id=request_id,
+            )
+            if not recovered:
+                raise RuntimeError(
+                    "The custom fee write completed but read-back verification failed. Retry this same request."
+                )
+            recovered["alreadyCreated"] = False
+            recovered["recovered"] = False
+            logger.info(
+                "Custom fee created draft_id=%s request_id=%s line_id=%s",
+                draft_id,
+                request_id,
+                line_id,
+            )
+            return recovered
+
     def add_line_item(self, draft_num: str, data: Dict[str, Any]):
+        if bool((data or {}).get("isFee")):
+            return self.add_custom_fee_line(draft_num, data)
+
         time_entries = self.repo._read_table_rows(sc.TBL_TIME)
         draft = self.get_draft(draft_num)
         if not draft:
-            return
+            raise ValueError(f"Draft {draft_num} not found")
             
         import uuid
         entry_id = f"T_{uuid.uuid4().hex[:10]}"
@@ -738,8 +1346,116 @@ class InvoiceDraftService:
         time_entries.append(new_row)
         self.repo._write_table_rows(sc.TBL_TIME, time_entries)
         self.recalculate_draft_totals(draft_num)
+        return {"ok": True, "entryId": entry_id}
+
+    def _recover_completed_custom_fee_finalization(
+        self,
+        draft_num: str,
+        final_invoice_num: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Recognize a completed custom-fee finalization after a lost response."""
+        tables = self._read_tables_once([
+            sc.TBL_DRAFT_INVOICES,
+            sc.TBL_TIME,
+            sc.TBL_RECEIVABLES,
+            sc.TBL_INVOICE_LOG,
+            sc.TBL_LEDGER,
+        ])
+        if any(
+            self._text(row.get(sc.COL_DRAFT_INVOICE_NUM)).casefold()
+            == self._text(draft_num).casefold()
+            for row in tables[sc.TBL_DRAFT_INVOICES]
+        ):
+            return None
+
+        candidates = [
+            row
+            for row in tables[sc.TBL_TIME]
+            if self._is_draft_custom_fee(row)
+            and self._audit_markers(row).get("draftref", "").casefold()
+            == self._text(draft_num).casefold()
+        ]
+        if not candidates:
+            return None
+
+        requested_invoice = self._text(final_invoice_num)
+        draft_ids = {
+            self._audit_markers(row).get("draftownerid", "").casefold()
+            for row in candidates
+        } - {""}
+        completed_invoices = {
+            self._audit_markers(row).get("finalinvoice", "")
+            or self._text(row.get(sc.COL_TIME_INVOICE_REF))
+            for row in candidates
+            if self._audit_markers(row).get("customfeestate", "").casefold()
+            == "finalized"
+        }
+        if (
+            len(draft_ids) != 1
+            or len(completed_invoices) != 1
+            or requested_invoice not in completed_invoices
+            or any(
+                self._audit_markers(row).get("customfeestate", "").casefold()
+                != "finalized"
+                or self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+                != requested_invoice.casefold()
+                or self._text(row.get(sc.COL_TIME_INVOICE_STATUS)).casefold() != "billed"
+                for row in candidates
+            )
+        ):
+            raise RuntimeError(
+                "The invoice draft is missing but its custom-fee completion footprint is inconsistent. "
+                "Stop and run Support Diagnostics."
+            )
+
+        receivable_matches = [
+            row
+            for row in tables[sc.TBL_RECEIVABLES]
+            if self._text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold()
+            == requested_invoice.casefold()
+        ]
+        invoice_log_matches = [
+            row
+            for row in tables[sc.TBL_INVOICE_LOG]
+            if self._text(row.get(sc.COL_INV_INVOICE_NUM)).casefold()
+            == requested_invoice.casefold()
+        ]
+        ledger_matches = [
+            row
+            for row in tables[sc.TBL_LEDGER]
+            if self._text(row.get(sc.COL_LEDGER_REFERENCE)).casefold()
+            == requested_invoice.casefold()
+            and self._text(row.get(sc.COL_LEDGER_CATEGORY)).casefold() == "revenue"
+        ]
+        if not (
+            len(receivable_matches) == 1
+            and len(invoice_log_matches) == 1
+            and len(ledger_matches) == 1
+        ):
+            raise RuntimeError(
+                "The invoice draft is missing but its financial completion records are incomplete or duplicated. "
+                "Stop and run Support Diagnostics."
+            )
+
+        draft_id = next(iter(draft_ids))
+        logger.info(
+            "Invoice finalization recovered idempotently draft_id=%s custom_fee_count=%d",
+            draft_id,
+            len(candidates),
+        )
+        return {
+            "ok": True,
+            "invoiceNum": requested_invoice,
+            "draftId": draft_id,
+            "alreadyFinalized": True,
+            "customFeeCount": len(candidates),
+        }
 
     def finalize_draft(self, draft_num: str, final_invoice_num: str, save_dir: str):
+        with _DRAFT_LIFECYCLE_LOCK:
+            return self._finalize_draft_locked(draft_num, final_invoice_num, save_dir)
+
+    def _finalize_draft_locked(self, draft_num: str, final_invoice_num: str, save_dir: str):
         """
         Finalizes the draft into a real invoice.
         Locks the draft, updates docket statuses, creates Receivable and InvoiceLog rows.
@@ -752,6 +1468,12 @@ class InvoiceDraftService:
         
         draft = self.get_draft(draft_num)
         if not draft:
+            recovered = self._recover_completed_custom_fee_finalization(
+                draft_num,
+                final_invoice_num,
+            )
+            if recovered:
+                return recovered
             raise ValueError(f"Draft {draft_num} not found")
 
         final_invoice_num = self._text(final_invoice_num)
@@ -779,6 +1501,8 @@ class InvoiceDraftService:
             sc.TBL_RECEIVABLES,
             sc.TBL_INVOICE_LOG,
             sc.TBL_LEDGER,
+            sc.TBL_MATTERS,
+            sc.TBL_TRANSACTIONS_MASTER,
         ]
         read_bulk = getattr(self.repo, "_read_table_rows_bulk", None)
         if callable(read_bulk):
@@ -806,6 +1530,78 @@ class InvoiceDraftService:
         # without saving a transient draft state first.
         time_entries = table_rows[sc.TBL_TIME]
         disb_entries = table_rows[sc.TBL_DISBURSEMENTS]
+        draft_id = self._text(draft.get(sc.COL_DRAFT_ID))
+        custom_fee_rows = [
+            row
+            for row in time_entries
+            if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+            == self._text(draft_num).casefold()
+            and self._is_draft_custom_fee(row)
+        ]
+        if custom_fee_rows and not draft_id:
+            raise ValueError("The invoice draft is missing its stable DraftID.")
+
+        matters_by_id = {
+            self._text(row.get(sc.COL_MATTER_ID)).casefold(): row
+            for row in table_rows[sc.TBL_MATTERS]
+            if self._text(row.get(sc.COL_MATTER_ID))
+        }
+        request_ids = set()
+        line_ids = set()
+        financial_tables = {
+            table: table_rows[table]
+            for table in (
+                sc.TBL_RECEIVABLES,
+                sc.TBL_INVOICE_LOG,
+                sc.TBL_LEDGER,
+                sc.TBL_TRANSACTIONS_MASTER,
+            )
+        }
+        for row in custom_fee_rows:
+            self._assert_custom_fee_owner(row, draft_id=draft_id, draft_num=draft_num)
+            markers = self._audit_markers(row)
+            if markers.get("customfeestate", "").casefold() != "draft":
+                raise ValueError(
+                    "A custom fee is not in the expected Draft state. Run Support Diagnostics."
+                )
+            request_id = self._validate_custom_fee_request_id(markers.get("requestid"))
+            entry_id = self._text(row.get(sc.COL_TIME_ENTRY_ID))
+            marker_line_id = self._text(markers.get("customfeelineid"))
+            if not entry_id or marker_line_id.casefold() != entry_id.casefold():
+                raise ValueError(
+                    "A custom fee has an invalid stable line identity. Run Support Diagnostics."
+                )
+            if request_id.casefold() in request_ids or entry_id.casefold() in line_ids:
+                raise ValueError(
+                    "A custom fee request or line identity is duplicated. Run Support Diagnostics."
+                )
+            request_ids.add(request_id.casefold())
+            line_ids.add(entry_id.casefold())
+
+            matter_id = self._text(row.get(sc.COL_TIME_MATTER_ID))
+            matter = matters_by_id.get(matter_id.casefold())
+            if not matter:
+                raise ValueError(
+                    "A custom fee no longer references a valid matter. Repair it before finalizing."
+                )
+            if (
+                self._text(matter.get(sc.COL_MATTER_CLIENT_ID)).casefold()
+                != self._text(draft.get(sc.COL_DRAFT_CLIENT_ID)).casefold()
+            ):
+                raise ValueError(
+                    "A custom fee matter no longer belongs to the draft work client."
+                )
+            reasons = self._custom_fee_dependency_reasons(
+                row,
+                draft_num=draft_num,
+                financial_tables=financial_tables,
+            )
+            if reasons:
+                raise ValueError(
+                    "A custom fee already has a financial dependency and cannot be finalized safely. "
+                    f"Run Support Diagnostics ({', '.join(reasons)})."
+                )
+
         self._recalculate_draft_totals_in_memory(draft, time_entries, disb_entries)
         final_invoice_total = self._money(draft.get(sc.COL_DRAFT_TOTAL_DUE))
             
@@ -815,6 +1611,7 @@ class InvoiceDraftService:
         # 1. Update Time Entries
         for row in time_entries:
             if row.get(sc.COL_TIME_INVOICE_REF) == draft_num:
+                custom_fee_markers = self._audit_markers(row) if self._is_draft_custom_fee(row) else None
                 self._entry_invoice_amounts(row, normalize_fee=True)
                 row[sc.COL_TIME_INVOICE_REF] = final_invoice_num
                 row[sc.COL_TIME_INVOICE_STATUS] = "Billed"
@@ -824,6 +1621,15 @@ class InvoiceDraftService:
                 row[sc.COL_TIME_INVOICE_AMOUNT_PAID] = "0.00"
                 row[sc.COL_TIME_INVOICE_BALANCE_DUE] = str(final_invoice_total)
                 row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
+                if custom_fee_markers is not None:
+                    row[sc.COL_TIME_LOCK_AUDIT] = self._custom_fee_lock_audit(
+                        draft_id=custom_fee_markers["draftownerid"],
+                        draft_num=custom_fee_markers["draftref"],
+                        request_id=custom_fee_markers["requestid"],
+                        line_id=custom_fee_markers["customfeelineid"],
+                        state="Finalized",
+                        final_invoice_num=final_invoice_num,
+                    )
                 
         # 1b. Handle WIP Adjustments for Flat Fees or Discounts
         try:
@@ -945,18 +1751,34 @@ class InvoiceDraftService:
         })
         # 5. Remove Draft
         drafts = [d for d in drafts if d.get(sc.COL_DRAFT_INVOICE_NUM) != draft_num]
-        self._write_tables_once({
-            sc.TBL_TIME: time_entries,
-            sc.TBL_DISBURSEMENTS: disb_entries,
-            sc.TBL_RECEIVABLES: receivables,
-            sc.TBL_INVOICE_LOG: invoice_log,
-            sc.TBL_LEDGER: ledger,
-            sc.TBL_DRAFT_INVOICES: drafts,
-        })
+        try:
+            self._write_tables_once({
+                sc.TBL_TIME: time_entries,
+                sc.TBL_DISBURSEMENTS: disb_entries,
+                sc.TBL_RECEIVABLES: receivables,
+                sc.TBL_INVOICE_LOG: invoice_log,
+                sc.TBL_LEDGER: ledger,
+                sc.TBL_DRAFT_INVOICES: drafts,
+            })
+        except Exception as exc:
+            logger.error(
+                "Invoice finalization write result uncertain draft_id=%s error_type=%s",
+                draft_id,
+                type(exc).__name__,
+            )
+            recovered = self._recover_completed_custom_fee_finalization(
+                draft_num,
+                final_invoice_num,
+            )
+            if recovered:
+                return recovered
+            raise RuntimeError(
+                "Invoice finalization could not be verified after the workbook write. "
+                "Retry with the same invoice number."
+            ) from exc
         logger.info(
-            "[PERF] Invoice finalization %s from %s completed in %.3fs with one workbook save.",
-            final_invoice_num,
-            draft_num,
+            "[PERF] Invoice finalization draft_id=%s completed in %.3fs with one workbook save.",
+            draft_id,
             time.perf_counter() - started,
         )
         
@@ -1072,41 +1894,105 @@ class InvoiceDraftService:
 
     def delete_draft(self, draft_num: str) -> bool:
         """
-        Deletes a draft invoice and releases associated time and disbursement entries
-        back to an 'Unbilled' state.
+        Delete one draft, destroying only its exclusively owned custom fees.
+
+        Ordinary time and disbursement WIP is released.  A draft custom fee is
+        never released as ordinary WIP because it has no independent source
+        record outside the draft that created it.
         """
-        draft = self.get_draft(draft_num)
-        if not draft:
-            return False
+        with _DRAFT_LIFECYCLE_LOCK:
+            draft_num = self._text(draft_num)
+            tables = self._read_tables_once([
+                sc.TBL_DRAFT_INVOICES,
+                sc.TBL_TIME,
+                sc.TBL_DISBURSEMENTS,
+                sc.TBL_RECEIVABLES,
+                sc.TBL_INVOICE_LOG,
+                sc.TBL_LEDGER,
+                sc.TBL_TRANSACTIONS_MASTER,
+            ])
+            drafts = tables[sc.TBL_DRAFT_INVOICES]
+            draft = next(
+                (
+                    row
+                    for row in drafts
+                    if self._text(row.get(sc.COL_DRAFT_INVOICE_NUM)).casefold()
+                    == draft_num.casefold()
+                ),
+                None,
+            )
+            if not draft:
+                return False
 
-        # 1. Revert Time Entries
-        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
-        modified_time = False
-        for row in time_entries:
-            if row.get(sc.COL_TIME_INVOICE_REF) == draft_num:
-                row[sc.COL_TIME_INVOICE_REF] = ""
-                row[sc.COL_TIME_INVOICE_STATUS] = ""
-                row["Status"] = "Unbilled"
-                modified_time = True
-        if modified_time:
-            self.repo._write_table_rows(sc.TBL_TIME, time_entries)
+            draft_id = self._text(draft.get(sc.COL_DRAFT_ID))
+            time_entries = tables[sc.TBL_TIME]
+            owned_time = [
+                row
+                for row in time_entries
+                if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+                == draft_num.casefold()
+            ]
+            custom_fees = [row for row in owned_time if self._is_draft_custom_fee(row)]
+            if custom_fees and not draft_id:
+                raise ValueError("The invoice draft is missing its stable DraftID.")
 
-        # 2. Revert Disbursements
-        disb_entries = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
-        modified_disb = False
-        for row in disb_entries:
-            if row.get(sc.COL_DISB_INVOICE_REF) == draft_num:
-                row[sc.COL_DISB_INVOICE_REF] = ""
-                modified_disb = True
-        if modified_disb:
-            self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
+            financial_tables = {
+                table: tables[table]
+                for table in (
+                    sc.TBL_RECEIVABLES,
+                    sc.TBL_INVOICE_LOG,
+                    sc.TBL_LEDGER,
+                    sc.TBL_TRANSACTIONS_MASTER,
+                )
+            }
+            for row in custom_fees:
+                self._assert_custom_fee_owner(row, draft_id=draft_id, draft_num=draft_num)
+                reasons = self._custom_fee_dependency_reasons(
+                    row,
+                    draft_num=draft_num,
+                    financial_tables=financial_tables,
+                )
+                if reasons:
+                    raise ValueError(
+                        "A custom fee has a financial dependency, so this draft cannot be deleted. "
+                        f"Run Support Diagnostics ({', '.join(reasons)})."
+                    )
 
-        # 3. Remove Draft
-        drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
-        drafts = [d for d in drafts if d.get(sc.COL_DRAFT_INVOICE_NUM) != draft_num]
-        self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
-        
-        return True
+            custom_fee_objects = {id(row) for row in custom_fees}
+            owned_time_objects = {id(row) for row in owned_time}
+            retained_time = []
+            for row in time_entries:
+                if id(row) in custom_fee_objects:
+                    continue
+                if id(row) in owned_time_objects:
+                    row[sc.COL_TIME_INVOICE_REF] = ""
+                    row[sc.COL_TIME_INVOICE_STATUS] = "Unbilled"
+                    row[sc.COL_TIME_STATUS] = "Unbilled"
+                    row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
+                retained_time.append(row)
+
+            disb_entries = tables[sc.TBL_DISBURSEMENTS]
+            for row in disb_entries:
+                if (
+                    self._text(row.get(sc.COL_DISB_INVOICE_REF)).casefold()
+                    == draft_num.casefold()
+                ):
+                    row[sc.COL_DISB_INVOICE_REF] = ""
+                    row[sc.COL_DISB_REISSUE_INVOICE_NUM] = ""
+
+            retained_drafts = [row for row in drafts if row is not draft]
+            self._write_tables_once({
+                sc.TBL_TIME: retained_time,
+                sc.TBL_DISBURSEMENTS: disb_entries,
+                sc.TBL_DRAFT_INVOICES: retained_drafts,
+            })
+            logger.info(
+                "Invoice draft deleted draft_id=%s custom_fee_count=%d released_wip_count=%d",
+                draft_id,
+                len(custom_fees),
+                len(owned_time) - len(custom_fees),
+            )
+            return True
 
     def delete_drafts(self, draft_nums: list) -> bool:
         """
@@ -1114,37 +2000,11 @@ class InvoiceDraftService:
         """
         if not draft_nums:
             return False
-            
-        draft_nums_set = set(draft_nums)
-
-        # 1. Revert Time Entries
-        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
-        modified_time = False
-        for row in time_entries:
-            if row.get(sc.COL_TIME_INVOICE_REF) in draft_nums_set:
-                row[sc.COL_TIME_INVOICE_REF] = ""
-                row[sc.COL_TIME_INVOICE_STATUS] = ""
-                row["Status"] = "Unbilled"
-                modified_time = True
-        if modified_time:
-            self.repo._write_table_rows(sc.TBL_TIME, time_entries)
-
-        # 2. Revert Disbursements
-        disb_entries = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
-        modified_disb = False
-        for row in disb_entries:
-            if row.get(sc.COL_DISB_INVOICE_REF) in draft_nums_set:
-                row[sc.COL_DISB_INVOICE_REF] = ""
-                modified_disb = True
-        if modified_disb:
-            self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
-
-        # 3. Remove Drafts
-        drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
-        drafts = [d for d in drafts if d.get(sc.COL_DRAFT_INVOICE_NUM) not in draft_nums_set]
-        self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
-        
-        return True
+        with _DRAFT_LIFECYCLE_LOCK:
+            deleted_any = False
+            for draft_num in draft_nums:
+                deleted_any = self.delete_draft(str(draft_num)) or deleted_any
+            return deleted_any
 
     def reverse_invoice(
         self,

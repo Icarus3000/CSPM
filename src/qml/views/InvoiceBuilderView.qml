@@ -54,6 +54,34 @@ Item {
     // immediately request a preview and raise a false "not found" warning.
     property string deletingDraftNum: ""
     property var selectedDraftData: null
+    property var draftMatterOptions: []
+    property var customFeeMatterOptions: {
+        var options = []
+        var seen = ({})
+        for (var optionIndex = 0; optionIndex < root.draftMatterOptions.length; ++optionIndex) {
+            var supplied = root.draftMatterOptions[optionIndex] || {}
+            var suppliedMatterId = String(supplied.matterId || "").trim()
+            var suppliedKey = suppliedMatterId.toLowerCase()
+            if (suppliedMatterId === "" || seen[suppliedKey]) continue
+            seen[suppliedKey] = true
+            options.push({
+                "matterId": suppliedMatterId,
+                "label": String(supplied.label || suppliedMatterId)
+            })
+        }
+        for (var i = 0; i < root.draftLineItems.length; ++i) {
+            var line = root.draftLineItems[i] || {}
+            var matterId = String(line.matterId || "").trim()
+            var key = matterId.toLowerCase()
+            if (matterId === "" || seen[key]) continue
+            seen[key] = true
+            options.push({
+                "matterId": matterId,
+                "label": String(line.matterDisplay || matterId)
+            })
+        }
+        return options
+    }
     property var draftLineItems: []
     property string previewHtml: ""
     property bool isLoading: false
@@ -145,9 +173,10 @@ Item {
 
     function _isCustomFeeItem(item) {
         if (!item) return false
-        return Number(item.hours || 0) === 0
+        return item.isFee === true
+                || (Number(item.hours || 0) === 0
                 && Number(item.rate || 0) === 0
-                && Number(item.amount || 0) > 0
+                && Number(item.amount || 0) > 0)
     }
 
     function _reconciliationMode() {
@@ -171,12 +200,13 @@ Item {
     function _clearSelection() {
         root.selectedDraftNum = ""
         root.selectedDraftData = null
+        root.draftMatterOptions = []
         root.draftLineItems = []
         root.previewHtml = ""
     }
 
     function openAddFeeDialog() {
-        addFeeDialog.open()
+        addFeeDialog.prepareAndOpen()
     }
     function openDatePickerFor(field, px, py) {
         _activeDateField = field
@@ -239,6 +269,7 @@ Item {
         // even begun.  The backend now returns the draft, line items, and HTML
         // together from one background snapshot.
         selectedDraftData = null
+        draftMatterOptions = []
         draftLineItems = []
         previewHtml = ""
         isPreviewLoading = true
@@ -298,6 +329,7 @@ Item {
         if (root.selectedDraftNum === num) {
             root.selectedDraftNum = ""
             root.selectedDraftData = null
+            root.draftMatterOptions = []
             root.draftLineItems = []
             root.previewHtml = ""
         }
@@ -361,6 +393,7 @@ Item {
             if (String(draftNum) !== root.selectedDraftNum) return
             var loaded = workspace || {}
             root.selectedDraftData = loaded.draft || null
+            root.draftMatterOptions = loaded.matterOptions || []
             root.draftLineItems = loaded.lineItems || []
             root.previewHtml = String(loaded.html || root.previewHtml || "")
             root.isPreviewLoading = false
@@ -457,6 +490,9 @@ Item {
                 root.pendingFinalizeInvoiceNum = ""
                 root.pendingFinalizePath = ""
             }
+        function onCustomFeeLineCompleted(result) {
+            addFeeDialog.handleCompletion(result || {})
+        }
         }
         function onDraftFinalizationError(msg) {
             root.isFinalizingExport = false
@@ -1052,7 +1088,7 @@ Item {
                                                         MouseArea {
                                                             anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                                             onClicked: {
-                                                                addFeeDialog.open()
+                                                                root.openAddFeeDialog()
                                                             }
                                                         }
                                                     }
@@ -1749,15 +1785,90 @@ Item {
     Window {
         id: addFeeDialog
         title: "Add Custom Fee"
-        width: 400
-        height: 250
+        width: 440
+        height: 380
         flags: Qt.Dialog | Qt.WindowStaysOnTopHint
         modality: Qt.ApplicationModal
         color: SemanticTheme.surfacePanel(root.t, root.appStyle)
+        property string requestId: ""
+        property string ownerDraftNum: ""
+        property bool submissionPending: false
+        property string validationMessage: ""
 
-        function open() {
+        function prepareAndOpen() {
+            if (!root.billingBackend || !root.selectedDraftNum) {
+                appToast("Select an invoice draft before adding a custom fee.")
+                return
+            }
+            requestId = String(root.billingBackend.newCustomFeeRequestId() || "")
+            ownerDraftNum = String(root.selectedDraftNum)
+            submissionPending = false
+            validationMessage = ""
+            newFeeDate.text = Qt.formatDate(new Date(), "yyyy-MM-dd")
+            newFeeDesc.text = ""
+            newFeeAmount.text = ""
+            newFeeMatter.currentIndex = root.customFeeMatterOptions.length > 0 ? 0 : -1
             x = (Screen.desktopAvailableWidth - width) / 2
             y = (Screen.desktopAvailableHeight - height) / 2
+            newFeeDesc.forceActiveFocus()
+        }
+
+        function submit() {
+            if (submissionPending) return
+            validationMessage = ""
+            if (!root.billingBackend || requestId === "" || ownerDraftNum === "") {
+                validationMessage = "This request is no longer valid. Close and reopen Add Custom Fee."
+                return
+            }
+            var normalizedDate = root._normalizedInvoiceDate(newFeeDate.text)
+            var description = String(newFeeDesc.text || "").trim()
+            var amount = Number(newFeeAmount.text)
+            var selectedMatter = newFeeMatter.currentIndex >= 0
+                    ? root.customFeeMatterOptions[newFeeMatter.currentIndex] : null
+            if (!normalizedDate) {
+                validationMessage = "Enter the fee date as YYYY-MM-DD."
+                return
+            }
+            if (description === "") {
+                validationMessage = "Enter a description for the custom fee."
+                return
+            }
+            if (!isFinite(amount) || amount <= 0) {
+                validationMessage = "Enter an amount greater than zero."
+                return
+            }
+            if (!selectedMatter || !selectedMatter.matterId) {
+                validationMessage = "Select a matter already represented by this invoice draft."
+                return
+            }
+
+            submissionPending = true
+            root.billingBackend.addDraftCustomFee(ownerDraftNum, {
+                "requestId": requestId,
+                "date": normalizedDate,
+                "description": description,
+                "isFee": true,
+                "amount": amount,
+                "matterId": String(selectedMatter.matterId)
+            })
+        }
+
+        function handleCompletion(result) {
+            if (!result || String(result.requestId || "") !== requestId) return
+            submissionPending = false
+            if (result.ok !== true) {
+                validationMessage = String(result.message || "The custom fee could not be verified. Retry this request.")
+                return
+            }
+            requestId = ""
+            ownerDraftNum = ""
+            newFeeDesc.text = ""
+            newFeeAmount.text = ""
+            hide()
+        }
+
+        onClosing: function(close) {
+            if (submissionPending) close.accepted = false
             show()
         }
 
@@ -1773,6 +1884,8 @@ Item {
                 text: Qt.formatDate(new Date(), "yyyy-MM-dd")
                 Layout.fillWidth: true
                 color: root.textColor
+                enabled: !addFeeDialog.submissionPending
+                onAccepted: addFeeDialog.submit()
                 background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
             }
             TextField {
@@ -1781,6 +1894,8 @@ Item {
                 placeholderTextColor: root.isDark ? "#888" : "#666"
                 Layout.fillWidth: true
                 color: root.textColor
+                enabled: !addFeeDialog.submissionPending
+                onAccepted: addFeeDialog.submit()
                 background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
             }
             TextField {
@@ -1789,6 +1904,42 @@ Item {
                 placeholderTextColor: root.isDark ? "#888" : "#666"
                 Layout.fillWidth: true
                 color: root.textColor
+                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                enabled: !addFeeDialog.submissionPending
+                onAccepted: addFeeDialog.submit()
+            }
+
+            ComboBox {
+                id: newFeeMatter
+                Layout.fillWidth: true
+                model: root.customFeeMatterOptions
+                textRole: "label"
+                enabled: !addFeeDialog.submissionPending && model.length > 0
+                contentItem: Text {
+                    leftPadding: 8
+                    rightPadding: 24
+                    text: newFeeMatter.displayText || "Select matter"
+                    color: root.textColor
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                }
+                background: Rectangle {
+                    color: root.isDark ? "#333" : "#f0f0f0"
+                    radius: 4
+                    border.color: root.borderColor
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: addFeeDialog.validationMessage !== ""
+                        ? addFeeDialog.validationMessage
+                        : (root.customFeeMatterOptions.length === 0
+                            ? "This draft has no valid matter. Add matter-linked WIP before adding a custom fee."
+                            : "The fee remains owned by this draft until it is finalized or removed.")
+                color: addFeeDialog.validationMessage !== "" ? "#D14343" : root.mutedColor
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
                 background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
             }
 
@@ -1799,27 +1950,18 @@ Item {
                 spacing: 10
                 Button {
                     text: "Cancel"
-                    onClicked: addFeeDialog.close()
-                }
-                Button {
-                    text: "OK"
+                    enabled: !addFeeDialog.submissionPending
                     onClicked: {
-                        var amount = parseFloat(newFeeAmount.text) || 0;
-                        if (amount !== 0 || newFeeDesc.text.trim() !== "") {
-                            root.billingBackend.addDraftLineItem(root.selectedDraftNum, {
-                                "date": newFeeDate.text,
-                                "description": newFeeDesc.text,
-                                "isFee": true,
-                                "amount": amount,
-                                "hours": 0.0,
-                                "rate": 0.0,
-                                "matterId": "Custom Fee"
-                            })
-                        }
-                        newFeeDesc.text = "";
-                        newFeeAmount.text = "";
-                        addFeeDialog.close()
+                        addFeeDialog.requestId = ""
+                        addFeeDialog.ownerDraftNum = ""
+                        addFeeDialog.hide()
                     }
+                Button {
+                    text: addFeeDialog.submissionPending ? "Adding…" : "Add Fee"
+                    enabled: !addFeeDialog.submissionPending
+                            && root.customFeeMatterOptions.length > 0
+                    onClicked: addFeeDialog.submit()
+                }
                 }
             }
         }
