@@ -1,518 +1,980 @@
-schema_version: 1
-updated_utc: "2026-06-05T00:00:00Z"
-status: "draft-canonical"
+schema_version: 2
+updated_utc: '2026-08-30T00:00:00Z'
+status: canonical-pre-conflict
 notes:
-  - "This file is the canonical workbook contract for Excel-first mode."
-  - "Application code must converge to this schema before SQL adapter rollout."
-
+- This file is the canonical workbook contract for Excel-first mode.
+- It is synchronized from runtime constants by the sanitized-template generator.
+- Conflict tables are intentionally absent pending an approved Phase 2 candidate.
 workbook:
-  path: "data/CSPM.xlsm"
-  mode: "tabular-database-only"
+  path: data/CSPM.xlsm
+  mode: tabular-database-only
   constraints:
-    - "No data stored in formatting, color, or merged cells."
-    - "Primary keys must be stable and portable to SQL."
-    - "Date/time values should be parseable without locale-only assumptions."
-
+  - No data stored in formatting, color, or merged cells.
+  - Primary keys must be stable and portable to SQL.
+  - Date/time values should be parseable without locale-only assumptions.
 tables:
-  - sheet: "Parents"
-    table: "tblParents"
-    primary_key: "ParentID"
-    columns:
-      - name: "ParentID"
-        type: "text"
-      - name: "ParentName"
-        type: "text"
-      - name: "DefaultSharePct"
-        type: "number"
-      - name: "DefaultClientRate"
-        type: "number"
-      - name: "Active"
-        type: "bool-int"
-      - name: "Notes"
-        type: "text"
-
-  - sheet: "Clients"
-    table: "tblClients"
-    primary_key: "ClientID"
-    columns:
-      - name: "ClientID"
-        type: "text"
-      - name: "ClientName"
-        type: "text"
-      - name: "Email"
-        type: "text"
-      - name: "Phone"
-        type: "text"
-      - name: "Status"
-        type: "text"
-      - name: "Active"
-        type: "bool-int"
-      - name: "Notes"
-        type: "text"
-
-  - sheet: "ClientProfiles"
-    table: "tblClientProfiles"
-    primary_key: "ClientID"
-    columns:
-      - name: "ClientID"
-        type: "text"
-      - name: "LegalName"
-        type: "text"
-      - name: "DisplayName"
-        type: "text"
-      - name: "FirstName"
-        type: "text"
-      - name: "MiddleName"
-        type: "text"
-      - name: "LastName"
-        type: "text"
-      - name: "EntityType"
-        type: "text"
-      - name: "PrincipalName"
-        type: "text"
-      - name: "PrincipalPosition"
-        type: "text"
-      - name: "PrimaryEmail"
-        type: "text"
-      - name: "PrimaryPhone"
-        type: "text"
-      - name: "SecondaryContactName"
-        type: "text"
-      - name: "SecondaryContactPosition"
-        type: "text"
-      - name: "SecondaryContactEmail"
-        type: "text"
-      - name: "SecondaryContactPhone"
-        type: "text"
-      - name: "AddressLine1"
-        type: "text"
-      - name: "AddressLine2"
-        type: "text"
-      - name: "City"
-        type: "text"
-      - name: "StateProvince"
-        type: "text"
-      - name: "PostalCode"
-        type: "text"
-      - name: "Country"
-        type: "text"
-      - name: "FullAddress"
-        type: "text"
-      - name: "ParentClientID"
-        type: "text"
-      - name: "ParentClientName"
-        type: "text"
-      - name: "Website"
-        type: "text"
-      - name: "TaxID"
-        type: "text"
-      - name: "Industry"
-        type: "text"
-      - name: "BillingEmail"
-        type: "text"
-      - name: "KYCStatus"
-        type: "text"
-      - name: "OnboardingStatus"
-        type: "text"
-      - name: "RetainerRequired"
-        type: "bool-int"
-      - name: "RetainerAmount"
-        type: "number"
-      - name: "EngagementStartDate"
-        type: "date"
-      - name: "DateClientAdded"
-        type: "date"
-      - name: "Birthday"
-        type: "date"
-      - name: "ReferralFrom"
-        type: "text"
-      - name: "ConflictNotes"
-        type: "text"
-      - name: "Notes"
-        type: "text"
-      - name: "CreatedAt"
-        type: "datetime"
-      - name: "UpdatedAt"
-        type: "datetime"
-
-  - sheet: "MatterParties"
-    table: "tblMatterParties"
-    primary_key: "MatterPartyID"
-    columns:
-      - name: "MatterPartyID"
-        type: "text"
-      - name: "MatterID"
-        type: "text"
-      - name: "ClientID"
-        type: "text"
-      - name: "ClientName"
-        type: "text"
-      - name: "Role"
-        type: "text"
-      - name: "IsFileAnchor"
-        type: "bool-int"
-      - name: "IsBillingRecipient"
-        type: "bool-int"
-      - name: "SortOrder"
-        type: "int"
-      - name: "Notes"
-        type: "text"
-      - name: "CreatedAt"
-        type: "datetime"
-      - name: "UpdatedAt"
-        type: "datetime"
-
-  - sheet: "Matters"
-    table: "tblMatters"
-    primary_key: "MatterID"
-    columns:
-      - name: "MatterID"
-        type: "text"
-      - name: "MatterNumber"
-        type: "text"
-      - name: "MatterName"
-        type: "text"
-      - name: "DisplayName"
-        type: "text"
-      - name: "ClientID"
-        type: "text"
-      - name: "ClientName"
-        type: "text"
-      - name: "ParentID"
-        type: "text"
-      - name: "ParentName"
-        type: "text"
-      - name: "MatterType"
-        type: "text"
-      - name: "PracticeArea"
-        type: "text"
-      - name: "Status"
-        type: "text"
-      - name: "ResponsibleLawyer"
-        type: "text"
-      - name: "BillingArrangement"
-        type: "text"
-      - name: "BillingContact"
-        type: "text"
-      - name: "BillingEmail"
-        type: "text"
-      - name: "DefaultRate"
-        type: "number"
-      - name: "DefaultSharePct"
-        type: "number"
-      - name: "DateOfEngagement"
-        type: "date"
-      - name: "DateOpened"
-        type: "date"
-      - name: "DateClosed"
-        type: "date"
-      - name: "CourtFileNumber"
-        type: "text"
-      - name: "OpposingParty"
-        type: "text"
-      - name: "ReferralFrom"
-        type: "text"
-      - name: "Description"
-        type: "text"
-      - name: "Notes"
-        type: "text"
-      - name: "RepresentationMode"
-        type: "text"
-      - name: "JointNoConfidentialityConfirmed"
-        type: "bool-int"
-      - name: "JointInstructionsRequireAll"
-        type: "bool-int"
-      - name: "JointEngagementDocument"
-        type: "text"
-      - name: "CreatedAt"
-        type: "datetime"
-      - name: "UpdatedAt"
-        type: "datetime"
-
-  - sheet: "TimeEntries"
-    table: "tblTimeEntries"
-    primary_key: "EntryID"
-    columns:
-      - name: "EntryID"
-        type: "text"
-      - name: "Date"
-        type: "date"
-      - name: "ClientID"
-        type: "text"
-      - name: "MatterID"
-        type: "text"
-      - name: "ParentID"
-        type: "text"
-      - name: "Description"
-        type: "text"
-      - name: "Hours"
-        type: "number"
-      - name: "ClientRate"
-        type: "number"
-      - name: "SharePct"
-        type: "number"
-      - name: "GrossToClient"
-        type: "number"
-      - name: "AmountToYou"
-        type: "number"
-      - name: "HST"
-        type: "number"
-      - name: "TotalInclHST"
-        type: "number"
-      - name: "RawSeconds"
-        type: "int"
-      - name: "Status"
-        type: "text"
-      - name: "LockAudit"
-        type: "text"
-      - name: "CreatedAt"
-        type: "datetime"
-
-  - sheet: "Trademarks"
-    table: "tblTrademarks"
-    primary_key: "TrademarkID"
-    columns:
-      - name: "TrademarkID"
-        type: "text"
-      - name: "Jurisdiction"
-        type: "text"
-      - name: "JurisdictionOther"
-        type: "text"
-      - name: "ClientName"
-        type: "text"
-      - name: "MatterNumber"
-        type: "text"
-      - name: "InternalNotesNextStrategy"
-        type: "text"
-      - name: "TrademarkText"
-        type: "text"
-      - name: "MarkType"
-        type: "text"
-      - name: "DesignRepresentation"
-        type: "text"
-      - name: "DesignImagePaste"
-        type: "text"
-      - name: "ColorClaimed"
-        type: "bool-int"
-      - name: "ColorDescription"
-        type: "text"
-      - name: "NiceClasses"
-        type: "text"
-      - name: "GoodsServicesDescription"
-        type: "text"
-      - name: "ForeignPriorityClaim"
-        type: "text"
-      - name: "RegistryLink"
-        type: "text"
-      - name: "ApplicationNumber"
-        type: "text"
-      - name: "RegistrationNumber"
-        type: "text"
-      - name: "CurrentStatus"
-        type: "text"
-      - name: "ApplicantNameAddress"
-        type: "text"
-      - name: "FilingDate"
-        type: "date"
-      - name: "RegistrationDate"
-        type: "date"
-      - name: "RenewalDeadline"
-        type: "date"
-      - name: "CIPOStatus"
-        type: "text"
-      - name: "TM5Status"
-        type: "text"
-      - name: "ExaminersReportDate"
-        type: "date"
-      - name: "OfficeActionResponseDeadline"
-        type: "date"
-      - name: "ApprovalDate"
-        type: "date"
-      - name: "AdvertisementDate"
-        type: "date"
-      - name: "AdvertisementVolIssue"
-        type: "text"
-      - name: "OppositionDeadline"
-        type: "date"
-      - name: "AllowanceDate"
-        type: "date"
-      - name: "RegisterType"
-        type: "text"
-      - name: "USPTOStatusIndicator"
-        type: "text"
-      - name: "OwnerNameAddress"
-        type: "text"
-      - name: "AttorneyOfRecord"
-        type: "text"
-      - name: "PublicationDate"
-        type: "date"
-      - name: "NoticeOfAllowanceDate"
-        type: "date"
-      - name: "SOUDeadline"
-        type: "date"
-      - name: "SOUExtensionTracking"
-        type: "text"
-      - name: "Section8Deadline"
-        type: "date"
-      - name: "Section15Deadline"
-        type: "date"
-      - name: "Section9Deadline"
-        type: "date"
-      - name: "LocalForeignAssociate"
-        type: "text"
-      - name: "ApplicationReferenceNumber"
-        type: "text"
-      - name: "PublicationAdvertisementDate"
-        type: "date"
-      - name: "OppositionPeriodEndDate"
-        type: "date"
-      - name: "UpcomingLocalDeadlineOfficeActionDate"
-        type: "date"
-      - name: "CreatedAt"
-        type: "datetime"
-      - name: "UpdatedAt"
-        type: "datetime"
-
-  - sheet: "Transactions"
-    table: "tblTransactionsMaster"
-    primary_key: "TransactionID"
-    columns:
-      - name: "TransactionID"
-        type: "text"
-      - name: "TxnDate"
-        type: "date"
-      - name: "Class"
-        type: "text"
-      - name: "BusinessUnit"
-        type: "text"
-      - name: "Type"
-        type: "text"
-      - name: "FromAccount"
-        type: "text"
-      - name: "ToAccount"
-        type: "text"
-      - name: "Payee"
-        type: "text"
-      - name: "Parent"
-        type: "text"
-      - name: "Client"
-        type: "text"
-      - name: "Matter"
-        type: "text"
-      - name: "CategoryCode"
-        type: "text"
-      - name: "CategoryName"
-        type: "text"
-      - name: "Member"
-        type: "text"
-      - name: "Amount"
-        type: "number"
-      - name: "TaxAmount"
-        type: "number"
-      - name: "TaxFlag"
-        type: "text"
-      - name: "HSTExempt"
-        type: "bool-int"
-      - name: "GeneralOfficeExpense"
-        type: "bool-int"
-      - name: "Shadow"
-        type: "bool-int"
-      - name: "InvoiceRef"
-        type: "text"
-      - name: "BillClaimPct"
-        type: "number"
-      - name: "TotalClaimAmount"
-        type: "number"
-      - name: "ExpenseDetails"
-        type: "text"
-      - name: "Notes"
-        type: "text"
-      - name: "Status"
-        type: "text"
-      - name: "Currency"
-        type: "text"
-      - name: "VoidReason"
-        type: "text"
-      - name: "ClearedAt"
-        type: "date"
-      - name: "ReconciledAt"
-        type: "date"
-      - name: "CreatedAt"
-        type: "datetime"
-      - name: "UpdatedAt"
-        type: "datetime"
-
-  - sheet: "TransactionAccounts"
-    table: "tblTransactionAccounts"
-    primary_key: "AccountCode"
-    columns:
-      - name: "AccountCode"
-        type: "text"
-      - name: "AccountName"
-        type: "text"
-      - name: "AccountKind"
-        type: "text"
-      - name: "Owner"
-        type: "text"
-      - name: "Active"
-        type: "bool-int"
-      - name: "AliasList"
-        type: "text"
-
-  - sheet: "TransactionCategories"
-    table: "tblTransactionCategories"
-    primary_key: "CategoryCode"
-    columns:
-      - name: "CategoryCode"
-        type: "text"
-      - name: "CategoryName"
-        type: "text"
-      - name: "Type"
-        type: "text"
-      - name: "ClassScope"
-        type: "text"
-      - name: "TaxFlagDefault"
-        type: "text"
-      - name: "BillableAllowed"
-        type: "bool-int"
-      - name: "MedicalEligible"
-        type: "bool-int"
-      - name: "DeductibleEligible"
-        type: "bool-int"
-      - name: "BusinessDeductibleEligible"
-        type: "bool-int"
-      - name: "Active"
-        type: "bool-int"
-      - name: "SortOrder"
-        type: "int"
-      - name: "Notes"
-        type: "text"
-
-  - sheet: "TransactionBusinessUnits"
-    table: "tblTransactionBusinessUnits"
-    primary_key: "BusinessUnit"
-    columns:
-      - name: "BusinessUnit"
-        type: "text"
-      - name: "Owner"
-        type: "text"
-      - name: "Active"
-        type: "bool-int"
-
-  - sheet: "TransactionPayees"
-    table: "tblTransactionPayees"
-    primary_key: "PayeeName"
-    columns:
-      - name: "PayeeName"
-        type: "text"
-      - name: "DefaultCategoryCode"
-        type: "text"
-      - name: "Active"
-        type: "bool-int"
-
+- sheet: Parents
+  table: tblParents
+  primary_key: ParentID
+  identity_policy: stable_primary_key
+  columns:
+  - name: ParentID
+    type: text
+  - name: ParentName
+    type: text
+  - name: DefaultSharePct
+    type: number
+  - name: DefaultClientRate
+    type: number
+  - name: Active
+    type: bool-int
+  - name: Notes
+    type: text
+- sheet: Clients
+  table: tblClients
+  primary_key: ClientID
+  identity_policy: stable_primary_key
+  columns:
+  - name: ClientID
+    type: text
+  - name: ClientName
+    type: text
+  - name: Email
+    type: text
+  - name: Phone
+    type: text
+  - name: Status
+    type: text
+  - name: Active
+    type: bool-int
+  - name: Notes
+    type: text
+- sheet: ClientProfiles
+  table: tblClientProfiles
+  primary_key: ClientID
+  identity_policy: stable_primary_key
+  columns:
+  - name: ClientID
+    type: text
+  - name: LegalName
+    type: text
+  - name: DisplayName
+    type: text
+  - name: FirstName
+    type: text
+  - name: MiddleName
+    type: text
+  - name: LastName
+    type: text
+  - name: EntityType
+    type: text
+  - name: PrincipalName
+    type: text
+  - name: PrincipalPosition
+    type: text
+  - name: PrimaryEmail
+    type: text
+  - name: PrimaryPhone
+    type: text
+  - name: SecondaryContactName
+    type: text
+  - name: SecondaryContactPosition
+    type: text
+  - name: SecondaryContactEmail
+    type: text
+  - name: SecondaryContactPhone
+    type: text
+  - name: AddressLine1
+    type: text
+  - name: AddressLine2
+    type: text
+  - name: City
+    type: text
+  - name: StateProvince
+    type: text
+  - name: PostalCode
+    type: text
+  - name: Country
+    type: text
+  - name: FullAddress
+    type: text
+  - name: ParentClientID
+    type: text
+  - name: ParentClientName
+    type: text
+  - name: Website
+    type: text
+  - name: TaxID
+    type: text
+  - name: Industry
+    type: text
+  - name: BillingEmail
+    type: text
+  - name: KYCStatus
+    type: text
+  - name: OnboardingStatus
+    type: text
+  - name: RetainerRequired
+    type: bool-int
+  - name: RetainerAmount
+    type: number
+  - name: EngagementStartDate
+    type: date
+  - name: DateClientAdded
+    type: date
+  - name: Birthday
+    type: date
+  - name: ReferralFrom
+    type: text
+  - name: ConflictNotes
+    type: text
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+- sheet: MatterParties
+  table: tblMatterParties
+  primary_key: MatterPartyID
+  identity_policy: stable_primary_key
+  columns:
+  - name: MatterPartyID
+    type: text
+  - name: MatterID
+    type: text
+  - name: ClientID
+    type: text
+  - name: ClientName
+    type: text
+  - name: Role
+    type: text
+  - name: IsFileAnchor
+    type: bool-int
+  - name: IsBillingRecipient
+    type: bool-int
+  - name: SortOrder
+    type: int
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+- sheet: Matters
+  table: tblMatters
+  primary_key: MatterID
+  identity_policy: stable_primary_key
+  columns:
+  - name: MatterID
+    type: text
+  - name: MatterNumber
+    type: text
+  - name: MatterName
+    type: text
+  - name: DisplayName
+    type: text
+  - name: ClientID
+    type: text
+  - name: ClientName
+    type: text
+  - name: ParentID
+    type: text
+  - name: ParentName
+    type: text
+  - name: MatterType
+    type: text
+  - name: PracticeArea
+    type: text
+  - name: Status
+    type: text
+  - name: ResponsibleLawyer
+    type: text
+  - name: BillingArrangement
+    type: text
+  - name: BillingContact
+    type: text
+  - name: BillingEmail
+    type: text
+  - name: DefaultRate
+    type: number
+  - name: DefaultSharePct
+    type: number
+  - name: RateHistory
+    type: text
+  - name: DateOfEngagement
+    type: date
+  - name: DateOpened
+    type: date
+  - name: DateClosed
+    type: date
+  - name: CourtFileNumber
+    type: text
+  - name: OpposingParty
+    type: text
+  - name: ReferralFrom
+    type: text
+  - name: Description
+    type: text
+  - name: Notes
+    type: text
+  - name: RepresentationMode
+    type: text
+  - name: JointNoConfidentialityConfirmed
+    type: bool-int
+  - name: JointInstructionsRequireAll
+    type: bool-int
+  - name: JointEngagementDocument
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+- sheet: TimeEntries
+  table: tblTimeEntries
+  primary_key: EntryID
+  identity_policy: stable_primary_key
+  columns:
+  - name: EntryID
+    type: text
+  - name: Date
+    type: date
+  - name: ClientID
+    type: text
+  - name: MatterID
+    type: text
+  - name: ParentID
+    type: text
+  - name: Description
+    type: text
+  - name: Hours
+    type: number
+  - name: ClientRate
+    type: number
+  - name: SharePct
+    type: number
+  - name: GrossToClient
+    type: number
+  - name: AmountToYou
+    type: number
+  - name: HST
+    type: number
+  - name: TotalInclHST
+    type: number
+  - name: RawSeconds
+    type: int
+  - name: Status
+    type: text
+  - name: InvoiceRef
+    type: text
+  - name: InvoiceStatus
+    type: text
+  - name: PaymentStatus
+    type: text
+  - name: InvoiceTotal
+    type: text
+  - name: InvoiceAmountPaid
+    type: text
+  - name: InvoiceBalanceDue
+    type: text
+  - name: InvoiceDate
+    type: date
+  - name: ReissueInvoiceNum
+    type: text
+  - name: LockAudit
+    type: text
+  - name: CreatedAt
+    type: datetime
+- sheet: Trademarks
+  table: tblTrademarks
+  primary_key: TrademarkID
+  identity_policy: stable_primary_key
+  columns:
+  - name: TrademarkID
+    type: text
+  - name: Jurisdiction
+    type: text
+  - name: JurisdictionOther
+    type: text
+  - name: ClientName
+    type: text
+  - name: MatterNumber
+    type: text
+  - name: InternalNotesNextStrategy
+    type: text
+  - name: TrademarkText
+    type: text
+  - name: MarkType
+    type: text
+  - name: DesignRepresentation
+    type: text
+  - name: DesignImagePaste
+    type: text
+  - name: ColorClaimed
+    type: bool-int
+  - name: ColorDescription
+    type: text
+  - name: NiceClasses
+    type: text
+  - name: GoodsServicesDescription
+    type: text
+  - name: ForeignPriorityClaim
+    type: text
+  - name: RegistryLink
+    type: text
+  - name: ApplicationNumber
+    type: text
+  - name: RegistrationNumber
+    type: text
+  - name: CurrentStatus
+    type: text
+  - name: ApplicantNameAddress
+    type: text
+  - name: FilingDate
+    type: date
+  - name: RegistrationDate
+    type: date
+  - name: RenewalDeadline
+    type: date
+  - name: CIPOStatus
+    type: text
+  - name: TM5Status
+    type: text
+  - name: ExaminersReportDate
+    type: date
+  - name: OfficeActionResponseDeadline
+    type: date
+  - name: ApprovalDate
+    type: date
+  - name: AdvertisementDate
+    type: date
+  - name: AdvertisementVolIssue
+    type: text
+  - name: OppositionDeadline
+    type: date
+  - name: AllowanceDate
+    type: date
+  - name: RegisterType
+    type: text
+  - name: USPTOStatusIndicator
+    type: text
+  - name: OwnerNameAddress
+    type: text
+  - name: AttorneyOfRecord
+    type: text
+  - name: PublicationDate
+    type: date
+  - name: NoticeOfAllowanceDate
+    type: date
+  - name: SOUDeadline
+    type: date
+  - name: SOUExtensionTracking
+    type: text
+  - name: Section8Deadline
+    type: date
+  - name: Section15Deadline
+    type: date
+  - name: Section9Deadline
+    type: date
+  - name: LocalForeignAssociate
+    type: text
+  - name: ApplicationReferenceNumber
+    type: text
+  - name: PublicationAdvertisementDate
+    type: date
+  - name: OppositionPeriodEndDate
+    type: date
+  - name: UpcomingLocalDeadlineOfficeActionDate
+    type: date
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+- sheet: Transactions
+  table: tblTransactionsMaster
+  primary_key: TransactionID
+  identity_policy: stable_primary_key
+  columns:
+  - name: TransactionID
+    type: text
+  - name: TxnDate
+    type: date
+  - name: Class
+    type: text
+  - name: BusinessUnit
+    type: text
+  - name: Type
+    type: text
+  - name: FromAccount
+    type: text
+  - name: ToAccount
+    type: text
+  - name: Payee
+    type: text
+  - name: Parent
+    type: text
+  - name: Client
+    type: text
+  - name: Matter
+    type: text
+  - name: CategoryCode
+    type: text
+  - name: CategoryName
+    type: text
+  - name: Member
+    type: text
+  - name: Amount
+    type: number
+  - name: TaxAmount
+    type: number
+  - name: TaxFlag
+    type: text
+  - name: HSTExempt
+    type: bool-int
+  - name: GeneralOfficeExpense
+    type: bool-int
+  - name: Shadow
+    type: bool-int
+  - name: InvoiceRef
+    type: text
+  - name: BillClaimPct
+    type: number
+  - name: TotalClaimAmount
+    type: number
+  - name: ExpenseDetails
+    type: text
+  - name: Notes
+    type: text
+  - name: Status
+    type: text
+  - name: Currency
+    type: text
+  - name: VoidReason
+    type: text
+  - name: ClearedAt
+    type: date
+  - name: ReconciledAt
+    type: date
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+- sheet: TransactionAccounts
+  table: tblTransactionAccounts
+  primary_key: AccountCode
+  identity_policy: stable_primary_key
+  columns:
+  - name: AccountCode
+    type: text
+  - name: AccountName
+    type: text
+  - name: AccountKind
+    type: text
+  - name: Owner
+    type: text
+  - name: Active
+    type: bool-int
+  - name: AliasList
+    type: text
+- sheet: TransactionCategories
+  table: tblTransactionCategories
+  primary_key: CategoryCode
+  identity_policy: stable_primary_key
+  columns:
+  - name: CategoryCode
+    type: text
+  - name: CategoryName
+    type: text
+  - name: Type
+    type: text
+  - name: ClassScope
+    type: text
+  - name: TaxFlagDefault
+    type: text
+  - name: BillableAllowed
+    type: bool-int
+  - name: MedicalEligible
+    type: bool-int
+  - name: DeductibleEligible
+    type: bool-int
+  - name: BusinessDeductibleEligible
+    type: bool-int
+  - name: Active
+    type: bool-int
+  - name: SortOrder
+    type: int
+  - name: Notes
+    type: text
+- sheet: TransactionBusinessUnits
+  table: tblTransactionBusinessUnits
+  primary_key: BusinessUnit
+  identity_policy: stable_primary_key
+  columns:
+  - name: BusinessUnit
+    type: text
+  - name: Owner
+    type: text
+  - name: Active
+    type: bool-int
+- sheet: TransactionPayees
+  table: tblTransactionPayees
+  primary_key: PayeeName
+  identity_policy: stable_primary_key
+  columns:
+  - name: PayeeName
+    type: text
+  - name: DefaultCategoryCode
+    type: text
+  - name: Active
+    type: bool-int
+- sheet: Disbursements
+  table: tblDisbursements
+  primary_key: DisbursementID
+  identity_policy: stable_primary_key
+  columns:
+  - name: DisbursementID
+    type: text
+  - name: Date
+    type: date
+  - name: ClientName
+    type: text
+  - name: SubClient
+    type: text
+  - name: ClientID
+    type: text
+  - name: ParentID
+    type: text
+  - name: MatterID
+    type: text
+  - name: Description
+    type: text
+  - name: Amount
+    type: number
+  - name: TaxExempt
+    type: bool-int
+  - name: BillPct
+    type: number
+  - name: InvoiceRef
+    type: text
+  - name: PaymentStatus
+    type: text
+  - name: InvoiceTotal
+    type: text
+  - name: InvoiceAmountPaid
+    type: text
+  - name: InvoiceBalanceDue
+    type: text
+  - name: ReissueInvoiceNum
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: APBillID
+    type: text
+  - name: APAllocationID
+    type: text
+  - name: SourceTransactionID
+    type: text
+  - name: OriginalCurrency
+    type: text
+  - name: OriginalAmount
+    type: number
+  - name: FXRate
+    type: number
+  - name: SupplierInvoiceRef
+    type: text
+  - name: DocumentPath
+    type: text
+- sheet: Ledger
+  table: tblLedger
+  primary_key: LedgerID
+  identity_policy: stable_primary_key
+  columns:
+  - name: LedgerID
+    type: text
+  - name: Date
+    type: date
+  - name: ClientVendor
+    type: text
+  - name: Description
+    type: text
+  - name: Category
+    type: text
+  - name: Reference
+    type: text
+  - name: BillingsExclHST
+    type: number
+  - name: HSTCollected
+    type: number
+  - name: ExpensesExclHST
+    type: number
+  - name: HSTPaid
+    type: number
+  - name: Collected
+    type: number
+  - name: WriteOff
+    type: number
+  - name: Receivable
+    type: number
+  - name: TrxID
+    type: text
+  - name: ExternalRefID
+    type: text
+  - name: OriginalAmount
+    type: number
+  - name: WorkClient
+    type: text
+  - name: CreatedAt
+    type: datetime
+- sheet: Receivables
+  table: tblReceivables
+  primary_key: null
+  identity_policy: legacy_nonunique_register
+  columns:
+  - name: InvoiceNum
+    type: text
+  - name: Date
+    type: date
+  - name: Client
+    type: text
+  - name: TotalInvoiced
+    type: number
+  - name: AmountPaid
+    type: number
+  - name: CreditsAdj
+    type: number
+  - name: BalanceDue
+    type: number
+  - name: Status
+    type: text
+  - name: WorkClient
+    type: text
+- sheet: InvoiceLog
+  table: tblInvoiceLog
+  primary_key: null
+  identity_policy: legacy_nonunique_register
+  columns:
+  - name: InvoiceNum
+    type: text
+  - name: ClientName
+    type: text
+  - name: SubClient
+    type: text
+  - name: InvoiceDate
+    type: date
+  - name: TotalFees
+    type: number
+  - name: TotalDisbursements
+    type: number
+  - name: TotalTax
+    type: number
+  - name: AggregateBilled
+    type: number
+  - name: BillToClient
+    type: text
+  - name: BillToSnapshot
+    type: text
+  - name: FilePath
+    type: text
+- sheet: HSTLog
+  table: tblHSTLog
+  primary_key: PeriodID
+  identity_policy: stable_primary_key
+  columns:
+  - name: PeriodID
+    type: text
+  - name: PeriodStart
+    type: date
+  - name: PeriodEnd
+    type: date
+  - name: FiledDate
+    type: date
+  - name: ConfNum
+    type: text
+  - name: NetTax
+    type: number
+  - name: PaidDate
+    type: date
+  - name: PaymentRef
+    type: text
+- sheet: DraftInvoices
+  table: tblDraftInvoices
+  primary_key: DraftID
+  identity_policy: stable_primary_key
+  columns:
+  - name: DraftID
+    type: text
+  - name: InvoiceNum
+    type: text
+  - name: ClientID
+    type: text
+  - name: ClientName
+    type: text
+  - name: Date
+    type: date
+  - name: DiscountType
+    type: text
+  - name: DiscountValue
+    type: number
+  - name: AgencySplitPercent
+    type: number
+  - name: TotalFees
+    type: number
+  - name: TotalDisbursements
+    type: number
+  - name: TotalTax
+    type: number
+  - name: TotalDue
+    type: number
+  - name: GroupingPref
+    type: text
+  - name: IsFlatFee
+    type: bool-int
+  - name: FlatFeeDesc
+    type: text
+  - name: FlatFeeAmount
+    type: number
+  - name: ReconciliationMode
+    type: bool-int
+  - name: ShowTotalHours
+    type: bool-int
+  - name: CustomSortOrder
+    type: text
+  - name: ReissueInvoiceNum
+    type: text
+  - name: BillToSnapshot
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+- sheet: CorpEntities
+  table: tblCorpEntities
+  primary_key: EntityID
+  identity_policy: stable_primary_key
+  columns:
+  - name: EntityID
+    type: text
+  - name: ClientID
+    type: text
+  - name: LegalName
+    type: text
+  - name: Jurisdiction
+    type: text
+  - name: IncorporationDate
+    type: date
+  - name: IncorporationNumber
+    type: text
+  - name: FiscalYearEnd
+    type: date
+  - name: Status
+    type: text
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+- sheet: CorpRelationships
+  table: tblCorpRelationships
+  primary_key: RelationshipID
+  identity_policy: stable_primary_key
+  columns:
+  - name: RelationshipID
+    type: text
+  - name: SourceEntityID
+    type: text
+  - name: TargetEntityID
+    type: text
+  - name: RelationshipType
+    type: text
+  - name: Title
+    type: text
+  - name: ShareClass
+    type: text
+  - name: SharesHeld
+    type: number
+  - name: OwnershipPercentage
+    type: number
+  - name: StartDate
+    type: date
+  - name: EndDate
+    type: date
+  - name: Active
+    type: bool-int
+- sheet: CorpTransactions
+  table: tblCorpTransactions
+  primary_key: TransactionID
+  identity_policy: stable_primary_key
+  columns:
+  - name: TransactionID
+    type: text
+  - name: EntityID
+    type: text
+  - name: Date
+    type: date
+  - name: TransactionType
+    type: text
+  - name: FromEntityID
+    type: text
+  - name: ToEntityID
+    type: text
+  - name: ShareClass
+    type: text
+  - name: NumberOfShares
+    type: number
+  - name: PricePerShare
+    type: number
+  - name: TotalValue
+    type: number
+  - name: DocumentReference
+    type: text
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+- sheet: APBills
+  table: tblAPBills
+  primary_key: APBillID
+  identity_policy: stable_primary_key
+  columns:
+  - name: APBillID
+    type: text
+  - name: Vendor
+    type: text
+  - name: VendorInvoiceNumber
+    type: text
+  - name: InvoiceDate
+    type: date
+  - name: DueDate
+    type: date
+  - name: Subtotal
+    type: number
+  - name: TaxAmount
+    type: number
+  - name: Total
+    type: number
+  - name: AmountPaid
+    type: number
+  - name: Balance
+    type: number
+  - name: Status
+    type: text
+  - name: Currency
+    type: text
+  - name: ExpenseTransactionID
+    type: text
+  - name: DuplicateKey
+    type: text
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+  - name: ExpenseTreatment
+    type: text
+  - name: CategoryCode
+    type: text
+  - name: CategoryName
+    type: text
+  - name: SourceAccount
+    type: text
+  - name: OriginalCurrency
+    type: text
+  - name: OriginalSubtotal
+    type: number
+  - name: OriginalTaxAmount
+    type: number
+  - name: OriginalTotal
+    type: number
+  - name: BaseCurrency
+    type: text
+  - name: BaseSubtotal
+    type: number
+  - name: BaseTaxAmount
+    type: number
+  - name: BaseTotal
+    type: number
+  - name: FXRate
+    type: number
+  - name: FXRateDate
+    type: date
+  - name: FXSource
+    type: text
+  - name: ClientTaxExempt
+    type: bool-int
+  - name: BillClaimPct
+    type: number
+  - name: MatterID
+    type: text
+  - name: ClientID
+    type: text
+  - name: ParentID
+    type: text
+  - name: DisbursementID
+    type: text
+  - name: DocumentPath
+    type: text
+  - name: DocumentHash
+    type: text
+  - name: DocumentOriginalName
+    type: text
+  - name: DocumentOriginalPath
+    type: text
+  - name: DocumentOriginalHash
+    type: text
+  - name: DocumentStorageFormat
+    type: text
+  - name: HistoricalAdoption
+    type: bool-int
+  - name: AdoptedAt
+    type: datetime
+- sheet: APPayments
+  table: tblAPPayments
+  primary_key: APPaymentID
+  identity_policy: stable_primary_key
+  columns:
+  - name: APPaymentID
+    type: text
+  - name: APBillID
+    type: text
+  - name: PaymentDate
+    type: date
+  - name: Amount
+    type: number
+  - name: FromAccount
+    type: text
+  - name: Method
+    type: text
+  - name: Reference
+    type: text
+  - name: Status
+    type: text
+  - name: ReversalOfPaymentID
+    type: text
+  - name: ReversalReason
+    type: text
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+  - name: BaseAmount
+    type: number
+  - name: FXRate
+    type: number
+  - name: PaymentTransactionID
+    type: text
+  - name: DocumentPath
+    type: text
+  - name: DocumentHash
+    type: text
+  - name: DocumentOriginalName
+    type: text
+  - name: HistoricalPayment
+    type: bool-int
 migration_to_sql:
-  strategy: "adapter-swap"
-  mapping_rule: "1:1 table and column names where possible"
+  strategy: adapter-swap
+  mapping_rule: 1:1 table and column names where possible
   preconditions:
-    - "Excel service and repo code must use one unified naming contract."
-    - "All business logic should operate on in-memory row objects, not cells."
+  - Excel service and repo code must use one unified naming contract.
+  - All business logic should operate on in-memory row objects, not cells.

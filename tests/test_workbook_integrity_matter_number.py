@@ -97,12 +97,14 @@ def _add_seven_synthetic_reference_warnings(repo: ExcelRepo) -> None:
             {
                 sc.COL_TXN_ID: f"SYNTHETIC-TXN-{index}",
                 sc.COL_TXN_DATE: "2026-01-02",
+                sc.COL_TXN_CLASS: "Business" if index <= 3 else "Family",
                 sc.COL_TXN_TYPE: "Transfer",
                 sc.COL_TXN_AMOUNT: 1.0,
                 sc.COL_TXN_FROM_ACCOUNT: f"SYNTHETIC-MISSING-ACCOUNT-{index}",
                 sc.COL_TXN_BUSINESS_UNIT: (
                     f"SYNTHETIC-MISSING-UNIT-{index}" if index <= 3 else ""
                 ),
+                sc.COL_TXN_STATUS: "Cleared",
             }
         )
     repo._write_table_rows(sc.TBL_TRANSACTIONS_MASTER, rows)

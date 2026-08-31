@@ -30,6 +30,9 @@ class WorkbookIntegrityIssue:
     row: Optional[int] = None
     column: str = ""
     value: str = ""
+    record_id: str = ""
+    reference_target: str = ""
+    reference_state: str = ""
 
     def as_dict(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
@@ -47,6 +50,12 @@ class WorkbookIntegrityIssue:
             payload["column"] = self.column
         if self.value:
             payload["value"] = self.value
+        if self.record_id:
+            payload["recordId"] = self.record_id
+        if self.reference_target:
+            payload["referenceTarget"] = self.reference_target
+        if self.reference_state:
+            payload["referenceState"] = self.reference_state
         return payload
 
 
@@ -221,8 +230,17 @@ class WorkbookIntegrityService:
             sheet = str(raw.get("sheet", "") or "").strip()
             table = str(raw.get("table", "") or "").strip()
             primary_key = str(raw.get("primary_key", "") or "").strip()
+            identity_policy = str(
+                raw.get("identity_policy", "stable_primary_key") or ""
+            ).strip()
             columns = raw.get("columns")
-            if not sheet or not table or not primary_key or not isinstance(columns, list):
+            primary_key_optional = identity_policy == "legacy_nonunique_register"
+            if (
+                not sheet
+                or not table
+                or (not primary_key and not primary_key_optional)
+                or not isinstance(columns, list)
+            ):
                 self._add(
                     report,
                     "error",
@@ -237,7 +255,7 @@ class WorkbookIntegrityService:
                 name = str(column.get("name", "") or "").strip()
                 if name:
                     column_names.append(name)
-            if primary_key not in column_names:
+            if primary_key and primary_key not in column_names:
                 self._add(
                     report,
                     "error",
@@ -252,6 +270,7 @@ class WorkbookIntegrityService:
                     "sheet": sheet,
                     "table": table,
                     "primary_key": primary_key,
+                    "identity_policy": identity_policy,
                     "columns": column_names,
                     "column_types": {
                         str(col.get("name", "") or "").strip(): str(col.get("type", "") or "").strip()
@@ -385,7 +404,10 @@ class WorkbookIntegrityService:
         return 0, 0, 0
 
     def _check_required_fields(self, table_read: _TableRead, report: WorkbookIntegrityReport) -> None:
-        required = self.REQUIRED_FIELDS_BY_TABLE.get(table_read.table, [table_read.primary_key])
+        required = self.REQUIRED_FIELDS_BY_TABLE.get(
+            table_read.table,
+            [table_read.primary_key] if table_read.primary_key else [],
+        )
         for row, row_idx in zip(table_read.rows, table_read.row_numbers):
             for column in required:
                 if column not in table_read.expected_columns:
@@ -404,6 +426,8 @@ class WorkbookIntegrityService:
 
     def _check_primary_key(self, table_read: _TableRead, report: WorkbookIntegrityReport) -> None:
         key = table_read.primary_key
+        if not key:
+            return
         seen: Dict[str, int] = {}
         for row, row_idx in zip(table_read.rows, table_read.row_numbers):
             value = row.get(key)
@@ -418,22 +442,25 @@ class WorkbookIntegrityService:
                     table=table_read.table,
                     row=row_idx,
                     column=key,
-                    value=text,
+                    value=self._reference_identifier(text),
+                    record_id=self._record_identifier(text),
                 )
                 continue
             if not text:
                 continue
             if text in seen:
+                identifier = self._record_identifier(text)
                 self._add(
                     report,
                     "error",
                     "duplicate_primary_key",
-                    f"Primary key '{text}' duplicates row {seen[text]}.",
+                    f"A primary key duplicates row {seen[text]}.",
                     sheet=table_read.sheet,
                     table=table_read.table,
                     row=row_idx,
                     column=key,
-                    value=text,
+                    value=self._reference_identifier(text),
+                    record_id=identifier,
                 )
             else:
                 seen[text] = row_idx
@@ -446,16 +473,18 @@ class WorkbookIntegrityService:
                 if not text:
                     continue
                 if text in seen:
+                    identifier = self._record_identifier(text)
                     self._add(
                         report,
                         "error",
                         "duplicate_sequence_value",
-                        f"Sequence-like value '{text}' in '{column}' duplicates row {seen[text]}.",
+                        f"A sequence-like value in '{column}' duplicates row {seen[text]}.",
                         sheet=table_read.sheet,
                         table=table_read.table,
                         row=row_idx,
                         column=column,
-                        value=text,
+                        value=self._reference_identifier(text),
+                        record_id=identifier,
                     )
                 else:
                     seen[text] = row_idx
@@ -539,9 +568,12 @@ class WorkbookIntegrityService:
         self._check_ref(tables.get("tblTimeEntries"), "ParentID", parents, report, "missing_parent_reference", "warning")
         self._check_ref(tables.get("tblTrademarks"), "MatterNumber", matter_numbers, report, "missing_matter_number_reference", "warning")
         self._check_ref(tables.get("tblTransactionsMaster"), "CategoryCode", categories, report, "missing_category_reference", "warning")
-        self._check_ref(tables.get("tblTransactionsMaster"), "FromAccount", accounts, report, "missing_account_reference", "warning")
-        self._check_ref(tables.get("tblTransactionsMaster"), "ToAccount", accounts, report, "missing_account_reference", "warning")
-        self._check_ref(tables.get("tblTransactionsMaster"), "BusinessUnit", business_units, report, "missing_business_unit_reference", "warning")
+        self._check_transaction_references(
+            tables.get("tblTransactionsMaster"),
+            tables.get("tblTransactionAccounts"),
+            tables.get("tblTransactionBusinessUnits"),
+            report,
+        )
         self._check_matter_client_ownership(
             tables.get("tblMatters"),
             tables.get("tblTimeEntries"),
@@ -596,17 +628,255 @@ class WorkbookIntegrityService:
             value = self._clean(row.get(column))
             if not value or value in allowed_values:
                 continue
+            record_id = self._clean(row.get(table_read.primary_key))
+            reference_identifier = self._reference_identifier(value)
             self._add(
                 report,
                 severity,
                 code,
-                f"Value '{value}' in '{column}' does not exist in the referenced table.",
+                f"The reference in '{column}' does not exist in the referenced table.",
                 sheet=table_read.sheet,
                 table=table_read.table,
                 row=row_idx,
                 column=column,
-                value=value,
+                value=reference_identifier,
+                record_id=record_id,
+                reference_state="missing",
             )
+
+    def _check_transaction_references(
+        self,
+        transactions: Optional[_TableRead],
+        accounts: Optional[_TableRead],
+        business_units: Optional[_TableRead],
+        report: WorkbookIntegrityReport,
+    ) -> None:
+        if transactions is None:
+            return
+        account_index, account_aliases = self._reference_master_index(
+            accounts,
+            key_column="AccountCode",
+            active_column="Active",
+            alias_column="AliasList",
+        )
+        unit_index, _ = self._reference_master_index(
+            business_units,
+            key_column="BusinessUnit",
+            active_column="Active",
+        )
+        for row, row_idx in zip(transactions.rows, transactions.row_numbers):
+            status = self._clean(row.get("Status")).casefold()
+            historical = status in {"cleared", "reconciled", "void"}
+            transaction_type = self._clean(row.get("Type")).casefold()
+            transaction_class = self._clean(row.get("Class")).casefold()
+            self._check_transaction_reference(
+                transactions,
+                row,
+                row_idx,
+                "FromAccount",
+                account_index,
+                account_aliases,
+                report,
+                target="tblTransactionAccounts.AccountCode",
+                missing_code="missing_account_reference",
+                retired_code="retired_account_reference",
+                required=True,
+                historical=historical,
+            )
+            self._check_transaction_reference(
+                transactions,
+                row,
+                row_idx,
+                "ToAccount",
+                account_index,
+                account_aliases,
+                report,
+                target="tblTransactionAccounts.AccountCode",
+                missing_code="missing_account_reference",
+                retired_code="retired_account_reference",
+                required=transaction_type in {"transfer", "debt repayment"},
+                historical=historical,
+            )
+            self._check_transaction_reference(
+                transactions,
+                row,
+                row_idx,
+                "BusinessUnit",
+                unit_index,
+                {},
+                report,
+                target="tblTransactionBusinessUnits.BusinessUnit",
+                missing_code="missing_business_unit_reference",
+                retired_code="retired_business_unit_reference",
+                required=transaction_class == "business",
+                historical=historical,
+            )
+
+    def _reference_master_index(
+        self,
+        table_read: Optional[_TableRead],
+        *,
+        key_column: str,
+        active_column: str,
+        alias_column: str = "",
+    ) -> Tuple[Dict[str, Tuple[str, bool]], Dict[str, List[Tuple[str, bool]]]]:
+        exact: Dict[str, Tuple[str, bool]] = {}
+        aliases: Dict[str, List[Tuple[str, bool]]] = {}
+        if table_read is None:
+            return exact, aliases
+        for row in table_read.rows:
+            canonical = self._clean(row.get(key_column))
+            if not canonical:
+                continue
+            active = self._is_active_reference(row.get(active_column))
+            entry = (canonical, active)
+            exact[canonical.casefold()] = entry
+            if not alias_column:
+                continue
+            for alias in (
+                self._clean(row.get(alias_column))
+                .replace(";", "|")
+                .replace(",", "|")
+                .split("|")
+            ):
+                key = alias.strip().casefold()
+                if key:
+                    aliases.setdefault(key, []).append(entry)
+        return exact, aliases
+
+    def _check_transaction_reference(
+        self,
+        transactions: _TableRead,
+        row: Dict[str, Any],
+        row_idx: int,
+        column: str,
+        exact: Dict[str, Tuple[str, bool]],
+        aliases: Dict[str, List[Tuple[str, bool]]],
+        report: WorkbookIntegrityReport,
+        *,
+        target: str,
+        missing_code: str,
+        retired_code: str,
+        required: bool,
+        historical: bool,
+    ) -> None:
+        value = self._clean(row.get(column))
+        record_id = self._clean(row.get(transactions.primary_key))
+        if not value:
+            if required:
+                self._add(
+                    report,
+                    "error",
+                    "missing_required_reference",
+                    f"'{column}' is required for this transaction.",
+                    sheet=transactions.sheet,
+                    table=transactions.table,
+                    row=row_idx,
+                    column=column,
+                    record_id=record_id,
+                    reference_target=target,
+                    reference_state="blank_required",
+                )
+            return
+
+        key = value.casefold()
+        match = exact.get(key)
+        mapped_alias = False
+        if match is None and key in aliases:
+            unique = {entry[0].casefold(): entry for entry in aliases[key]}
+            if len(unique) == 1:
+                match = next(iter(unique.values()))
+                mapped_alias = True
+            else:
+                self._add(
+                    report,
+                    "error",
+                    "ambiguous_legacy_reference",
+                    f"The declared legacy mapping for '{column}' is ambiguous.",
+                    sheet=transactions.sheet,
+                    table=transactions.table,
+                    row=row_idx,
+                    column=column,
+                    value=self._reference_identifier(value),
+                    record_id=record_id,
+                    reference_target=target,
+                    reference_state="ambiguous_legacy_mapping",
+                )
+                return
+
+        if match is None:
+            self._add(
+                report,
+                "warning" if historical else "error",
+                missing_code,
+                f"The reference in '{column}' is not represented in its master table.",
+                sheet=transactions.sheet,
+                table=transactions.table,
+                row=row_idx,
+                column=column,
+                value=self._reference_identifier(value),
+                record_id=record_id,
+                reference_target=target,
+                reference_state=(
+                    "unmapped_historical_identifier" if historical else "broken_current_reference"
+                ),
+            )
+            return
+
+        _canonical, active = match
+        if not active and not historical:
+            self._add(
+                report,
+                "error",
+                retired_code,
+                f"The current transaction references a retired master row in '{column}'.",
+                sheet=transactions.sheet,
+                table=transactions.table,
+                row=row_idx,
+                column=column,
+                value=self._reference_identifier(value),
+                record_id=record_id,
+                reference_target=target,
+                reference_state="retired_current_reference",
+            )
+            return
+        if mapped_alias and not historical:
+            self._add(
+                report,
+                "error",
+                "noncanonical_current_reference",
+                f"The current transaction must store the canonical master key in '{column}'.",
+                sheet=transactions.sheet,
+                table=transactions.table,
+                row=row_idx,
+                column=column,
+                value=self._reference_identifier(value),
+                record_id=record_id,
+                reference_target=target,
+                reference_state="mapped_alias_on_current_record",
+            )
+
+    def _reference_identifier(self, value: Any) -> str:
+        text = self._clean(value).casefold()
+        if not text:
+            return ""
+        return f"REF-{hashlib.sha256(text.encode('utf-8')).hexdigest()[:10].upper()}"
+
+    def _record_identifier(self, value: Any) -> str:
+        text = self._clean(value).casefold()
+        if not text:
+            return ""
+        return f"RID-{hashlib.sha256(text.encode('utf-8')).hexdigest()[:10].upper()}"
+
+    def _is_active_reference(self, value: Any) -> bool:
+        if self._is_empty(value):
+            return True
+        return self._is_bool_int(value) and str(value).strip().casefold() not in {
+            "0",
+            "false",
+            "no",
+            "n",
+        }
 
     def _check_financial_totals(self, tables: Dict[str, _TableRead], report: WorkbookIntegrityReport) -> None:
         time_table = tables.get("tblTimeEntries")
@@ -771,6 +1041,9 @@ class WorkbookIntegrityService:
         row: Optional[int] = None,
         column: str = "",
         value: str = "",
+        record_id: str = "",
+        reference_target: str = "",
+        reference_state: str = "",
     ) -> None:
         report.issues.append(
             WorkbookIntegrityIssue(
@@ -782,6 +1055,9 @@ class WorkbookIntegrityService:
                 row=row,
                 column=column,
                 value=value,
+                record_id=record_id,
+                reference_target=reference_target,
+                reference_state=reference_state,
             )
         )
 

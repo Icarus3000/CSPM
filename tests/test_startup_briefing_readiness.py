@@ -206,7 +206,6 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("def show_first_frame(self) -> None:", main_py)
         self.assertIn("Native CS splash first frame primed", main_py)
         self.assertIn("custom_splash.show_first_frame()", main_py)
-        self.assertIn("leaving the splash at 0% forever", main_py)
         self.assertNotIn("custom_splash.anim_in.finished.connect", main_py)
         launch_block_start = main_py.index("if not is_tray_only:")
         tray_load_start = main_py.index("tray_url = QUrl.fromLocalFile", launch_block_start)
@@ -250,6 +249,7 @@ class TestStartupBriefingReadiness(unittest.TestCase):
             "bootstrap._preloadShellComponentDuringIsolatedBriefing(\"controller-readiness-changed\")",
             bootstrap_qml,
         )
+        self.assertIn("Component.Asynchronous", bootstrap_qml)
         self.assertIn(
             "Phase 1 snapshot complete; serializing hidden shell preload",
             bootstrap_qml,
@@ -298,6 +298,22 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("duration: 400", shell_qml)
         self.assertIn("function cancelAsyncStartupWork(reason)", main_content_qml)
         self.assertIn("active: !root.shutdownRequested", main_content_qml)
+
+    def test_native_splash_runs_the_authored_intro_before_sync_startup_work(self):
+        main_py = (ROOT_DIR / "src" / "python" / "main.py").read_text(encoding="utf-8")
+        show_start = main_py.index("    def show_first_frame(self) -> None:")
+        show_end = main_py.index("    def start_fade_out(self):", show_start)
+        show_first_frame = main_py[show_start:show_end]
+
+        self.assertIn("self._logo_intro_progress = 0.0", show_first_frame)
+        self.assertIn("self._intro_animation.start()", show_first_frame)
+        self.assertIn("Native CS splash content intro started", show_first_frame)
+        self.assertIn("intro_loop.exec()", show_first_frame)
+        self.assertIn("self.setWindowOpacity(1.0)", show_first_frame)
+        self.assertIn("_INTRO_DURATION_MS = 960", main_py)
+        self.assertIn("setEasingCurve(QEasingCurve.InOutCubic)", main_py)
+        self.assertIn("self.repaint()", main_py)
+        self.assertNotIn("QPropertyAnimation", show_first_frame)
 
 
 if __name__ == "__main__":

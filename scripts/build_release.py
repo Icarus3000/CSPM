@@ -143,7 +143,7 @@ def validate_templates(template_dir: Path, manifest_path: Path, allow_candidate:
                 raise Exception("missing_critical")
                 
             ct_data = zf.read("[Content_Types].xml")
-            if vba_policy == "required_governed":
+            if tmpl_path.suffix.lower() == ".xlsm":
                 if b"application/vnd.ms-excel.sheet.macroEnabled.main+xml" not in ct_data:
                     print(f"ERROR: Build blocked. Not a macro-enabled content type in {tmpl_path}")
                     raise Exception("not_macro_enabled")

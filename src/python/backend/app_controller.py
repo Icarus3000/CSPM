@@ -2269,6 +2269,82 @@ class AppController(QObject):
         )
         return focused
 
+    @Slot(result=bool)
+    def claimInitialMainWindowForeground(self) -> bool:
+        """Put the first revealed main window in front exactly once.
+
+        The temporary topmost promotion is removed immediately in the same
+        call. CSPM remains an ordinary non-topmost window afterward and never
+        reclaims focus if the user subsequently selects another application.
+        """
+
+        if getattr(self, "_initial_main_foreground_claimed", False):
+            return False
+
+        target = self._find_main_shell_window()
+        if target is None:
+            return False
+
+        self._initial_main_foreground_claimed = True
+        trace_start = time.perf_counter()
+        for method_name in ("show", "raise_", "requestActivate"):
+            try:
+                method = getattr(target, method_name, None)
+                if callable(method):
+                    method()
+            except Exception:
+                pass
+
+        claimed = False
+        if sys.platform.startswith("win"):
+            try:
+                hwnd_value = int(target.winId())
+                user32 = ctypes.windll.user32
+                hwnd_type = ctypes.c_void_p
+                user32.SetWindowPos.argtypes = [
+                    hwnd_type,
+                    hwnd_type,
+                    ctypes.c_int,
+                    ctypes.c_int,
+                    ctypes.c_int,
+                    ctypes.c_int,
+                    ctypes.c_uint,
+                ]
+                user32.SetWindowPos.restype = ctypes.c_int
+                user32.BringWindowToTop.argtypes = [hwnd_type]
+                user32.BringWindowToTop.restype = ctypes.c_int
+                user32.SetForegroundWindow.argtypes = [hwnd_type]
+                user32.SetForegroundWindow.restype = ctypes.c_int
+                user32.SetActiveWindow.argtypes = [hwnd_type]
+                user32.SetActiveWindow.restype = hwnd_type
+                user32.SetFocus.argtypes = [hwnd_type]
+                user32.SetFocus.restype = hwnd_type
+                user32.GetForegroundWindow.restype = hwnd_type
+
+                hwnd = hwnd_type(hwnd_value)
+                flags = 0x0001 | 0x0002 | 0x0040  # NOSIZE | NOMOVE | SHOWWINDOW
+                # Promote and demote in one event turn: this guarantees initial
+                # z-order without leaving an always-on-top style behind.
+                user32.SetWindowPos(hwnd, hwnd_type(-1), 0, 0, 0, 0, flags)
+                user32.SetWindowPos(hwnd, hwnd_type(-2), 0, 0, 0, 0, flags)
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+                user32.SetActiveWindow(hwnd)
+                user32.SetFocus(hwnd)
+                foreground = user32.GetForegroundWindow()
+                claimed = bool(foreground and int(foreground) == hwnd_value)
+            except Exception:
+                logging.getLogger("startup").exception(
+                    "Initial main-window foreground claim failed"
+                )
+        else:
+            claimed = True
+
+        self._trace_startup_backend_step(
+            f"claimInitialMainWindowForeground -> {claimed}", trace_start
+        )
+        return claimed
+
     @Slot(QObject, result=bool)
     def forceWindowForeground(self, target):
         return self._force_window_foreground(target, "forceWindowForeground")

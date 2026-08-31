@@ -138,6 +138,47 @@ def confidentiality_check(path: Path, live_hashes: set) -> dict:
     return result
 
 
+def validate_cspm_governance(path: Path) -> dict:
+    """Verify the generated workbook, spec, manifest, and empty-row policy."""
+
+    from generate_sanitized_templates import inspect_sanitized_workbook
+
+    result = {"ok": False, "details": []}
+    try:
+        inspection = inspect_sanitized_workbook(path)
+        spec_path = ROOT_DIR / "src" / "templates" / "CSPM.template-spec.json"
+        manifest_path = ROOT_DIR / "src" / "templates" / "CSPM.template-manifest.json"
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        actual_tables = {
+            name: {
+                "worksheet": details["worksheet"],
+                "columns": details["columns"],
+            }
+            for name, details in inspection["tables"].items()
+        }
+        if spec.get("tables") != actual_tables:
+            raise ValueError("CSPM template structure does not match its specification.")
+        if manifest.get("expected_worksheets") != inspection["worksheets"]:
+            raise ValueError("CSPM manifest worksheet inventory is stale.")
+        if manifest.get("expected_tables") != list(inspection["tables"]):
+            raise ValueError("CSPM manifest table inventory is stale.")
+        if manifest.get("table_columns") != {
+            name: details["columns"]
+            for name, details in inspection["tables"].items()
+        }:
+            raise ValueError("CSPM manifest column inventory is stale.")
+        if str(manifest.get("template_sha256", "")).upper() != sha256_file(path):
+            raise ValueError("CSPM manifest hash does not match the candidate.")
+        if inspection["confidentialRows"] != 0:
+            raise ValueError("CSPM candidate contains non-header table rows.")
+        result["ok"] = True
+        result["details"].append("Spec, manifest, package, and empty-row policy agree")
+    except Exception as exc:
+        result["details"].append(str(exc))
+    return result
+
+
 def print_candidate_summary(name: str, path: Path, summary: dict, conf: dict):
     """Display a candidate summary."""
     print(f"\n{'='*60}")
@@ -206,6 +247,10 @@ def main():
     cspm_path = ROOT_DIR / "src" / "templates" / "CSPM.xlsm"
     cspm_summary = structural_summary(cspm_path)
     cspm_conf = confidentiality_check(cspm_path, live_hashes)
+    cspm_governance = validate_cspm_governance(cspm_path)
+    if not cspm_governance["ok"]:
+        cspm_conf["safe"] = False
+    cspm_conf["details"].extend(cspm_governance["details"])
     print_candidate_summary("CSPM.xlsm Template", cspm_path, cspm_summary, cspm_conf)
 
     # ── Dockets Template ──
@@ -263,6 +308,16 @@ def main():
                 if tmpl["approved_filename"] == "CSPM.xlsm":
                     tmpl["human_approval_status"] = "APPROVED"
                     tmpl["sha256"] = current_hash
+            cspm_manifest_path = ROOT_DIR / "src" / "templates" / "CSPM.template-manifest.json"
+            cspm_manifest = json.loads(cspm_manifest_path.read_text(encoding="utf-8"))
+            cspm_manifest["approval_status"] = "APPROVED"
+            cspm_manifest["approver"] = cspm_approver
+            cspm_manifest["approval_date"] = timestamp
+            cspm_manifest["approval_note"] = "Approved via approve_phase9_candidates.py"
+            cspm_manifest_path.write_text(
+                json.dumps(cspm_manifest, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
             approval_record["approvals"].append(
                 {
                     "file": "CSPM.xlsm",

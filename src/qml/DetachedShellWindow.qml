@@ -103,6 +103,7 @@ Window {
     property real lastMinimizeTargetDistY: 0.0
     // Cross-monitor tray flight state
     property bool _crossMonitorTrayFlight: false
+    property bool _crossMonitorTrayFlightLaunched: false
     property real _trayTargetGlobalX: 0
     property real _trayTargetGlobalY: 0
     property real _windowCenterGlobalX: 0
@@ -329,22 +330,54 @@ Window {
     property int restoreTargetFinalY: 0
     property int restoreTargetFinalW: 1
     property int restoreTargetFinalH: 1
-    // Professional maximize/restore uses direct GPU hardware-accelerated texture transforms
-    // on contentLayer with zero-latency cubic easing.
-    property bool professionalMaximizeSnapshotCapturePending: false
-    property bool professionalMaximizeSnapshotActive: false
-    property bool professionalMaximizeSnapshotCoverReady: false
-    property string professionalMaximizeSnapshotUrl: ""
-    property int professionalMaximizeSnapshotSequence: 0
-    property var professionalMaximizeSnapshotContext: null
-    property real professionalMaximizeSnapshotRenderX: 0.0
-    property real professionalMaximizeSnapshotRenderY: 0.0
-    property real professionalMaximizeSnapshotRenderW: 1.0
-    property real professionalMaximizeSnapshotRenderH: 1.0
-    property real professionalMaximizeSnapshotTargetX: 0.0
-    property real professionalMaximizeSnapshotTargetY: 0.0
-    property real professionalMaximizeSnapshotTargetW: 1.0
-    property real professionalMaximizeSnapshotTargetH: 1.0
+    // Professional maximize/restore has exactly one visual owner: a live
+    // scene-graph texture of contentLayer.  The native host expands only once
+    // to make room for that texture; the texture itself owns every visible
+    // intermediate pixel until the final geometry is committed.
+    property bool professionalWindowMotionActive: false
+    property string professionalWindowMotionKind: ""
+    property real professionalWindowMotionProgress: 0.0
+    property real professionalWindowMotionSourceX: 0.0
+    property real professionalWindowMotionSourceY: 0.0
+    property real professionalWindowMotionSourceW: 1.0
+    property real professionalWindowMotionSourceH: 1.0
+    property real professionalWindowMotionTargetX: 0.0
+    property real professionalWindowMotionTargetY: 0.0
+    property real professionalWindowMotionTargetW: 1.0
+    property real professionalWindowMotionTargetH: 1.0
+    property real professionalWindowMotionSourceHostX: 0.0
+    property real professionalWindowMotionSourceHostY: 0.0
+    property real professionalWindowMotionSourceHostW: 1.0
+    property real professionalWindowMotionSourceHostH: 1.0
+    property real professionalWindowMotionTargetHostX: 0.0
+    property real professionalWindowMotionTargetHostY: 0.0
+    property real professionalWindowMotionTargetHostW: 1.0
+    property real professionalWindowMotionTargetHostH: 1.0
+    property real professionalWindowMotionRenderX: professionalWindowMotionSourceX
+        + ((professionalWindowMotionTargetX - professionalWindowMotionSourceX)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionRenderY: professionalWindowMotionSourceY
+        + ((professionalWindowMotionTargetY - professionalWindowMotionSourceY)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionRenderW: professionalWindowMotionSourceW
+        + ((professionalWindowMotionTargetW - professionalWindowMotionSourceW)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionRenderH: professionalWindowMotionSourceH
+        + ((professionalWindowMotionTargetH - professionalWindowMotionSourceH)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionRenderHostX: professionalWindowMotionSourceHostX
+        + ((professionalWindowMotionTargetHostX - professionalWindowMotionSourceHostX)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionRenderHostY: professionalWindowMotionSourceHostY
+        + ((professionalWindowMotionTargetHostY - professionalWindowMotionSourceHostY)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionRenderHostW: professionalWindowMotionSourceHostW
+        + ((professionalWindowMotionTargetHostW - professionalWindowMotionSourceHostW)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionRenderHostH: professionalWindowMotionSourceHostH
+        + ((professionalWindowMotionTargetHostH - professionalWindowMotionSourceHostH)
+            * professionalWindowMotionProgress)
+    property real professionalWindowMotionStartedMs: 0.0
     property real dragFxScaleX: 1.0
     property real dragFxScaleY: 1.0
     property real dragFxTransX: 0.0
@@ -578,10 +611,21 @@ Window {
     // During a normal settled state, the native window is only as large as the
     // visible canvas.  A monitor-sized transparent host blocks every other
     // application on that monitor even when CSPM itself looks small.
-    width: hostW
-    height: hostH
-    x: hostX
-    y: hostY
+    // Professional maximize/restore moves the real transparent host and its
+    // frozen content texture from the same timeline. There is no monitor-sized
+    // pre-stage and no later native maximize transaction.
+    width: mainWin.professionalWindowMotionActive
+        ? Math.max(1, Math.round(mainWin.professionalWindowMotionRenderHostW))
+        : hostW
+    height: mainWin.professionalWindowMotionActive
+        ? Math.max(1, Math.round(mainWin.professionalWindowMotionRenderHostH))
+        : hostH
+    x: mainWin.professionalWindowMotionActive
+        ? Math.round(mainWin.professionalWindowMotionRenderHostX)
+        : hostX
+    y: mainWin.professionalWindowMotionActive
+        ? Math.round(mainWin.professionalWindowMotionRenderHostY)
+        : hostY
     onHostXChanged: {
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
@@ -3238,26 +3282,17 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function stopMaximizeFxAnimations() {
         maximizeAnimInProgress = false;
-        professionalMaximizeSnapshotCapturePending = false;
-        professionalMaximizeSnapshotActive = false;
-        professionalMaximizeSnapshotCoverReady = false;
+        professionalWindowMotionActive = false;
+        professionalWindowMotionKind = "";
+        professionalWindowMotionProgress = 0.0;
         if (maximizeFxAnimation.running) {
             maximizeFxAnimation.stop();
         }
         if (maximizeRestoreFxAnimation.running) {
             maximizeRestoreFxAnimation.stop();
         }
-        if (professionalMaximizeFxAnimation.running) {
-            professionalMaximizeFxAnimation.stop();
-        }
-        if (professionalRestoreMaxFxAnimation.running) {
-            professionalRestoreMaxFxAnimation.stop();
-        }
-        if (professionalMaximizeLiveFallbackAnimation.running) {
-            professionalMaximizeLiveFallbackAnimation.stop();
-        }
-        if (professionalRestoreMaxLiveFallbackAnimation.running) {
-            professionalRestoreMaxLiveFallbackAnimation.stop();
+        if (professionalWindowMotionAnimation.running) {
+            professionalWindowMotionAnimation.stop();
         }
         resetMaximizeFxState();
     }
@@ -3265,13 +3300,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     function maximizeFxSequenceRunning() {
         return maximizeFxAnimation.running
             || maximizeRestoreFxAnimation.running
-            || professionalMaximizeFxAnimation.running
-            || professionalRestoreMaxFxAnimation.running
-            || professionalMaximizeLiveFallbackAnimation.running
-            || professionalRestoreMaxLiveFallbackAnimation.running;
+            || professionalWindowMotionAnimation.running;
     }
 
     function finishMaximizeFxSequence(kind) {
+        if (professionalWindowMotionActive) {
+            finishProfessionalWindowMotion();
+            return;
+        }
         if (!maximizeAnimInProgress || maximizeFxSequenceRunning()) return;
         resetMaximizeFxState();
         maximizeAnimInProgress = false;
@@ -3293,170 +3329,123 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
     }
 
-    function beginProfessionalMaximizeSnapshotCapture(kind, context) {
-        if (!context || !contentLayer || !contentLayer.grabToImage) {
-            startProfessionalMaximizeSnapshotMotion(context, false);
-            return true;
+    function professionalMotionTargetHostRect(kind, targetRect) {
+        var targetW = Math.max(1, Math.round(targetRect.w));
+        var targetH = Math.max(1, Math.round(targetRect.h));
+        var targetPad = 0;
+        if (kind === "restore") {
+            var refRect = activeVisibleRectForMaximize();
+            var refW = refRect ? Math.max(1, Math.round(refRect.w)) : targetW;
+            var refH = refRect ? Math.max(1, Math.round(refRect.h)) : targetH;
+            var desiredPad = isFinite(glowPadding) && glowPadding >= 0
+                ? Math.round(glowPadding)
+                : settledPaddingPx(targetW, targetH);
+            var maxPadX = Math.max(0, Math.floor((refW - targetW) / 2));
+            var maxPadY = Math.max(0, Math.floor((refH - targetH) / 2));
+            targetPad = Math.max(0, Math.min(desiredPad, Math.min(maxPadX, maxPadY)));
         }
+        return {
+            "x": Math.round(targetRect.x - targetPad),
+            "y": Math.round(targetRect.y - targetPad),
+            "w": Math.max(1, Math.round(targetW + (targetPad * 2))),
+            "h": Math.max(1, Math.round(targetH + (targetPad * 2)))
+        };
+    }
 
-        var sequence = professionalMaximizeSnapshotSequence + 1;
-        professionalMaximizeSnapshotSequence = sequence;
-        professionalMaximizeSnapshotCapturePending = true;
-        professionalMaximizeSnapshotActive = false;
-        professionalMaximizeSnapshotCoverReady = false;
-        professionalMaximizeSnapshotUrl = "";
-        professionalMaximizeSnapshotContext = context;
+    function beginProfessionalWindowMotion(kind, sourceRect, targetRect, targetScreenOverride) {
+        if (professionalWindowMotionActive || !sourceRect || !targetRect) return false;
+        var sourceW = Math.max(1, Math.round(sourceRect.w));
+        var sourceH = Math.max(1, Math.round(sourceRect.h));
+        var targetW = Math.max(1, Math.round(targetRect.w));
+        var targetH = Math.max(1, Math.round(targetRect.h));
+        if (sourceW <= 0 || sourceH <= 0 || targetW <= 0 || targetH <= 0) return false;
+
+        // Keep final geometry and the live component tree at the source size
+        // throughout the motion.  This is what prevents layout reflow and a
+        // native resize from competing with the compositor animation.
+        geometryTransitionSuppressed = true;
+        professionalWindowMotionKind = kind;
+        professionalWindowMotionProgress = 0.0;
+        professionalWindowMotionSourceX = Math.round(sourceRect.x);
+        professionalWindowMotionSourceY = Math.round(sourceRect.y);
+        professionalWindowMotionSourceW = sourceW;
+        professionalWindowMotionSourceH = sourceH;
+        professionalWindowMotionTargetX = Math.round(targetRect.x);
+        professionalWindowMotionTargetY = Math.round(targetRect.y);
+        professionalWindowMotionTargetW = targetW;
+        professionalWindowMotionTargetH = targetH;
+        professionalWindowMotionSourceHostX = Math.round(mainWin.x);
+        professionalWindowMotionSourceHostY = Math.round(mainWin.y);
+        professionalWindowMotionSourceHostW = Math.max(1, Math.round(mainWin.width));
+        professionalWindowMotionSourceHostH = Math.max(1, Math.round(mainWin.height));
+        var targetHost = professionalMotionTargetHostRect(kind, targetRect);
+        professionalWindowMotionTargetHostX = targetHost.x;
+        professionalWindowMotionTargetHostY = targetHost.y;
+        professionalWindowMotionTargetHostW = targetHost.w;
+        professionalWindowMotionTargetHostH = targetHost.h;
+        professionalWindowMotionActive = true;
+        professionalWindowMotionStartedMs = Date.now();
         maximizeAnimInProgress = true;
 
-        context.kind = kind;
-        context.sourceX = Math.round(finalX);
-        context.sourceY = Math.round(finalY);
-        context.sourceW = Math.max(1, Math.round(finalW));
-        context.sourceH = Math.max(1, Math.round(finalH));
-        professionalMaximizeSnapshotRenderX = context.sourceX - mainWin.x;
-        professionalMaximizeSnapshotRenderY = context.sourceY - mainWin.y;
-        professionalMaximizeSnapshotRenderW = context.sourceW;
-        professionalMaximizeSnapshotRenderH = context.sourceH;
-
-        phaseLog(kind === "restore" ? "RESTORE-MAX" : "MAXIMIZE",
-            "Frozen-frame capture requested from "
-            + fmtRect(context.sourceX, context.sourceY, context.sourceW, context.sourceH));
-        professionalMaximizeSnapshotTimer.sequence = sequence;
-        professionalMaximizeSnapshotTimer.restart();
-        var requested = false;
-        try {
-            requested = contentLayer.grabToImage(function(result) {
-                var snapshotUrl = (result && result.url) ? String(result.url) : "";
-                mainWin.finishProfessionalMaximizeSnapshotCapture(snapshotUrl, sequence);
-            }, Qt.size(context.sourceW, context.sourceH));
-        } catch (eCapture) {
-            lagLog("Professional maximize frozen-frame capture failed=" + eCapture);
-            requested = false;
-        }
-        if (!requested) {
-            finishProfessionalMaximizeSnapshotCapture("", sequence);
-        }
-        return true;
-    }
-
-    function finishProfessionalMaximizeSnapshotCapture(snapshotUrl, sequence) {
-        if (sequence !== professionalMaximizeSnapshotSequence
-                || !professionalMaximizeSnapshotCapturePending) return;
-        var context = professionalMaximizeSnapshotContext;
-        if (!snapshotUrl || snapshotUrl.length === 0) {
-            professionalMaximizeSnapshotCapturePending = false;
-            professionalMaximizeSnapshotTimer.stop();
-            startProfessionalMaximizeSnapshotMotion(context, false);
-            return;
-        }
-
-        // Keep the captured pixels exactly on top of their live source before
-        // changing native geometry. The image status callback starts movement
-        // only after that source frame is ready to render.
-        professionalMaximizeSnapshotUrl = snapshotUrl;
-        professionalMaximizeSnapshotActive = true;
-        professionalMaximizeSnapshotCoverReady = false;
-        professionalMaximizeSnapshotRenderX = context.sourceX - mainWin.x;
-        professionalMaximizeSnapshotRenderY = context.sourceY - mainWin.y;
-        professionalMaximizeSnapshotRenderW = context.sourceW;
-        professionalMaximizeSnapshotRenderH = context.sourceH;
-        Qt.callLater(function() {
-            mainWin.tryStartProfessionalMaximizeSnapshotMotion(sequence);
-        });
-    }
-
-    function tryStartProfessionalMaximizeSnapshotMotion(sequence) {
-        if (sequence !== professionalMaximizeSnapshotSequence
-                || !professionalMaximizeSnapshotCapturePending) return;
-        if (professionalMaximizeSnapshotImage.status === Image.Ready) {
-            professionalMaximizeSnapshotCoverReady = true;
-            professionalMaximizeSnapshotCapturePending = false;
-            professionalMaximizeSnapshotTimer.stop();
-            startProfessionalMaximizeSnapshotMotion(professionalMaximizeSnapshotContext, true);
-        } else if (professionalMaximizeSnapshotImage.status === Image.Error) {
-            professionalMaximizeSnapshotCapturePending = false;
-            professionalMaximizeSnapshotTimer.stop();
-            professionalMaximizeSnapshotActive = false;
-            professionalMaximizeSnapshotCoverReady = false;
-            professionalMaximizeSnapshotUrl = "";
-            startProfessionalMaximizeSnapshotMotion(professionalMaximizeSnapshotContext, false);
-        }
-    }
-
-    function startProfessionalMaximizeSnapshotMotion(context, useFrozenSnapshot) {
-        if (!context || !maximizeAnimInProgress) return false;
-        var restoring = context.kind === "restore";
-        geometryTransitionSuppressed = true;
-        uiMaximized = !restoring;
-        finalX = Math.round(context.targetX);
-        finalY = Math.round(context.targetY);
-        finalW = Math.max(1, Math.round(context.targetW));
-        finalH = Math.max(1, Math.round(context.targetH));
-        if (context.targetScreen) {
-            adoptTargetScreen(context.targetScreen, true);
+        if (targetScreenOverride) {
+            adoptTargetScreen(targetScreenOverride, true);
         } else {
             updateTargetScreenFromFinalCenter();
         }
         refreshActiveVisibleRect();
-        // `maximizeAnimInProgress` retains the full monitor envelope for both
-        // directions, so a restore snapshot can visibly contract before the
-        // native host becomes compact again.
-        applyHostEnvelopeForTarget();
-        updateCanvasGeometry();
-        if (restoring) {
-            maximizedOwnerScreen = null;
+        var tag = kind === "restore" ? "RESTORE-MAX" : "MAXIMIZE";
+        if (kind === "restore") {
             restoreMaxMonitorFrame = 0;
         } else {
             maximizeMonitorFrame = 0;
         }
-
-        seedMaximizeFxFromSourceRect(context.sourceX, context.sourceY,
-            context.sourceW, context.sourceH);
-        if (useFrozenSnapshot) {
-            professionalMaximizeSnapshotRenderX = context.sourceX - mainWin.x;
-            professionalMaximizeSnapshotRenderY = context.sourceY - mainWin.y;
-            professionalMaximizeSnapshotRenderW = context.sourceW;
-            professionalMaximizeSnapshotRenderH = context.sourceH;
-            professionalMaximizeSnapshotTargetX = finalX - mainWin.x;
-            professionalMaximizeSnapshotTargetY = finalY - mainWin.y;
-            professionalMaximizeSnapshotTargetW = finalW;
-            professionalMaximizeSnapshotTargetH = finalH;
-            phaseLog(restoring ? "RESTORE-MAX" : "MAXIMIZE",
-                "Frozen-frame GPU transform " + fmtRect(context.sourceX, context.sourceY,
-                    context.sourceW, context.sourceH) + " -> "
-                + fmtRect(finalX, finalY, finalW, finalH));
-            if (restoring) {
-                professionalRestoreMaxFxAnimation.restart();
-            } else {
-                professionalMaximizeFxAnimation.restart();
-            }
-        } else if (restoring) {
-            professionalRestoreMaxLiveFallbackAnimation.restart();
-        } else {
-            professionalMaximizeLiveFallbackAnimation.restart();
-        }
-        Qt.callLater(function() {
-            mainWin.geometryTransitionSuppressed = false;
-        });
+        phaseLog(tag, "Professional compositor motion prepared "
+            + fmtRect(professionalWindowMotionSourceX, professionalWindowMotionSourceY,
+                professionalWindowMotionSourceW, professionalWindowMotionSourceH)
+            + " -> " + fmtRect(professionalWindowMotionTargetX, professionalWindowMotionTargetY,
+                professionalWindowMotionTargetW, professionalWindowMotionTargetH));
+        lagLog("[" + tag + "] one timeline owns host bounds and frozen content texture");
+        professionalWindowMotionAnimation.restart();
         return true;
     }
 
-    Timer {
-        id: professionalMaximizeSnapshotTimer
-        property int sequence: -1
-        interval: 1200
-        repeat: false
-        onTriggered: {
-            if (mainWin.professionalMaximizeSnapshotCapturePending
-                    && sequence === mainWin.professionalMaximizeSnapshotSequence) {
-                mainWin.lagLog("Professional maximize frozen-frame capture timed out; using live transform fallback");
-                mainWin.professionalMaximizeSnapshotCapturePending = false;
-                mainWin.professionalMaximizeSnapshotActive = false;
-                mainWin.professionalMaximizeSnapshotCoverReady = false;
-                mainWin.professionalMaximizeSnapshotUrl = "";
-                mainWin.startProfessionalMaximizeSnapshotMotion(
-                    mainWin.professionalMaximizeSnapshotContext, false);
-            }
+    function finishProfessionalWindowMotion() {
+        if (!professionalWindowMotionActive || professionalWindowMotionAnimation.running) return;
+        var kind = professionalWindowMotionKind;
+        var restoring = kind === "restore";
+        var tag = restoring ? "RESTORE-MAX" : "MAXIMIZE";
+        professionalWindowMotionProgress = 1.0;
+
+        // Commit only after the texture has reached exactly the final visual
+        // rectangle.  All of these writes share one QML turn, avoiding an
+        // intermediate frame with target layout plus source transform.
+        finalX = Math.round(professionalWindowMotionTargetX);
+        finalY = Math.round(professionalWindowMotionTargetY);
+        finalW = Math.max(1, Math.round(professionalWindowMotionTargetW));
+        finalH = Math.max(1, Math.round(professionalWindowMotionTargetH));
+        uiMaximized = !restoring;
+        if (restoring) {
+            maximizedOwnerScreen = null;
+        }
+        hostX = Math.round(professionalWindowMotionTargetHostX);
+        hostY = Math.round(professionalWindowMotionTargetHostY);
+        hostW = Math.max(1, Math.round(professionalWindowMotionTargetHostW));
+        hostH = Math.max(1, Math.round(professionalWindowMotionTargetHostH));
+        updateCanvasGeometry();
+        professionalWindowMotionActive = false;
+        professionalWindowMotionKind = "";
+        maximizeAnimInProgress = false;
+        resetMaximizeFxState();
+        geometryTransitionSuppressed = false;
+        phaseLog(tag, "Professional compositor motion settled in "
+            + Math.max(0, Math.round(Date.now() - professionalWindowMotionStartedMs)) + " ms");
+        logGreenFrameGeometry(tag, "Professional compositor settled geometry");
+        if (!mainWin.detachedMode) {
+            persistMainWindowLayout();
+        }
+        if (sfxBusRef && sfxBusRef.playWindowSettle) {
+            sfxBusRef.playWindowSettle(restoring ? "restore" : "maximize",
+                restoring ? 0.66 : 0.70);
         }
     }
 
@@ -4527,6 +4516,13 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         return (mainWin.activeVisibleRect.y + (mainWin.activeVisibleRect.h / 2.0)) - mainWin.finalY
     }
 
+    function showProfessionalWindowAtRequestedState() {
+        // CSPM owns maximized geometry in its existing model. Keeping the
+        // QWindow in ordinary Windowed visibility also preserves the authored
+        // minimize/tray restore choreography.
+        mainWin.show();
+    }
+
     function startProfessionalLaunchNow() {
         perfStart("window.transition.open", "detached=" + detachedMode + " phase=" + animationPhase + " style=Professional");
         setStartupPhase("professional-open", "startProfessionalLaunchNow");
@@ -4576,7 +4572,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.startupCinematicBloomActive = true;
         mainWin.opacity = mainWin.startupCinematicBloomPrestageOnly ? 0.0 : 1.0;
         if (!mainWin.visible) {
-            mainWin.show();
+            mainWin.showProfessionalWindowAtRequestedState();
             mainWin.raise();
             mainWin.forceLaunchFocus();
         } else if (!mainWin.startupCinematicBloomPrestageOnly) {
@@ -6275,7 +6271,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function reassertHostWindowGeometry(reasonTag) {
-        if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize) return false;
+        if (animationPhase !== "settled" || isClosing || isMinimizing
+                || isRestoringFromMinimize || maximizeAnimInProgress) return false;
         if (userMoveInProgress || userResizeInProgress || systemMoveInProgress || dragFinalizePending || dragStrategy !== "none") return false;
         if (!hostWindowOutOfSync(1)) return false;
 
@@ -6300,10 +6297,26 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
         // Re-install explicit bindings in case platform-side geometry writes detached
         // x/y/width/height from their host model expressions.
-        mainWin.x = Qt.binding(function() { return mainWin.hostX; });
-        mainWin.y = Qt.binding(function() { return mainWin.hostY; });
-        mainWin.width = Qt.binding(function() { return mainWin.hostW; });
-        mainWin.height = Qt.binding(function() { return mainWin.hostH; });
+        mainWin.x = Qt.binding(function() {
+            return mainWin.professionalWindowMotionActive
+                ? Math.round(mainWin.professionalWindowMotionRenderHostX)
+                : mainWin.hostX;
+        });
+        mainWin.y = Qt.binding(function() {
+            return mainWin.professionalWindowMotionActive
+                ? Math.round(mainWin.professionalWindowMotionRenderHostY)
+                : mainWin.hostY;
+        });
+        mainWin.width = Qt.binding(function() {
+            return mainWin.professionalWindowMotionActive
+                ? Math.max(1, Math.round(mainWin.professionalWindowMotionRenderHostW))
+                : mainWin.hostW;
+        });
+        mainWin.height = Qt.binding(function() {
+            return mainWin.professionalWindowMotionActive
+                ? Math.max(1, Math.round(mainWin.professionalWindowMotionRenderHostH))
+                : mainWin.hostH;
+        });
 
         geometryTransitionSuppressed = prevGeomSuppressed;
         var driftAfter = hostWindowGeometryDrift();
@@ -7285,6 +7298,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             sfxBus.playWindowDeform(0.74);
         }
 
+        if (appStyle === "Professional") {
+            return beginProfessionalWindowMotion("maximize", {
+                    "x": sourceX, "y": sourceY, "w": sourceW, "h": sourceH
+                }, {
+                    "x": targetX, "y": targetY, "w": targetW, "h": targetH
+                }, commandScreen);
+        }
+
         maximizeStartFinalX = sourceX;
         maximizeStartFinalY = sourceY;
         maximizeStartFinalW = sourceW;
@@ -7323,12 +7344,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         maximizeFxTransY = maximizeFxStartTransY;
         maximizeFxRotate = 0.0;
 
-        if (appStyle !== "Professional") {
-            seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
-            maximizeFxAnimation.restart();
-        } else {
-            professionalMaximizeFxAnimation.restart();
-        }
+        seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
+        maximizeFxAnimation.restart();
 
         Qt.callLater(function() {
             mainWin.geometryTransitionSuppressed = false;
@@ -7494,6 +7511,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
         refreshActiveVisibleRect();
 
+        if (appStyle === "Professional") {
+            return beginProfessionalWindowMotion("restore", {
+                    "x": sourceX, "y": sourceY, "w": sourceW, "h": sourceH
+                }, {
+                    "x": nextX, "y": nextY, "w": nextW, "h": nextH
+                }, restoreScreen);
+        }
+
         resetMaximizeFxState();
         geometryTransitionSuppressed = true;
 
@@ -7545,19 +7570,15 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         contentLocalX = 0;
         contentLocalY = 0;
 
-        if (appStyle !== "Professional") {
-            finalX = nextX;
-            finalY = nextY;
-            finalW = nextW;
-            finalH = nextH;
-            uiMaximized = false;
-            applyHostEnvelopeForTarget();
-            updateCanvasGeometry();
-            seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
-            maximizeRestoreFxAnimation.restart();
-        } else {
-            professionalRestoreMaxFxAnimation.restart();
-        }
+        finalX = nextX;
+        finalY = nextY;
+        finalW = nextW;
+        finalH = nextH;
+        uiMaximized = false;
+        applyHostEnvelopeForTarget();
+        updateCanvasGeometry();
+        seedMaximizeFxFromSourceRect(sourceX, sourceY, sourceW, sourceH);
+        maximizeRestoreFxAnimation.restart();
 
         Qt.callLater(function() {
             mainWin.geometryTransitionSuppressed = false;
@@ -7627,7 +7648,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (uiMaximized) {
             phaseLog("RESTORE-MAX", "Toggle requested -> restore from maximized");
             var restored = restoreFromMaximized(null, false);
-            if (restored && !mainWin.detachedMode) {
+            if (restored && !mainWin.detachedMode && mainWin.appStyle !== "Professional") {
                 persistMainWindowLayout();
             }
             return restored;
@@ -7638,7 +7659,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // screen for both the saved normal rectangle and the maximized target.
         rememberRestoreGeometry(commandScreen);
         var maximized = maximizeWindowToVisibleRect(commandScreen);
-        if (maximized && !mainWin.detachedMode) {
+        if (maximized && !mainWin.detachedMode && mainWin.appStyle !== "Professional") {
             persistMainWindowLayout();
         }
         return maximized;
@@ -8193,6 +8214,28 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             payload.heightPct = Math.max(0, Math.min(1, mainWin.finalH / uh));
             payload.centerXPct = Math.max(0, Math.min(1, ((mainWin.finalX + (mainWin.finalW / 2.0)) - ux) / uw));
             payload.centerYPct = Math.max(0, Math.min(1, ((mainWin.finalY + (mainWin.finalH / 2.0)) - uy) / uh));
+        } else if (mainWin.restoreGeometryValid) {
+            // Match Source's getNormalBounds() persistence: maximizing must not
+            // discard the native window's usable normal rectangle.
+            var restoreUw = Math.max(1, Math.round(mainWin.usableW));
+            var restoreUh = Math.max(1, Math.round(mainWin.usableH));
+            var restoreUx = Math.round(mainWin.usableX);
+            var restoreUy = Math.round(mainWin.usableY);
+            payload.hasExactRect = true;
+            payload.x = Math.round(mainWin.restoreFinalX);
+            payload.y = Math.round(mainWin.restoreFinalY);
+            payload.width = Math.max(1, Math.round(mainWin.restoreFinalW));
+            payload.height = Math.max(1, Math.round(mainWin.restoreFinalH));
+            payload.workAreaX = restoreUx;
+            payload.workAreaY = restoreUy;
+            payload.workAreaWidth = restoreUw;
+            payload.workAreaHeight = restoreUh;
+            payload.widthPct = Math.max(0, Math.min(1, mainWin.restoreFinalW / restoreUw));
+            payload.heightPct = Math.max(0, Math.min(1, mainWin.restoreFinalH / restoreUh));
+            payload.centerXPct = Math.max(0, Math.min(1,
+                ((mainWin.restoreFinalX + (mainWin.restoreFinalW / 2.0)) - restoreUx) / restoreUw));
+            payload.centerYPct = Math.max(0, Math.min(1,
+                ((mainWin.restoreFinalY + (mainWin.restoreFinalH / 2.0)) - restoreUy) / restoreUh));
         }
         try {
             return !!mainWin.appRef.saveMainWindowLayout(payload);
@@ -8210,9 +8253,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             return null;
         }
         if (!saved || !saved.ok) return null;
-        if (saved.maximized) {
-            return { "maximized": true };
-        }
+        var savedMaximized = saved.maximized === true;
 
         var exactWorkAreaMatches = saved.hasExactRect === true
             && Number(saved.workAreaX) === ux
@@ -8230,13 +8271,18 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 && exactX >= ux && (exactX + exactW) <= (ux + uw)
                 && exactY >= uy && (exactY + exactH) <= (uy + uh);
             if (exactFitsWorkArea) {
+                if (savedMaximized) {
+                    return { "maximized": true, "x": exactX, "y": exactY, "w": exactW, "h": exactH };
+                }
                 return { "maximized": false, "x": exactX, "y": exactY, "w": exactW, "h": exactH };
             }
         }
 
         var widthPct = Number(saved.widthPct || 0);
         var heightPct = Number(saved.heightPct || 0);
-        if (!(widthPct > 0.05 && heightPct > 0.05)) return null;
+        if (!(widthPct > 0.05 && heightPct > 0.05)) {
+            return savedMaximized ? { "maximized": true } : null;
+        }
 
         var w = Math.round(clampNumber(uw * widthPct, minW, Math.min(maxW, uw)));
         var h = Math.round(clampNumber(uh * heightPct, minH, Math.min(maxH, uh)));
@@ -8246,7 +8292,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var y = Math.round(cy - (h / 2.0));
         x = Math.round(clampNumber(x, ux, ux + uw - w));
         y = Math.round(clampNumber(y, uy, uy + uh - h));
-        return { "maximized": false, "x": x, "y": y, "w": w, "h": h };
+        return { "maximized": savedMaximized, "x": x, "y": y, "w": w, "h": h };
     }
 
     function applyGeometryToTargetScreen(showWhenConfigured) {
@@ -8346,6 +8392,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (!mainWin.detachedMode) {
             persistedRect = resolvePersistedMainWindowRect(ux, uy, uw, uh, minW, maxW, minH, maxH);
             if (persistedRect && persistedRect.maximized) {
+                if (typeof persistedRect.x === "number" && typeof persistedRect.y === "number"
+                    && typeof persistedRect.w === "number" && typeof persistedRect.h === "number") {
+                    restoreFinalX = Math.round(persistedRect.x);
+                    restoreFinalY = Math.round(persistedRect.y);
+                    restoreFinalW = Math.max(1, Math.round(persistedRect.w));
+                    restoreFinalH = Math.max(1, Math.round(persistedRect.h));
+                    restoreGeometryValid = true;
+                }
                 uiMaximized = true;
                 finalX = Math.round(ux);
                 finalY = Math.round(uy);
@@ -8966,75 +9020,26 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
     }
 
-    // Professional maximize/restore uses direct GPU hardware-accelerated texture transforms
-    // on contentLayer with zero-latency cubic easing.
-    ParallelAnimation {
-        id: professionalMaximizeFxAnimation
-        running: false
-
-        NumberAnimation { target: mainWin; property: "maximizeRenderX"; from: mainWin.maximizeStartFinalX; to: mainWin.maximizeTargetFinalX; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeRenderY"; from: mainWin.maximizeStartFinalY; to: mainWin.maximizeTargetFinalY; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeRenderW"; from: mainWin.maximizeStartFinalW; to: mainWin.maximizeTargetFinalW; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeRenderH"; from: mainWin.maximizeStartFinalH; to: mainWin.maximizeTargetFinalH; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleX"; from: mainWin.maximizeFxStartScaleX; to: 1.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleY"; from: mainWin.maximizeFxStartScaleY; to: 1.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransX"; from: mainWin.maximizeFxStartTransX; to: 0.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransY"; from: mainWin.maximizeFxStartTransY; to: 0.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-
+    // One scalar timeline drives both the real host bounds and the frozen
+    // content texture. They advance together, so no second geometry owner can
+    // produce a staged frame or post-animation catch-up.
+    NumberAnimation {
+        id: professionalWindowMotionAnimation
+        target: mainWin
+        property: "professionalWindowMotionProgress"
+        from: 0.0
+        to: 1.0
+        duration: mainWin.lowPerformanceMode ? 180 : 260
+        easing.type: Easing.InOutCubic
         onRunningChanged: {
             if (running) {
-                mainWin.phaseLog("MAXIMIZE", "Professional GPU transform start");
-                mainWin.logGreenFrameGeometry("MAXIMIZE", "Professional GPU transform start geometry");
+                var tag = mainWin.professionalWindowMotionKind === "restore"
+                    ? "RESTORE-MAX" : "MAXIMIZE";
+                mainWin.phaseLog(tag, "Professional one-owner texture motion started");
+                mainWin.logGreenFrameGeometry(tag, "Professional texture motion start geometry");
+            } else {
+                mainWin.finishProfessionalWindowMotion();
             }
-            if (!running) mainWin.finishMaximizeFxSequence("maximize");
-        }
-    }
-
-    ParallelAnimation {
-        id: professionalRestoreMaxFxAnimation
-        running: false
-
-        NumberAnimation { target: mainWin; property: "maximizeRenderX"; from: mainWin.maximizeStartFinalX; to: mainWin.maximizeTargetFinalX; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeRenderY"; from: mainWin.maximizeStartFinalY; to: mainWin.maximizeTargetFinalY; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeRenderW"; from: mainWin.maximizeStartFinalW; to: mainWin.maximizeTargetFinalW; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeRenderH"; from: mainWin.maximizeStartFinalH; to: mainWin.maximizeTargetFinalH; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleX"; from: 1.0; to: mainWin.maximizeFxTargetScaleX; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleY"; from: 1.0; to: mainWin.maximizeFxTargetScaleY; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransX"; from: 0.0; to: mainWin.maximizeFxTargetTransX; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransY"; from: 0.0; to: mainWin.maximizeFxTargetTransY; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-
-        onRunningChanged: {
-            if (running) {
-                mainWin.phaseLog("RESTORE-MAX", "Professional GPU transform start");
-                mainWin.logGreenFrameGeometry("RESTORE-MAX", "Professional GPU transform start geometry");
-            }
-            if (!running) mainWin.finishMaximizeFxSequence("restore");
-        }
-    }
-
-    ParallelAnimation {
-        id: professionalMaximizeLiveFallbackAnimation
-        running: false
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleX"; to: 1.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleY"; to: 1.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransX"; to: 0.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransY"; to: 0.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        onRunningChanged: {
-            if (running) mainWin.phaseLog("MAXIMIZE", "Professional live transform fallback start");
-            if (!running) mainWin.finishMaximizeFxSequence("maximize");
-        }
-    }
-
-    ParallelAnimation {
-        id: professionalRestoreMaxLiveFallbackAnimation
-        running: false
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleX"; to: 1.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxScaleY"; to: 1.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransX"; to: 0.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        NumberAnimation { target: mainWin; property: "maximizeFxTransY"; to: 0.0; duration: mainWin.lowPerformanceMode ? 140 : 220; easing.type: Easing.OutCubic }
-        onRunningChanged: {
-            if (running) mainWin.phaseLog("RESTORE-MAX", "Professional live transform fallback start");
-            if (!running) mainWin.finishMaximizeFxSequence("restore");
         }
     }
 
@@ -9045,7 +9050,19 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         running: mainWin.maximizeAnimInProgress && mainWin.maximizeFxSequenceRunning()
         onTriggered: {
             var gLocal = mainWin.greenFrameLocalRect();
-            if (maximizeFxAnimation.running || professionalMaximizeFxAnimation.running) {
+            if (professionalWindowMotionAnimation.running) {
+                var tag = mainWin.professionalWindowMotionKind === "restore"
+                    ? "RESTORE-MAX" : "MAXIMIZE";
+                var monitorFrame = tag === "RESTORE-MAX"
+                    ? ++mainWin.restoreMaxMonitorFrame : ++mainWin.maximizeMonitorFrame;
+                mainWin.phaseMonitorLog(tag, monitorFrame,
+                    "progress=" + mainWin.professionalWindowMotionProgress.toFixed(3)
+                    + " render=" + mainWin.fmtRect(mainWin.professionalWindowMotionRenderX,
+                        mainWin.professionalWindowMotionRenderY,
+                        mainWin.professionalWindowMotionRenderW,
+                        mainWin.professionalWindowMotionRenderH)
+                    + " host=" + Math.round(mainWin.x) + "," + Math.round(mainWin.y));
+            } else if (maximizeFxAnimation.running) {
                 mainWin.maximizeMonitorFrame = mainWin.maximizeMonitorFrame + 1
                 mainWin.phaseMonitorLog("MAXIMIZE", mainWin.maximizeMonitorFrame,
                     "fxScale=" + mainWin.maximizeFxScaleX.toFixed(3) + "x" + mainWin.maximizeFxScaleY.toFixed(3)
@@ -9054,7 +9071,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                     + " rotate=" + mainWin.maximizeFxRotate.toFixed(2)
                     + " greenLocal=" + Math.round(gLocal.x) + "," + Math.round(gLocal.y)
                     + " host=" + Math.round(mainWin.x) + "," + Math.round(mainWin.y))
-            } else if (maximizeRestoreFxAnimation.running || professionalRestoreMaxFxAnimation.running) {
+            } else if (maximizeRestoreFxAnimation.running) {
                 mainWin.restoreMaxMonitorFrame = mainWin.restoreMaxMonitorFrame + 1
                 mainWin.phaseMonitorLog("RESTORE-MAX", mainWin.restoreMaxMonitorFrame,
                     "fxScale=" + mainWin.maximizeFxScaleX.toFixed(3) + "x" + mainWin.maximizeFxScaleY.toFixed(3)
@@ -9443,25 +9460,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 // Show keep-alive window BEFORE hiding — prevents lastWindowClosed
                 trayKeepAlive.visible = true;
                 mainWin.hide();
-                // Cross-monitor: launch overlay comet from window center to tray
-                if (mainWin._crossMonitorTrayFlight) {
-                    mainWin._pendingTrayAction = "";
-                    var overlay = mainWin._ensureCrossMonitorOverlay();
-                    if (overlay) {
-                        var dist = Math.sqrt(
-                            Math.pow(mainWin._trayTargetGlobalX - mainWin._windowCenterGlobalX, 2) +
-                            Math.pow(mainWin._trayTargetGlobalY - mainWin._windowCenterGlobalY, 2)
-                        );
-                        var durationMs = Math.round(Math.min(800, Math.max(400, dist * 0.3)));
-                        overlay.launchFlight(
-                            mainWin._windowCenterGlobalX, mainWin._windowCenterGlobalY,
-                            mainWin._trayTargetGlobalX,   mainWin._trayTargetGlobalY,
-                            mainWin._vdX, mainWin._vdY, mainWin._vdW, mainWin._vdH,
-                            durationMs
-                        );
-                    }
-                    mainWin._crossMonitorTrayFlight = false;
+                // The desktop comet is launched at the center-fireball handoff
+                // (65% progress). This fallback only covers a skipped frame;
+                // the one-shot guard prevents a second fireball.
+                if (mainWin._crossMonitorTrayFlight
+                        && !mainWin._crossMonitorTrayFlightLaunched) {
+                    mainWin.launchCrossMonitorTrayMinimizeFlightOnce();
                 }
+                mainWin._crossMonitorTrayFlight = false;
                 try {
                     systemTrayToastWindow.showToast("CSPM is running in the system tray");
                 } catch(e) {
@@ -9499,8 +9505,6 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         id: animationCanvasLayer
         visible: !mainWin.isExitingFromTray
             && !mainWin.startupCinematicSnapshotActive
-            && !(mainWin.professionalMaximizeSnapshotActive
-                && mainWin.professionalMaximizeSnapshotCoverReady)
         // Canvas is a dynamic rectangle inside a fixed host window.
         x: mainWin.canvasLocalX
         y: mainWin.canvasLocalY
@@ -9611,27 +9615,48 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // CONTENT LAYER - Position within canvas keeps window pixels fixed
         Item {
             id: contentLayer
-            x: mainWin.maximizeAnimInProgress
+            // The Professional motion keeps this item's source geometry fixed
+            // and moves only its rendered texture.  Do not fold this case into
+            // the legacy maximize rect path: that would reintroduce a second
+            // visual owner for x/y/width/height.
+            x: mainWin.professionalWindowMotionActive
+                // Anchor to the actual native Window, rather than the target
+                // host model.  Native geometry commits asynchronously on
+                // Windows; this preserves the source texture's global pixel
+                // position until the compositor transform moves it.
+                ? Math.round(mainWin.professionalWindowMotionSourceX - mainWin.x - animationCanvasLayer.x)
+                : (mainWin.maximizeAnimInProgress
                 ? Math.round(mainWin.maximizeRenderX - mainWin.hostX)
-                : mainWin.contentLocalX
-            y: mainWin.maximizeAnimInProgress
+                : mainWin.contentLocalX)
+            y: mainWin.professionalWindowMotionActive
+                ? Math.round(mainWin.professionalWindowMotionSourceY - mainWin.y - animationCanvasLayer.y)
+                : (mainWin.maximizeAnimInProgress
                 ? Math.round(mainWin.maximizeRenderY - mainWin.hostY)
-                : mainWin.contentLocalY
-            width: mainWin.maximizeAnimInProgress
+                : mainWin.contentLocalY)
+            width: mainWin.professionalWindowMotionActive
+                ? Math.max(1, Math.round(mainWin.professionalWindowMotionSourceW))
+                : (mainWin.maximizeAnimInProgress
                 ? Math.max(1, Math.round(mainWin.maximizeStartFinalW))
                 : (mainWin.userResizeInProgress
                     ? Math.max(1, Math.round(mainWin.resizeStartFinalW))
-                    : mainWin.finalW)
-            height: mainWin.maximizeAnimInProgress
+                    : mainWin.finalW))
+            height: mainWin.professionalWindowMotionActive
+                ? Math.max(1, Math.round(mainWin.professionalWindowMotionSourceH))
+                : (mainWin.maximizeAnimInProgress
                 ? Math.max(1, Math.round(mainWin.maximizeStartFinalH))
                 : (mainWin.userResizeInProgress
                     ? Math.max(1, Math.round(mainWin.resizeStartFinalH))
-                    : mainWin.finalH)
+                    : mainWin.finalH))
             clip: !(mainWin.animationPhase === "opening"
                 || mainWin.startupPhase === "falling-window"
                 || mainWin.startupCinematicBloomActive)
             layer.enabled: mainWin.userResizeInProgress || mainWin.maximizeAnimInProgress
             layer.smooth: true
+            // Qt Quick applies the transform to this one texture.  Mipmaps
+            // are useful on the restore (downscale) leg and are freed as soon
+            // as this short-lived layer is disabled.
+            layer.mipmap: mainWin.professionalWindowMotionActive
+                && mainWin.professionalWindowMotionKind === "restore"
             transform: [
                 Scale {
                     origin.x: mainWin.startupCinematicBloomActive
@@ -9648,28 +9673,38 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         ? mainWin.startupCinematicBloomScale
                         : ((mainWin.animationPhase === "opening")
                         ? animationCanvasLayer.openingRenderScaleX
-                        : ((mainWin.maximizeAnimInProgress && contentLayer.width > 0)
+                        : ((mainWin.professionalWindowMotionActive && contentLayer.width > 0)
+                            ? (mainWin.professionalWindowMotionRenderW / contentLayer.width)
+                            : ((mainWin.maximizeAnimInProgress && contentLayer.width > 0)
                             ? (mainWin.maximizeRenderW / contentLayer.width)
                             : ((mainWin.userResizeInProgress && contentLayer.width > 0)
                                 ? (mainWin.finalW / contentLayer.width)
-                                : 1.0)))
+                                : 1.0))))
                     yScale: mainWin.startupCinematicBloomActive
                         ? mainWin.startupCinematicBloomScale
                         : ((mainWin.animationPhase === "opening")
                         ? animationCanvasLayer.openingRenderScaleY
-                        : ((mainWin.maximizeAnimInProgress && contentLayer.height > 0)
+                        : ((mainWin.professionalWindowMotionActive && contentLayer.height > 0)
+                            ? (mainWin.professionalWindowMotionRenderH / contentLayer.height)
+                            : ((mainWin.maximizeAnimInProgress && contentLayer.height > 0)
                             ? (mainWin.maximizeRenderH / contentLayer.height)
                             : ((mainWin.userResizeInProgress && contentLayer.height > 0)
                                 ? (mainWin.finalH / contentLayer.height)
-                                : 1.0)))
+                                : 1.0))))
                 },
                 Translate {
                     x: (mainWin.animationPhase === "opening")
                         ? animationCanvasLayer.openingRenderTransX
-                        : 0.0
+                        : (mainWin.professionalWindowMotionActive
+                            ? (mainWin.professionalWindowMotionRenderX
+                                - mainWin.professionalWindowMotionSourceX)
+                            : 0.0)
                     y: (mainWin.animationPhase === "opening")
                         ? animationCanvasLayer.openingRenderTransY
-                        : 0.0
+                        : (mainWin.professionalWindowMotionActive
+                            ? (mainWin.professionalWindowMotionRenderY
+                                - mainWin.professionalWindowMotionSourceY)
+                            : 0.0)
                 }
             ]
 
@@ -9694,6 +9729,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 ChromeSurface {
                     id: unifiedChrome
                     anchors.fill: parent
+                    roundedSurfaceMaskEnabled: unifiedChrome.cornerRadius > 0
                     metrics: mainWin.uiMetrics
                     farGlowEnabled: !(mainWin.lowPerformanceMode || mainWin.userResizeInProgress)
                     glowRadiusNear: mainWin.userResizeInProgress ? 0 : mainWin.chromeGlowNearPx()
@@ -9809,32 +9845,6 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    // Act III visual owner. It is a frozen GPU canvas captured while the
-    // native splash is still in front, so nothing other than this image can
-    // appear between the plasma's centre point and the growing app surface.
-    Image {
-        id: professionalMaximizeSnapshotImage
-        x: mainWin.professionalMaximizeSnapshotRenderX
-        y: mainWin.professionalMaximizeSnapshotRenderY
-        width: Math.max(1, mainWin.professionalMaximizeSnapshotRenderW)
-        height: Math.max(1, mainWin.professionalMaximizeSnapshotRenderH)
-        z: 1745
-        visible: mainWin.professionalMaximizeSnapshotActive
-            && mainWin.professionalMaximizeSnapshotCoverReady
-            && mainWin.professionalMaximizeSnapshotUrl.length > 0
-        source: mainWin.professionalMaximizeSnapshotUrl
-        fillMode: Image.Stretch
-        smooth: true
-        mipmap: true
-        asynchronous: false
-        onStatusChanged: {
-            if (status === Image.Ready || status === Image.Error) {
-                mainWin.tryStartProfessionalMaximizeSnapshotMotion(
-                    mainWin.professionalMaximizeSnapshotSequence);
             }
         }
     }
@@ -10228,6 +10238,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 closingAccretionCanvas.requestPaint();
             }
             function onMinimizeProgressChanged() {
+                if (mainWin.isMinimizingToTray
+                        && mainWin._crossMonitorTrayFlight
+                        && !mainWin._crossMonitorTrayFlightLaunched
+                        && jelly.minimizeProgress >= 0.65) {
+                    mainWin.launchCrossMonitorTrayMinimizeFlightOnce();
+                }
                 closingAccretionCanvas.requestPaint();
             }
             function onExitFromTrayProgressChanged() {
@@ -10612,6 +10628,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         }
                     }
                 } else {
+                    // On a cross-monitor tray flight, the virtual-desktop
+                    // overlay takes ownership at the end of the center hang.
+                    // Do not draw the same outbound comet again inside CSPM.
+                    if (mainWin.isMinimizingToTray
+                            && mainWin._crossMonitorTrayFlightLaunched
+                            && p >= 0.65) {
+                        return;
+                    }
                     // ============================================================
                     // 5-STAGE MINIMIZE TO TASKBAR / SYSTEM TRAY COMET ENGINE (2D VECTOR AWARE)
                     // ============================================================
@@ -11262,6 +11286,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // Query the actual system tray location for angle-correct comet flight
         var targetDistX, targetDistY;
         mainWin._crossMonitorTrayFlight = false;
+        mainWin._crossMonitorTrayFlightLaunched = false;
         if (typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
             var winCX = Math.round(mainWin.x + mainWin.width / 2.0);
             var winCY = Math.round(mainWin.y + mainWin.height / 2.0);
@@ -11301,6 +11326,27 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.lastMinimizeTargetDistY = targetDistY;
 
         jelly.startMinimize(targetDistX, targetDistY);
+        return true;
+    }
+
+    function launchCrossMonitorTrayMinimizeFlightOnce() {
+        if (!mainWin.isMinimizingToTray
+                || !mainWin._crossMonitorTrayFlight
+                || mainWin._crossMonitorTrayFlightLaunched) {
+            return false;
+        }
+        var overlay = mainWin._ensureCrossMonitorOverlay();
+        if (!overlay) return false;
+        var dist = Math.sqrt(
+            Math.pow(mainWin._trayTargetGlobalX - mainWin._windowCenterGlobalX, 2)
+            + Math.pow(mainWin._trayTargetGlobalY - mainWin._windowCenterGlobalY, 2));
+        var durationMs = Math.round(Math.min(800, Math.max(400, dist * 0.3)));
+        mainWin._crossMonitorTrayFlightLaunched = true;
+        overlay.launchFlight(
+            mainWin._windowCenterGlobalX, mainWin._windowCenterGlobalY,
+            mainWin._trayTargetGlobalX, mainWin._trayTargetGlobalY,
+            mainWin._vdX, mainWin._vdY, mainWin._vdW, mainWin._vdH,
+            durationMs);
         return true;
     }
 
@@ -11441,6 +11487,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     function _onCrossMonitorFlightFinished() {
         var action = mainWin._pendingTrayAction;
         mainWin._pendingTrayAction = "";
+        mainWin._crossMonitorTrayFlightLaunched = false;
         if (action === "restore") {
             mainWin._startRestoreFromTrayInWindow();
         } else if (action === "exit") {

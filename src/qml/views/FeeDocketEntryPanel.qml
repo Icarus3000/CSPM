@@ -180,8 +180,8 @@ Rectangle {
         }
 
         var amount = parseFeeAmount(feeAmountInput.text)
-        if (!isFinite(amount) || amount <= 0) {
-            setFeedback("Enter a fee amount greater than zero.", true)
+        if (!isFinite(amount) || amount === 0) {
+            setFeedback("Enter a non-zero fee amount.", true)
             return false
         }
 

@@ -562,9 +562,25 @@ Item {
                                             Layout.preferredWidth: 101
                                             Layout.preferredHeight: 31
                                             model: ["Percentage", "Flat Amount"]
-                                            currentIndex: host.selectedDraftData && ["flat", "fixed"].indexOf(String(host.selectedDraftData.DiscountType || "").toLowerCase()) >= 0 ? 1 : 0
+                                            currentIndex: host.selectedDraftData && ["flat", "fixed", "flat amount"].indexOf(String(host.selectedDraftData.DiscountType || "").toLowerCase()) >= 0 ? 1 : 0
+                                            onActivated: {
+                                                if (parseFloat(discountValue.text) > 0) {
+                                                    host.billingBackend.applyDiscount(host.selectedDraftNum, currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0)
+                                                }
+                                            }
                                         }
-                                        TextField { id: discountValue; Layout.fillWidth: true; Layout.preferredHeight: 31; text: host.selectedDraftData ? String(host.selectedDraftData.DiscountValue || "0.0") : "0.0"; color: host.textColor; font.pixelSize: 11; inputMethodHints: Qt.ImhFormattedNumbersOnly; background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 } }
+                                        TextField {
+                                            id: discountValue
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 31
+                                            text: host.selectedDraftData ? String(host.selectedDraftData.DiscountValue || "0.0") : "0.0"
+                                            color: host.textColor
+                                            font.pixelSize: 11
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                            background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                            onEditingFinished: host.billingBackend.applyDiscount(host.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0)
+                                            onAccepted: host.billingBackend.applyDiscount(host.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0)
+                                        }
                                         PillButton { t: host.t; text: "Apply"; primary: false; Layout.preferredWidth: 50; Layout.preferredHeight: 31; onClicked: host.billingBackend.applyDiscount(host.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0) }
                                     }
                                 }
@@ -575,7 +591,18 @@ Item {
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 4
-                                        TextField { id: agencySplit; Layout.fillWidth: true; Layout.preferredHeight: 31; text: host.selectedDraftData ? String(host.selectedDraftData.AgencySplitPercent || "0.0") : "0.0"; color: host.textColor; font.pixelSize: 11; inputMethodHints: Qt.ImhFormattedNumbersOnly; background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 } }
+                                        TextField {
+                                            id: agencySplit
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 31
+                                            text: host.selectedDraftData ? String(host.selectedDraftData.AgencySplitPercent || "0.0") : "0.0"
+                                            color: host.textColor
+                                            font.pixelSize: 11
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                            background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                            onEditingFinished: host.billingBackend.applyAgencySplit(host.selectedDraftNum, parseFloat(agencySplit.text) || 0)
+                                            onAccepted: host.billingBackend.applyAgencySplit(host.selectedDraftNum, parseFloat(agencySplit.text) || 0)
+                                        }
                                         PillButton { t: host.t; text: "Set"; primary: false; Layout.preferredWidth: 42; Layout.preferredHeight: 31; onClicked: host.billingBackend.applyAgencySplit(host.selectedDraftNum, parseFloat(agencySplit.text) || 0) }
                                     }
                                 }

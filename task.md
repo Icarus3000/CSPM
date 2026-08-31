@@ -1,12 +1,26 @@
 # CSPM Task And Validation Ledger
 
+## Professional Native DWM Maximize / Restore (2026-08-31)
+
+- [x] Audited the actual Source implementation. Source does not author a renderer/window-geometry tween: its custom title-bar command calls Electron `maximize()` / `unmaximize()`, follows the native maximize/unmaximize events, and keeps the frameless HWND's default Windows thick-frame contract. No `setBounds`, easing timer, snapshot, layer, or monitor-envelope animation participates.
+- [x] Corrected the prior log inference. The missing Professional start/progress/settled lines were debug-level telemetry suppressed unless verbose logging is enabled; the warning-level staging marker alone did not prove that the old 240 ms timeline failed to start. The remaining stutter was architectural: CSPM changed its layered native host envelope around a QML texture transition, while Source left the entire state transaction with DWM.
+- [x] Added a Professional-main-window-only native style bridge. Qt's client-drawn frameless chrome remains, while the HWND replaces `WS_POPUP` with `WS_CAPTION`, `WS_THICKFRAME`, system menu, minimize, and maximize style bits and receives one `SWP_FRAMECHANGED`. Console and detached windows retain their prior path.
+- [x] Replaced the accepted Professional button path with true HWND `SW_MAXIMIZE` / `SW_RESTORE` requests. QML now follows `Window.Maximized` / `Window.Windowed`, updates the glyph/model/persistence after the native event, preserves the native normal bounds, and leaves `maximizeAnimInProgress`, the temporary scene-graph layer, manual monitor-envelope staging, and the 240 ms Professional timeline out of the normal path. The prior texture path remains only as a bridge-unavailable compatibility fallback.
+- [x] Returned Professional `Win+Shift+Arrow` to Windows instead of consuming it in CSPM's two keyboard hooks. The native maximized HWND and Windows-owned normal placement now move together; QML adopts the resulting screen/state event.
+- [x] Sandbox-safe validation passed: Python compilation for the changed runtime modules; **9 passed** across maximize/restore choreography, native style, and main-window layout persistence; governed `scripts/qmllint.ps1` parsed `DetachedShellWindow.qml` with no syntax error and only its existing warning-level diagnostics; scoped `git diff --check` passed.
+- [x] Outside-sandbox source runtime validation passed through `launch.ps1`: the real Qt/WebEngine shell reached a responsive main window; startup logged the bridge as ready; the live custom-chrome HWND was `0x16CF0000` / `0x00080100`; CSPM's own maximize glyph entered true `IsZoomed` / `0x17CF0000` state; its restore glyph returned to the exact prior normal HWND rectangle and `0x16CF0000`. The app is left open in normal state for foreground review.
+- [ ] **Manual visual acceptance remains the blocking P0 gate:** from the open smaller Professional window, click Maximize/Restore ten times and confirm Source-equivalent continuity with no pre-jump, mask pop, blank frame, duplicate motion, or layout snap. Then test Maximize → `Win+Shift+Arrow` → Restore and confirm Windows restores on the monitor that owns the native maximized window. Do not advance to another visual state machine until Cory accepts this real-app motion.
+
 ## Accepted Packaged Startup Hotfix Integration (2026-08-30)
 
 - [x] Recovered the interrupted release state before changing it. The failed packaged run reached `briefing-snapshot-ready` at 86% and then failed while compiling the hidden shell: `InvoiceBuilderView.qml:1943` assigned `background` to a plain `Text`. The deterministic `Component.Error` entered all 180 retries from t+10.446 s through t+78.871 s, exhausted at t+78.874 s, and never reached `ready-to-reveal` or a first pixel. The roughly 2.1 s synchronous component compile did not explain the long splash; the invalid QML plus repeated retries did.
 - [x] Classified the recovered `d4196fc` operation as **B — candidate output completed, but canonical finalization/validation did not finish**. Retained session evidence showed both PyInstaller COLLECT outputs completed and the full 4,358-file tree remained under its staging name after the builder exited; the prior agent moved that complete tree as one directory to the candidate path and was interrupted immediately before promotion. No individual-file overlay occurred, no builder remained active, and no process was terminated during recovery.
 - [x] Reviewed `7fda5e9ae89d2b648859edc659696c9941b7487b`: `src/python/main.py`, `src/qml/BootstrapRoot.qml`, and `tests/test_startup_shell_failure_contract.py`. It makes shell compilation asynchronous, sends deterministic component errors through an explicit diagnostic/quit path instead of the 180-retry path, preserves the hidden native-splash handoff and mandatory initialization, and adds no silent fallback or unrelated visual work. It shortens deterministic failure but does not repair the observed invalid QML by itself.
 - [x] Reviewed the required root-cause follow-up `d4196fcfb3d6af0b2ae396ff8d5fa474a18c16da`: it removes only the invalid `Text.background` assignment from `InvoiceBuilderView.qml` and adds a focused Custom Fee QML regression assertion. The accepted Custom Fee implementation remains inherited unchanged from `dce3112`; no Custom Fee behavior, workbook schema, visual state machine, or conflict-checking work was broadened.
-- [x] Independently validated and promoted `release_candidate_custom_fee_startup_hotfix_20260830_d4196fc` through `scripts/promote_verified_release_package.py`. The source and post-promotion manifests match exactly. The immediate prior `7fda5e9` fail-fast-only package is preserved at `to_delete/dist__manual_replaced_release_20260830_163733`, its predecessor `dce3112` remains at `to_delete/dist__manual_replaced_release_20260830_154035`, and the successful promotion audit is `to_delete/release_promotion_20260830_163733.json`.
+- [x] Sandbox-safe validation passed: `py_compile src/python/main.py`; governed `scripts/qmllint.ps1` on `BootstrapRoot.qml` and `InvoiceBuilderView.qml` (exit 0, existing warning diagnostics only); `git diff --check`; canonical package structural validation; exact source-versus-package QML hashes; and 38 applicable startup/splash/briefing/restart/maximize/Custom Fee tests. The one additionally selected failure is the already documented stale focus assertion against the separate tray-toast `WindowStaysOnTopHint`; the QML and test are unchanged from `ec9b7a3` and are not a hotfix regression.
+- [x] Independently validated the complete `release_candidate_custom_fee_startup_hotfix_20260830_d4196fc` package: 4,358 files / 678,617,490 bytes / tree SHA-256 `343F43A3AC28C9DB5DF1553983C0178AC957A81F38D86BCBA51ECE5F33AF5323`; `CSPM.exe` SHA-256 `1E983211BB589D41E4D90EC415552BCC4073C5F9B2B3D589F06E7B7800206DE0`. Main/recovery executables, splash assets, governed templates, QML, Qt Quick/QML libraries, WebEngine process/DLLs/resources/locales, and ICU data are present; no incomplete marker or alternate data stream remains.
+- [x] Promoted that exact candidate through `scripts/promote_verified_release_package.py`. The source and post-promotion manifests match exactly. The immediate prior `7fda5e9` fail-fast-only package is preserved at `to_delete/dist__manual_replaced_release_20260830_163733`, its predecessor `dce3112` remains at `to_delete/dist__manual_replaced_release_20260830_154035`, and the successful promotion audit is `to_delete/release_promotion_20260830_163733.json`.
+- [x] Workbook safety remained intact: `data/CSPM.xlsm` stayed byte-identical at SHA-256 `CDCAF48AF137A9A489560EEED61D760E7876390160F6B0D66DF20E9A18B9ACEA`; canonical integrity remains 12 tables / 1,537 rows / 0 errors / 7 unchanged unrelated warnings. Those warnings were not addressed. Conflict checking remains inactive.
 - [x] Cory completed the required outside-sandbox packaged-startup acceptance with `dist/CSPM/CSPM.exe` at 16:45 on 2026-08-30. The accepted `d4196fc` package advanced from the native splash through `ready-to-reveal`, completed the native-to-QML handoff, displayed a usable main window, opened a workspace, and closed normally. The fresh frozen runtime log contains no former 180-retry cycle, startup diagnostic, component failure, or stuck-splash state. This acceptance is startup-only; it does not claim that Cory repeated the remaining Custom Fee lifecycle scenarios in the corrected package.
 - [x] Exact integrated-source validation: the eight focused startup/splash/briefing/restart/focus/maximize/Custom Fee files collected 39 tests, with **38 passed and 1 known pre-existing failure**. The sole failure is the stale tray-toast `Qt.WindowStaysOnTopHint` focus assertion; both implicated files are unchanged by this hotfix and the same test fails at parent `ec9b7a3`. `py_compile src/python/main.py`, governed QML lint for both affected QML files, and both `git diff --check` scopes passed. QML lint retained existing warning-level diagnostics only.
 - [x] Package/source correspondence remains exact: bundled `BootstrapRoot.qml`, `DetachedShellWindow.qml`, and `InvoiceBuilderView.qml` match integrated `d4196fc` Git blobs. The accepted EXE remains SHA-256 `1E983211BB589D41E4D90EC415552BCC4073C5F9B2B3D589F06E7B7800206DE0`; the promoted tree remains 4,358 files / 678,617,490 bytes / SHA-256 `343F43A3AC28C9DB5DF1553983C0178AC957A81F38D86BCBA51ECE5F33AF5323`. No rebuild was required because integration did not change runtime source beyond the already accepted lineage.
@@ -30,14 +44,6 @@
 - [x] Canonical PyInstaller build completed from the clean detached `dce3112` commit via `C:\Projects\__CSPM\.venv_CORY_CorySchneider\Scripts\python.exe scripts\build_release.py --validate`. Verified package manifest: 4,358 files / 678,615,222 bytes / SHA-256 `0EC666DA28A8134FC2299D44B149AD2CDF14ACB13C2F426861232B5DDF80CD24`; `CSPM.exe` SHA-256 `9C7379024912E154E39F42528D58E1CDEC043E87A595D66EBBC5D36DEAFB36A6`.
 - [x] Promoted the hash-verified candidate to `dist` with the standard promotion utility; the post-promotion manifest matched exactly and the prior package was preserved at `to_delete/dist__manual_replaced_release_20260830_145052`. No supported noninteractive packaged smoke is available; WebEngine EXE launch was not validated in this sandbox.
 - [x] Scope guard: conflict checking remains inactive; the seven unrelated workbook warnings were not addressed; no workbook mutation occurred. All unrelated dirty source, visual FX, discount, launcher, workbook, staging, and prior release-candidate work remains outside this checkpoint.
-
-## Packaged Startup Hang Hotfix Candidate (2026-08-30)
-
-- [x] Treated the reported frozen `dist\\CSPM\\CSPM.exe` launch as a release blocker. Fresh fault-capture evidence showed the packaged process entered startup and completed sync, but never created a WebEngine helper or usable application shell. Historical startup diagnostics also proved that a QML `Component.Error` could repeatedly retry and leave the splash looking frozen.
-- [x] Built the isolated hotfix commit `7fda5e9ae89d2b648859edc659696c9941b7487b` (`Prevent packaged startup shell hangs`) on top of the Custom Fee checkpoint. It compiles the heavyweight `DetachedShellWindow` asynchronously during the native splash, rather than blocking a cold package launch, and turns deterministic component errors into a logged, short visible diagnostic followed by app exit instead of 180 retries.
-- [x] Sandbox-safe validation: `py_compile` passed; startup/splash contracts passed **9 tests**; governed `scripts/qmllint.ps1 -Targets src/qml/BootstrapRoot.qml` completed with existing warning-level diagnostics only and no syntax error; `git diff --check` passed.
-- [x] Rebuilt a separate candidate at `release_candidate_custom_fee_startup_hotfix_20260830_7fda5e9_b\\CSPM` without changing promoted `dist`: **4,358 files / 678,617,620 bytes**, tree SHA-256 `125FCB96FA5A859A800A8DAB2D1FAAD367007537C757D87B06E68A0DD1ACF568`; `CSPM.exe` SHA-256 `FF435C45286A1A24B2413348361D3D59642078101F31CF92436679C5A34E9FBB`.
-- [ ] Required outside-sandbox acceptance: launch `release_candidate_custom_fee_startup_hotfix_20260830_7fda5e9_b\\CSPM\\CSPM.exe`, confirm it reaches the usable main window promptly and that Invoice Builder's Custom Fee flow remains available. Do not replace `dist` or merge/push this hotfix until this desktop gate passes.
 
 ## Governed Repository-Only Orphan-Record Repair (2026-08-30)
 
@@ -70,6 +76,131 @@
 - [x] Built version **2.4.0 / Phase 9 / build 1** from a clean detached worktree at that exact commit with `scripts/build_release.py`. Both executables, governed templates, and splash assets were produced; the build's confidential-workbook check passed (neither bundle template matches the live workbook).
 - [x] Windows denied the builder's final directory rename, so `scripts/promote_verified_release_package.py` performed the documented hash-verified promotion. `dist` matches the source package: **4,358 files**, **678,587,001 bytes**, tree SHA-256 `9C8F6141B43032C5A13CC368BB7349DEC27E26E80EE0AF904A61615556274717`. `dist\\CSPM\\CSPM.exe` SHA-256: `876C7C62BD57B53BEDC940C64748C9685093551D6D590F0D14E5E4D9BC8C89AE`; recovery EXE SHA-256: `9A4F348ADC0AC17CC05DED34A348254BF091105EFB11BE9D958E80B7070DCCA4`. The prior package is recoverable at `to_delete\\dist__manual_replaced_release_20260829_174402`; the promotion audit is `to_delete\\release_promotion_20260829_174402.json`.
 - [x] Packaged interactive WebEngine smoke was not run in the strict sandbox. It is not required to re-prove the already accepted source launch; the promoted executable was structurally and hash verified.
+
+## Governed `launch.ps1` Null LiteralPath Blocker (2026-08-29)
+
+- [x] Read the runtime log before diagnosis. It showed no fresh launch attempt, confirming the reported failure occurred before Python/WebEngine startup.
+- [x] Identified the full failure chain. The initiating error was `scripts/ensure_venv.ps1:287`: its requirements-stamp code called `Get-FileHash`, but a Windows PowerShell child inheriting PowerShell 7's module search path could see an incompatible `Microsoft.PowerShell.Utility` first and could not resolve that cmdlet. The former script-wide `trap` in `launch.ps1` then called `Test-Path -LiteralPath $transcriptPath`; traps apply to the entire script scope, while `$transcriptPath` had not yet been assigned. That secondary null-path binding failure replaced the useful `Get-FileHash` error and was attributed opaquely to `launch.ps1`.
+- [x] Replaced the host-dependent hash cmdlet with the equivalent .NET SHA-256 stream implementation, removed the redundant global trap, guarded empty resolver candidates, and made governed resolver errors preserve source file/line. The existing application `try/finally` continues to collect console/transcript output. No default path, alternate startup route, skipped initialization, workbook change, or payment change was introduced.
+- [x] Sandbox-safe validation: PowerShell parsed `launch.ps1` and `scripts/ensure_venv.ps1` with **0 errors**; `launch.ps1 -SetupOnly` passed under both Windows PowerShell 5.1 and PowerShell 7 and resolved `C:\Projects\__CSPM\.venv_CORY_CorySchneider\Scripts\python.exe`; direct `ensure_venv.ps1 -InstallRequirements -PassThruPython` returned the same interpreter. The formerly failing detached Windows PowerShell host now exits **0** with empty stderr, and its .NET requirements digest exactly matches `Get-FileHash` (`5A95144BB041979750D3F05DC637F7241A1B8D8C8F47E4F6208610C3A5142306`). A clean-child null-path probe exits **1** with `Missing ensure script`, not a null-`LiteralPath` error. `git diff --check` passed. PSScriptAnalyzer is not installed.
+- [x] Confirmed independent from the unpaid-invoice filter: that work changed payment QML/backend/tests only; it did not change `launch.ps1`, venv resolution, or startup configuration.
+- [x] Outside-sandbox governed validation of the final edited `launch.ps1` reached the main window, `post-settle-ready`, and recorded real user input in a fresh `logs/cspm.log`; it then recorded a normal user-initiated close and clean shutdown. No alternate Python/application command was used. Reopen for the blocked manual acceptance with `& 'C:\Projects\__CSPM\launch.ps1'`.
+
+## Make Payment Unpaid-Invoice Filtering (2026-08-29)
+
+- [x] Reworked the shared `listOpenPaymentInvoices` path so Payment Entry searches its already eligible open Receivables rows by invoice number, work/client name, matter description, billing client, or the displayed open balance within an inclusive ±5% range.
+- [x] Reused the canonical read-only invoice-to-matter context used by statements; no `tblReceivables` schema change, payment/allocation change, or workbook write was introduced. Paid, voided, reversed, superseded, closed, cancelled, and non-positive-balance rows remain excluded.
+- [x] Made monetary query parsing Decimal-safe for `$`, commas, decimals, whitespace, and a typing-friendly trailing decimal point. The selector continues to use **Balance** (open `BalanceDue`), not `TotalInvoiced`, because Balance is the amount displayed to the user.
+- [x] Added `tests/test_payment_invoice_filtering.py`; focused Payment Entry tests passed (**7 passed**) and adjacent invoice/payment/receivables/statement/financial-sync tests passed (**36 passed**). Python compilation passed. Governed QML lint reported existing unqualified-access warnings only, with no syntax error.
+- [ ] Manual outside-sandbox acceptance: run `.\launch.ps1`, open Make Payment, and confirm a known open invoice can be found by its matter, billing client, invoice number, and displayed balance while a paid/void/reversed invoice never appears. Confirm the selected invoice and entered partial-payment amount remain stable while changing the filter.
+
+## Invoice Courtesy Discount Workflow Fix & Invoice 26-0070 Recreation (2026-08-24)
+
+- [x] Fixed courtesy discount persistence, type normalization, and auto-commit across `InvoiceBuilderWorkspace.qml`, `InvoiceBuilderView.qml`, `BillingController`, and `InvoiceDraftService`.
+- [x] Added automated test coverage in `tests/test_invoice_discount.py` for both flat and percentage courtesy discounts, tax recalculation on net fees, and WIP ledger balancing in `finalize_draft`.
+- [x] Reversed and recreated invoice `26-0070` for `Kingdon Green LP` dated July 6, 2026 with the `$4,327.00` flat discount ($8,023.00 net fees, $1,042.99 HST, $9,065.99 total due).
+- [x] Exported Concept_A2 HTML and finalized PDF to `C:\Users\CorySchneider\OneDrive - LPN\__Invoices (1)\__RECEIVABLE\INV 26-0070 - Kingdon Green LP - 06JUL2026.pdf`.
+
+## P0 Correction — Packaged Splash and Professional Window Motion (2026-08-20)
+
+- [x] Read the fresh taskbar-executable log before changing the reported visual
+  defects. It proves the painted splash intro ran from 18:05:00.189 to
+  18:05:00.815, but the prior `OutCubic` front-loaded its opacity and read as a
+  pop. It also proves Professional maximize/restore prepared the native host
+  but never emitted `Professional one-owner texture motion started` or
+  `Professional compositor motion settled`; the user therefore saw only the
+  one-time native geometry jump.
+- [x] Make the CS mark's painted intro an unmistakable 960 ms `InOutCubic`
+  dissolve/rise and synchronously repaint each brief visible frame so DWM
+  cannot coalesce it into the final opaque logo.
+- [x] Start the Professional scene-graph timeline in the same QML transaction
+  as its one-time host staging, rather than an unreliable deferred callback;
+  anchor the source texture to actual native-window coordinates while Windows
+  applies that staging.
+- [x] Run sandbox-safe Python compilation, focused maximize/splash/startup
+  regression tests (**18 passed**), and governed QML lint (existing
+  warning-only diagnostics; no syntax error).
+- [x] Build, hash-verify, and promote this correction to `dist\CSPM\CSPM.exe`.
+  The verified source and installed trees both contain **4,358 files** and
+  **678,579,033 bytes**, SHA-256
+  `6E2C1686BC1463ACEB6C02764AF5077DE97E3D10D2D5B8A523D35019F7076B37`.
+  Installed `CSPM.exe` SHA-256 is
+  `8DAC3B53B3D208463A686D4ED38E6B93F0B2CAD3EFEBE5F1D3610BC0BEB282AC`.
+  The prior package is recoverable at
+  `to_delete\dist__manual_replaced_release_20260820_183040`.
+- [ ] Manual P0 acceptance in the new packaged taskbar EXE: the CS mark must
+  visibly dissolve/rise on launch, and each Professional maximize/restore must
+  be one continuous transform without a pre-jump, native-resize sweep, blank
+  frame, or layout reflow. Preserve the fresh package log if any defect stays.
+
+## Professional Window Motion and Native-Splash Rebuild (2026-08-20)
+
+- [x] Read the fresh taskbar-package runtime log before changing visual code.
+  It confirmed the reported visible defects: the native splash recorded no
+  authored intro start, and the reported restore attempts had no coherent
+  Professional motion trace.
+- [x] Replace the Professional maximize/restore implementation with one
+  compositor-owned `contentLayer` texture motion. The native host stages once;
+  a single 240 ms `OutCubic` progress value owns all intermediate pixels; the
+  live responsive layout is not resized or reflowed until the final rectangle.
+  Remove the obsolete Professional `grabToImage`/snapshot image/fallback path.
+- [x] Replace Windows top-level splash opacity/position animation with a
+  620 ms painted-content dissolve, 18 px rise, and subtle 96.5%→100% settle.
+  The progress indicator follows that content intro and now catches up to
+  authoritative readiness milestones at 1.20 units/second instead of 0.20.
+- [x] Run sandbox-safe `py_compile`, focused maximize/splash/startup regression
+  tests (**18 passed**), `git diff --check`, and the governed QML lint wrapper
+  (existing warning-level diagnostics only; no syntax error).
+- [x] Build, hash-verify, and promote this revision to
+  `dist\CSPM\CSPM.exe` without replacing the user’s recoverable candidates.
+  Candidate and installed manifests match: 4,358 files, 678,577,278 bytes,
+  SHA-256 `4D7B91535F2173D21EFEE6534BD09844FF91AE6F919B6C71C6928EF97E9BB334`.
+  `CSPM.exe` SHA-256 is
+  `7E1C0F9730F01F79E2B4F827A0EBD5FFFCE05070FF5F0C2929A00E400BF54318`;
+  the preceding package is recoverable at
+  `to_delete\dist__manual_replaced_release_20260820_133443`.
+- [x] Real outside-sandbox Qt/WebEngine startup check: the promoted EXE logged
+  the new native content-intro start and completion, became responsive, and
+  reached its first main pixel without QML/runtime error. Its cold first-main
+  pixel was 53.688 s; the remaining material delay is a 34.955 s hidden-shell
+  compilation, not the painted progress catch-up.
+- [ ] Manual P0 acceptance in the packaged taskbar EXE: maximize and restore
+  repeatedly in Professional style. Each must be one uninterrupted 240 ms
+  surface transform with no pre-jump, native resize sweep, blank frame, or
+  responsive layout reflow. Then confirm the CS logo truly dissolves/rises
+  into place at launch and the loader reacts promptly to real milestones.
+
+## Packaged Native Splash Intro and Cold-Start Responsiveness (2026-08-20)
+
+- [x] Read the actual taskbar-package runtime log before changing the splash.
+  The old August 18 EXE was serialized for **138.796 s** before first pixel;
+  shell compilation and object construction were the dominant stalls.
+- [x] Restore the authored native CS logo introduction. The transparent,
+  painted first frame now runs a 460 ms opacity-and-rise animation before
+  synchronous startup work can skip directly to the final opaque logo.
+- [x] Compile the hidden `DetachedShellWindow` asynchronously so the native
+  splash stays responsive and the isolated Practice Briefing worker begins in
+  parallel with QML compilation. The progress bar remains driven only by real
+  readiness states.
+- [x] Run sandbox-safe Python/QML checks and focused startup regressions
+  (**9 passed**). The mandatory QML lint wrapper reported existing warnings
+  only and no syntax error.
+- [x] Build and hash-verify the complete 2.4.0 taskbar package, then promote
+  it to `dist\\CSPM\\CSPM.exe`. The 4,358 installed files match the candidate
+  manifest `5456F07DA177E3B6120382A988031FFA65D354C10C39CD4D0ED462D92342608D`;
+  the preceding package is recoverable at
+  `to_delete\\dist__manual_replaced_release_20260820_114642`.
+- [x] Real package startup check outside the sandbox: two launches completed
+  without QML error/crash and reached first main pixel at **32.056 s** and
+  **33.420 s**, respectively (down from the prior 138.796 s path). The
+  residual cold cost is the approximately 22 s large-shell compile, now
+  parallel with the authoritative briefing read.
+- [ ] Manual acceptance: launch `dist\\CSPM\\CSPM.exe` from the taskbar.
+  Confirm the CS logo visibly fades and rises into its final position rather
+  than appearing fully opaque, the bar remains visually alive while real work
+  proceeds, and the splash-to-plasma-to-bloom handoff stays clean. Do not
+  alter another startup state machine until this path is confirmed in the
+  real app.
 
 ## Smooth GPU-Accelerated Maximize & Restore Animation (2026-08-19)
 

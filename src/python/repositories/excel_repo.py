@@ -112,6 +112,14 @@ if __package__ in (None, ""):
 
 from domain.money import calc_amounts, normalize_pct
 from domain import schema_constants as sc
+from domain.ap_schema import (
+    AP_BILLS_HEADERS,
+    AP_BILLS_SHEET,
+    AP_BILLS_TABLE,
+    AP_PAYMENTS_HEADERS,
+    AP_PAYMENTS_SHEET,
+    AP_PAYMENTS_TABLE,
+)
 from services.paths import AppPaths
 
 import logging
@@ -135,6 +143,7 @@ TBL_DISBURSEMENTS = TableRef(sc.SHEET_DISBURSEMENTS, sc.TBL_DISBURSEMENTS)
 TBL_LEDGER = TableRef(sc.SHEET_LEDGER, sc.TBL_LEDGER)
 TBL_RECEIVABLES = TableRef(sc.SHEET_RECEIVABLES, sc.TBL_RECEIVABLES)
 TBL_INVOICE_LOG = TableRef(sc.SHEET_INVOICE_LOG, sc.TBL_INVOICE_LOG)
+TBL_HST_LOG = TableRef(sc.SHEET_HST_LOG, sc.TBL_HST_LOG)
 TBL_TRANSACTIONS_MASTER = TableRef(sc.SHEET_TRANSACTIONS, sc.TBL_TRANSACTIONS_MASTER)
 TBL_TRANSACTION_ACCOUNTS = TableRef(sc.SHEET_TRANSACTION_ACCOUNTS, sc.TBL_TRANSACTION_ACCOUNTS)
 TBL_TRANSACTION_CATEGORIES = TableRef(sc.SHEET_TRANSACTION_CATEGORIES, sc.TBL_TRANSACTION_CATEGORIES)
@@ -157,6 +166,7 @@ TABLES_IN_ORDER = [
     TBL_LEDGER,
     TBL_RECEIVABLES,
     TBL_INVOICE_LOG,
+    TBL_HST_LOG,
     TBL_TRANSACTIONS_MASTER,
     TBL_TRANSACTION_ACCOUNTS,
     TBL_TRANSACTION_CATEGORIES,
@@ -1203,6 +1213,20 @@ class ExcelRepo:
                 # Relinquish Python interpreter lock momentarily to guarantee GUI framerate
                 time.sleep(0.01)
 
+            for sheet_name, table_name, headers in (
+                (AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS),
+                (AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS),
+            ):
+                did_change, mode = self._ensure_governed_external_table_schema(
+                    wb,
+                    sheet_name=sheet_name,
+                    table_name=table_name,
+                    headers=list(headers),
+                )
+                if did_change:
+                    changed = True
+                    table_changes.append({"table": table_name, "mode": mode})
+
             if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1:
                 default_ws = wb["Sheet"]
                 if int(default_ws.max_row or 0) <= 1 and int(default_ws.max_column or 0) <= 1:
@@ -1283,6 +1307,22 @@ class ExcelRepo:
                 
                 # Relinquish lock to unblock Qt GUI frame rendering
                 time.sleep(0.01)
+            if not required:
+                for sheet_name, headers in (
+                    (AP_BILLS_SHEET, AP_BILLS_HEADERS),
+                    (AP_PAYMENTS_SHEET, AP_PAYMENTS_HEADERS),
+                ):
+                    if sheet_name not in wb.sheetnames:
+                        required = True
+                        break
+                    ws = wb[sheet_name]
+                    actual = [
+                        _clean_text(ws.cell(row=1, column=index).value)
+                        for index in range(1, len(headers) + 1)
+                    ]
+                    if actual != list(headers):
+                        required = True
+                        break
         finally:
             self._close_workbook(wb)
         self._set_cached_schema_requires_migration(workbook_signature, required)
@@ -1637,14 +1677,14 @@ class ExcelRepo:
             # Existing single-client matters and joint records which explicitly
             # nominate one invoice recipient do not need a prompt.
             eligible = [party for party in parties if int(party.get("isBillingRecipient", 0) or 0) == 1]
-            if len(eligible) <= 1:
+            if not eligible:
                 continue
             recipient_ids = {
                 _clean_text(party.get("clientId")).casefold()
                 for party in eligible
                 if _clean_text(party.get("clientId"))
             }
-            if len(recipient_ids) <= 1:
+            if not recipient_ids:
                 continue
             for party in eligible:
                 party_id = _clean_text(party.get("clientId")).casefold()
@@ -3089,6 +3129,8 @@ class ExcelRepo:
 
         method = _clean_text(data.get("method"))
         deposit_account = _clean_text(data.get("depositAccount") or data.get("account"))
+        if payment_amount > 0 and not deposit_account:
+            raise ValueError("Select the active account receiving this payment.")
         reference = _clean_text(data.get("reference"))
         notes = _clean_text(data.get("notes"))
         adjustment_reason = _clean_text(data.get("adjustmentReason"))
@@ -3102,9 +3144,7 @@ class ExcelRepo:
                 updated_transaction = dict(transaction_rows[transaction_index])
                 updated_transaction[sc.COL_TXN_DATE] = payment_date
                 updated_transaction[sc.COL_TXN_TYPE] = "Income"
-                updated_transaction[sc.COL_TXN_FROM_ACCOUNT] = deposit_account or method or _clean_text(
-                    updated_transaction.get(sc.COL_TXN_FROM_ACCOUNT)
-                )
+                updated_transaction[sc.COL_TXN_FROM_ACCOUNT] = deposit_account
                 updated_transaction[sc.COL_TXN_AMOUNT] = payment_amount
                 updated_transaction[sc.COL_TXN_INVOICE_REF] = invoice
                 updated_transaction[sc.COL_TXN_NOTES] = notes or f"{method or 'Payment'} applied to invoice {invoice}"
@@ -3117,9 +3157,9 @@ class ExcelRepo:
                     {
                         "txnDate": payment_date,
                         "class": "Business",
-                        "businessUnit": "Legal Practice",
+                        "businessUnit": sc.SYSTEM_BUSINESS_UNIT_LEGAL_PRACTICE,
                         "type": "Income",
-                        "fromAccount": deposit_account or method or "Operating Account",
+                        "fromAccount": deposit_account,
                         "payee": _clean_text(receivable.get(sc.COL_RECV_CLIENT)),
                         "client": _clean_text(receivable.get(sc.COL_RECV_WORK_CLIENT))
                         or _clean_text(receivable.get(sc.COL_RECV_CLIENT)),
@@ -3261,7 +3301,9 @@ class ExcelRepo:
 
         method = _clean_text(data.get("method") or data.get("paymentMethod"))
         reference = _clean_text(data.get("reference") or data.get("ref") or data.get("cheque") or data.get("chequeNumber"))
-        deposit_account = _clean_text(data.get("depositAccount") or data.get("account") or method or "Operating Account")
+        deposit_account = _clean_text(data.get("depositAccount") or data.get("account"))
+        if payment_amt > 0 and not deposit_account:
+            raise ValueError("Select the active account receiving this payment.")
         notes = _clean_text(data.get("notes"))
         adj_reason = _clean_text(data.get("adjustmentReason"))
 
@@ -3299,7 +3341,7 @@ class ExcelRepo:
             transaction_payload = {
                 "txnDate": payment_date,
                 "class": "Business",
-                "businessUnit": "Legal Practice",
+                "businessUnit": sc.SYSTEM_BUSINESS_UNIT_LEGAL_PRACTICE,
                 "type": "Income",
                 "fromAccount": deposit_account,
                 "payee": _clean_text(target_row.get(sc.COL_RECV_CLIENT)),
@@ -6166,10 +6208,11 @@ class ExcelRepo:
         """Create one matter-linked, invoiceable fee WIP line.
 
         A fee is stored in the standard time/WIP table with zero hours and a
-        zero rate.  Its positive gross/net amount is intentional: the invoice
-        renderer treats that shape as a flat-fee service line.  This keeps a
-        matter containing only direct fee entries invoiceable without routing
-        the user through the invoice builder.
+        zero rate. A non-zero gross/net amount is intentional: the invoice
+        renderer treats that shape as a flat-fee service or an explicit fee
+        adjustment line. This keeps a matter containing only direct fee
+        entries invoiceable without routing the user through the invoice
+        builder, while allowing transparent pre-tax fee credits.
         """
         self.ensure_schema()
         raw = dict(payload or {})
@@ -6181,8 +6224,8 @@ class ExcelRepo:
             raise ValueError("Date must be in YYYY-MM-DD format.")
 
         amount = self._pick_float(raw, ["amount", "feeAmount", "amountText", sc.COL_TIME_GROSS])
-        if amount is None or not math.isfinite(float(amount)) or float(amount) <= 0:
-            raise ValueError("Fee amount must be greater than zero.")
+        if amount is None or not math.isfinite(float(amount)) or float(amount) == 0:
+            raise ValueError("Fee amount must be non-zero.")
         amount = round(float(amount), 2)
 
         requested_matter_id = self._pick_text(
@@ -8529,6 +8572,36 @@ class ExcelRepo:
 
         self._write_table(ws, None, tref.table, headers, [], None)
         return True, "created"
+
+    def _ensure_governed_external_table_schema(
+        self,
+        wb,
+        *,
+        sheet_name: str,
+        table_name: str,
+        headers: List[str],
+    ) -> Tuple[bool, str]:
+        ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.create_sheet(sheet_name)
+        existing = ws.tables[table_name] if table_name in ws.tables else None
+        if existing is None:
+            self._write_table(ws, None, table_name, headers, [], None)
+            return True, "created"
+        existing_headers, existing_rows = self._rows_from_table(ws, existing)
+        if existing_headers == headers:
+            return False, "unchanged"
+        if headers[: len(existing_headers)] != existing_headers:
+            raise RuntimeError(
+                f"Governed table {table_name} does not have an append-only schema prefix."
+            )
+        self._write_table(
+            ws,
+            existing_table=existing,
+            table_name=table_name,
+            headers=headers,
+            rows=existing_rows,
+            style=existing.tableStyleInfo,
+        )
+        return True, "migrated"
 
     def _seed_transaction_lookup_tables_if_empty(self, wb) -> List[Dict[str, Any]]:
         seed_specs = [
@@ -11844,6 +11917,12 @@ class ExcelRepo:
         if movement_type and to_account and from_account.lower() == to_account.lower():
             raise ValueError("FromAccount and ToAccount must differ for Transfer and Debt Repayment.")
 
+        business_unit, from_account, to_account = self._canonical_transaction_references(
+            business_unit=business_unit,
+            from_account=from_account,
+            to_account=to_account,
+        )
+
         payee = self._pick_text(payload, ["payee", "vendor", sc.COL_TXN_PAYEE])
         if txn_type_lc != "transfer" and not payee:
             raise ValueError("Payee is required for non-transfer transactions.")
@@ -12067,6 +12146,124 @@ class ExcelRepo:
                         continue
                     out[alias] = kind
         return out
+
+    def _canonical_transaction_reference(
+        self,
+        *,
+        value: str,
+        rows: List[Dict[str, Any]],
+        key_column: str,
+        active_column: str,
+        label: str,
+        alias_column: str = "",
+    ) -> str:
+        """Resolve a current-write reference to one active canonical key."""
+
+        text = _clean_text(value)
+        if not text:
+            return ""
+        key = text.casefold()
+        exact: List[Dict[str, Any]] = []
+        aliases: List[Dict[str, Any]] = []
+        for raw in rows:
+            row = dict(raw or {})
+            canonical = _clean_text(row.get(key_column))
+            if not canonical:
+                continue
+            if canonical.casefold() == key:
+                exact.append(row)
+            if alias_column:
+                declared = {
+                    alias.strip().casefold()
+                    for alias in _clean_text(row.get(alias_column))
+                    .replace(";", "|")
+                    .replace(",", "|")
+                    .split("|")
+                    if alias.strip()
+                }
+                if key in declared:
+                    aliases.append(row)
+
+        candidates = exact or aliases
+        if not candidates:
+            raise ValueError(
+                f"{label} '{text}' is not configured in its reference table. "
+                f"Select an active configured {label.lower()}."
+            )
+        canonical_keys = {
+            _clean_text(row.get(key_column)).casefold(): _clean_text(row.get(key_column))
+            for row in candidates
+            if _clean_text(row.get(key_column))
+        }
+        if len(canonical_keys) != 1:
+            raise ValueError(f"{label} '{text}' maps to more than one configured reference.")
+        if self._to_bool_int(candidates[0].get(active_column), default=1) != 1:
+            raise ValueError(
+                f"{label} '{text}' is retired and cannot be used for a current transaction."
+            )
+        return next(iter(canonical_keys.values()))
+
+    def _canonical_transaction_references(
+        self,
+        *,
+        business_unit: str,
+        from_account: str,
+        to_account: str,
+    ) -> Tuple[str, str, str]:
+        tables = self._read_table_rows_bulk(
+            [TBL_TRANSACTION_ACCOUNTS, TBL_TRANSACTION_BUSINESS_UNITS]
+        )
+        account_rows = [
+            self._canonicalize_transaction_account_row(row)
+            for row in tables.get(TBL_TRANSACTION_ACCOUNTS.table, [])
+        ]
+        unit_rows = [
+            self._canonicalize_transaction_business_unit_row(row)
+            for row in tables.get(TBL_TRANSACTION_BUSINESS_UNITS.table, [])
+        ]
+        if not account_rows:
+            account_rows = [
+                self._canonicalize_transaction_account_row(row)
+                for row in self._load_seed_csv_rows("transactions_master.accounts.seed.csv")
+            ]
+        if not unit_rows:
+            unit_rows = [
+                self._canonicalize_transaction_business_unit_row(row)
+                for row in self._load_seed_csv_rows("transactions_master.business_units.seed.csv")
+            ]
+
+        canonical_from = self._canonical_transaction_reference(
+            value=from_account,
+            rows=account_rows,
+            key_column=sc.COL_TXN_ACCOUNT_CODE,
+            active_column=sc.COL_TXN_ACCOUNT_ACTIVE,
+            alias_column=sc.COL_TXN_ACCOUNT_ALIASES,
+            label="FromAccount",
+        )
+        canonical_to = (
+            self._canonical_transaction_reference(
+                value=to_account,
+                rows=account_rows,
+                key_column=sc.COL_TXN_ACCOUNT_CODE,
+                active_column=sc.COL_TXN_ACCOUNT_ACTIVE,
+                alias_column=sc.COL_TXN_ACCOUNT_ALIASES,
+                label="ToAccount",
+            )
+            if to_account
+            else ""
+        )
+        canonical_unit = (
+            self._canonical_transaction_reference(
+                value=business_unit,
+                rows=unit_rows,
+                key_column=sc.COL_TXN_BUSINESS_UNIT_NAME,
+                active_column=sc.COL_TXN_BUSINESS_UNIT_ACTIVE,
+                label="BusinessUnit",
+            )
+            if business_unit
+            else ""
+        )
+        return canonical_unit, canonical_from, canonical_to
 
     def _transaction_category_lookup_maps(self) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
         by_code: Dict[str, Dict[str, Any]] = {}

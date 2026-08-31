@@ -53,7 +53,8 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     )
     assert "var commandScreen = screenOverride ? screenOverride : monitorOwningWindowControl();" in maximize
     assert "maximizedOwnerScreen = commandScreen;" in maximize
-    assert "professionalMaximizeFxAnimation.restart();" in maximize
+    assert 'beginProfessionalWindowMotion("maximize"' in maximize
+    assert "requestProfessionalNativeWindowState" not in maximize
 
     toggle = _function_body(
         shell,
@@ -99,30 +100,99 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     assert "var restoreDestination = !cursorAnchored ? restoreGlyphDestinationScreen() : null;" in restore
     assert "var restoreScreen = restoreDestination ? restoreDestination.screen : null;" in restore
     assert "adoptTargetScreen(restoreScreen, true);" in restore
-    assert "professionalRestoreMaxFxAnimation.restart();" in restore
+    assert 'beginProfessionalWindowMotion("restore"' in restore
+    assert "requestProfessionalNativeWindowState" not in restore
 
 
-def test_professional_maximize_restore_uses_a_short_frozen_surface_transform() -> None:
+def test_professional_maximize_restore_has_one_continuous_geometry_owner() -> None:
     shell = (PROJECT_ROOT / "src" / "qml" / "DetachedShellWindow.qml").read_text(
         encoding="utf-8"
     )
+    main_py = (PROJECT_ROOT / "src" / "python" / "main.py").read_text(encoding="utf-8")
+    app_controller = (
+        PROJECT_ROOT / "src" / "python" / "backend" / "app_controller.py"
+    ).read_text(encoding="utf-8")
+    win_shift = (
+        PROJECT_ROOT / "src" / "python" / "platform" / "win_shift_arrow.py"
+    ).read_text(encoding="utf-8")
 
-    # The Professional shell uses direct GPU hardware-accelerated texture transforms
-    # on contentLayer with zero-latency cubic easing.
-    assert "property real maximizeRenderX: 0.0" in shell
-    assert "property real maximizeRenderY: 0.0" in shell
-    assert "property real maximizeRenderW: 1.0" in shell
-    assert "property real maximizeRenderH: 1.0" in shell
-    assert "property real maximizeStartFinalX: 0.0" in shell
-    assert "property real maximizeTargetFinalX: 0.0" in shell
-    assert "id: professionalMaximizeFxAnimation" in shell
-    assert "id: professionalRestoreMaxFxAnimation" in shell
-    assert 'property: "maximizeRenderX"' in shell
-    assert 'property: "maximizeRenderY"' in shell
-    assert 'property: "maximizeRenderW"' in shell
-    assert 'property: "maximizeRenderH"' in shell
-    assert "layer.enabled: mainWin.userResizeInProgress || mainWin.maximizeAnimInProgress" in shell
-    assert "easing.type: Easing.OutCubic" in shell
+    motion = _function_body(
+        shell,
+        "    function beginProfessionalWindowMotion(kind, sourceRect, targetRect, targetScreenOverride) {",
+        "    function finishProfessionalWindowMotion() {",
+    )
+    assert "professionalWindowMotionSourceHostX = Math.round(mainWin.x);" in motion
+    assert "professionalWindowMotionSourceHostW = Math.max(1, Math.round(mainWin.width));" in motion
+    assert "var targetHost = professionalMotionTargetHostRect(kind, targetRect);" in motion
+    assert "professionalWindowMotionTargetHostX = targetHost.x;" in motion
+    assert "professionalWindowMotionAnimation.restart();" in motion
+    assert "applyHostEnvelopeForTarget();" not in motion
+    assert "updateCanvasGeometry();" not in motion
+
+    finish = _function_body(
+        shell,
+        "    function finishProfessionalWindowMotion() {",
+        "    function resetDragFxState() {",
+    )
+    assert "hostX = Math.round(professionalWindowMotionTargetHostX);" in finish
+    assert "hostW = Math.max(1, Math.round(professionalWindowMotionTargetHostW));" in finish
+    assert finish.index("updateCanvasGeometry();") < finish.index(
+        "professionalWindowMotionActive = false;"
+    )
+
+    window_setup = _function_body(
+        shell,
+        "    // ============================================================\n    // WINDOW SETUP",
+        "    onHostXChanged:",
+    )
+    assert 'color: "transparent"' in window_setup
+    assert "Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint" in window_setup
+    assert "professionalWindowMotionRenderHostW" in window_setup
+    assert "professionalWindowMotionRenderHostX" in window_setup
+
+    startup_show = _function_body(
+        shell,
+        "    function showProfessionalWindowAtRequestedState() {",
+        "    function startProfessionalLaunchNow() {",
+    )
+    assert "mainWin.show();" in startup_show
+    assert "showMaximized" not in startup_show
+
+    assert "ensure_professional_native_window_style" not in main_py
+    assert "requestProfessionalNativeWindowState" not in app_controller
+    assert "_uses_native_professional_window_state" not in win_shift
+    assert "professionalNativeWindow" not in shell
+    assert "roundedSurfaceMaskEnabled: unifiedChrome.cornerRadius > 0" in shell
+    assert "farGlowEnabled: !(mainWin.lowPerformanceMode" in shell
+
+
+def test_cross_monitor_tray_minimize_launches_only_one_outbound_comet() -> None:
+    shell = (PROJECT_ROOT / "src" / "qml" / "DetachedShellWindow.qml").read_text(
+        encoding="utf-8"
+    )
+    launch = _function_body(
+        shell,
+        "    function launchCrossMonitorTrayMinimizeFlightOnce() {",
+        "    function requestExitFromTrayAnimation() {",
+    )
+    assert "_crossMonitorTrayFlightLaunched" in launch
+    assert "overlay.launchFlight(" in launch
+
+    progress = _function_body(
+        shell,
+        "            function onMinimizeProgressChanged() {",
+        "            function onExitFromTrayProgressChanged() {",
+    )
+    assert "jelly.minimizeProgress >= 0.65" in progress
+    assert "launchCrossMonitorTrayMinimizeFlightOnce()" in progress
+
+    finished = _function_body(
+        shell,
+        "        onMinimizeFinished: {",
+        "        onRestoreFinished: {",
+    )
+    assert "!mainWin._crossMonitorTrayFlightLaunched" in finished
+    assert finished.count("launchCrossMonitorTrayMinimizeFlightOnce()") == 1
 
 
 def test_modern_combo_box_height_is_independent_of_its_implicit_height() -> None:

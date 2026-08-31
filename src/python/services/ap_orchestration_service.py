@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
 
+from domain import schema_constants as sc
 from domain.ap_lifecycle import APValidationError, clean_text, money
 from repositories.ap_workbook_repository import APWorkbookRepository
 from services.ap_setoff_service import APSetoffService
@@ -193,7 +194,7 @@ class APOrchestrationService:
             # A supplier bill records an obligation, not a bank movement.  The
             # actual cash account is recorded only when a supplier payment is
             # posted later.
-            "fromAccount": "AP_PAYABLE",
+            "fromAccount": sc.SYSTEM_ACCOUNT_AP_PAYABLE,
             "toAccount": clean_text(bill.get("ToAccount")),
             "payee": clean_text(bill.get("Vendor")),
             "parent": clean_text(bill.get("Parent")),
@@ -726,7 +727,7 @@ class APOrchestrationService:
                 "businessUnit": clean_text(bill.get("BusinessUnit")) or "Cory Business",
                 "type": "Transfer",
                 "fromAccount": from_account,
-                "toAccount": "AP_PAYABLE",
+                "toAccount": sc.SYSTEM_ACCOUNT_AP_PAYABLE,
                 "payee": clean_text(bill.get("Vendor")),
                 "categoryCode": clean_text(bill.get("CategoryCode")) or "EXP_GENERAL",
                 "categoryName": clean_text(bill.get("CategoryName")) or "Supplier payment",

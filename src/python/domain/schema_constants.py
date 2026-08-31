@@ -311,6 +311,15 @@ COL_TXN_PAYEE_NAME = "PayeeName"
 COL_TXN_PAYEE_DEFAULT_CATEGORY_CODE = "DefaultCategoryCode"
 COL_TXN_PAYEE_ACTIVE = "Active"
 
+# Governed transaction references used by backend-owned financial workflows.
+# These are explicit system references, not UI defaults.  A/P expense rows use
+# the liability account until an actual supplier payment names its cash account;
+# invoice receipts belong to the legal-practice business unit.
+SYSTEM_ACCOUNT_AP_PAYABLE = "AP_PAYABLE"
+SYSTEM_ACCOUNT_AP_PAYABLE_NAME = "Accounts Payable"
+SYSTEM_ACCOUNT_AP_PAYABLE_KIND = "accounts-payable"
+SYSTEM_BUSINESS_UNIT_LEGAL_PRACTICE = "Legal Practice"
+
 # Disbursements
 COL_DISB_ID = "DisbursementID"
 COL_DISB_DATE = "Date"

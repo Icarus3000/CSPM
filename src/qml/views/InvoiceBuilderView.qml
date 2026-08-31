@@ -54,6 +54,7 @@ Item {
     // immediately request a preview and raise a false "not found" warning.
     property string deletingDraftNum: ""
     property var selectedDraftData: null
+    property var draftLineItems: []
     property var draftMatterOptions: []
     property var customFeeMatterOptions: {
         var options = []
@@ -82,7 +83,6 @@ Item {
         }
         return options
     }
-    property var draftLineItems: []
     property string previewHtml: ""
     property bool isLoading: false
     property bool isPreviewLoading: false
@@ -200,8 +200,8 @@ Item {
     function _clearSelection() {
         root.selectedDraftNum = ""
         root.selectedDraftData = null
-        root.draftMatterOptions = []
         root.draftLineItems = []
+        root.draftMatterOptions = []
         root.previewHtml = ""
     }
 
@@ -269,8 +269,8 @@ Item {
         // even begun.  The backend now returns the draft, line items, and HTML
         // together from one background snapshot.
         selectedDraftData = null
-        draftMatterOptions = []
         draftLineItems = []
+        draftMatterOptions = []
         previewHtml = ""
         isPreviewLoading = true
 
@@ -329,8 +329,8 @@ Item {
         if (root.selectedDraftNum === num) {
             root.selectedDraftNum = ""
             root.selectedDraftData = null
-            root.draftMatterOptions = []
             root.draftLineItems = []
+            root.draftMatterOptions = []
             root.previewHtml = ""
         }
         root.deletingDraftNum = ""
@@ -393,8 +393,8 @@ Item {
             if (String(draftNum) !== root.selectedDraftNum) return
             var loaded = workspace || {}
             root.selectedDraftData = loaded.draft || null
-            root.draftMatterOptions = loaded.matterOptions || []
             root.draftLineItems = loaded.lineItems || []
+            root.draftMatterOptions = loaded.matterOptions || []
             root.previewHtml = String(loaded.html || root.previewHtml || "")
             root.isPreviewLoading = false
         }
@@ -490,9 +490,9 @@ Item {
                 root.pendingFinalizeInvoiceNum = ""
                 root.pendingFinalizePath = ""
             }
+        }
         function onCustomFeeLineCompleted(result) {
             addFeeDialog.handleCompletion(result || {})
-        }
         }
         function onDraftFinalizationError(msg) {
             root.isFinalizingExport = false
@@ -906,7 +906,7 @@ Item {
                                                             id: discountTypeCombo
                                                             anchors.fill: parent
                                                             model: ["Percentage", "Fixed Amount"]
-                                                            currentIndex: (root.selectedDraftData && root.selectedDraftData.DiscountType === "fixed") ? 1 : 0
+                                                            currentIndex: (root.selectedDraftData && ["flat", "fixed", "flat amount"].indexOf(String(root.selectedDraftData.DiscountType || "").toLowerCase()) >= 0) ? 1 : 0
                                                             font.pixelSize: 12
                                                             contentItem: Text { leftPadding: 8; rightPadding: 24; text: discountTypeCombo.displayText; color: root.textColor; font: discountTypeCombo.font; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                                                             indicator: Text { x: discountTypeCombo.width - width - 8; anchors.verticalCenter: parent.verticalCenter; text: "⌄"; color: root.mutedColor; font.pixelSize: 16 }
@@ -935,6 +935,8 @@ Item {
                                                         color: textColor
                                                         background: Rectangle { color: root.isDark ? "#333" : "#fff"; border.color: borderColor; radius: 4 }
                                                         text: root.selectedDraftData ? (root.selectedDraftData.DiscountValue || "0.0") : "0.0"
+                                                        onEditingFinished: root.billingBackend.applyDiscount(root.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValInput.text) || 0)
+                                                        onAccepted: root.billingBackend.applyDiscount(root.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValInput.text) || 0)
                                                     }
                                                     Rectangle {
                                                         Layout.alignment: Qt.AlignVCenter
@@ -947,7 +949,7 @@ Item {
                                                         Text { anchors.centerIn: parent; text: "Apply"; color: root.textColor; font.pixelSize: 12 }
                                                         MouseArea {
                                                             anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                                            onClicked: root.billingBackend.applyDiscount(root.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "percentage" : "fixed", parseFloat(discountValInput.text) || 0)
+                                                            onClicked: root.billingBackend.applyDiscount(root.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValInput.text) || 0)
                                                         }
                                                     }
 
@@ -1810,6 +1812,7 @@ Item {
             newFeeMatter.currentIndex = root.customFeeMatterOptions.length > 0 ? 0 : -1
             x = (Screen.desktopAvailableWidth - width) / 2
             y = (Screen.desktopAvailableHeight - height) / 2
+            show()
             newFeeDesc.forceActiveFocus()
         }
 
@@ -1869,7 +1872,6 @@ Item {
 
         onClosing: function(close) {
             if (submissionPending) close.accepted = false
-            show()
         }
 
         ColumnLayout {
@@ -1884,9 +1886,9 @@ Item {
                 text: Qt.formatDate(new Date(), "yyyy-MM-dd")
                 Layout.fillWidth: true
                 color: root.textColor
+                background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
                 enabled: !addFeeDialog.submissionPending
                 onAccepted: addFeeDialog.submit()
-                background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
             }
             TextField {
                 id: newFeeDesc
@@ -1894,9 +1896,9 @@ Item {
                 placeholderTextColor: root.isDark ? "#888" : "#666"
                 Layout.fillWidth: true
                 color: root.textColor
+                background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
                 enabled: !addFeeDialog.submissionPending
                 onAccepted: addFeeDialog.submit()
-                background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
             }
             TextField {
                 id: newFeeAmount
@@ -1904,6 +1906,7 @@ Item {
                 placeholderTextColor: root.isDark ? "#888" : "#666"
                 Layout.fillWidth: true
                 color: root.textColor
+                background: Rectangle { color: root.isDark ? "#333" : "#f0f0f0"; radius: 4; border.color: root.borderColor }
                 inputMethodHints: Qt.ImhFormattedNumbersOnly
                 enabled: !addFeeDialog.submissionPending
                 onAccepted: addFeeDialog.submit()
@@ -1955,12 +1958,12 @@ Item {
                         addFeeDialog.ownerDraftNum = ""
                         addFeeDialog.hide()
                     }
+                }
                 Button {
                     text: addFeeDialog.submissionPending ? "Adding…" : "Add Fee"
                     enabled: !addFeeDialog.submissionPending
                             && root.customFeeMatterOptions.length > 0
                     onClicked: addFeeDialog.submit()
-                }
                 }
             }
         }

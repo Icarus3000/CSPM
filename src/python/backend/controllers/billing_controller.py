@@ -3,8 +3,8 @@ import re
 import logging
 
 import time
-import uuid
 
+import uuid
 
 from decimal import Decimal
 
@@ -87,8 +87,8 @@ class BillingController(QObject):
     draftsDeleted = Signal('QVariantMap')
 
     draftFinalized = Signal('QVariantMap')
-    customFeeLineCompleted = Signal('QVariantMap')
 
+    customFeeLineCompleted = Signal('QVariantMap')
 
     draftsLoaded = Signal('QVariantList')
 
@@ -170,8 +170,8 @@ class BillingController(QObject):
         self._finalized_invoice_load_in_progress = False
         self._invoice_directory_detail_requests = set()
         self._draft_workspace_requests = set()
-        self._custom_fee_requests_in_progress = set()
         self._invoice_reversal_in_progress = False
+        self._custom_fee_requests_in_progress = set()
 
     # ── Worker helpers ───────────────────────────────────────────────────────
 
@@ -715,6 +715,7 @@ class BillingController(QObject):
 
             from repositories.excel_repo import TBL_TIME
 
+            rows = self._excel_repo._read_table_rows(TBL_TIME)
             matters = self._excel_repo._read_table_rows(sc.TBL_MATTERS)
             matter_display = {}
             for matter in matters:
@@ -725,7 +726,6 @@ class BillingController(QObject):
                 matter_name = str(matter.get(sc.COL_MATTER_NAME) or "").strip()
                 label = " • ".join(value for value in (matter_number, matter_name) if value)
                 matter_display[matter_id.casefold()] = label or matter_id
-            rows = self._excel_repo._read_table_rows(TBL_TIME)
 
             items = []
 
@@ -747,6 +747,7 @@ class BillingController(QObject):
                     except (ValueError, TypeError):
 
                         hours = 0.0
+
                     try:
                         rate = float(row.get(sc.COL_TIME_RATE) or 0)
                     except (ValueError, TypeError):
@@ -759,7 +760,6 @@ class BillingController(QObject):
                         or "feeorigin:invoicedraft" in lock_audit
                         or (hours == 0.0 and rate == 0.0 and net > 0.0)
                     )
-
 
                     items.append({
 
@@ -857,10 +857,10 @@ class BillingController(QObject):
 
     def addDraftLineItem(self, draft_num, data):
         self._payload_cache.pop(f"{draft_num}_True_None", None)
+
         if bool((data or {}).get("isFee")):
             self.addDraftCustomFee(str(draft_num), dict(data or {}))
             return
-
 
         try:
 
@@ -873,6 +873,7 @@ class BillingController(QObject):
         except Exception as exc:
 
             self.error.emit(f"Could not add docket: {exc}")
+
     @Slot(result=str)
     def newCustomFeeRequestId(self):
         """Return one opaque logical-action identity for Add Custom Fee."""
@@ -947,7 +948,6 @@ class BillingController(QObject):
         finally:
             self._custom_fee_requests_in_progress.discard(request_key)
             self._release_worker(worker)
-
 
     # ── Discount ─────────────────────────────────────────────────────────────
 
@@ -1141,33 +1141,31 @@ class BillingController(QObject):
         except Exception as e:
             logger.exception(f"Failed to update draft meta: {e}")
 
+    @staticmethod
+    def _normalize_discount_type(discount_type):
+        dtype = str(discount_type or "").strip().casefold()
+        if dtype in ("percentage", "percent", "%"):
+            return "Percentage"
+        elif dtype in ("flat", "fixed", "flat amount", "amount", "$"):
+            return "Flat"
+        return "None"
+
     @Slot(str, str, float)
-
     def applyDiscount(self, draft_num, discount_type, discount_value):
-
         """Apply a discount to a draft invoice."""
-
         try:
-
+            norm_type = self._normalize_discount_type(discount_type)
             self._payload_cache.pop(f"{draft_num}_True_None", None)
+            self._payload_cache.pop(f"{draft_num}_False_None", None)
             self._draft_svc.apply_discount(
-
                 str(draft_num),
-
-                str(discount_type),
-
+                norm_type,
                 Decimal(str(discount_value)),
-
             )
-
             draft = self._draft_svc.get_draft(str(draft_num))
-
             self.toast.emit(f"Discount applied to {draft_num}")
-
             self.draftUpdated.emit(dict(draft) if draft else {})
-
         except Exception as exc:
-
             self.error.emit(f"Could not apply discount: {exc}")
 
     @Slot(str, float)
@@ -1810,14 +1808,11 @@ class BillingController(QObject):
                 billing_profile["principalName"] = ""
                 addr_lines = [line.strip() for line in address_snapshot.splitlines() if line.strip()]
 
-        discount_type = str(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE) or "None")
+        discount_type = self._normalize_discount_type(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE))
 
         try:
-
             discount_value = float(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0)
-
         except (ValueError, TypeError):
-
             discount_value = 0.0
 
             
@@ -2694,8 +2689,8 @@ class BillingController(QObject):
         started = time.perf_counter()
         from repositories.excel_repo import (
             TBL_CLIENTS,
-            TBL_DISBURSEMENTS,
             TBL_CLIENT_PROFILES,
+            TBL_DISBURSEMENTS,
             TBL_DRAFT_INVOICES,
             TBL_INVOICE_LOG,
             TBL_MATTERS,
@@ -2708,8 +2703,8 @@ class BillingController(QObject):
         # use ExcelRepo's in-memory rows instead of reopening the macro file.
         self._excel_repo._read_table_rows_bulk([
             TBL_DRAFT_INVOICES,
-            TBL_DISBURSEMENTS,
             TBL_TIME,
+            TBL_DISBURSEMENTS,
             TBL_CLIENTS,
             TBL_CLIENT_PROFILES,
             TBL_MATTERS,
@@ -2720,6 +2715,7 @@ class BillingController(QObject):
         if not draft:
             raise ValueError(f"Draft {draft_num} was not found.")
 
+        line_items = self.getDraftLineItems(draft_num)
         matter_rows = self._excel_repo._read_table_rows(TBL_MATTERS)
         matter_by_id = {
             str(row.get(sc.COL_MATTER_ID) or "").strip().casefold(): row
@@ -2750,7 +2746,6 @@ class BillingController(QObject):
             label = " • ".join(value for value in (matter_number, matter_name) if value)
             matter_options.append({"matterId": matter_id, "label": label or matter_id})
 
-        line_items = self.getDraftLineItems(draft_num)
         html = self._generate_preview_impl(draft_num, template_name)
         logger.info(
             "[PERF] Invoice Builder workspace %s: %.3fs (%d line item(s), %d HTML chars)",
@@ -2761,8 +2756,8 @@ class BillingController(QObject):
         )
         return {
             "draft": dict(draft),
-            "matterOptions": matter_options,
             "lineItems": list(line_items or []),
+            "matterOptions": matter_options,
             "html": str(html or ""),
         }
 

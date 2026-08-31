@@ -1058,6 +1058,12 @@ class FinanceRepo:
         if movement_type and to_account and from_account.lower() == to_account.lower():
             raise ValueError("FromAccount and ToAccount must differ for Transfer and Debt Repayment.")
 
+        business_unit, from_account, to_account = self.db._canonical_transaction_references(
+            business_unit=business_unit,
+            from_account=from_account,
+            to_account=to_account,
+        )
+
         payee = self.db._pick_text(payload, ["payee", "vendor", sc.COL_TXN_PAYEE])
         if txn_type_lc != "transfer" and not payee:
             raise ValueError("Payee is required for non-transfer transactions.")

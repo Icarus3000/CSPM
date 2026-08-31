@@ -38,7 +38,6 @@ Item {
     property string _createRetryReason: ""
     property bool _createRetryAllowPrewarm: false
     property bool _createRetryExhaustedLogged: false
-    property bool _mainComponentFatalError: false
     property int _handoffTimeoutRetryCount: 0
     property int _handoffTimeoutRetryMax: 12
     // Phase 1: create and hydrate the first workspace while every main-window
@@ -109,10 +108,6 @@ Item {
     readonly property int startupMainObjectPrewarmLeadMs: _runtimeIntSafe("startupMainObjectPrewarmLeadMs", 4200)
 
     signal mainWindowReady(var windowRef)
-    // Component.Error is deterministic for a given QML source tree. Retrying it
-    // hundreds of times only leaves the native splash visible and makes a
-    // startup error look like a frozen application.
-    signal mainWindowLoadFailed(string message)
     signal cinematicRevealRequested()
     signal cinematicBloomPrestageComplete()
 
@@ -468,26 +463,6 @@ Item {
         gateCreateRetryTimer.stop()
     }
 
-    function _failMainWindowLoad(reason) {
-        if (_mainComponentFatalError) return
-        _mainComponentFatalError = true
-        _pendingCreateReason = ""
-        _pendingCreateAllowPrewarm = false
-        _createRetryReason = ""
-        _createRetryAllowPrewarm = false
-        gateCreateRetryTimer.stop()
-
-        var detail = "Unable to load the CSPM application shell."
-        if (_mainComponent && _mainComponent.errorString) {
-            var componentDetail = String(_mainComponent.errorString() || "").trim()
-            if (componentDetail.length > 0) detail += "\n" + componentDetail
-        }
-        detail += "\nStartup stage: " + String(reason || "unknown")
-        console.error("[BOOT] Fatal main-window component error: " + detail)
-        _lagLog("_failMainWindowLoad reason=" + String(reason || "unknown"))
-        mainWindowLoadFailed(detail)
-    }
-
     function _scheduleCreateRetry(reason, allowPrewarm) {
         if (mainWindowRef) {
             _resetCreateRetryState()
@@ -819,7 +794,7 @@ Item {
         if (_mainComponent.status === Component.Error) {
             _lagLog("_tryCreateMainWindow failed: component Error reason=" + reason)
             console.warn("[BOOT] Main window component failed: " + _mainComponent.errorString())
-            _failMainWindowLoad("component-error:" + reason)
+            _scheduleCreateRetry("component-error:" + reason, prewarm)
             return false
         }
         if (_mainComponent.status !== Component.Ready) {
@@ -960,7 +935,7 @@ Item {
         _lagLog("_onMainComponentStatusChanged status=" + _componentStatusLabel(_mainComponent.status))
         if (_mainComponent.status === Component.Error) {
             console.warn("[BOOT] Main component error: " + _mainComponent.errorString())
-            _failMainWindowLoad("component-status-error")
+            _scheduleCreateRetry("component-status-error", false)
             return
         }
         if (_mainComponent.status === Component.Loading && _componentLoadStartedAtMs <= 0) {
@@ -991,9 +966,11 @@ Item {
         _componentLoadStartedAtMs = Date.now()
         _componentReadyAtMs = 0
         _lagLog("_preloadMainWindow createComponent begin")
-        // Compile the heavyweight shell while the native splash owns the
-        // screen. Asynchronous compilation keeps the GUI event loop alive on
-        // a cold packaged launch, where the QML disk cache is deliberately off.
+        // The shell is intentionally prepared while the native splash owns
+        // every visible pixel. Prefer asynchronous compilation so the GUI
+        // event loop can keep painting the native progress sequence and the
+        // isolated Practice Briefing worker can start immediately instead of
+        // waiting behind one long synchronous QML compile.
         _mainComponent = Qt.createComponent("DetachedShellWindow.qml", Component.Asynchronous)
         if (!_mainComponent) {
             console.warn("[BOOT] Failed to allocate main component")

@@ -1,10 +1,11 @@
 {
   "filename": "CSPM.xlsm",
-  "type": "macro-enabled-workbook",
+  "type": "macro-enabled-container-with-vba-prohibited",
   "worksheets": [
     "Parents",
     "Clients",
     "ClientProfiles",
+    "MatterParties",
     "Matters",
     "TimeEntries",
     "Trademarks",
@@ -21,7 +22,9 @@
     "DraftInvoices",
     "CorpEntities",
     "CorpRelationships",
-    "CorpTransactions"
+    "CorpTransactions",
+    "APBills",
+    "APPayments"
   ],
   "tables": {
     "tblParents": {
@@ -92,6 +95,22 @@
         "UpdatedAt"
       ]
     },
+    "tblMatterParties": {
+      "worksheet": "MatterParties",
+      "columns": [
+        "MatterPartyID",
+        "MatterID",
+        "ClientID",
+        "ClientName",
+        "Role",
+        "IsFileAnchor",
+        "IsBillingRecipient",
+        "SortOrder",
+        "Notes",
+        "CreatedAt",
+        "UpdatedAt"
+      ]
+    },
     "tblMatters": {
       "worksheet": "Matters",
       "columns": [
@@ -121,6 +140,10 @@
         "ReferralFrom",
         "Description",
         "Notes",
+        "RepresentationMode",
+        "JointNoConfidentialityConfirmed",
+        "JointInstructionsRequireAll",
+        "JointEngagementDocument",
         "CreatedAt",
         "UpdatedAt"
       ]
@@ -150,6 +173,7 @@
         "InvoiceAmountPaid",
         "InvoiceBalanceDue",
         "InvoiceDate",
+        "ReissueInvoiceNum",
         "LockAudit",
         "CreatedAt"
       ]
@@ -309,7 +333,16 @@
         "InvoiceTotal",
         "InvoiceAmountPaid",
         "InvoiceBalanceDue",
-        "CreatedAt"
+        "ReissueInvoiceNum",
+        "CreatedAt",
+        "APBillID",
+        "APAllocationID",
+        "SourceTransactionID",
+        "OriginalCurrency",
+        "OriginalAmount",
+        "FXRate",
+        "SupplierInvoiceRef",
+        "DocumentPath"
       ]
     },
     "tblLedger": {
@@ -361,6 +394,7 @@
         "TotalTax",
         "AggregateBilled",
         "BillToClient",
+        "BillToSnapshot",
         "FilePath"
       ]
     },
@@ -387,11 +421,20 @@
         "Date",
         "DiscountType",
         "DiscountValue",
+        "AgencySplitPercent",
         "TotalFees",
         "TotalDisbursements",
         "TotalTax",
         "TotalDue",
         "GroupingPref",
+        "IsFlatFee",
+        "FlatFeeDesc",
+        "FlatFeeAmount",
+        "ReconciliationMode",
+        "ShowTotalHours",
+        "CustomSortOrder",
+        "ReissueInvoiceNum",
+        "BillToSnapshot",
         "CreatedAt",
         "UpdatedAt"
       ]
@@ -443,6 +486,82 @@
         "DocumentReference",
         "Notes",
         "CreatedAt"
+      ]
+    },
+    "tblAPBills": {
+      "worksheet": "APBills",
+      "columns": [
+        "APBillID",
+        "Vendor",
+        "VendorInvoiceNumber",
+        "InvoiceDate",
+        "DueDate",
+        "Subtotal",
+        "TaxAmount",
+        "Total",
+        "AmountPaid",
+        "Balance",
+        "Status",
+        "Currency",
+        "ExpenseTransactionID",
+        "DuplicateKey",
+        "Notes",
+        "CreatedAt",
+        "UpdatedAt",
+        "ExpenseTreatment",
+        "CategoryCode",
+        "CategoryName",
+        "SourceAccount",
+        "OriginalCurrency",
+        "OriginalSubtotal",
+        "OriginalTaxAmount",
+        "OriginalTotal",
+        "BaseCurrency",
+        "BaseSubtotal",
+        "BaseTaxAmount",
+        "BaseTotal",
+        "FXRate",
+        "FXRateDate",
+        "FXSource",
+        "ClientTaxExempt",
+        "BillClaimPct",
+        "MatterID",
+        "ClientID",
+        "ParentID",
+        "DisbursementID",
+        "DocumentPath",
+        "DocumentHash",
+        "DocumentOriginalName",
+        "DocumentOriginalPath",
+        "DocumentOriginalHash",
+        "DocumentStorageFormat",
+        "HistoricalAdoption",
+        "AdoptedAt"
+      ]
+    },
+    "tblAPPayments": {
+      "worksheet": "APPayments",
+      "columns": [
+        "APPaymentID",
+        "APBillID",
+        "PaymentDate",
+        "Amount",
+        "FromAccount",
+        "Method",
+        "Reference",
+        "Status",
+        "ReversalOfPaymentID",
+        "ReversalReason",
+        "Notes",
+        "CreatedAt",
+        "UpdatedAt",
+        "BaseAmount",
+        "FXRate",
+        "PaymentTransactionID",
+        "DocumentPath",
+        "DocumentHash",
+        "DocumentOriginalName",
+        "HistoricalPayment"
       ]
     }
   }

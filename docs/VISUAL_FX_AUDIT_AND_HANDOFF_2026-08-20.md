@@ -24,21 +24,63 @@ Maximizing a smaller Professional window looked as though it jumped around the s
 
 ### Current implementation
 
-src/qml/DetachedShellWindow.qml now uses a frozen-surface handoff for Professional maximize and restore:
+As of 2026-08-31, Professional maximize/restore follows Source's native-window
+ownership model:
 
-1. maximizeWindowToVisibleRect() or restoreFromMaximized() records exact source/target rectangles and routes Professional through beginProfessionalMaximizeSnapshotCapture().
-2. contentLayer.grabToImage() captures the completed source surface while its host still has the old geometry.
-3. The image becomes the only visible surface. The native host can adopt the target geometry and the live responsive hierarchy can reflow behind it without becoming visible.
-4. professionalMaximizeSnapshotProgress interpolates the frozen image x, y, width, and height directly from source rectangle to target rectangle.
-5. Only on the final matching rectangle does the frozen image disappear and the live hierarchy become visible.
+1. `src/python/platform/native_window_style.py` keeps Qt's client-drawn
+   frameless chrome but restores the HWND caption/thick-frame/system/min/max
+   style contract that Windows uses for its DWM state animation.
+2. The title-bar command calls one native `SW_MAXIMIZE` or `SW_RESTORE`
+   operation through `AppController.requestProfessionalNativeWindowState()`.
+3. `DetachedShellWindow.qml` does not set `maximizeAnimInProgress`, stage a
+   monitor-sized host, enable the maximize texture layer, or run a per-frame
+   QML geometry/texture timeline on the ordinary Professional path.
+4. `Window.Maximized` / `Window.Windowed` is authoritative. QML follows that
+   event to synchronize the glyph, final/canvas model, normal bounds, monitor,
+   and persistence.
+5. `Win+Shift+Arrow` passes through to Windows for this ready native path, so
+   the maximized HWND and Windows-owned normal placement transfer together.
 
-Professional timing is 260 ms for maximize and 230 ms for restore, both Easing.OutCubic, with no rotation or overshoot. Capture is bounded at 180 ms. The existing direct live transform remains only as a compatibility fallback if GPU readback is unavailable; it is not the preferred visual path because it cannot protect against internal reflow.
+The prior 240 ms one-owner texture implementation remains only as a
+bridge-unavailable compatibility fallback. It is not the accepted Windows
+Professional path.
 
 ### Current validation state
 
-- Sandbox-safe source regression: python -m pytest tests/test_maximized_restore_and_close_choreography.py — 4 passed.
-- scripts/qmllint.ps1 -Targets @('src/qml/DetachedShellWindow.qml') emitted no diagnostics but exceeded the current execution harness timeout. QML lint is inconclusive, not passed.
-- An outside-sandbox source launch reached the settled Professional Qt/WebEngine shell without a QML/runtime failure. The log did not demonstrate the new frozen-surface maximize marker, so actual visual motion remains manual acceptance pending.
+- Sandbox-safe: changed Python modules compile; focused maximize/native-style/
+  layout suites report **9 passed**; governed QML lint exits 0 with no syntax
+  error and existing warning-level diagnostics only; scoped `git diff --check`
+  exits 0.
+- Outside-sandbox source runtime: `launch.ps1` reached a responsive real
+  Qt/WebEngine shell. The custom chrome remained intact; the live HWND carried
+  style `0x16CF0000` / exstyle `0x00080100`; CSPM's own maximize glyph entered
+  true `IsZoomed` / `0x17CF0000` state; restore returned to the exact prior
+  normal HWND rectangle and style.
+- The source app is left open in normal state. Automated checks establish the
+  native ownership/state contract, not subjective frame pacing. Cory's manual
+  visual acceptance remains pending and blocking. No package was built.
+
+### 2026-08-31 P0 native-window correction in progress
+
+The earlier telemetry conclusion is superseded. `phaseLog()` is disabled
+unless verbose logging is enabled, and Qt debug/info messages are normally
+dropped by `main.py`. The warning-level native-envelope staging line was not
+evidence that the 240 ms timeline failed to start; staging-to-settings-save
+timing was consistent with the animation completing.
+
+The user's visual report instead exposed an ownership mismatch. Source leaves
+one HWND and the full maximize/restore transaction with Windows/DWM. CSPM was
+resizing a layered native host around a QML texture transition, so native
+surface/swapchain reconfiguration could remain visible regardless of easing.
+
+The current source build now restores Source-like native style bits and calls
+the real HWND maximize/restore command. A disposable local Qt compositor probe
+confirmed that the corrected layered HWND receives DWM-owned intermediate
+frames, so CSPM's transparent surface and separate close/minimize visuals did
+not need to be redesigned for this P0. The real source app has passed native
+state/geometry wiring checks and is open for the manual gate below. Do not
+build/promote a package or advance to another visual state machine until Cory
+accepts this source motion.
 
 ### Manual acceptance gate — do this first
 
@@ -46,12 +88,12 @@ Launch with ./launch.ps1 in Professional style and begin from a visibly smaller 
 
 | Action | Must be observed | Must not be observed |
 | --- | --- | --- |
-| Click Maximize | One continuous 260 ms growth from the exact resting rectangle | Pre-jump, internal-panel reflow, flash, duplicate motion, delayed start |
-| Click Restore | One continuous 230 ms contraction to the saved normal rectangle | Mask/corner pop, position shift, blank frame, layout snap |
+| Click Maximize | One continuous native Windows/DWM transition from the exact resting rectangle, visually matching Source | Pre-jump, internal-panel reflow, flash, duplicate motion, delayed start |
+| Click Restore | One continuous native Windows/DWM transition to the Windows-owned normal rectangle | Mask/corner pop, position shift, blank frame, layout snap |
 | Maximize, Win+Shift+Arrow, then Restore | Restore on the monitor that currently owns the maximized native window | Return to a stale monitor or stale desktop coordinates |
-| Repeat ten times | Consistent timing and clean handoff | Capture timeout, accumulating lag, stale image resurrection |
+| Repeat ten times | Consistent timing and clean handoff | Accumulating lag, stale layer, native resize sweep |
 
-If a defect remains, preserve logs/cspm.log from the failing run and inspect MAXIMIZE / RESTORE-MAX messages before changing code. Do not replace the frozen-surface approach with multi-stage bounce, rotation, or a geometry Behavior on the native Window.
+If a defect remains, preserve logs/cspm.log from the failing run and inspect MAXIMIZE / RESTORE-MAX messages before changing code. Do not add multi-stage bounce, rotation, a native-Window geometry Behavior, or image readback to this path.
 
 ## Animation Inventory — Current Source Audit
 
@@ -59,7 +101,7 @@ If a defect remains, preserve logs/cspm.log from the failing run and inspect MAX
 | --- | --- | --- | --- |
 | Native splash and QML reveal | src/python/main.py; DetachedShellWindow.qml | Native splash hands into QML opening/bloom | Keep native splash authoritative until QML has a real ready frame; test on a real GPU after handoff changes |
 | Startup background work | DetachedShellWindow.qml; backend controllers | Deferred queue and quiet-time guard | Keep data/theme/dashboard work outside reveal and first-input budget; use timing evidence |
-| Maximize / restore | DetachedShellWindow.qml | Frozen Professional source; live transform fallback | Finish manual acceptance gate before altering another motion path |
+| Maximize / restore | native_window_style.py; AppController; DetachedShellWindow.qml | Native HWND state; QML follows Windows events | Finish manual acceptance gate before altering another motion path |
 | Restore by title-bar drag | DetachedShellWindow.qml | Separate cursor-anchored geometry path | Test separately; preserve pointer anchoring and do not add cinematic delay |
 | Dragging | DetachedShellWindow.qml | Native drag when available; 8 ms fallback cursor polling | Measure QML geometry cost; prefer native/event-driven motion over more polling |
 | Resizing | DetachedShellWindow.qml | Live resize with a 4 ms timer and effect reduction | Profile a dense view; coalesce to display cadence and avoid FBO/mask reallocation per tick |
@@ -95,7 +137,10 @@ Consolidate by meaning, not by component:
 - window state change: 220–280 ms;
 - intentional cinematic reveal only: longer, with background work isolated.
 
-Use monotonic easing for Professional window transitions. OutCubic is the current baseline. Do not use OutBack, bounce, or rotation unless real-GPU review specifically approves it.
+Use monotonic easing for application-owned Professional transitions. Native
+maximize/restore deliberately has no QML easing token; Windows/DWM owns its
+timing. Do not use OutBack, bounce, or rotation unless real-GPU review
+specifically approves it.
 
 ### P3 — Instrument frame pacing before expanding effects
 
@@ -136,5 +181,8 @@ For every state machine, document source state, visual owner, native geometry ch
 
 ## Change Log
 
+- 2026-08-31: Replaced the rejected Professional texture/host choreography
+  with Source-like native HWND maximize/restore ownership; manual visual
+  acceptance remains pending.
 - 2026-08-20: Created after the Professional frozen-surface maximize/restore repair. Manual visual acceptance remains pending.
 

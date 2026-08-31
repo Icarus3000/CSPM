@@ -260,6 +260,15 @@ Professional:
 
 Components should ask the rules layer instead of checking `appStyle` everywhere.
 
+Professional top-level maximize/restore is an operating-system window-state
+transition, not an application-authored visual effect. Keep the client-drawn
+title bar, but preserve the Windows caption/thick-frame style contract beneath
+it and issue the real native maximize/restore command. QML follows the native
+state event to update its glyph and layout model. Do not reintroduce a manual
+monitor-envelope resize, QML geometry tween, snapshot, or temporary texture
+animation on this path. Console may retain its explicitly expressive visual
+sequences where they do not compete with native window state.
+
 ## 8. Migration Boundary
 
 Before a Flutter or React Native client can be practical, Professional screens need a stable local service boundary.

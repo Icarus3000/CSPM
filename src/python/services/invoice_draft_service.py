@@ -1,8 +1,8 @@
 import uuid
+import logging
 import math
 import re
 import threading
-import logging
 import time
 from datetime import datetime, UTC
 from typing import Dict, List, Optional, Any
@@ -15,11 +15,11 @@ from repositories.excel_repo import ExcelRepo
 
 logger = logging.getLogger(__name__)
 
+
 _DRAFT_LIFECYCLE_LOCK = threading.RLock()
 
 
 CUSTOM_FEE_ORIGIN = "InvoiceDraft"
-
 
 class InvoiceDraftService:
     def __init__(self, repo: ExcelRepo):
@@ -228,6 +228,15 @@ class InvoiceDraftService:
                     break
         return sorted(set(reasons))
 
+    @staticmethod
+    def _normalize_discount_type(discount_type: Any) -> str:
+        dtype = str(discount_type or "").strip().casefold()
+        if dtype in ("percentage", "percent", "%"):
+            return "Percentage"
+        elif dtype in ("flat", "fixed", "flat amount", "amount", "$"):
+            return "Flat"
+        return "None"
+
     def _recalculate_draft_totals_in_memory(
         self,
         draft: Dict[str, Any],
@@ -252,9 +261,8 @@ class InvoiceDraftService:
         is_flat_fee = self._text(draft.get(sc.COL_DRAFT_IS_FLAT_FEE)).lower() == "true"
         flat_fee_amt = Decimal(str(draft.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT) or 0))
         fees_to_use = flat_fee_amt if is_flat_fee else fees
-        draft[sc.COL_DRAFT_TOTAL_FEES] = str(self._money(fees_to_use + disb_total))
 
-        discount_type = self._text(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE)) or "None"
+        discount_type = self._normalize_discount_type(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE))
         discount_value = Decimal(str(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
         agency_split_percent = Decimal(str(draft.get(sc.COL_DRAFT_AGENCY_SPLIT_PERCENT) or 0))
         total_base = fees_to_use + disb_total
@@ -268,7 +276,16 @@ class InvoiceDraftService:
         subtotal = max(Decimal("0.0"), total_base - discount_amt)
         agency_split_amt = subtotal * (agency_split_percent / Decimal("100.0"))
         new_fees = max(Decimal("0.0"), subtotal - agency_split_amt)
-        final_tax = new_fees * Decimal("0.13") if (is_flat_fee or agency_split_percent > 0) else tax
+
+        # If flat fee, agency split, or discount is applied, compute tax on final net fees
+        if is_flat_fee or agency_split_percent > 0 or discount_amt > 0:
+            final_tax = round(new_fees * Decimal("0.13"), 2)
+            fees_billed = new_fees
+        else:
+            final_tax = tax
+            fees_billed = fees_to_use + disb_total
+
+        draft[sc.COL_DRAFT_TOTAL_FEES] = str(self._money(fees_billed))
         draft[sc.COL_DRAFT_TOTAL_TAX] = str(self._money(final_tax))
         draft[sc.COL_DRAFT_TOTAL_DUE] = str(self._money(new_fees + final_tax))
         draft[sc.COL_DRAFT_UPDATED_AT] = datetime.now().astimezone().isoformat()
@@ -386,10 +403,7 @@ class InvoiceDraftService:
         tax = self._money(row.get(sc.COL_TIME_HST))
         is_direct_fee = "entrytype:fee" in str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower()
 
-        # The draft invoice total must use the gross docket amount as the base.
-        # This matches the HTML invoice display, and correctly handles agency 
-        # split calculations without double-deducting the lawyer's share.
-        invoice_fee = gross if gross > 0 else net
+        invoice_fee = net if net > 0 else gross
 
         if is_direct_fee:
             if net <= 0 and gross > 0:
@@ -1656,20 +1670,35 @@ class InvoiceDraftService:
                         sc.COL_TIME_INVOICE_DATE: date_str
                     })
             else:
-                discount_val = draft.get(sc.COL_DRAFT_DISCOUNT_VALUE)
-                if discount_val and Decimal(str(discount_val)) > 0:
+                discount_val = Decimal(str(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
+                discount_type = self._normalize_discount_type(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE))
+                if discount_type != "None" and discount_val > 0:
+                    wip_fees = sum(
+                        Decimal(str(r.get(sc.COL_TIME_NET) or 0))
+                        for r in time_entries
+                        if r.get(sc.COL_TIME_INVOICE_REF) == final_invoice_num
+                    )
+                    if discount_type == "Percentage":
+                        discount_amt = self._money(wip_fees * (discount_val / Decimal("100.0")))
+                        desc = f"Courtesy Discount ({discount_val}% {discount_type})"
+                    else:
+                        discount_amt = self._money(discount_val)
+                        desc = f"Courtesy Discount ({discount_type})"
+
+                    discount_hst = self._money(discount_amt * Decimal("0.13"))
+                    discount_total = discount_amt + discount_hst
                     time_entries.append({
                         sc.COL_TIME_ENTRY_ID: f"WIP_{uuid.uuid4().hex[:8]}",
                         sc.COL_TIME_DATE: date_str,
                         sc.COL_TIME_CLIENT_ID: draft.get(sc.COL_DRAFT_CLIENT_ID),
-                        sc.COL_TIME_DESC: f"Courtesy Discount ({draft.get(sc.COL_DRAFT_DISCOUNT_TYPE)})",
-                        sc.COL_TIME_NET: str(-Decimal(str(discount_val))),
-                        sc.COL_TIME_HST: "0.00",
-                        sc.COL_TIME_TOTAL: str(-Decimal(str(discount_val))),
+                        sc.COL_TIME_DESC: desc,
+                        sc.COL_TIME_NET: str(-discount_amt),
+                        sc.COL_TIME_HST: str(-discount_hst),
+                        sc.COL_TIME_TOTAL: str(-discount_total),
                         sc.COL_TIME_INVOICE_REF: final_invoice_num,
                         sc.COL_TIME_INVOICE_STATUS: "Billed",
                         sc.COL_TIME_STATUS: "Billed",
-                        sc.COL_TIME_INVOICE_DATE: date_str
+                        sc.COL_TIME_INVOICE_DATE: date_str,
                     })
         except Exception as e:
             print("Failed to apply WIP adjustment:", e)

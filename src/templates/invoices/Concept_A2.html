@@ -386,6 +386,14 @@
                                 <span class="totals-val">{{ "{:,.1f}".format(total_hours) }} hours</span>
                             </div>
                             {% endif %}
+                            {% if calculation_summary %}
+                            {% for item in calculation_summary %}
+                            <div class="totals-row{% if item.amount < 0 %} sub-row{% endif %}">
+                                <span>{{ item.label }}</span>
+                                <span class="totals-val">{% if item.amount < 0 %}-{% endif %}${{ "{:,.2f}".format(item.amount|abs) }}</span>
+                            </div>
+                            {% endfor %}
+                            {% else %}
                             <div class="totals-row">
                                 <span>Total Professional Fees</span>
                                 <span class="totals-val">${{ "{:,.2f}".format(total_fees) }}</span>
@@ -407,6 +415,7 @@
                                 <span>Net Fees After Discount</span>
                                 <span class="totals-val">${{ "{:,.2f}".format(total_fees - discount_amount - agency_split_amount) }}</span>
                             </div>
+                            {% endif %}
                             {% endif %}
                             <div class="totals-row sub-row">
                                 <span>HST (13%)</span>
