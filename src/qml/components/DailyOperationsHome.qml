@@ -49,6 +49,11 @@ Item {
             "overdueDeadlines": [],
             "overdueBills": [],
             "readyToBillMatters": [],
+            "readyToBillWipAmount": 0.0,
+            "readyToBillMatterCount": 0,
+            "totalWipAmount": 0.0,
+            "totalWipCount": 0,
+            "totalWipMatterCount": 0,
             "arSummary": {
                 "totalAr": 0.0,
                 "openInvoiceCount": 0,
@@ -127,6 +132,27 @@ Item {
     function arSummaryValue(key) {
         var summary = root.briefing && root.briefing.arSummary ? root.briefing.arSummary : ({})
         return number(summary[key])
+    }
+
+    function totalWipValue() {
+        var summary = root.briefing || ({})
+        if (summary.totalWipAmount !== undefined && summary.totalWipAmount !== null)
+            return number(summary.totalWipAmount)
+        return sumAmount(summary.readyToBillMatters, "wipAmount")
+    }
+
+    function readyToBillWipValue() {
+        var summary = root.briefing || ({})
+        if (summary.readyToBillWipAmount !== undefined && summary.readyToBillWipAmount !== null)
+            return number(summary.readyToBillWipAmount)
+        return sumAmount(summary.readyToBillMatters, "wipAmount")
+    }
+
+    function readyToBillCount() {
+        var summary = root.briefing || ({})
+        if (summary.readyToBillMatterCount !== undefined && summary.readyToBillMatterCount !== null)
+            return whole(summary.readyToBillMatterCount)
+        return entryCount(summary.readyToBillMatters)
     }
 
     function priorityItems() {
@@ -237,11 +263,13 @@ Item {
             }
         },
         {
-            "label": "WIP to review",
-            "value": formatMoney(sumAmount(briefing.readyToBillMatters, "wipAmount")),
-            "detail": String(entryCount(briefing.readyToBillMatters)) + " matters ready",
+            "label": "Total WIP",
+            "value": formatMoney(totalWipValue()),
+            "detail": readyToBillCount() > 0
+                ? "Review: " + formatMoney(readyToBillWipValue()) + " \u00b7 " + String(readyToBillCount()) + (readyToBillCount() === 1 ? " matter" : " matters")
+                : (whole(briefing.totalWipMatterCount) > 0 ? String(whole(briefing.totalWipMatterCount)) + " matters in progress" : "No matters ready"),
             "icon": "\uE8C7",
-            "tone": "positive",
+            "tone": readyToBillCount() > 0 ? "positive" : "accent",
             "moduleId": "billing", "nodeId": "C01"
         },
         {

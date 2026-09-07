@@ -233,6 +233,63 @@ def validate_templates(template_dir: Path, manifest_path: Path, allow_candidate:
                         
     return approved_manifest
 
+
+def deploy_to_programs(source_package_dir: Path, target_deploy_dir: Path) -> None:
+    target_deploy_dir = Path(target_deploy_dir).resolve()
+    print("\n==================================================")
+    print(f"  DEPLOYING CSPM PACKAGE TO: {target_deploy_dir}")
+    print("==================================================")
+
+    target_exe = target_deploy_dir / "CSPM.exe"
+    if target_exe.exists():
+        try:
+            with open(target_exe, "a+b"):
+                pass
+        except OSError as exc:
+            print(f"ERROR: Cannot write to {target_exe}. Please ensure CSPM is not running: {exc}")
+            raise
+
+    target_deploy_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ignore_existing_user_data(src_dir_str: str, contents: list[str]) -> set[str]:
+        src_dir = Path(src_dir_str)
+        ignored = set()
+        try:
+            rel = src_dir.relative_to(source_package_dir)
+            if rel.parts and rel.parts[0].lower() in ("backups", "logs"):
+                return set(contents)
+            if rel.parts and rel.parts[0].lower() == "data":
+                for item in contents:
+                    target_file = target_deploy_dir / rel / item
+                    if target_file.exists():
+                        ignored.add(item)
+        except ValueError:
+            pass
+        return ignored
+
+    shutil.copytree(source_package_dir, target_deploy_dir, dirs_exist_ok=True, ignore=_ignore_existing_user_data)
+
+    # Clean up stale files in target_deploy_dir that no longer exist in source_package_dir
+    for existing in list(target_deploy_dir.rglob("*")):
+        if existing.is_file():
+            try:
+                rel = existing.relative_to(target_deploy_dir)
+                top_level = rel.parts[0].lower() if rel.parts else ""
+                if top_level in ("data", "backups", "logs"):
+                    continue
+                counterpart = source_package_dir / rel
+                if not counterpart.exists():
+                    existing.unlink()
+            except Exception:
+                pass
+
+    print(f"[SUCCESS] Packaged executable deployed to {target_exe}")
+    if target_exe.exists():
+        print(f"  Target: {target_exe}")
+        print(f"  Size: {target_exe.stat().st_size} bytes")
+        print(f"  Modified: {datetime.fromtimestamp(target_exe.stat().st_mtime).isoformat()}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="CSPM Release Builder")
     parser.add_argument("--installer", action="store_true", help="Compile Inno Setup installer after PyInstaller builds")
@@ -240,6 +297,8 @@ def main():
     parser.add_argument("--candidate-validation", action="store_true", help="Allow CANDIDATE_AWAITING_CORY_APPROVAL templates for non-production validation builds")
     parser.add_argument("--distpath", help="Override dist output directory")
     parser.add_argument("--workpath", help="Override PyInstaller work directory")
+    parser.add_argument("--deploy-dir", default=r"C:\programs\CSPM", help="Deployment directory for runnable CSPM package (default: C:\\programs\\CSPM)")
+    parser.add_argument("--no-deploy", action="store_true", help="Disable automatic deployment to --deploy-dir")
     args = parser.parse_args()
 
     if args.candidate_validation:
@@ -507,19 +566,31 @@ def main():
             print(f"ERROR: Could not quarantine current release {target_dist_dir}: {exc}")
             print("The current release remains in place; the new build will be quarantined on exit.")
             sys.exit(1)
+    promoted = False
     try:
         os.rename(staging_dist_dir, target_dist_dir)
+        promoted = True
         print(f"Promoted {staging_dist_dir} to {target_dist_dir}")
     except OSError as e:
-        print(f"Failed to promote staging dir to {target_dist_dir}: {e}")
-        if quarantined_previous_dist is not None and not target_dist_dir.exists():
-            try:
-                os.rename(quarantined_previous_dist, target_dist_dir)
-                print(f"Restored prior release from {quarantined_previous_dist}")
-            except OSError as restore_error:
-                print(f"CRITICAL: Could not restore prior release: {restore_error}")
-        print("The unpromoted build will be moved to to_delete on exit for review.")
-        sys.exit(1)
+        print(f"os.rename failed ({e}); attempting fallback directory move...")
+        try:
+            shutil.move(str(staging_dist_dir), str(target_dist_dir))
+            promoted = True
+            print(f"Promoted {staging_dist_dir} to {target_dist_dir} via fallback move")
+        except OSError as e2:
+            print(f"Failed to promote staging dir to {target_dist_dir}: {e2}")
+            if quarantined_previous_dist is not None and not target_dist_dir.exists():
+                try:
+                    shutil.move(str(quarantined_previous_dist), str(target_dist_dir))
+                    print(f"Restored prior release from {quarantined_previous_dist}")
+                except OSError as restore_error:
+                    print(f"CRITICAL: Could not restore prior release: {restore_error}")
+            print("The unpromoted build will be moved to to_delete on exit for review.")
+            sys.exit(1)
+
+    # Automatically deploy runnable package to programs directory (e.g. C:\programs\CSPM)
+    if not args.no_deploy and args.deploy_dir:
+        deploy_to_programs(target_dist_dir / "CSPM", Path(args.deploy_dir))
     
     print("Build process finished successfully.")
 

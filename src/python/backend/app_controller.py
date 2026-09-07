@@ -1874,6 +1874,11 @@ class AppController(QObject):
             "overdueDeadlines": [],
             "overdueBills": [],
             "readyToBillMatters": [],
+            "readyToBillWipAmount": 0.0,
+            "readyToBillMatterCount": 0,
+            "totalWipAmount": 0.0,
+            "totalWipCount": 0,
+            "totalWipMatterCount": 0,
             "arSummary": {
                 "totalAr": 0.0,
                 "openInvoiceCount": 0,

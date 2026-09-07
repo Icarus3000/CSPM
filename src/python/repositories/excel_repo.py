@@ -5346,6 +5346,11 @@ class ExcelRepo:
                 "overdueDeadlines": [],
                 "overdueBills": [],
                 "readyToBillMatters": [],
+                "readyToBillWipAmount": 0.0,
+                "readyToBillMatterCount": 0,
+                "totalWipAmount": 0.0,
+                "totalWipCount": 0,
+                "totalWipMatterCount": 0,
                 "arSummary": {
                     "totalAr": 0.0,
                     "openInvoiceCount": 0,
@@ -5456,13 +5461,7 @@ class ExcelRepo:
             matter_id = _clean_text(
                 row.get(sc.COL_TIME_MATTER_ID) or row.get(sc.COL_MATTER_ID) or row.get("MatterId")
             )
-            
-            invoice_status = _clean_text(row.get(sc.COL_TIME_INVOICE_STATUS)).lower()
-            invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
-            if status == "billed" or invoice_status == "billed" or (invoice_ref and invoice_ref.lower() != "draft"):
-                continue
 
-            
             try:
                 hours = float(row.get(sc.COL_TIME_HOURS) or row.get("Hours") or 0.0)
             except (TypeError, ValueError):
@@ -5481,7 +5480,9 @@ class ExcelRepo:
             if "no charge" in status or "free" in status or "do not bill" in status:
                 gross_value = 0.0
                 net_value = 0.0
-                
+
+            # 1. Production metrics: represent all work performed in the period
+            # regardless of whether an invoice has since been issued.
             if hours > 0 or gross_value > 0 or net_value > 0:
                 if date_text == today_iso:
                     prod["today"]["hours"] += hours
@@ -5518,7 +5519,7 @@ class ExcelRepo:
                     "matterId": matter_id,
                     "matterName": matter_name_by_id.get(matter_id, ""),
                 })
-            
+
             if date_text == today_iso and (
                 "meeting" in description.lower()
                 or "conference" in description.lower()
@@ -5534,6 +5535,13 @@ class ExcelRepo:
                         "matterName": matter_name_by_id.get(matter_id, ""),
                     }
                 )
+
+            # 2. Unbilled WIP inventory: exclude entries that are already billed
+            invoice_status = _clean_text(row.get(sc.COL_TIME_INVOICE_STATUS)).lower()
+            invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF))
+            if status == "billed" or invoice_status == "billed" or (invoice_ref and invoice_ref.lower() != "draft"):
+                continue
+
             if ready_only:
                 if status not in ready_statuses:
                     continue
@@ -5638,6 +5646,10 @@ class ExcelRepo:
             prod[k]["gross"] = round(prod[k]["gross"], 2)
             prod[k]["net"] = round(prod[k]["net"], 2)
 
+        total_wip_amount = round(sum(float(m.get("wipAmount", 0.0) or 0.0) for m in matter_wip.values()), 2)
+        total_wip_entries = sum(int(m.get("entryCount", 0) or 0) for m in matter_wip.values())
+        ready_wip_amount = round(sum(float(m.get("wipAmount", 0.0) or 0.0) for m in ready_to_bill), 2)
+
         return {
             "ok": True,
             "asOfDate": today_iso,
@@ -5647,6 +5659,11 @@ class ExcelRepo:
             "overdueDeadlines": overdue_deadlines[:20],
             "overdueBills": overdue_bills[:20],
             "readyToBillMatters": ready_to_bill[:20],
+            "readyToBillWipAmount": ready_wip_amount,
+            "readyToBillMatterCount": len(ready_to_bill),
+            "totalWipAmount": total_wip_amount,
+            "totalWipCount": total_wip_entries,
+            "totalWipMatterCount": len(matter_wip),
             "arSummary": ar_summary,
             "summary": summary if isinstance(summary, dict) else _empty_summary(),
             "productivitySummary": prod,

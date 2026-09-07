@@ -71,7 +71,14 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def promote(source: Path, destination: Path, *, dry_run: bool) -> dict[str, object]:
+def promote(
+    source: Path,
+    destination: Path,
+    *,
+    dry_run: bool,
+    deploy_dir: Path | str | None = None,
+    no_deploy: bool = False,
+) -> dict[str, object]:
     source = _ensure_within_project(source)
     destination = _ensure_within_project(destination)
     if not source.is_dir():
@@ -131,7 +138,56 @@ def promote(source: Path, destination: Path, *, dry_run: bool) -> dict[str, obje
         }
     )
     _write_json(PROJECT_ROOT / "to_delete" / f"release_promotion_{stamp}.json", result)
+
+    if not no_deploy and deploy_dir:
+        deploy_to_programs(destination / "CSPM", Path(deploy_dir))
+
     return result
+
+
+def deploy_to_programs(source_package_dir: Path, target_deploy_dir: Path) -> None:
+    target_deploy_dir = Path(target_deploy_dir).resolve()
+    target_exe = target_deploy_dir / "CSPM.exe"
+    if target_exe.exists():
+        try:
+            with open(target_exe, "a+b"):
+                pass
+        except OSError as exc:
+            print(f"ERROR: Cannot write to {target_exe}. Please ensure CSPM is not running: {exc}", file=sys.stderr)
+            raise
+
+    target_deploy_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ignore_existing_user_data(src_dir_str: str, contents: list[str]) -> set[str]:
+        src_dir = Path(src_dir_str)
+        ignored = set()
+        try:
+            rel = src_dir.relative_to(source_package_dir)
+            if rel.parts and rel.parts[0].lower() in ("backups", "logs"):
+                return set(contents)
+            if rel.parts and rel.parts[0].lower() == "data":
+                for item in contents:
+                    target_file = target_deploy_dir / rel / item
+                    if target_file.exists():
+                        ignored.add(item)
+        except ValueError:
+            pass
+        return ignored
+
+    shutil.copytree(source_package_dir, target_deploy_dir, dirs_exist_ok=True, ignore=_ignore_existing_user_data)
+
+    for existing in list(target_deploy_dir.rglob("*")):
+        if existing.is_file():
+            try:
+                rel = existing.relative_to(target_deploy_dir)
+                top_level = rel.parts[0].lower() if rel.parts else ""
+                if top_level in ("data", "backups", "logs"):
+                    continue
+                counterpart = source_package_dir / rel
+                if not counterpart.exists():
+                    existing.unlink()
+            except Exception:
+                pass
 
 
 def main() -> int:
@@ -139,9 +195,11 @@ def main() -> int:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--deploy-dir", default=r"C:\programs\CSPM", help="Deployment directory for runnable CSPM package (default: C:\\programs\\CSPM)")
+    parser.add_argument("--no-deploy", action="store_true", help="Disable deployment to --deploy-dir")
     args = parser.parse_args()
     try:
-        result = promote(args.source, args.destination, dry_run=args.dry_run)
+        result = promote(args.source, args.destination, dry_run=args.dry_run, deploy_dir=args.deploy_dir, no_deploy=args.no_deploy)
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
         return 1

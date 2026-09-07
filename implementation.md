@@ -1,5 +1,65 @@
 # Implementation History
 
+## 2026-09-07: WIP to Bill Date Filtering and Quick Presets
+
+- User request: Add date filtering (`From` -> `To`) to the WIP to Bill Workbench (`src/qml/views/WIPBillingWizardView.qml`) with presets:
+  - `To-Date`: From beginning of time (`2025-01-01`) through today.
+  - `Through Last Month`: From beginning of time (`2025-01-01`) through last day of previous month.
+  - `All Dates`: Clear date restrictions.
+  - Constraint: Keep spacing clean and preserve visual interface balance.
+- State and computation implementation:
+  - Added `beginningOfTime: "2025-01-01"` (all historical entries in `tblTimeEntries` date from August 2025 onwards).
+  - Added properties: `fromDateFilter`, `toDateFilter`, `activeDatePreset`, `datePickerTarget`.
+  - Added date helpers: `todayIso()`, `getLastDayOfPreviousMonth()` (`new Date(now.getFullYear(), now.getMonth(), 0)`), `applyDatePreset(preset)`, `_syncDatePreset()`, `parseIsoDateOrToday(textValue)`, and `openDatePicker(target, px, py)`.
+  - Integrated `JellyCalendar` via `wipCalendarLoader` with dismissal handlers on `onVisibleChanged` and `onClosing`.
+  - Filter logic: Updated `clientList`, `billingClientList`, and `filteredItems` to check `itemDate >= root.fromDateFilter` and `itemDate <= root.toDateFilter`.
+  - State persistence: Updated `applyInitialState` and `snapshotState` to save and restore `fromDateFilter`, `toDateFilter`, and `activeDatePreset`.
+- Visual toolbar refactoring:
+  - Split the previously single-row toolbar into a 2-row `ColumnLayout` with 10px spacing.
+  - Row 1: Client Filter Combo, Billing Client Filter Combo, Select All, Clear, flexible spacer, Status text, Refresh (`↻`), Zen Mode Expand (`⛶`).
+  - Row 2: Period label, From input box with `📅` picker and `✕` clear button, arrow `→`, To input box with `📅` picker and `✕` clear button, separator, Quick Preset pills (`To-Date`, `Through Last Month`, `All Dates`), flexible spacer, and filtered entry counter (`Showing X of Y entries`).
+  - Text fields and preset pills use `SemanticTheme.surfaceInput`, `SemanticTheme.buttonHover`, and `SemanticTheme.accentPrimary`.
+- Verification:
+  - QML lint checked via `scripts/qmllint.ps1 src/qml/views/WIPBillingWizardView.qml` (exit code 0).
+  - Regression unit tests added in `tests/test_wip_date_filtering.py` (7 tests passed).
+  - Total WIP / Briefing test suite passed (9 tests passed).
+
+## 2026-09-07: Practice Briefing Total WIP Redesign & Productivity Accumulation Bug Fix
+
+- Root cause 1 (Productivity Under-Reporting): In `src/python/repositories/excel_repo.py`, `practice_briefing()` iterated over `time_rows` and immediately executed `if status == "billed" or invoice_status == "billed" or (invoice_ref and invoice_ref.lower() != "draft"): continue` at the top of the loop. Because `productivitySummary` (`today`, `wtd`, `last7`, `last90`, `ytd`) was computed after this check, all billed time entries were discarded. As a result, issuing an invoice subtracted from YTD productivity instead of contributing to it, showing only active unbilled time (~$18K-$21K / 39-50 hours instead of the true ~$219K / 485 hours).
+- Root cause 2 ("WIP to review" Cardinality Misalignment): The Home dashboard KPI card previously showed "WIP to review" as `sumAmount(briefing.readyToBillMatters, "wipAmount")`. `readyToBillMatters` only includes matters that hit the 28-day aging threshold or $5,000 threshold under Practice Briefing Rules (and is capped at 20 matters). Active WIP on matters worked on recently with < $5K was completely omitted from the headline number, confusing users who expected an inventory view of total firm WIP.
+- Decoupled productivity from unbilled WIP in `excel_repo.py`:
+  - `prod` (`today`, `wtd`, `last7`, `last90`, `ytd`), `recent_work`, and `todays_tasks` are calculated for all non-free/non-void time entries in the period regardless of billed status.
+  - The `status == "billed"` filter is applied strictly to `matter_wip` (open WIP) aggregation.
+- Added explicit metrics to `practice_briefing()` return payload and fallback structures:
+  - `totalWipAmount`: rounded sum of all unbilled WIP across all matters.
+  - `totalWipCount`: total entry count of unbilled WIP.
+  - `totalWipMatterCount`: total distinct matters with unbilled WIP.
+  - `readyToBillWipAmount`: rounded sum of WIP on matters eligible for billing review.
+  - `readyToBillMatterCount`: count of matters eligible for billing review.
+  - Mirrored fallback values in `src/python/backend/app_controller.py`.
+- Updated `src/qml/components/DailyOperationsHome.qml`:
+  - Card label changed from "WIP to review" to **Total WIP**.
+  - Value displays `formatMoney(totalWipValue())`.
+  - Detail line displays `Review: $X · Y matters` when matters are ready for billing review, matching the design and layout of the Total A/R card (`Overdue: $X · Y invoices`).
+  - Clicking the card continues to route to `/billing/wip-to-bill` (Workbench `C01`).
+- Added regression test suite `tests/test_practice_briefing_metrics.py`.
+- Automated build & deployment pipeline configured for `C:\programs\CSPM\CSPM.exe`:
+  - `scripts/cspm_installer.iss`: configured `DefaultDirName` to `C:\programs\CSPM`.
+  - `scripts/build_release.py`: configured with `--deploy-dir` (defaulting to `C:\programs\CSPM`), `--no-deploy`, fallback directory move upon Windows rename contention, and post-promotion deployment `deploy_to_programs` to ensure `C:\programs\CSPM\CSPM.exe` is updated whenever a release build is created.
+  - `scripts/promote_verified_release_package.py`: updated with `--deploy-dir` (defaulting to `C:\programs\CSPM`), `--no-deploy`, and deployment mirroring to `C:\programs\CSPM`.
+- Release build execution and verification:
+  - PyInstaller compiled main app and recovery utility bundles.
+  - Inno Setup compiled installer `dist/CSPM-Setup-2.4.0.exe` (189,800,546 bytes).
+  - Promoted package to `dist/CSPM/CSPM.exe` (9,113,906 bytes).
+  - Deployed runnable bundle to `C:\programs\CSPM\CSPM.exe` (9,113,906 bytes).
+- Validation:
+  - Python compilation passed cleanly (`py_compile`).
+  - QML lint passed (`scripts/qmllint.ps1 src/qml/components/DailyOperationsHome.qml`).
+  - Scoped git diff check passed with no whitespace/syntax issues.
+  - `unittest` passed all 10 briefing tests.
+  - Deployed `C:\programs\CSPM\_internal\src\qml\components\DailyOperationsHome.qml` verified to contain the Total WIP redesign and updated logic.
+
 ## 2026-08-31: Professional Maximize / Restore Delegated to Native DWM
 
 - Source's smoothness comes from ownership, not a hidden custom easing curve. Its renderer sends one toggle command; Electron calls the real BrowserWindow `maximize()` / `unmaximize()` methods and updates the glyph from native events. The opaque frameless Source HWND retains the default `thickFrame` / `WS_THICKFRAME` contract. There is no renderer geometry tween, monitor-sized staging host, bitmap readback, scene-graph layer, or competing final-bounds calculation.

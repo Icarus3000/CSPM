@@ -715,12 +715,125 @@ Item {
     property string selectedBillingClientFilter: ""
     property string _pendingClientIdToFilter: ""
     property bool isZenMode: false
+
+    // Date Filtering State
+    readonly property string beginningOfTime: "2025-01-01"
+    property string fromDateFilter: ""
+    property string toDateFilter: ""
+    property string activeDatePreset: "all"
+    property string datePickerTarget: "from"
+
+    function todayIso() {
+        return Qt.formatDate(new Date(), "yyyy-MM-dd")
+    }
+
+    function getLastDayOfPreviousMonth() {
+        var now = new Date()
+        var lastDay = new Date(now.getFullYear(), now.getMonth(), 0)
+        return Qt.formatDate(lastDay, "yyyy-MM-dd")
+    }
+
+    function applyDatePreset(preset) {
+        if (preset === "toDate") {
+            root.fromDateFilter = root.beginningOfTime
+            root.toDateFilter = root.todayIso()
+            root.activeDatePreset = "toDate"
+        } else if (preset === "lastMonth") {
+            root.fromDateFilter = root.beginningOfTime
+            root.toDateFilter = root.getLastDayOfPreviousMonth()
+            root.activeDatePreset = "lastMonth"
+        } else if (preset === "all") {
+            root.fromDateFilter = ""
+            root.toDateFilter = ""
+            root.activeDatePreset = "all"
+        }
+        root.autoCheckFilterMatch()
+    }
+
+    function _syncDatePreset() {
+        if (!root.fromDateFilter && !root.toDateFilter) {
+            root.activeDatePreset = "all"
+        } else if (root.fromDateFilter === root.beginningOfTime && root.toDateFilter === root.todayIso()) {
+            root.activeDatePreset = "toDate"
+        } else if (root.fromDateFilter === root.beginningOfTime && root.toDateFilter === root.getLastDayOfPreviousMonth()) {
+            root.activeDatePreset = "lastMonth"
+        } else {
+            root.activeDatePreset = "custom"
+        }
+        root.autoCheckFilterMatch()
+    }
+
+    function parseIsoDateOrToday(textValue) {
+        var textValueString = String(textValue || "").trim()
+        var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(textValueString)
+        if (match) {
+            var year = Number(match[1])
+            var monthIndex = Number(match[2]) - 1
+            var day = Number(match[3])
+            var candidate = new Date(year, monthIndex, day)
+            if (candidate.getFullYear() === year
+                && candidate.getMonth() === monthIndex
+                && candidate.getDate() === day) {
+                return candidate
+            }
+        }
+        return new Date()
+    }
+
+    function openDatePicker(target, px, py) {
+        root.datePickerTarget = target
+        wipCalendarLoader.active = true
+        Qt.callLater(function() {
+            var calendar = wipCalendarLoader.item
+            if (!calendar) return
+            var val = target === "from" ? root.fromDateFilter : root.toDateFilter
+            calendar.selectedDate = root.parseIsoDateOrToday(val)
+            if (typeof calendar.openAt === "function") calendar.openAt(px, py)
+            else if (typeof calendar.open === "function") calendar.open()
+            else calendar.visible = true
+        })
+    }
+
+    Loader {
+        id: wipCalendarLoader
+        active: false
+        sourceComponent: Component {
+            JellyCalendar {
+                visible: false
+                t: root.t
+                metrics: null
+                hostWindow: root.Window.window
+                onDatePicked: function(d) {
+                    var iso = Qt.formatDate(d, "yyyy-MM-dd")
+                    if (root.datePickerTarget === "from") {
+                        root.fromDateFilter = iso
+                    } else {
+                        root.toDateFilter = iso
+                    }
+                    root._syncDatePreset()
+                    wipCalendarLoader.active = false
+                }
+                onVisibleChanged: {
+                    if (!visible) {
+                        wipCalendarLoader.active = false
+                    }
+                }
+                onClosing: function(close_event) {
+                    wipCalendarLoader.active = false
+                }
+            }
+        }
+    }
+
     // Computed: unique clients from WIP
     property var clientList: {
         if (!wipItems) return ["All Clients"]
         var seen = {}
         var list = []
         for (var i = 0; i < wipItems.length; i++) {
+            var itemDate = String(wipItems[i].date || "").substring(0, 10)
+            if (root.fromDateFilter && itemDate.length >= 10 && itemDate < root.fromDateFilter) continue
+            if (root.toDateFilter && itemDate.length >= 10 && itemDate > root.toDateFilter) continue
             var bname = wipItems[i].parentName || wipItems[i].parentId || ""
             if (selectedBillingClientFilter && selectedBillingClientFilter !== "All Billing Clients" && bname !== selectedBillingClientFilter) {
                 continue
@@ -741,6 +854,9 @@ Item {
         var seen = {}
         var list = []
         for (var i = 0; i < wipItems.length; i++) {
+            var itemDate = String(wipItems[i].date || "").substring(0, 10)
+            if (root.fromDateFilter && itemDate.length >= 10 && itemDate < root.fromDateFilter) continue
+            if (root.toDateFilter && itemDate.length >= 10 && itemDate > root.toDateFilter) continue
             var cname = wipItems[i].clientName || wipItems[i].clientId || ""
             if (selectedClientFilter && selectedClientFilter !== "All Clients" && cname !== selectedClientFilter) {
                 continue
@@ -757,17 +873,25 @@ Item {
 
     // Computed: filtered items
     property var filteredItems: {
-        if (!selectedClientFilter && !selectedBillingClientFilter)
+        if (!selectedClientFilter && !selectedBillingClientFilter && !root.fromDateFilter && !root.toDateFilter)
             return wipItems
         var out = []
         for (var i = 0; i < wipItems.length; i++) {
-            var cname = wipItems[i].clientName || wipItems[i].clientId || ""
-            var bname = wipItems[i].parentName || wipItems[i].parentId || ""
+            var item = wipItems[i]
+            var itemDate = String(item.date || "").substring(0, 10)
+            if (root.fromDateFilter && itemDate.length >= 10 && itemDate < root.fromDateFilter) {
+                continue
+            }
+            if (root.toDateFilter && itemDate.length >= 10 && itemDate > root.toDateFilter) {
+                continue
+            }
+            var cname = item.clientName || item.clientId || ""
+            var bname = item.parentName || item.parentId || ""
             var matchClient = (!selectedClientFilter || selectedClientFilter === "All Clients" || cname === selectedClientFilter)
             var matchBilling = (!selectedBillingClientFilter || selectedBillingClientFilter === "All Billing Clients" || bname === selectedBillingClientFilter)
             
             if (matchClient && matchBilling) {
-                out.push(wipItems[i])
+                out.push(item)
             }
         }
         return out
@@ -809,6 +933,17 @@ Item {
         if (state.matterId) {
             root.selectedMatterId = state.matterId
         }
+        if (state.fromDate !== undefined) {
+            root.fromDateFilter = String(state.fromDate || "");
+        }
+        if (state.toDate !== undefined) {
+            root.toDateFilter = String(state.toDate || "");
+        }
+        if (state.datePreset !== undefined) {
+            root.activeDatePreset = String(state.datePreset || "");
+        } else if (state.fromDate !== undefined || state.toDate !== undefined) {
+            root._syncDatePreset();
+        }
         root.autoCheckFilterMatch();
         
         // Component creation loads WIP once.  Returning to this tab uses the
@@ -821,7 +956,10 @@ Item {
             "selectedClientFilter": root.selectedClientFilter,
             "selectedBillingClientFilter": root.selectedBillingClientFilter,
             "clientIdToDraft": root._pendingClientIdToFilter || "ALL",
-            "matterId": root.selectedMatterId
+            "matterId": root.selectedMatterId,
+            "fromDate": root.fromDateFilter,
+            "toDate": root.toDateFilter,
+            "datePreset": root.activeDatePreset
         }
     }
 
@@ -1368,11 +1506,16 @@ Item {
         width: parent.width
         height: parent.height
         spacing: 20
-            // ── Toolbar Row ─────────────────────────────────────────────
-            RowLayout {
+            // ── Toolbar Section ─────────────────────────────────────────────
+            ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 12
-                // Client filter combo
+                spacing: 10
+
+                // Row 1: Entity Filters & Global Actions
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    // Client filter combo
                 Rectangle {
                     id: clientFilterRect
                     width: 220
@@ -1749,7 +1892,361 @@ Item {
                     ToolTip.visible: expandMouseArea.containsMouse
                     ToolTip.text: "Expand to Zen Mode Window"
                 }
+                }
+
+                // Row 2: Date Filtering & Quick Presets
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text {
+                        text: "Period:"
+                        color: root.mutedColor
+                        font.pixelSize: 12
+                        font.weight: Font.Medium
+                        font.family: "Inter"
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    // From Date Input Box
+                    Rectangle {
+                        id: fromDateBox
+                        width: 145
+                        height: 34
+                        radius: 6
+                        color: SemanticTheme.surfaceInput(root.t, root.appStyle)
+                        border.color: fromDateInput.activeFocus ? root.accentColor : root.borderColor
+                        border.width: 1
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            spacing: 4
+
+                            TextField {
+                                id: fromDateInput
+                                text: root.fromDateFilter
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                font.pixelSize: 12
+                                font.family: "Inter"
+                                color: root.textColor
+                                placeholderText: "From (YYYY-MM-DD)"
+                                placeholderTextColor: root.mutedColor
+                                verticalAlignment: TextInput.AlignVCenter
+                                background: Item {}
+                                padding: 0
+                                leftPadding: 0
+                                rightPadding: 0
+                                topPadding: 0
+                                bottomPadding: 0
+
+                                onEditingFinished: {
+                                    var val = text.trim()
+                                    if (val === "" || /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                                        root.fromDateFilter = val
+                                        root._syncDatePreset()
+                                    } else {
+                                        text = root.fromDateFilter
+                                    }
+                                }
+                                onAccepted: {
+                                    focus = false
+                                }
+                            }
+
+                            Text {
+                                visible: root.fromDateFilter.length > 0
+                                text: "✕"
+                                color: fromClearMouseArea.containsMouse ? root.textColor : root.mutedColor
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                Layout.preferredWidth: 14
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+
+                                MouseArea {
+                                    id: fromClearMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.fromDateFilter = ""
+                                        root._syncDatePreset()
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "📅"
+                                font.pixelSize: 13
+                                Layout.preferredWidth: 20
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+
+                                MouseArea {
+                                    id: fromCalMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        var pt = typeof fromDateBox.mapToGlobal === "function"
+                                            ? fromDateBox.mapToGlobal(0, fromDateBox.height)
+                                            : fromDateBox.mapToItem(null, 0, fromDateBox.height)
+                                        root.openDatePicker("from", pt.x, pt.y)
+                                    }
+                                }
+                                ToolTip.visible: fromCalMouseArea.containsMouse
+                                ToolTip.text: "Pick 'From' date"
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "→"
+                        color: root.mutedColor
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    // To Date Input Box
+                    Rectangle {
+                        id: toDateBox
+                        width: 145
+                        height: 34
+                        radius: 6
+                        color: SemanticTheme.surfaceInput(root.t, root.appStyle)
+                        border.color: toDateInput.activeFocus ? root.accentColor : root.borderColor
+                        border.width: 1
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 8
+                            spacing: 4
+
+                            TextField {
+                                id: toDateInput
+                                text: root.toDateFilter
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                font.pixelSize: 12
+                                font.family: "Inter"
+                                color: root.textColor
+                                placeholderText: "To (YYYY-MM-DD)"
+                                placeholderTextColor: root.mutedColor
+                                verticalAlignment: TextInput.AlignVCenter
+                                background: Item {}
+                                padding: 0
+                                leftPadding: 0
+                                rightPadding: 0
+                                topPadding: 0
+                                bottomPadding: 0
+
+                                onEditingFinished: {
+                                    var val = text.trim()
+                                    if (val === "" || /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                                        root.toDateFilter = val
+                                        root._syncDatePreset()
+                                    } else {
+                                        text = root.toDateFilter
+                                    }
+                                }
+                                onAccepted: {
+                                    focus = false
+                                }
+                            }
+
+                            Text {
+                                visible: root.toDateFilter.length > 0
+                                text: "✕"
+                                color: toClearMouseArea.containsMouse ? root.textColor : root.mutedColor
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                Layout.preferredWidth: 14
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+
+                                MouseArea {
+                                    id: toClearMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.toDateFilter = ""
+                                        root._syncDatePreset()
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "📅"
+                                font.pixelSize: 13
+                                Layout.preferredWidth: 20
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+
+                                MouseArea {
+                                    id: toCalMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        var pt = typeof toDateBox.mapToGlobal === "function"
+                                            ? toDateBox.mapToGlobal(0, toDateBox.height)
+                                            : toDateBox.mapToItem(null, 0, toDateBox.height)
+                                        root.openDatePicker("to", pt.x, pt.y)
+                                    }
+                                }
+                                ToolTip.visible: toCalMouseArea.containsMouse
+                                ToolTip.text: "Pick 'To' date"
+                            }
+                        }
+                    }
+
+                    // Divider
+                    Rectangle {
+                        width: 1
+                        height: 20
+                        color: root.borderColor
+                        Layout.leftMargin: 4
+                        Layout.rightMargin: 4
+                    }
+
+                    // Preset: To-Date
+                    Rectangle {
+                        id: toDateBtn
+                        height: 34
+                        width: toDateText.implicitWidth + 24
+                        radius: 6
+                        color: root.activeDatePreset === "toDate"
+                            ? SemanticTheme.alpha(root.accentColor, 0.15)
+                            : (toDateMouse.containsMouse ? SemanticTheme.buttonHover(root.t, root.appStyle) : "transparent")
+                        border.color: root.activeDatePreset === "toDate" ? root.accentColor : root.borderColor
+                        border.width: root.activeDatePreset === "toDate" ? 1.5 : 1
+
+                        Text {
+                            id: toDateText
+                            anchors.centerIn: parent
+                            text: "To-Date"
+                            color: root.activeDatePreset === "toDate"
+                                ? root.accentColor
+                                : (toDateMouse.containsMouse ? root.textColor : root.mutedColor)
+                            font.pixelSize: 12
+                            font.weight: root.activeDatePreset === "toDate" ? Font.DemiBold : Font.Normal
+                            font.family: "Inter"
+                        }
+
+                        MouseArea {
+                            id: toDateMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.applyDatePreset("toDate")
+                        }
+                        ToolTip.visible: toDateMouse.containsMouse
+                        ToolTip.text: "From 2025-01-01 through today (" + root.todayIso() + ")"
+                    }
+
+                    // Preset: Through Last Month
+                    Rectangle {
+                        id: lastMonthBtn
+                        height: 34
+                        width: lastMonthText.implicitWidth + 24
+                        radius: 6
+                        color: root.activeDatePreset === "lastMonth"
+                            ? SemanticTheme.alpha(root.accentColor, 0.15)
+                            : (lastMonthMouse.containsMouse ? SemanticTheme.buttonHover(root.t, root.appStyle) : "transparent")
+                        border.color: root.activeDatePreset === "lastMonth" ? root.accentColor : root.borderColor
+                        border.width: root.activeDatePreset === "lastMonth" ? 1.5 : 1
+
+                        Text {
+                            id: lastMonthText
+                            anchors.centerIn: parent
+                            text: "Through Last Month"
+                            color: root.activeDatePreset === "lastMonth"
+                                ? root.accentColor
+                                : (lastMonthMouse.containsMouse ? root.textColor : root.mutedColor)
+                            font.pixelSize: 12
+                            font.weight: root.activeDatePreset === "lastMonth" ? Font.DemiBold : Font.Normal
+                            font.family: "Inter"
+                        }
+
+                        MouseArea {
+                            id: lastMonthMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.applyDatePreset("lastMonth")
+                        }
+                        ToolTip.visible: lastMonthMouse.containsMouse
+                        ToolTip.text: "From 2025-01-01 through " + root.getLastDayOfPreviousMonth()
+                    }
+
+                    // Preset: All Dates
+                    Rectangle {
+                        id: allDatesBtn
+                        height: 34
+                        width: allDatesText.implicitWidth + 24
+                        radius: 6
+                        color: root.activeDatePreset === "all"
+                            ? SemanticTheme.alpha(root.accentColor, 0.15)
+                            : (allDatesMouse.containsMouse ? SemanticTheme.buttonHover(root.t, root.appStyle) : "transparent")
+                        border.color: root.activeDatePreset === "all" ? root.accentColor : root.borderColor
+                        border.width: root.activeDatePreset === "all" ? 1.5 : 1
+
+                        Text {
+                            id: allDatesText
+                            anchors.centerIn: parent
+                            text: "All Dates"
+                            color: root.activeDatePreset === "all"
+                                ? root.accentColor
+                                : (allDatesMouse.containsMouse ? root.textColor : root.mutedColor)
+                            font.pixelSize: 12
+                            font.weight: root.activeDatePreset === "all" ? Font.DemiBold : Font.Normal
+                            font.family: "Inter"
+                        }
+
+                        MouseArea {
+                            id: allDatesMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.applyDatePreset("all")
+                        }
+                        ToolTip.visible: allDatesMouse.containsMouse
+                        ToolTip.text: "Show entries across all dates without date restrictions"
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Counter of filtered entries
+                    Text {
+                        text: "Showing " + root.filteredItems.length + " of " + (root.wipItems ? root.wipItems.length : 0) + " entries"
+                        color: root.mutedColor
+                        font.pixelSize: 12
+                        font.family: "Inter"
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                Connections {
+                    target: root
+                    function onFromDateFilterChanged() {
+                        if (fromDateInput.text !== root.fromDateFilter) {
+                            fromDateInput.text = root.fromDateFilter
+                        }
+                    }
+                    function onToDateFilterChanged() {
+                        if (toDateInput.text !== root.toDateFilter) {
+                            toDateInput.text = root.toDateFilter
+                        }
+                    }
+                }
             }
+
             // ── WIP Table ───────────────────────────────────────────────
             Rectangle {
                 Layout.fillWidth: true
