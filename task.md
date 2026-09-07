@@ -1,6 +1,30 @@
 # CSPM Task And Validation Ledger
 
-## WIP to Bill Date Filtering and Quick Presets (2026-09-07)
+## Report Branding Logo Path Relocation Fix and Statement of Account Audit (2026-09-07)
+
+- [x] Diagnosed user report regarding missing CS branding logo in ReportWindow and Statement of Account:
+  - Runtime logs showed `QML QQuickImage: Protocol "c" is unknown` from `ReportWindow.qml:831`.
+  - `user_settings.json` stored `logoPath` as `C:\Projects\__CSPM\src\qml\assets\CS.svg`, which does not exist on the current `Y:` drive or within the deployed directory.
+  - `_path_to_file_url()` in `src/python/backend/app_controller.py` returned an empty string for missing paths without searching fallback asset directories, causing `logoUrl` to be blank.
+  - `ReportWindow.qml` fell back to the bare Windows path `C:\...`, which QML's `Image` parses as an invalid URL scheme `"c:"`.
+  - In `ReportWindow.qml`, `reportLogo` was anchored to `firmContact.top` rather than `parent.top`, pushing it down out of alignment with `firmName`.
+- [x] Implemented resilient, self-healing logo resolution:
+  - Added `_resolve_asset_file_path()` in `app_controller.py` searching candidate filenames across project, source, runtime, and bundled asset paths (`assets/`, `src/qml/assets/`, `_internal/assets/`, etc.).
+  - Updated `_path_to_file_url()` to return valid `file:///` URLs for resolved local assets.
+  - Updated `_normalize_report_branding_profile()` to heal stale or invalid `logoPath` entries on load.
+  - Updated `_logo_path_for_pdf()` to use `_resolve_asset_file_path()`.
+  - Updated `_logoSource()` in `ReportWindow.qml` to prepend `file:///` to raw Windows file paths.
+  - Updated `reportLogo` anchors in `ReportWindow.qml` (`top: parent.top`, `bottom: firmContact.bottom`, `width: height`) so the CS logo renders to the left of the firm name and contact block.
+  - Updated `user_settings.json` profile `logoPath`.
+- [x] Audited African Bronze Honey Company Limited in `data/CSPM.xlsm` to address "why is african honey missing":
+  - Identified that African Bronze Honey Company Limited is an independent direct client (`AFRI`), not a sub-client of `LIHDC Professional Corporation`. Statements generated for `LIHDC Professional Corporation` do not include direct African Honey matters/invoices.
+  - Identified that African Bronze Honey Company Limited has a $0.00 open balance in `tblReceivables` (`25-0051` Closed, `26-0013` Closed at $0 invoiced/$0 balance), which is why it does not appear in the Statement of Account "Billing Client" dropdown.
+  - Discovered discrepancy in `tblLedger` (Row 182) where `26-0013` has `Receivable: $2,165.38` (matching US Trademark Agent Fees disbursement), but was logged as $0 in `tblReceivables` and `tblInvoiceLog`.
+- [x] Verified QML syntax with `scripts/qmllint.ps1` (0 errors).
+- [x] Committed changes and pushed to remote `origin/main` (`9d1910d`).
+- [x] Recompiled release and deployed updated executable directly to `C:\programs\CSPM\CSPM.exe` (9,114,847 bytes, modified 6:55:57 PM).
+
+
 
 - [x] Designed and implemented clean, non-intrusive date range filtering on the WIP to Bill Workbench (`src/qml/views/WIPBillingWizardView.qml`).
 - [x] Added date filtering properties and synchronization functions:

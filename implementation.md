@@ -1,6 +1,35 @@
 # Implementation History
 
-## 2026-09-07: WIP to Bill Date Filtering and Quick Presets
+## 2026-09-07: Report Branding Logo Path Relocation Fix & Statement of Account Data Audit
+
+- User request:
+  1. Fix missing firm branding logo (CS logo for Cory Schneider Law Office) to the left of the firm name and address block in the Statement of Account report window.
+  2. Explain why African Bronze Honey Company Limited was missing from the Statement of Account.
+  3. Commit and push revisions to git, then recompile and replace `C:\programs\CSPM\CSPM.exe`.
+- Root Cause 1 (Branding Logo Missing):
+  - In `user_settings.json`, `reportBrandingProfiles[0].logoPath` pointed to `C:\Projects\__CSPM\src\qml\assets\CS.svg`. On this machine, the repo root is on `Y:`, and the installed executable is at `C:\programs\CSPM`. `C:\Projects\...` does not exist.
+  - `_path_to_file_url()` in `src/python/backend/app_controller.py` returned an empty string for missing paths without searching fallback asset directories. Consequently, `logoUrl` in the report document payload was empty.
+  - In `ReportWindow.qml`, `_logoSource()` fell back to `branding.logoPath` (`C:\...`). In Qt QML, `Image.source` treats a bare Windows drive letter `c:` as an unsupported URI protocol, raising `[WARNING] QML QQuickImage: Protocol "c" is unknown` and failing to load.
+  - In `ReportWindow.qml`, `reportLogo` was anchored top to `firmContact.top` rather than `parent.top`, pushing it down to the bottom address block.
+- Implementation 1 (Resilient Branding Resolution & Layout):
+  - Added `_resolve_asset_file_path()` in `src/python/backend/app_controller.py`: If a stored path does not exist, searches candidate filenames across project, source, runtime, and bundled asset directories (`assets/`, `src/qml/assets/`, `_internal/assets/`, etc.).
+  - Updated `_path_to_file_url()`: Uses `_resolve_asset_file_path()` and returns a valid `file:///` URI.
+  - Updated `_normalize_report_branding_profile()`: Automatically heals stale or invalid `logoPath` references.
+  - Updated `_logo_path_for_pdf()`: Uses `_resolve_asset_file_path()` for configured profile logos.
+  - Updated `_logoSource()` in `src/qml/components/ReportWindow.qml`: Automatically prefixes `file:///` to raw Windows file paths to prevent protocol parser errors.
+  - Updated `reportLogo` anchors in `ReportWindow.qml`: Anchored `top: parent.top` and `bottom: (firmContact.text && firmContact.text.trim().length > 0) ? firmContact.bottom : firmName.bottom` with `width: height`, placing the CS logo neatly to the left of the firm name and contact block.
+  - Updated local `user_settings.json` profile `logoPath`.
+- Audit 2 (African Bronze Honey Company Limited on Statement of Account):
+  - In `data/CSPM.xlsm`, African Bronze Honey Company Limited is an independent direct client (`AFRI`), not a sub-client of `LIHDC Professional Corporation`. The Statement of Account in the screenshot was generated specifically for `Billing Client: LIHDC Professional Corporation`, so African Honey invoices are not included.
+  - In `tblReceivables`, all African Honey records (`25-0051` and `26-0013`) are marked with `BalanceDue = 0` and `Status = Closed`. Because the Statement of Account "Billing Client" dropdown only lists parties with open receivables (`balanceDue > 0`), African Honey does not appear in the dropdown.
+  - In `tblLedger` (Row 182), invoice `26-0013` (Date: 2026-03-03) has `Receivable: $2,165.38` (matching US Trademark Agent Fees disbursement), but in `tblReceivables` and `tblInvoiceLog` it was recorded with `TotalInvoiced = $0`, `BalanceDue = $0`, and `Status = Closed`.
+- Verification & Deployment:
+  - Python compile passed (`py_compile`).
+  - QML lint passed (`scripts/qmllint.ps1 src/qml/components/ReportWindow.qml` with 0 errors).
+  - Committed and pushed to remote `origin/main` (`9d1910d`).
+  - PyInstaller compiled and deployed runnable executable to `C:\programs\CSPM\CSPM.exe` (9,114,847 bytes, modified 2026-09-07 6:55:57 PM).
+
+
 
 - User request: Add date filtering (`From` -> `To`) to the WIP to Bill Workbench (`src/qml/views/WIPBillingWizardView.qml`) with presets:
   - `To-Date`: From beginning of time (`2025-01-01`) through today.
