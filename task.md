@@ -1,5 +1,20 @@
 # CSPM Task And Validation Ledger
 
+## African Bronze Honey Billing Client & Open Invoices Fix (2026-09-07)
+
+- [x] Implemented user requirement: "all african bronze matters should have LIhdc as the billing client. the latest 2 african bronze honey invoices still remain open and unpaid - please fix that."
+- [x] Backed up workbooks with timestamped copies (`CSPM_backup_20260907_190448.xlsm`) across `C:\Users\cschn\AppData\Local\CSPM\data`, `C:\Users\cschn\OneDrive - LPN\CSPM_Shared_Data`, and `Y:\Projects\__CSPM\data`.
+- [x] Configured African Bronze Honey Company Limited billing relationship:
+  - Updated `ClientProfiles`: set `ParentClientID = 'LIHD'` and `ParentClientName = 'LIHDC Professional Corporation'` for `ClientID: AFRI`.
+  - Created and registered matter `AFRI-LIHD-TMK-26-0001` (`Trademarks`) in `tblMatters` with `ParentID: LIHD` and `ParentName: LIHDC Professional Corporation`, updating Excel table reference `tblMatters.ref`.
+  - Updated `Disbursements`: linked both African Bronze disbursements (`25-0051` CIPO fee $47.00, `26-0013` US Trademark fee $2,165.38) to `ParentID: LIHD`, `MatterID: AFRI-LIHD-TMK-26-0001`, and `PaymentStatus: PENDING`.
+  - Updated `InvoiceLog`: set `BillToClient: LIHDC Professional Corporation` and `SubClient: African Bronze Honey Company Limited` for `25-0051` ($47.00) and `26-0013` ($2,165.38).
+  - Updated `Receivables`: set `WorkClient: African Bronze Honey Company Limited`, `TotalInvoiced` and `BalanceDue` to `$47.00` for `25-0051` and `$2,165.38` for `26-0013`, with `Status: PENDING`.
+  - Updated `Transactions`: linked Gust Rosenfeld trademark transaction to `Parent: LIHD` and `Matter: AFRI-LIHD-TMK-26-0001`.
+- [x] Validated across active `localDataDir`, `masterDataDir`, and repo copies:
+  - `_statement_open_invoice_candidates({'billingClient': 'LIHDC Professional Corporation'})` cleanly returns both `25-0051` ($47.00) and `26-0013` ($2,165.38) as Unpaid/open receivables under `LIHDC Professional Corporation`.
+  - `statement_of_account_report({'billingClient': 'LIHDC Professional Corporation'})` verified generating a complete Statement of Account with 12 open candidate invoices totaling $21,423.51.
+
 ## Report Branding Logo Path Relocation Fix and Statement of Account Audit (2026-09-07)
 
 - [x] Diagnosed user report regarding missing CS branding logo in ReportWindow and Statement of Account:

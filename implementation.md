@@ -1,5 +1,20 @@
 # Implementation History
 
+## 2026-09-07: African Bronze Honey Billing Client (LIHDC) & Open Invoices Resolution
+
+- User request: "all african bronze matters should have LIhdc as the billing client. the latest 2 african bronze honey invoices still remain open and unpaid - please fix that."
+- Workbook data updates (backed up prior to editing to `*_backup_20260907_190448.xlsm`):
+  - `ClientProfiles`: set `ParentClientID = 'LIHD'` and `ParentClientName = 'LIHDC Professional Corporation'` for `ClientID: AFRI`.
+  - `Matters`: added matter `AFRI-LIHD-TMK-26-0001` (`Trademarks`) under `ParentID: LIHD`, `ParentName: LIHDC Professional Corporation`, `DefaultRate: 425`, `DefaultSharePct: 70`. Expanded table ref `tblMatters.ref`.
+  - `Disbursements`: linked both disbursements (`25-0051` CIPO fee $47.00, `26-0013` US Trademark Agent Fees $2,165.38) to `ParentID: LIHD`, `MatterID: AFRI-LIHD-TMK-26-0001`, and `PaymentStatus: PENDING`.
+  - `InvoiceLog`: updated `25-0051` ($47.00) and `26-0013` ($2,165.38) to `BillToClient: LIHDC Professional Corporation` and `SubClient: African Bronze Honey Company Limited`.
+  - `Receivables`: updated `25-0051` (TotalInvoiced: $47.00, BalanceDue: $47.00, Status: PENDING, WorkClient: African Bronze Honey Company Limited) and `26-0013` (TotalInvoiced: $2,165.38, BalanceDue: $2,165.38, Status: PENDING, WorkClient: African Bronze Honey Company Limited).
+  - `Transactions`: linked expense transaction for Gust Rosenfeld to `Parent: LIHD` and `Matter: AFRI-LIHD-TMK-26-0001`.
+  - Propagated across local data dir (`C:\Users\cschn\AppData\Local\CSPM\data\CSPM.xlsm`), master shared dir (`C:\Users\cschn\OneDrive - LPN\CSPM_Shared_Data\CSPM.xlsm`), and repo (`Y:\Projects\__CSPM\data\CSPM.xlsm`).
+- Verification:
+  - `_statement_open_invoice_candidates({'billingClient': 'LIHDC Professional Corporation'})` verified in Python: cleanly returns `25-0051` ($47.00) and `26-0013` ($2,165.38) as Unpaid candidate invoices for LIHDC.
+  - `statement_of_account_report({'billingClient': 'LIHDC Professional Corporation'})` generates complete statement payload with 12 open candidate invoices totaling $21,423.51.
+
 ## 2026-09-07: Report Branding Logo Path Relocation Fix & Statement of Account Data Audit
 
 - User request:
