@@ -3070,6 +3070,18 @@ class AppController(QObject):
         else:
             logo_path = str(logo_path).strip()
 
+        # Heal stale or invalid logo paths across project/install directory relocations
+        if logo_path:
+            resolved_logo = self._resolve_asset_file_path(logo_path)
+            if resolved_logo:
+                logo_path = str(resolved_logo)
+            elif profile_id == DEFAULT_REPORT_BRANDING_PROFILE_ID:
+                default_resolved = self._resolve_asset_file_path(default["logoPath"]) or (self._paths.root / "assets" / "CS.svg")
+                logo_path = str(default_resolved)
+        elif profile_id == DEFAULT_REPORT_BRANDING_PROFILE_ID:
+            default_resolved = self._resolve_asset_file_path(default["logoPath"]) or (self._paths.root / "assets" / "CS.svg")
+            logo_path = str(default_resolved)
+
         return {
             "id": profile_id,
             "profileId": profile_id,
@@ -3158,6 +3170,40 @@ class AppController(QObject):
     def _report_profile_firm_contact(self, profile: Dict[str, Any]) -> str:
         return "\n".join(self._report_profile_contact_lines(profile))
 
+    def _resolve_asset_file_path(self, path_text: Any) -> Optional[Path]:
+        source = str(path_text or "").strip()
+        if not source:
+            return None
+        candidate = Path(source)
+        if not candidate.is_absolute():
+            resolved = (self._paths.root / candidate).resolve()
+            if resolved.exists():
+                return resolved
+        elif candidate.exists():
+            return candidate.resolve()
+
+        filename = candidate.name
+        if not filename:
+            return None
+
+        search_dirs = [
+            self._paths.root / "assets",
+            self._paths.root / "src" / "qml" / "assets",
+            self._paths.root / "src" / "assets",
+            self._paths.project_root() / "assets",
+            self._paths.project_root() / "src" / "qml" / "assets",
+            self._paths.project_root() / "src" / "assets",
+            self._paths.executable_root() / "assets",
+            self._paths.executable_root() / "src" / "qml" / "assets",
+            self._paths.executable_root() / "_internal" / "assets",
+            self._paths.executable_root() / "_internal" / "src" / "qml" / "assets",
+        ]
+        for sdir in search_dirs:
+            probe = (sdir / filename).resolve()
+            if probe.exists():
+                return probe
+        return None
+
     def _path_to_file_url(self, path_text: Any) -> str:
         source = str(path_text or "").strip()
         if not source:
@@ -3165,12 +3211,10 @@ class AppController(QObject):
         lowered = source.lower()
         if lowered.startswith(("file:", "qrc:", "http://", "https://", "../", "./")):
             return source
-        candidate = Path(source)
-        if not candidate.is_absolute():
-            candidate = (self._paths.root / candidate).resolve()
-        if candidate.exists():
+        resolved = self._resolve_asset_file_path(source)
+        if resolved and resolved.exists():
             try:
-                return candidate.as_uri()
+                return resolved.as_uri()
             except ValueError:
                 return ""
         return ""
@@ -3467,7 +3511,8 @@ class AppController(QObject):
         firm_report_logo = self._paths.root / "assets" / "CS.svg"
         legacy_report_logo = self._paths.root / "src" / "qml" / "assets" / "CS.svg"
         legacy_app_icon = self._paths.root / "src" / "assets" / "app_icon_preview.png"
-        configured_path = self._coerce_file_path(configured_logo) if configured_logo else None
+        resolved_configured = self._resolve_asset_file_path(configured_logo) if configured_logo else None
+        configured_path = resolved_configured or (self._coerce_file_path(configured_logo) if configured_logo else None)
         default_logo_paths = {
             str(path.resolve()).casefold()
             for path in (firm_report_logo, legacy_report_logo, legacy_app_icon)
@@ -3478,6 +3523,8 @@ class AppController(QObject):
         # invoice/report mark.  A genuinely custom profile logo is untouched.
         if configured_key and configured_key in default_logo_paths:
             candidates.append((DEFAULT_REPORT_BRANDING_PROFILE_ID, str(firm_report_logo)))
+        elif resolved_configured:
+            candidates.append((str(profile.get("id") or "profile"), str(resolved_configured)))
         elif configured_logo:
             candidates.append((str(profile.get("id") or "profile"), configured_logo))
         candidates.append((DEFAULT_REPORT_BRANDING_PROFILE_ID, str(firm_report_logo)))

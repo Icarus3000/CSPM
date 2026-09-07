@@ -163,7 +163,13 @@ Window {
     function _logoSource() {
         var branding = reportDocument && reportDocument.branding ? reportDocument.branding : ({})
         var source = _safeText(branding.logoUrl || branding.logoSource || branding.logoPath).trim()
-        return source.length > 0 ? source : ""
+        if (source.length === 0) return ""
+        if (source.indexOf("://") === -1 && source.indexOf("qrc:") !== 0) {
+            var normalized = source.replace(/\\/g, "/")
+            if (!normalized.startsWith("/")) normalized = "/" + normalized
+            return "file://" + normalized
+        }
+        return source
     }
 
     function _profileId(profile) {
@@ -831,10 +837,8 @@ Window {
                                 Image {
                                     id: reportLogo
                                     anchors.left: parent.left
-                                    anchors.top: firmContact.top
-                                    anchors.topMargin: -4
-                                    anchors.bottom: firmContact.bottom
-                                    anchors.bottomMargin: -4
+                                    anchors.top: parent.top
+                                    anchors.bottom: (firmContact.text && firmContact.text.trim().length > 0) ? firmContact.bottom : firmName.bottom
                                     width: height
                                     source: root._logoSource()
                                     visible: root._logoSource().length > 0
