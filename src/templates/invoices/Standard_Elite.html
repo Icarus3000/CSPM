@@ -457,7 +457,7 @@
                 <span class="font-semibold" style="color: #e53e3e;">-${{ "%.2f"|format(discount_amount) }}</span>
             </div>
             <div class="grand-totals-row">
-                <span class="meta-label">Net Fees After Discount</span>
+                <span class="meta-label">{% if discount_type == "Agency Split" %}Net Fees After Deduction{% else %}Net Fees After Discount{% endif %}</span>
                 <span class="font-semibold">${{ "%.2f"|format(total_fees - discount_amount) }}</span>
             </div>
             {% endif %}
