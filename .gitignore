@@ -317,4 +317,6 @@ CSPM_PROJECT_TEXT_DUMP_*
 .cspm_*
 checkout_recovery/
 release_candidates/
+/.release_promotion_staging_*/
+/release_candidate_*/
 startup_briefing/
