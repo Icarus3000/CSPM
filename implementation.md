@@ -1,5 +1,28 @@
 # Implementation History
 
+## 2026-09-07: Report Window Clickable Export Path to Windows Explorer
+
+- User request: "clicking on the file path here should open that folder in windows explorer"
+- Screenshot reference: `media_1788822811135.png` showing `ReportWindow.qml` status bar reading `PDF exported: StatementOfAccount_...pdf | Saved to: C:\Users\cschn\AppData\Local\CSPM\exports`.
+- Changes Made:
+  1. `src/python/backend/app_controller.py`:
+     - Added `@Slot(str, result=bool) def openPathInExplorer(self, path_str: str) -> bool`.
+     - Handles Windows paths, file URLs, and quoted strings.
+     - If path points to an existing file: opens Windows Explorer with `/select,"<normpath>"` to open the containing folder and highlight the file.
+     - If path points to a directory: opens Windows Explorer at that folder using `os.startfile()` or `explorer.exe <dir>`.
+     - Non-Windows fallback: uses `QDesktopServices.openUrl(QUrl.fromLocalFile(...))`.
+  2. `src/qml/components/ReportWindow.qml`:
+     - Added `property string lastExportedPath: ""`.
+     - Enhanced `_parentFolder` and `_folderLabel` to correctly detect file extensions vs directories.
+     - Added `_hasSavedPath(text)`, `_statusPrefix(text)`, `_statusPath(text)`, and `openInExplorer(path)`.
+     - Updated `savePdf()` and `exportCsv()` to set `lastExportedPath = _safeText(result.path)` and show action feedback toast.
+     - Updated `actionFeedbackPopup` to show an interactive folder path with `Qt.PointingHandCursor` and tooltip.
+     - Redesigned status bar (32px rectangle): renders a clean `RowLayout` when `_hasSavedPath` is true, styling the folder path as a blue underlined link (`#0A62B0`) with hover highlight (`#005A9E`), pointing hand cursor, and tooltip `"Click to open folder in Windows Explorer"`. On click, invokes `openInExplorer(target)`.
+- Verification:
+  - `python -m py_compile src/python/backend/app_controller.py` passed with 0 errors.
+  - `scripts/qmllint.ps1 src/qml/components/ReportWindow.qml` passed with 0 errors.
+
+
 ## 2026-09-07: African Bronze Honey Billing Client (LIHDC) & Open Invoices Resolution
 
 - User request: "all african bronze matters should have LIhdc as the billing client. the latest 2 african bronze honey invoices still remain open and unpaid - please fix that."

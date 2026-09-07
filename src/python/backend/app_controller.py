@@ -3246,6 +3246,57 @@ class AppController(QObject):
             self._report_failure("Could not open URL", context="system.open_url", exc=exc)
             return False
 
+    @Slot(str, result=bool)
+    def openPathInExplorer(self, path_str: str) -> bool:
+        """Open a folder or file in Windows Explorer, highlighting the file if applicable."""
+        try:
+            import os
+            import subprocess
+            import sys
+            from pathlib import Path
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+
+            raw = str(path_str or "").strip()
+            if not raw:
+                return False
+            if raw.lower().startswith("file:///"):
+                raw = raw[8:]
+            elif raw.lower().startswith("file://"):
+                raw = raw[7:]
+            raw = raw.strip("\"'")
+            if not raw:
+                return False
+
+            target = Path(raw).resolve()
+            if sys.platform.startswith("win"):
+                norm = os.path.normpath(str(target))
+                if target.is_file():
+                    try:
+                        subprocess.Popen(f'explorer.exe /select,"{norm}"')
+                        return True
+                    except Exception:
+                        pass
+                target_dir = target if target.is_dir() else target.parent
+                if not target_dir.exists():
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                norm_dir = os.path.normpath(str(target_dir))
+                if hasattr(os, "startfile"):
+                    try:
+                        os.startfile(norm_dir)
+                        return True
+                    except Exception:
+                        pass
+                subprocess.Popen(["explorer.exe", norm_dir])
+                return True
+            else:
+                target_dir = target if target.is_dir() else target.parent
+                return bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(target_dir))))
+        except Exception as exc:
+            self._report_failure("Could not open path in Explorer", context="system.open_explorer", exc=exc)
+            return False
+
+
     def _expert_preview_url(self) -> str:
         return "http://127.0.0.1:5174/"
 

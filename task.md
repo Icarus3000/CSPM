@@ -1,5 +1,26 @@
 # CSPM Task And Validation Ledger
 
+## Report Window Clickable Export Path to Windows Explorer (2026-09-07)
+
+- [x] Implemented user requirement: "clicking on the file path here should open that folder in windows explorer" (from ReportWindow export status bar).
+- [x] Added `@Slot(str, result=bool) def openPathInExplorer(self, path_str: str) -> bool` to `src/python/backend/app_controller.py`:
+  - Resolves path strings, handles file:/// URLs and quotes.
+  - On Windows: if path is a file, executes `explorer.exe /select,"<normpath>"` to open Windows Explorer with the exported PDF/CSV highlighted.
+  - If path is a folder, executes `os.startfile(norm_dir)` or `subprocess.Popen(["explorer.exe", norm_dir])` to open the directory directly in Windows Explorer.
+  - Includes cross-platform fallback via `QDesktopServices.openUrl(QUrl.fromLocalFile(...))`.
+- [x] Updated `src/qml/components/ReportWindow.qml`:
+  - Added `lastExportedPath` property tracking the last exported file path.
+  - Updated `_parentFolder` and `_folderLabel` to correctly differentiate between file paths and directory paths without stripping directory names.
+  - Added helper functions `_hasSavedPath(text)`, `_statusPrefix(text)`, `_statusPath(text)`, and `openInExplorer(path)`.
+  - Updated `savePdf(openAfterSave)` and `exportCsv()` to set `lastExportedPath` and invoke `showActionFeedback` with the path.
+  - Updated action feedback popup to use an interactive `Item` with `MouseArea`, `cursorShape: Qt.PointingHandCursor`, tooltip `"Click to open folder in Windows Explorer"`, and click handler calling `root.openInExplorer(root.actionFeedbackPath)`.
+  - Re-architected status bar in `ReportWindow.qml` (32px high panel):
+    - Plain text when status has no path.
+    - Clean `RowLayout` when `_hasSavedPath(root.statusText)` is true: displays prefix text (`PDF exported: <file> | Saved to: `) alongside an interactive, underlined `#0A62B0` link that deepens to `#005A9E` on hover, presents `Qt.PointingHandCursor`, shows tooltip `"Click to open folder in Windows Explorer"`, and opens Windows Explorer on click.
+- [x] Validated with `python -m py_compile src/python/backend/app_controller.py` (pass) and `scripts/qmllint.ps1` (0 errors).
+- [x] Committed to git, pushed to remote `origin/main`, recompiled release, and replaced `C:\programs\CSPM\CSPM.exe`.
+
+
 ## African Bronze Honey Billing Client & Open Invoices Fix (2026-09-07)
 
 - [x] Implemented user requirement: "all african bronze matters should have LIhdc as the billing client. the latest 2 african bronze honey invoices still remain open and unpaid - please fix that."

@@ -32,6 +32,7 @@ Window {
     property string actionFeedbackText: ""
     property bool actionFeedbackIsError: false
     property string actionFeedbackPath: ""
+    property string lastExportedPath: ""
     property var brandingProfiles: []
     property var brandingProfileNames: []
     property string selectedBrandingProfileId: ""
@@ -144,12 +145,61 @@ Window {
 
     function _parentFolder(pathText) {
         var normalized = _safeText(pathText).trim().replace(/\\/g, "/")
-        var slashIndex = normalized.lastIndexOf("/")
-        return slashIndex > 0 ? normalized.slice(0, slashIndex) : ""
+        if (normalized.length <= 0) return ""
+        var lastSlash = normalized.lastIndexOf("/")
+        var lastDot = normalized.lastIndexOf(".")
+        if (lastDot > lastSlash && lastSlash > 0) {
+            return normalized.slice(0, lastSlash)
+        }
+        return normalized
     }
 
     function _folderLabel(pathText) {
-        return _parentFolder(pathText).replace(/\//g, "\\\\")
+        return _parentFolder(pathText).replace(/\//g, "\\")
+    }
+
+    function _hasSavedPath(text) {
+        var s = _safeText(text)
+        return s.indexOf("Saved to: ") >= 0
+    }
+
+    function _statusPrefix(text) {
+        var s = _safeText(text)
+        var sep = " | Saved to: "
+        var idx = s.indexOf(sep)
+        if (idx >= 0) return s.slice(0, idx) + " | Saved to: "
+        var alt = "Saved to: "
+        idx = s.indexOf(alt)
+        if (idx >= 0) return s.slice(0, idx) + "Saved to: "
+        return s
+    }
+
+    function _statusPath(text) {
+        var s = _safeText(text)
+        var sep = " | Saved to: "
+        var idx = s.indexOf(sep)
+        if (idx >= 0) return s.slice(idx + sep.length).trim()
+        var alt = "Saved to: "
+        idx = s.indexOf(alt)
+        if (idx >= 0) return s.slice(idx + alt.length).trim()
+        return ""
+    }
+
+    function openInExplorer(path) {
+        var raw = _safeText(path).trim()
+        if (raw.length === 0) return
+        if (appRef && appRef.openPathInExplorer) {
+            try {
+                if (appRef.openPathInExplorer(raw)) return
+            } catch (e) {
+                console.warn("openPathInExplorer failed:", e)
+            }
+        }
+        var folderTarget = _parentFolder(raw)
+        var url = _fileUrl(folderTarget)
+        if (url.length > 0) {
+            Qt.openUrlExternally(url)
+        }
     }
 
     function showActionFeedback(message, isError, savedPath) {
@@ -516,10 +566,13 @@ Window {
         }
         busy = false
         if (result && result.ok) {
+            lastExportedPath = _safeText(result.path)
             statusText = result.message ? String(result.message) : "PDF saved."
+            if (!openAfterSave) showActionFeedback("PDF Exported. Saved here:", false, _safeText(result.path))
             if (openAfterSave) Qt.openUrlExternally(_fileUrl(result.path))
         } else {
             statusText = "PDF failed: " + (result && result.message ? String(result.message) : "Unknown error")
+            showActionFeedback(statusText, true, "")
         }
     }
 
@@ -545,6 +598,7 @@ Window {
             }
             busy = false
             if (result && result.ok) {
+                lastExportedPath = _safeText(result.path)
                 statusText = result.message ? String(result.message) : "CSV exported."
                 showActionFeedback("CSV Exported. Saved here:", false, _safeText(result.path))
             } else {
@@ -641,24 +695,34 @@ Window {
                 font.bold: true
                 wrapMode: Text.WordWrap
             }
-            Button {
+            Item {
                 visible: !root.actionFeedbackIsError && root._folderLabel(root.actionFeedbackPath).length > 0
                 Layout.fillWidth: true
-                implicitHeight: folderLink.implicitHeight + 2
-                leftPadding: 0
-                rightPadding: 0
-                topPadding: 0
-                bottomPadding: 0
-                background: Item { }
-                contentItem: Text {
+                implicitHeight: folderLink.implicitHeight + 4
+
+                Text {
                     id: folderLink
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
                     text: root._folderLabel(root.actionFeedbackPath)
-                    color: "#0A62B0"
+                    color: folderArea.containsMouse ? "#005A9E" : "#0A62B0"
                     font.pixelSize: 12
                     font.underline: true
                     elide: Text.ElideMiddle
+                    width: Math.min(implicitWidth, parent.width)
                 }
-                onClicked: Qt.openUrlExternally(root._fileUrl(root._parentFolder(root.actionFeedbackPath)))
+
+                MouseArea {
+                    id: folderArea
+                    anchors.fill: folderLink
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.openInExplorer(root.actionFeedbackPath)
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 300
+                    ToolTip.text: "Click to open folder in Windows Explorer"
+                }
             }
         }
     }
@@ -755,10 +819,13 @@ Window {
         }
 
         Rectangle {
+            id: statusBar
             Layout.fillWidth: true
             Layout.preferredHeight: 32
             color: SemanticTheme.surfacePanel(root.t, root.appStyle)
+
             Text {
+                visible: !root._hasSavedPath(root.statusText)
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
@@ -768,6 +835,59 @@ Window {
                 font.pixelSize: 12
                 font.bold: root.statusText !== "Ready"
                 elide: Text.ElideRight
+            }
+
+            RowLayout {
+                visible: root._hasSavedPath(root.statusText)
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 4
+
+                Text {
+                    text: root._statusPrefix(root.statusText)
+                    color: root.mutedInk
+                    font.pixelSize: 12
+                    font.bold: true
+                    verticalAlignment: Text.AlignVCenter
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Item {
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.fillWidth: true
+                    implicitHeight: pathText.implicitHeight + 4
+
+                    Text {
+                        id: pathText
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root._statusPath(root.statusText)
+                        color: pathArea.containsMouse ? "#005A9E" : "#0A62B0"
+                        font.pixelSize: 12
+                        font.bold: true
+                        font.underline: true
+                        elide: Text.ElideMiddle
+                        width: Math.min(implicitWidth, parent.width)
+                    }
+
+                    MouseArea {
+                        id: pathArea
+                        anchors.fill: pathText
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            var target = root.lastExportedPath.length > 0
+                                ? root.lastExportedPath
+                                : root._statusPath(root.statusText)
+                            root.openInExplorer(target)
+                        }
+
+                        ToolTip.visible: containsMouse
+                        ToolTip.delay: 300
+                        ToolTip.text: "Click to open folder in Windows Explorer"
+                    }
+                }
             }
         }
 
