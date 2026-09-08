@@ -1,5 +1,38 @@
 # Implementation History
 
+## 2026-09-07: CS Branding Logo Bottom Floor Alignment Across Invoices, Statements, and Reports
+
+- User request: "on the statement of account, and on the invoices, and on all reports, please move the CS branding logo downward, such that the bottom 'floor' aligns with the bottom 'floor' of the text block to the right of it."
+- Reference Screenshot: `media_1788825574411.png` showing the CS monogram sitting too high relative to the firm name and contact block.
+- Technical Findings & Root Cause:
+  1. SVG Asset Padding: `assets/CS.svg` and `src/qml/assets/CS.svg` vector artwork had an uncropped `0 0 1536 1536` viewBox while actual artwork was located between Y=309.39 and Y=1197.31 (aspect ratio 1.5828). This left ~338px (~22.1%) of empty bottom padding inside the SVG asset itself, causing the artwork to float ~17-22px above any container floor.
+  2. QML Preview: In `ReportWindow.qml`, `reportLogo` was constrained inside a square 1:1 box with `verticalAlignment: Image.AlignVCenter`.
+  3. PDF Exporter: In `report_pdf_exporter.py`, `_draw_header_footer` used `anchor="c"` which vertically centered the logo image inside its bounding box rather than anchoring it to `contact_bottom`.
+  4. Invoice HTML Templates: Brand groups used `align-items: center` with square viewBoxes.
+- Changes Made:
+  1. `assets/CS.svg` and `src/qml/assets/CS.svg`:
+     - Updated viewBox to `60.8 309.4 1405.4 887.9` (matching exact artwork geometry with 0px margin).
+  2. HTML Invoice Templates (`Concept_A2.html`, `Standard_Elite.html`, `LIHDC_Format.html`, `Concept_A.html`, `Concept_A_Agency.html`, `Concept_B.html`):
+     - Updated inline SVG viewBoxes to `60.8 309.4 1405.4 887.9`.
+     - Set `.logo-mark` dimensions to proportional `120px` x `76px` with `flex-shrink: 0; display: flex; align-items: flex-end;`.
+     - Set header rows and firm details to `align-items: flex-end` so the CS logo artwork baseline rests directly on the bottom floor of the contact text block.
+  3. `src/qml/components/ReportWindow.qml`:
+     - Anchored `reportLogo.bottom` to `firmContact.bottom` (falling back to `firmName.bottom`).
+     - Set `height: (firmContact.text && firmContact.text.trim().length > 0) ? (firmContact.y + firmContact.height) : (firmName.y + firmName.height)`.
+     - Set `width: Math.round(height * 1.583)`.
+     - Set `verticalAlignment: Image.AlignBottom` and `horizontalAlignment: Image.AlignLeft`.
+  4. `src/python/services/report_pdf_exporter.py`:
+     - Calculated exact contact descent floor: `contact_bottom = (top - 11) - (num_contact_lines - 1) * 8.5 - 2.0`.
+     - Calculated total text block height: `contact_block_height = (top + 9.5) - contact_bottom`.
+     - Set default proportional dimensions: `logo_h = contact_block_height`, `logo_w = round(logo_h * 1.583, 2)`.
+     - Positioned `logo_y = contact_bottom` and used `anchor="sw"` with `preserveAspectRatio=True` in `canvas.drawImage`.
+- Verification:
+  - `python -m py_compile src/python/services/report_pdf_exporter.py` passed with 0 errors.
+  - `scripts/qmllint.ps1 src/qml/components/ReportWindow.qml` passed with 0 errors.
+  - Rendered test Statement of Account and Docket Activity Report PDFs with PyMuPDF; measured exact nonwhite pixel bounds: logo bottom and text bottom difference is **0 px** on both documents.
+  - 25 unit tests across statements, reports, and invoices passed in 1.12s.
+  - Compiled release build and deployed executable to `C:\programs\CSPM\CSPM.exe`.
+
 ## 2026-09-07: Report Window Clickable Export Path to Windows Explorer
 
 - User request: "clicking on the file path here should open that folder in windows explorer"

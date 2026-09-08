@@ -211,11 +211,13 @@ def _draw_header_footer(canvas, doc, config, logo_path):
     num_contact_lines = max(1, len(contact_lines))
 
     # Calculate exact contact block bounds for logo alignment
-    contact_top = (top - 11) + 7.0  # Ascent of 7.0pt font is roughly 7.0
+    # Contact lines start at top - 11 with 8.5pt spacing. 7.0pt font has ~2.0pt descent.
     contact_bottom = (top - 11) - (num_contact_lines - 1) * 8.5 - 2.0  # Descent
-    contact_height = contact_top - contact_bottom
-    logo_h = max(contact_height, float(config.get("headerLogoMinHeight") or contact_height))
-    logo_w = logo_h
+    # Firm name baseline is at top (12pt font with ~9.5pt cap height).
+    contact_block_height = (top + 9.5) - contact_bottom
+
+    logo_h = max(contact_block_height, float(config.get("headerLogoMinHeight") or contact_block_height))
+    logo_w = round(logo_h * 1.583, 2)
     logo_y = contact_bottom
 
     logo_drawn = False
@@ -228,16 +230,17 @@ def _draw_header_footer(canvas, doc, config, logo_path):
                 if requested_width > 0 and requested_height > 0:
                     logo_w = requested_width
                     logo_h = requested_height
-                    if config.get("headerLogoBottomAligned"):
+                    if config.get("headerLogoBottomAligned", True):
                         logo_y = contact_bottom
                     else:
                         logo_y = top - logo_h + float(
-                            config.get("headerLogoVerticalOffset") or 3.0
+                            config.get("headerLogoVerticalOffset") or 0.0
                         )
                 else:
-                    logo_h = max(contact_height, float(config.get("headerLogoMinHeight") or contact_height))
-                    logo_w = logo_h
-                    logo_y = contact_top - logo_h
+                    logo_h = max(contact_block_height, float(config.get("headerLogoMinHeight") or contact_block_height))
+                    logo_w = round(logo_h * 1.583, 2)
+                    logo_y = contact_bottom
+
                 canvas.drawImage(
                     str(logo_path),
                     left,
@@ -247,15 +250,15 @@ def _draw_header_footer(canvas, doc, config, logo_path):
                     # The firm mark is intentionally a horizontal wordmark.
                     # Keep it undistorted inside the reserved header footprint
                     # when a report explicitly requests this treatment.
-                    preserveAspectRatio=bool(config.get("headerLogoPreserveAspectRatio", False)),
-                    anchor="c",
+                    preserveAspectRatio=bool(config.get("headerLogoPreserveAspectRatio", True)),
+                    anchor="sw",
                     mask="auto",
                 )
                 logo_drawn = True
             except Exception:
                 logo_drawn = False
 
-    text_left = left + (logo_w + 12 if logo_drawn else 0)
+    text_left = left + (logo_w + 14 if logo_drawn else 0)
     canvas.setFillColor(colors.HexColor("#111827"))
     canvas.setFont("Helvetica-Bold", 12)
     canvas.drawString(text_left, top, _safe_text(config.get("firmName") or "Cory Schneider Law Office")[:80])

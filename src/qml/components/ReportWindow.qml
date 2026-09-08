@@ -957,12 +957,14 @@ Window {
                                 Image {
                                     id: reportLogo
                                     anchors.left: parent.left
-                                    anchors.top: parent.top
                                     anchors.bottom: (firmContact.text && firmContact.text.trim().length > 0) ? firmContact.bottom : firmName.bottom
-                                    width: height
+                                    height: (firmContact.text && firmContact.text.trim().length > 0) ? (firmContact.y + firmContact.height) : (firmName.y + firmName.height)
+                                    width: Math.round(height * 1.583)
                                     source: root._logoSource()
                                     visible: root._logoSource().length > 0
                                     fillMode: Image.PreserveAspectFit
+                                    verticalAlignment: Image.AlignBottom
+                                    horizontalAlignment: Image.AlignLeft
                                     smooth: true
                                     mipmap: true
                                 }
