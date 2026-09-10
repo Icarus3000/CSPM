@@ -44,6 +44,7 @@ REPORT_BRANDING_PROFILES_KEY = "reportBrandingProfiles"
 LAST_REPORT_BRANDING_PROFILE_KEY = "lastReportBrandingProfileId"
 LEGACY_DOCKETS_RECENT_FILES_KEY = "legacyDocketsRecentFiles"
 TABLE_PREFERENCES_KEY = "tablePreferences"
+CUSTOM_MATTER_TYPES_KEY = "customMatterTypesByPracticeArea"
 DEFAULT_REPORT_BRANDING_PROFILE_ID = "cs_law"
 REPORT_BRANDING_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg"}
 DEFAULT_AUTO_BACKUP_MINUTES = 15
@@ -70,6 +71,66 @@ DEFAULT_PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS = 0
 VALID_APP_STYLES = ("Professional",)
 DEFAULT_APP_STYLE = "Professional"
 AR_AGING_REPORT_IDS = {"ar_aging", "ar_aging_report", "accounts_receivable"}
+
+# Matter types are grouped by practice area so the wizard can offer a useful
+# catalog without forcing firms into a fixed taxonomy. Firm-added entries are
+# stored separately in user settings and merged with this catalog at runtime.
+DEFAULT_MATTER_TYPES_BY_PRACTICE_AREA = {
+    "General": (
+        "General", "General Consultation", "Independent Legal Advice",
+        "Legal Opinion", "Document Drafting / Review", "Negotiation",
+        "Regulatory / Compliance", "Notary / Commissioning",
+        "Mediation / Alternative Dispute Resolution", "Debt Collection",
+        "Legal Research", "Other",
+    ),
+    "Intellectual Property": (
+        "Trademark Search / Clearance", "Trademark Filings",
+        "Trademark Opposition / Cancellation", "Patent Filings",
+        "Patent Prosecution", "Copyright Filings", "Industrial Design",
+        "Domain Name Dispute", "IP Litigation", "Cease and Desist",
+        "IP Management", "IP Licensing", "IP Due Diligence", "Trade Secrets",
+    ),
+    "Tax": (
+        "CRA Audit / Reassessment", "Notice of Objection", "Tax Court Appeal",
+        "Tax Litigation", "Voluntary Disclosure (VDP)",
+        "Section 85 Rollover / Reorganization", "Estate Freeze",
+        "Tax Planning & Advisory", "Commodity Tax / HST",
+        "Tax Collection / Enforcement", "Cross-Border Tax",
+    ),
+    "Corporate / Commercial": (
+        "Incorporation / Organization", "Corporate Reorganization",
+        "Share Purchase / Sale", "Asset Purchase / Sale",
+        "Unanimous Shareholder Agreement (USA)", "Shareholders Agreement",
+        "Partnership / Joint Venture", "Contract Drafting & Review",
+        "Corporate Maintenance / Annual Returns", "Financing / Secured Lending",
+        "Private Placement / Securities", "Due Diligence",
+        "Amalgamation / Dissolution",
+    ),
+    "Real Estate": (
+        "Residential Purchase", "Residential Sale", "Commercial Purchase",
+        "Commercial Sale", "Refinance / Mortgage", "Commercial Leasing",
+        "Residential Leasing", "Title Transfer", "Development / Subdivision",
+        "Landlord and Tenant", "Title / Boundary Dispute",
+    ),
+    "Litigation & Dispute Resolution": (
+        "Civil Litigation", "Commercial Litigation", "Small Claims",
+        "Debt Recovery", "Breach of Contract", "Shareholder Dispute",
+        "Construction Litigation", "Employment Litigation",
+        "Injunction / Urgent Motion", "Appeal / Judicial Review",
+        "Mediation", "Arbitration",
+    ),
+    "Wills & Estates": (
+        "Will Preparation", "Powers of Attorney", "Estate Planning",
+        "Trust Planning / Administration", "Estate Administration / Probate",
+        "Passing of Accounts", "Guardianship Application", "Estate Litigation",
+    ),
+    "Family Law": (
+        "Separation Agreement", "Divorce",
+        "Parenting / Decision-Making Responsibility", "Child / Spousal Support",
+        "Property Division / Equalization", "Cohabitation / Marriage Contract",
+        "Adoption", "Family Mediation / Arbitration", "Child Protection",
+    ),
+}
 
 
 def _restart_command(
@@ -248,6 +309,7 @@ class AppController(QObject):
     toast = Signal(str)
     error = Signal(str)
     clientDataChanged = Signal()
+    matterTypeOptionsChanged = Signal()
     transactionDataChanged = Signal()
     transactionLookupDataChanged = Signal()
     backendBootChanged = Signal()
@@ -3966,6 +4028,142 @@ class AppController(QObject):
         else:
             theme_logger.warning("save_settings failed to atomically write to path=%s", str(target_path))
         return success
+
+
+    @staticmethod
+    def _clean_matter_type_label(value: Any) -> str:
+        """Return a single-line, whitespace-normalized matter-type label."""
+        return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
+
+    @classmethod
+    def _normalize_custom_matter_types(cls, raw: Any) -> Dict[str, list[str]]:
+        if not isinstance(raw, dict):
+            return {}
+        normalized: Dict[str, list[str]] = {}
+        for raw_area, raw_values in raw.items():
+            area = cls._clean_matter_type_label(raw_area)
+            if not area or not isinstance(raw_values, (list, tuple)):
+                continue
+            values: list[str] = []
+            seen: set[str] = set()
+            for raw_value in raw_values:
+                label = cls._clean_matter_type_label(raw_value)[:80]
+                key = label.casefold()
+                if not label or key in seen:
+                    continue
+                seen.add(key)
+                values.append(label)
+            if values:
+                normalized[area] = values
+        return normalized
+
+    @staticmethod
+    def _dedupe_matter_type_options(values: list[Any]) -> list[str]:
+        options: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            label = AppController._clean_matter_type_label(value)
+            key = label.casefold()
+            if not label or key in seen:
+                continue
+            seen.add(key)
+            options.append(label)
+        return options
+
+    def _observed_matter_types(self, practice_area: str) -> list[str]:
+        """Return workbook values so legacy/custom matter types remain selectable."""
+        if not getattr(self, "_is_booted", False):
+            return []
+        try:
+            rows = self._crud.list_matter_directory()
+        except Exception:
+            return []
+        wanted_area = self._clean_matter_type_label(practice_area).casefold()
+        observed: list[str] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            row_area = self._clean_matter_type_label(row.get("practiceArea")) or "General"
+            if row_area.casefold() != wanted_area:
+                continue
+            observed.append(self._clean_matter_type_label(row.get("matterType")))
+        return self._dedupe_matter_type_options(observed)
+
+    @Slot(str, result=list)
+    def getMatterTypeOptions(self, practice_area):
+        """Return built-in, firm-added, and already-used types for one area."""
+        if not self._settings_load_complete:
+            self.load_settings()
+        area = self._clean_matter_type_label(practice_area) or "General"
+        custom_by_area = self._normalize_custom_matter_types(
+            self._settings_data.get(CUSTOM_MATTER_TYPES_KEY)
+        )
+        built_in_area = next(
+            (name for name in DEFAULT_MATTER_TYPES_BY_PRACTICE_AREA if name.casefold() == area.casefold()),
+            area,
+        )
+        custom_area = next(
+            (name for name in custom_by_area if name.casefold() == area.casefold()),
+            area,
+        )
+        return self._dedupe_matter_type_options([
+            *DEFAULT_MATTER_TYPES_BY_PRACTICE_AREA.get(built_in_area, ()),
+            "Other",
+            *custom_by_area.get(custom_area, ()),
+            *self._observed_matter_types(area),
+        ])
+
+    @Slot(str, str, result=dict)
+    def addMatterTypeOption(self, practice_area, matter_type):
+        """Persist a new practice-area-scoped matter type in app settings."""
+        if not self._settings_load_complete:
+            self.load_settings()
+        area = self._clean_matter_type_label(practice_area)
+        label = self._clean_matter_type_label(matter_type)
+        if not area:
+            return {"ok": False, "message": "Select a practice area first."}
+        if not label:
+            return {"ok": False, "message": "Enter a matter type."}
+        if len(label) > 80:
+            return {"ok": False, "message": "Matter type must be 80 characters or fewer."}
+
+        current_options = self.getMatterTypeOptions(area)
+        for existing in current_options:
+            if existing.casefold() == label.casefold():
+                return {
+                    "ok": True,
+                    "created": False,
+                    "matterType": existing,
+                    "options": current_options,
+                    "message": f"{existing} is already available.",
+                }
+
+        custom_by_area = self._normalize_custom_matter_types(
+            self._settings_data.get(CUSTOM_MATTER_TYPES_KEY)
+        )
+        stored_area = next(
+            (name for name in custom_by_area if name.casefold() == area.casefold()),
+            area,
+        )
+        previous = self._settings_data.get(CUSTOM_MATTER_TYPES_KEY)
+        custom_by_area.setdefault(stored_area, []).append(label)
+        self._settings_data[CUSTOM_MATTER_TYPES_KEY] = custom_by_area
+        if not self.save_settings():
+            if previous is None:
+                self._settings_data.pop(CUSTOM_MATTER_TYPES_KEY, None)
+            else:
+                self._settings_data[CUSTOM_MATTER_TYPES_KEY] = previous
+            return {"ok": False, "message": "The matter type could not be saved."}
+
+        options = self.getMatterTypeOptions(area)
+        self.matterTypeOptionsChanged.emit()
+        return {
+            "ok": True,
+            "created": True,
+            "matterType": label,
+            "options": options,
+            "message": f"{label} was added to {area}.",
+        }
 
 
 

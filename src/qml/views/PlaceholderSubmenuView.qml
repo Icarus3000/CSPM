@@ -159,6 +159,8 @@ Item {
     property string editReturnMatterName: ""
     property string clientWizardDateTarget: ""
     property string clientSaveValidationSummary: ""
+    property string matterTypeAddPracticeArea: ""
+    property string matterTypeAddMessage: ""
     property var entityTypeOptions: [
         "Individual",
         "Corporation",
@@ -1300,6 +1302,91 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         lawyerOptions = names
     }
 
+    function _matterTypeOptionIndex(options, value) {
+        var wanted = String(value || "").trim().toLowerCase()
+        if (wanted.length <= 0 || !options || options.length === undefined) return -1
+        for (var i = 0; i < options.length; i++) {
+            if (String(options[i] || "").trim().toLowerCase() === wanted) return i
+        }
+        return -1
+    }
+
+    function refreshMatterTypeOptions(preserveSelection) {
+        var area = String(matterPracticeAreaCombo.editText || "").trim()
+        if (area.length <= 0) area = "General"
+        var current = String(matterTypeCombo.editText || "").trim()
+        var options = []
+        try {
+            if (appRef && appRef.backendBooted && appRef.getMatterTypeOptions) {
+                var loaded = appRef.getMatterTypeOptions(area)
+                if (loaded && loaded.length !== undefined) {
+                    for (var i = 0; i < loaded.length; i++) {
+                        var label = String(loaded[i] || "").trim()
+                        if (label.length > 0) options.push(label)
+                    }
+                }
+            }
+        } catch (e0) {
+            options = []
+        }
+        if (options.length <= 0) {
+            var fallback = root.practiceAreaMatterTypes[area] || ["Other"]
+            for (var j = 0; j < fallback.length; j++) options.push(String(fallback[j] || ""))
+        }
+
+        var currentIndex = root._matterTypeOptionIndex(options, current)
+        if (current.length > 0 && currentIndex < 0 && (root.matterEditMode || root._hydrating)) {
+            options.push(current)
+            currentIndex = options.length - 1
+        }
+        root.matterTypeOptions = options
+
+        if (preserveSelection === true && currentIndex >= 0) {
+            root._setComboBoxSilently(matterTypeCombo, options[currentIndex])
+        } else if (preserveSelection !== true) {
+            root._setComboBoxSilently(matterTypeCombo, options.length > 0 ? options[0] : "")
+        }
+    }
+
+    function openAddMatterTypePopup() {
+        var area = String(matterPracticeAreaCombo.editText || "").trim()
+        if (area.length <= 0) {
+            root.lastSaveOk = false
+            root.saveMessage = "Select a Practice Area before adding a matter type."
+            return
+        }
+        root.matterTypeAddPracticeArea = area
+        root.matterTypeAddMessage = ""
+        addMatterTypeInput.text = ""
+        addMatterTypePopup.open()
+    }
+
+    function saveAddedMatterType() {
+        var area = String(root.matterTypeAddPracticeArea || "").trim()
+        var label = String(addMatterTypeInput.text || "").trim()
+        if (!appRef || !appRef.addMatterTypeOption) {
+            root.matterTypeAddMessage = "Matter type settings are unavailable."
+            return
+        }
+        var result = ({ "ok": false, "message": "The matter type could not be saved." })
+        try {
+            result = appRef.addMatterTypeOption(area, label)
+        } catch (e0) {
+            result = ({ "ok": false, "message": String(e0) })
+        }
+        if (!result || !result.ok) {
+            root.matterTypeAddMessage = String(result && result.message ? result.message : "The matter type could not be saved.")
+            return
+        }
+
+        root.refreshMatterTypeOptions(true)
+        root._setComboBoxSilently(matterTypeCombo, String(result.matterType || label))
+        root.dirty = true
+        root.lastSaveOk = true
+        root.saveMessage = String(result.message || "Matter type added.")
+        addMatterTypePopup.close()
+    }
+
     function _matterWizardClientName() {
         var clientName = String(matterClientCombo.editText || "").trim()
         return _isNewClientOption(clientName) ? "" : clientName
@@ -1495,9 +1582,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         jointNoConfidentialityCheck.checked = false
         jointInstructionsCheck.checked = true
         _setTextFieldSilently(matterJointEngagementDocumentInput, "")
-        _setComboBoxSilently(matterTypeCombo, "General")
         _setComboBoxSilently(matterStatusCombo, "Open")
         _setComboBoxSilently(matterPracticeAreaCombo, "General")
+        root.refreshMatterTypeOptions(false)
         _setComboBoxSilently(matterResponsibleLawyerCombo, "")
         _setComboBoxSilently(matterBillingArrangementCombo, "Hourly")
         _setTextFieldSilently(matterBillingContactInput, "")
@@ -1960,10 +2047,11 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         jointNoConfidentialityCheck.checked = root.matterJointNoConfidentialityConfirmed
         jointInstructionsCheck.checked = root.matterJointInstructionsRequireAll
         _setTextFieldSilently(matterJointEngagementDocumentInput, String(profile.jointEngagementDocument || ""))
-        _setComboBoxSilently(matterTypeCombo, String(profile.matterType || "General"))
         _setComboBoxSilently(matterStatusCombo, String(profile.status || "Open"))
         matterPersistedStatus = String(profile.status || "Open").trim()
-        _setComboBoxSilently(matterPracticeAreaCombo, String(profile.practiceArea || ""))
+        _setComboBoxSilently(matterPracticeAreaCombo, String(profile.practiceArea || "General"))
+        root.refreshMatterTypeOptions(false)
+        _setComboBoxSilently(matterTypeCombo, String(profile.matterType || "General"))
         _setComboBoxSilently(matterResponsibleLawyerCombo, String(profile.responsibleLawyer || ""))
         _setComboBoxSilently(
             matterBillingArrangementCombo,
@@ -3431,6 +3519,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         if (root.activeIsNewMatterWizard()) {
             root.refreshParentClientOptions()
             root.refreshMatterWizardClientOptions()
+            root.refreshMatterTypeOptions(true)
             if (!root.matterEditMode && root.selectedClientName.length > 0) {
                 _setComboBoxSilently(matterClientCombo, root.selectedClientName)
             }
@@ -3490,6 +3579,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             root.refreshClientDirectory(false)
             root.refreshMatterDirectory(false)
             root.refreshMatterWizardClientOptions()
+            root.refreshMatterTypeOptions(true)
             if (transactionMasterView && transactionMasterView.refreshLookupData) {
                 transactionMasterView.refreshLookupData()
             }
@@ -3532,6 +3622,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             if (root.activeIsMatterProfile360()) {
                 root.loadSelectedMatterProfile("")
             }
+        }
+        function onMatterTypeOptionsChanged() {
+            root.refreshMatterTypeOptions(true)
         }
 
         function onTransactionDataChanged() {
@@ -5499,26 +5592,46 @@ Behavior on border.color {
                         Layout.columnSpan: 1
                         Layout.preferredHeight: root.fieldHeightPx
                         fullModel: root.practiceAreaOptions
+                        Component.onCompleted: root.refreshMatterTypeOptions(true)
                         onEditTextChanged: {
-                            if (!root._hydrating) root.dirty = true
-                            root.matterTypeOptions = root.practiceAreaMatterTypes[editText] || [""]
-                            if (!root._hydrating && root.matterTypeOptions.indexOf(matterTypeCombo.editText) === -1) {
-                                matterTypeCombo.editText = ""
+                            if (root._hydrating) {
+                                root.refreshMatterTypeOptions(true)
+                                return
                             }
+                            root.dirty = true
+                            root.refreshMatterTypeOptions(false)
                         }
                     }
 
-                    ModernComboBox {
-                        id: matterTypeCombo
-                        t: root.t
-                        metrics: root.responsiveMetrics
-                        label: "Matter Type"
-                        emptyOptionLabel: "Select matter type..."
+                    RowLayout {
                         Layout.fillWidth: true
                         Layout.columnSpan: 1
                         Layout.preferredHeight: root.fieldHeightPx
-                        fullModel: root.matterTypeOptions
-                        onEditTextChanged: if (!root._hydrating) root.dirty = true
+                        spacing: root.ratioPxW(0.006, 6)
+
+                        ModernComboBox {
+                            id: matterTypeCombo
+                            t: root.t
+                            metrics: root.responsiveMetrics
+                            label: "Matter Type"
+                            emptyOptionLabel: "Select matter type..."
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: root.fieldHeightPx
+                            fullModel: root.matterTypeOptions
+                            onEditTextChanged: if (!root._hydrating && !root._autoFieldMutation) root.dirty = true
+                        }
+
+                        PillButton {
+                            t: root.t
+                            metrics: root.responsiveMetrics
+                            sfxBus: root.sfxBus
+                            text: "+ Add"
+                            tooltipText: "Add a persistent matter type for this practice area"
+                            primary: false
+                            Layout.preferredWidth: root.ratioPxW(0.070, 72)
+                            Layout.preferredHeight: root.fieldHeightPx
+                            onClicked: root.openAddMatterTypePopup()
+                        }
                     }
 
                     ModernComboBox {
@@ -6115,6 +6228,107 @@ Behavior on border.color {
                     font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
                 }
                     }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: addMatterTypePopup
+        parent: root.Window.window ? root.Window.window.contentItem : root
+        modal: true
+        focus: true
+        dim: true
+        closePolicy: Popup.CloseOnEscape
+        anchors.centerIn: parent
+        padding: root.ratioPx(0.010, 10)
+        width: Math.max(
+            root.ratioPxW(0.34, 360),
+            Math.min(root.ratioPxW(0.50, 620), (parent ? parent.width : root.width) - root.ratioPx(0.018, 18))
+        )
+        onOpened: Qt.callLater(function() {
+            if (addMatterTypeInput) addMatterTypeInput.forceActiveFocus()
+        })
+
+        background: Rectangle {
+            radius: root.sectionRadiusPx
+            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.98)
+            border.width: 1
+            border.color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.66)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: root.ratioPx(0.008, 8)
+
+            Text {
+                Layout.fillWidth: true
+                text: "Add Matter Type"
+                color: root._text
+                font.pixelSize: root.ratioPx(
+                    root.scaleRatios.headerTitleFontPct * 0.62,
+                    root.metricFloor("fontFloorBodyPx", 10)
+                )
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "This option will remain available under "
+                    + String(root.matterTypeAddPracticeArea || "the selected practice area")
+                    + " after the app restarts."
+                color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.82)
+                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                wrapMode: Text.WordWrap
+            }
+
+            ModernTextField {
+                id: addMatterTypeInput
+                t: root.t
+                metrics: root.responsiveMetrics
+                label: "Matter Type Name"
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.fieldHeightPx
+                maximumLength: 80
+                onTextChanged: root.matterTypeAddMessage = ""
+                Keys.onReturnPressed: root.saveAddedMatterType()
+                Keys.onEnterPressed: root.saveAddedMatterType()
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: String(root.matterTypeAddMessage || "").length > 0
+                text: root.matterTypeAddMessage
+                color: Qt.rgba(0.98, 0.42, 0.42, 0.96)
+                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: root.ratioPx(0.008, 8)
+
+                Item { Layout.fillWidth: true }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Cancel"
+                    primary: false
+                    Layout.preferredWidth: root.ratioPxW(0.105, 108)
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: addMatterTypePopup.close()
+                }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Add Type"
+                    primary: true
+                    Layout.preferredWidth: root.ratioPxW(0.115, 118)
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: root.saveAddedMatterType()
                 }
             }
         }

@@ -1,5 +1,16 @@
 # CSPM Task And Validation Ledger
 
+## Persistent User-Defined Matter Types (2026-09-10)
+
+- [x] Replaced the New Matter Wizard's fixed three-choice General list with an expanded practice-area catalog exposed through `AppController`; every existing practice area now has a broader set of common legal matter types and `Other` remains available everywhere.
+- [x] Added a visible `+ Add` action beside Matter Type. Its modal scopes the new value to the selected Practice Area, validates blank/over-80-character input, normalizes whitespace, prevents case-insensitive duplicates, immediately selects the result, and refreshes other open wizard instances.
+- [x] Persisted user-added values under `customMatterTypesByPracticeArea` in the authoritative LocalAppData `user_settings.json`, which survives app restarts and package replacement. Existing workbook matter-type values are also merged back into their matching practice area so legacy/custom records never become unselectable.
+- [x] Corrected New/Edit Matter hydration order so the practice-area model is loaded before the saved/default Matter Type is applied; unknown legacy values are preserved while editing.
+- [x] Sandbox-safe validation: Python compilation passed; focused persistence/catalog/UI-contract tests passed (**5 passed**); governed QML lint completed with no syntax errors and existing warning-only diagnostics; `git diff --check` passed. A wider run produced **205 passed / 6 unrelated pre-existing failures**; the separate stale motion-settings module still cannot collect because it imports removed window-style constants.
+- [x] Recompiled the complete candidate-validation package, promoted it to `dist\CSPM`, and deployed it to `C:\Programs\CSPM`. Dist and installed EXE SHA-256 values match at `06EB350DA4DC9494204824BF39505CE80E6653459B96CD2F0F2A5EAC64762090`; packaged/source wizard QML hashes match exactly. The prior package is recoverable at `to_delete\dist__replaced_release_20260910_075928`.
+- [x] Outside-sandbox packaged Qt/WebEngine startup validation: the installed app acquired the writable checkout, reached first main-window pixel in 12.339 seconds, and closed through its normal transition. Shutdown published cleanly and no shared checkout marker remains.
+- [ ] Manual application acceptance: in New Matter, confirm each Practice Area shows the expanded list; use `+ Add` to create a safe test type, select it, restart CSPM, and confirm it remains available under the same Practice Area.
+
 ## Metadata-Only Cloud Conflict And Legacy Import Write Preflight (2026-09-10)
 
 - [x] Diagnosed the reported Legacy Dockets Import failure from the fresh installed-app log. Startup had deliberately opened read-only because both local and cloud `CSPM.xlsm` hashes differed from their recorded common ancestor; the import then performed its full in-memory batch before the repository write guard rejected the final save.
