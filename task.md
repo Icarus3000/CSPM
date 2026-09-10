@@ -1,5 +1,16 @@
 # CSPM Task And Validation Ledger
 
+## Same-Computer Cross-Launch Checkout Recovery (2026-09-09)
+
+- [x] Diagnosed the Legacy Dockets Import failure from the fresh installed-app log. The September 9 packaged launch was read-only because `.cspm_checkout.json` still belonged to dead PID `15372` from a September 8 source/runtime launch; the source and packaged launch roots had different `machineId` files, so the existing same-installation recovery deliberately refused the otherwise safe same-computer cleanup.
+- [x] Moved the durable workstation identity to the shared LocalAppData CSPM state rather than a launch-specific runtime tree. Source and packaged launches now present the same installation identity while separate explicitly isolated test/install identities remain distinct. Recovery still requires matching identity and computer name plus a conclusively dead recorded PID; live PIDs, unreadable markers, other installations, and other computers remain protected, and lease age is still never used.
+- [x] Added regression coverage proving source/package roots share the stable workstation identity and recover a dead checkout, while a different-installation checkout and a live same-installation checkout remain blocked.
+- [x] Recovered the actual stale checkout through the governed synchronization service, wrote an immutable audit record under LocalAppData, acquired and released a fresh lease, and verified local/cloud `CSPM.xlsm` and `Dockets.xlsm` hashes still match exactly.
+- [x] Sandbox-safe validation: Python compilation passed; focused checkout plus Legacy Dockets selection/reconciliation tests passed (**14 passed**); scoped `git diff --check` passed with line-ending notices only.
+- [x] Outside-sandbox packaged Qt/WebEngine validation: the current `dist\CSPM\CSPM.exe` acquired a writable checkout (`Cloud authority and local replica already match`) and reached its first main-window pixel. The agent-started test process was then stopped; its resulting dead test lease was recovered and released through the governed service, leaving no shared checkout marker.
+- [x] A clean production rebuild was attempted from committed `8024ccf` plus only this repair, but the release preflight correctly blocked because the CSPM workbook template remains `CANDIDATE_AWAITING_CORY_APPROVAL`. The temporary build worktree was removed; no candidate or production package was promoted and unrelated working-tree QML changes were not included.
+- [ ] Manual application acceptance: relaunch CSPM, confirm startup no longer reports read-only, then repeat the reviewed six-row `88 qu` Legacy Dockets import. No import was executed automatically during this repair.
+
 ## CS Branding Logo Bottom Floor Alignment Across Invoices, Statements, and Reports (2026-09-07)
 
 - [x] Implemented user requirement: "on the statement of account, and on the invoices, and on all reports, please move the CS branding logo downward, such that the bottom 'floor' aligns with the bottom 'floor' of the text block to the right of it."

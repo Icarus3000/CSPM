@@ -42,10 +42,10 @@ class SyncService:
 
     The lease is intentionally conservative.  It never expires based on age:
     a checkout from another computer is never reclaimed automatically.  The
-    one exception is an abandoned marker which proves it was created by this
-    same CSPM installation and whose recorded local process is no longer
-    running.  That narrow recovery prevents a crash from leaving this PC
-    permanently read-only without weakening the cross-PC writer guarantee.
+    one exception is an abandoned marker from this same CSPM workstation
+    identity whose recorded local process is conclusively no longer running.
+    That identity is stored outside a launch-specific source/package runtime
+    tree, so both supported launch paths identify the same installation.
     """
 
     STATE_VERSION = 2
@@ -58,13 +58,27 @@ class SyncService:
     RECOVERY_GUARD_PREFIX = ".cspm_checkout_recovering_"
     RECOVERY_DIR_NAME = "checkout_recovery"
 
-    def __init__(self, paths: AppPaths):
+    def __init__(self, paths: AppPaths, machine_identity_file: Optional[Path] = None):
         self.paths = paths
         self.state_file = self.paths.runtime_dir() / "sync_state.json"
+        self._machine_identity_file = (
+            Path(machine_identity_file)
+            if machine_identity_file is not None
+            else self._default_machine_identity_file()
+        )
         self._checkout_id = uuid4().hex
         self._machine_id: Optional[str] = None
         self._lease_owned = False
         self._shutdown_complete = False
+
+    def _default_machine_identity_file(self) -> Path:
+        explicit = os.environ.get("CSPM_MACHINE_ID_FILE", "").strip()
+        if explicit:
+            return Path(explicit)
+        local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+        if local_app_data:
+            return Path(local_app_data) / "CSPM" / self.MACHINE_ID_FILE_NAME
+        return self.paths.runtime_dir() / self.MACHINE_ID_FILE_NAME
 
     @staticmethod
     def _sha256(path: Path) -> str:
@@ -136,7 +150,7 @@ class SyncService:
         """Return the durable ID for this CSPM installation, not a username."""
         if self._machine_id:
             return self._machine_id
-        identity_file = self.paths.runtime_dir() / self.MACHINE_ID_FILE_NAME
+        identity_file = self._machine_identity_file
         try:
             if identity_file.is_file():
                 raw = json.loads(identity_file.read_text(encoding="utf-8"))
@@ -209,7 +223,7 @@ class SyncService:
         """Return ``True`` unless a local process is conclusively gone.
 
         A reused PID is treated as live, which is deliberately conservative:
-        the only safe automatic recovery case is a same-installation marker
+        the only safe automatic recovery case is a same-workstation marker
         whose original process ID is definitely absent.
         """
         try:
@@ -288,7 +302,7 @@ class SyncService:
         payload = {
             "schemaVersion": 1,
             "recoveredAtUtc": datetime.now(UTC).isoformat(),
-            "reason": "same_installation_dead_process",
+            "reason": "same_workstation_identity_dead_process",
             "abandonedLease": lease,
         }
         with target.open("x", encoding="utf-8") as handle:
@@ -298,7 +312,7 @@ class SyncService:
         return str(target)
 
     def _recover_abandoned_local_lease(self, original: Dict[str, Any]) -> Dict[str, Any]:
-        """Remove only a proven-dead lease from this installation.
+        """Remove only a proven-dead lease from this CSPM workstation.
 
         A short-lived exclusive recovery guard prevents two new CSPM launches
         on this same PC from both attempting to recover the marker.  The

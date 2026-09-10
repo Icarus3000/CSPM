@@ -25,7 +25,8 @@ def _service(tmp_path: Path, name: str, cloud: Path, local: Path) -> SyncService
             root=tmp_path / f"runtime-{name}",
             override_data_dir=local,
             override_master_dir=cloud,
-        )
+        ),
+        machine_identity_file=tmp_path / f"runtime-{name}" / SyncService.MACHINE_ID_FILE_NAME,
     )
 
 
@@ -206,6 +207,41 @@ def test_auto_recovery_never_removes_another_installations_dead_process_checkout
     assert not blocked["ok"]
     assert blocked["status"] == "checkout-held"
     assert json.loads((cloud / owner.LEASE_FILE_NAME).read_text(encoding="utf-8")) == foreign_lease
+
+
+def test_source_and_packaged_roots_share_stable_workstation_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cloud = tmp_path / "cloud"
+    local = tmp_path / "local"
+    _write_package(cloud, "base")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+
+    source = SyncService(
+        AppPaths(root=tmp_path / "source", override_data_dir=local, override_master_dir=cloud)
+    )
+    packaged = SyncService(
+        AppPaths(root=tmp_path / "package", override_data_dir=local, override_master_dir=cloud)
+    )
+    assert source._machine_identity() == packaged._machine_identity()
+
+    stale_lease = {
+        "schemaVersion": 1,
+        "machineId": source._machine_identity(),
+        "checkoutId": "dead-source-checkout",
+        "processId": 424242,
+        "computerName": socket.gethostname(),
+        "checkedOutAtUtc": "2026-09-08T00:00:00+00:00",
+        "purpose": "CSPM exclusive workbook write checkout",
+    }
+    (cloud / source.LEASE_FILE_NAME).write_text(json.dumps(stale_lease), encoding="utf-8")
+    monkeypatch.setattr(packaged, "_local_process_is_running", lambda _pid: False)
+
+    acquired = packaged._acquire_checkout_lease()
+
+    assert acquired["ok"]
+    assert acquired["recovery"]["status"] == "recovered-abandoned-checkout"
+    assert packaged._release_checkout_lease()["ok"]
 
 
 def test_auto_recovery_does_not_reclaim_a_same_installation_live_process_checkout(tmp_path: Path) -> None:
