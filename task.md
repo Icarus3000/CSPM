@@ -1,5 +1,19 @@
 # CSPM Task And Validation Ledger
 
+## Billing-Client A/R Receipt Allocation (2026-09-10)
+
+- [x] Replace the invoice-row quick-payment concept with a billing-client collection session that loads every open/partially paid invoice for the selected billing client.
+- [x] Capture the real-world receipt header once: date received, total received, payment method, general deposit account, bank/cheque reference, and notes.
+- [x] Support editable invoice allocations plus **Allocate oldest first**, **Clear allocations**, received/allocated/unallocated totals, projected invoice balances, and an exact-balance posting gate.
+- [x] Post one bank-facing `Transactions Master` receipt and separate invoice-level `Ledger` allocations sharing its transaction ID; update Receivables, Time, and Disbursements in the same financial-write batch.
+- [x] Reject missing/closed/cross-billing-client invoices, duplicate invoices, over-allocation, and any receipt whose allocations do not equal the received amount before financial writes begin.
+- [x] Prevent a multi-invoice receipt from being changed through the legacy single-invoice payment editor; its per-invoice history is labelled `Allocated receipt` and is read-only there pending a governed whole-receipt correction/reversal workflow.
+- [x] Keep the workflow explicitly general-account-only. Trust receipt, client/matter trust liability, authorized trust-to-general transfer, Form 9A, reconciliation, and correction controls remain future work in the regulated financial roadmap.
+- [x] Sandbox-safe validation: Python compilation passed; focused and adjacent payment/invoice/report tests passed (**62 passed**); both changed QML files compiled `Ready`; governed lint reported no errors (the pre-existing Payment Entry warning diagnostics remain); `git diff --check` passed.
+- [x] Rebuilt the complete candidate-validation executable at `dist\CSPM\CSPM.exe` (SHA-256 `20965F32BC0DBD89B82E87F65AFCA7C0759ECC079D8B723D75BA459FD054A3FD`; 4,325 files). Packaged Payment Entry and collection-dialog QML match source byte-for-byte. The prior package is recoverable at `to_delete\dist__replaced_release_20260910_100706`.
+- [x] Outside-sandbox packaged Qt/WebEngine startup validation reached first main-window pixel, completed deferred startup work, and closed through the normal transition. No payment was posted; shutdown found local/cloud data already matching and released the shared checkout marker.
+- [ ] Manual application acceptance: open **Payment & Adjustment Entry**, choose **Collect billing-client A/R**, select a billing client with multiple open invoices, enter a test receipt, allocate it across invoices, confirm totals balance, post against a recoverable test workbook, and verify one transaction plus matching per-invoice ledger/payment-history entries.
+
 ## Persistent User-Defined Matter Types (2026-09-10)
 
 - [x] Replaced the New Matter Wizard's fixed three-choice General list with an expanded practice-area catalog exposed through `AppController`; every existing practice area now has a broader set of common legal matter types and `Other` remains available everywhere.

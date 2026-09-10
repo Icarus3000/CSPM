@@ -616,3 +616,11 @@ current execution boundary are in
 `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`. Do not start a broad database
 cutover, live trust workflow, or tax-filing integration while the current
 Excel-backed 10/10 quality and financial-trust gates remain open.
+
+The current billing-client A/R collection workflow is a general-account
+boundary: one received-payment transaction may have several invoice
+allocations, but it must not offer `Trust` as a payment method or source.
+Future trust-to-general collection must originate from an authorized,
+source-linked trust transfer and preserve the relationship among the trust
+event, client/matter trust liability, rendered invoice allocations, bank
+evidence, reconciliation period, and required authorization/Form 9A evidence.

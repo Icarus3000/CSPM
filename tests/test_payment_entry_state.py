@@ -8,8 +8,8 @@ PAYMENT_VIEW = (ROOT / "src" / "qml" / "views" / "PaymentEntryView.qml").read_te
 HOST_VIEW = (ROOT / "src" / "qml" / "views" / "PlaceholderSubmenuView.qml").read_text(
     encoding="utf-8"
 )
-QUICK_PAYMENT_DIALOG = (
-    ROOT / "src" / "qml" / "views" / "QuickPaymentDialog.qml"
+COLLECTION_DIALOG = (
+    ROOT / "src" / "qml" / "views" / "BillingClientARCollectionDialog.qml"
 ).read_text(encoding="utf-8")
 
 
@@ -49,16 +49,29 @@ def test_payment_entry_exposes_exact_party_filters_and_preserves_them_in_state()
     assert '"partyFilterValue": partyFilterValue' in PAYMENT_VIEW
 
 
-def test_each_open_invoice_can_launch_the_full_quick_payment_dialog():
-    assert 'text: "Add Payment"' in PAYMENT_VIEW
-    assert "quickPaymentDialog.openForInvoice(row)" in PAYMENT_VIEW
-    assert "root.runQuickPayment(payload)" in PAYMENT_VIEW
-    assert 'text: "Record Payment"' in QUICK_PAYMENT_DIALOG
-    assert 'label: "Payment ($)"' in QUICK_PAYMENT_DIALOG
-    assert 'label: "Adjustment ($)"' in QUICK_PAYMENT_DIALOG
-    assert 'label: "Adjustment reason"' in QUICK_PAYMENT_DIALOG
-    assert 'label: "Mode"' in QUICK_PAYMENT_DIALOG
-    assert 'label: "Method"' in QUICK_PAYMENT_DIALOG
-    assert 'label: "Deposit account"' in QUICK_PAYMENT_DIALOG
-    assert 'label: "Reference / Cheque #"' in QUICK_PAYMENT_DIALOG
-    assert 'text: dialog.postInProgress ? "Posting..." : "Post Payment"' in QUICK_PAYMENT_DIALOG
+def test_payment_entry_launches_billing_client_ar_collection_workflow():
+    assert 'text: "Collect billing-client A/R"' in PAYMENT_VIEW
+    assert 'text: "Collect A/R"' in PAYMENT_VIEW
+    assert "billingClientCollectionDialog.openForBillingClient(preferred)" in PAYMENT_VIEW
+    assert "root.runBillingClientReceipt(payload)" in PAYMENT_VIEW
+    assert 'text: "Billing Client A/R Collection"' in COLLECTION_DIALOG
+    assert 'label: "Billing client"' in COLLECTION_DIALOG
+    assert 'label: "Amount received ($)"' in COLLECTION_DIALOG
+    assert 'label: "Payment method"' in COLLECTION_DIALOG
+    assert 'label: "General deposit account"' in COLLECTION_DIALOG
+    assert 'label: "Reference / Cheque #"' in COLLECTION_DIALOG
+    assert 'text: "Allocate oldest first"' in COLLECTION_DIALOG
+    assert 'text: dialog.postInProgress ? "Posting..." : "Post Received Payment"' in COLLECTION_DIALOG
+    assert '"allocations": allocations' in COLLECTION_DIALOG
+    assert "Allocated total must exactly equal the amount received." in COLLECTION_DIALOG
+    assert "trust receipts and trust-to-general transfers are not implemented" in COLLECTION_DIALOG
+
+
+def test_billing_client_receipt_uses_a_dedicated_async_controller_signal():
+    controller = (
+        ROOT / "src" / "python" / "backend" / "controllers" / "docketing_controller.py"
+    ).read_text(encoding="utf-8")
+    assert "billingClientReceiptSaveFinished = Signal(dict)" in controller
+    assert "def postBillingClientReceipt(self, payload):" in controller
+    assert "self._excel_repo.post_billing_client_receipt" in controller
+    assert "function onBillingClientReceiptSaveFinished(result)" in PAYMENT_VIEW

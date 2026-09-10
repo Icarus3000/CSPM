@@ -31,8 +31,7 @@ Item {
     property string partyFilterMode: "All open invoices"
     property string partyFilterValue: ""
     property var partyFilterOptions: []
-    property bool quickPaymentInProgress: false
-    property string quickPaymentInvoiceKey: ""
+    property bool billingReceiptInProgress: false
     property string invoiceSortKey: "client"
     property bool invoiceSortAscending: true
     property var invoiceColumns: [
@@ -538,10 +537,12 @@ Item {
         refreshHistory()
     }
 
-    function openQuickPayment(row) {
-        if (saveInProgress || quickPaymentInProgress || !row) return
+    function openBillingClientCollection(billingClient) {
+        if (saveInProgress || billingReceiptInProgress) return
         loadDepositAccounts()
-        quickPaymentDialog.openForInvoice(row)
+        var preferred = _clean(billingClient)
+        if (!preferred && partyFilterMode === "Billing client") preferred = _clean(partyFilterValue)
+        billingClientCollectionDialog.openForBillingClient(preferred)
     }
 
     function resetDraft() {
@@ -607,33 +608,25 @@ Item {
         return _validatePayloadForInvoice(payload, selectedInvoice, editingPaymentId)
     }
 
-    function runQuickPayment(payload) {
-        if (saveInProgress || quickPaymentInProgress) return
-        var invoiceRow = quickPaymentDialog.invoiceRow || ({})
-        var validation = _validatePayloadForInvoice(payload, invoiceRow, "")
-        if (validation.length > 0) {
-            quickPaymentDialog.showValidationError(validation)
-            return
-        }
+    function runBillingClientReceipt(payload) {
+        if (saveInProgress || billingReceiptInProgress) return
         var backend = _paymentBackend()
-        if (!backend || !backend.postPayment) {
-            quickPaymentDialog.showValidationError("Payment backend is unavailable.")
+        if (!backend || !backend.postBillingClientReceipt) {
+            billingClientCollectionDialog.showValidationError("Billing-client receipt backend is unavailable.")
             return
         }
-        quickPaymentInvoiceKey = _clean(payload.invoice)
-        quickPaymentInProgress = true
-        quickPaymentDialog.beginPost()
+        billingReceiptInProgress = true
+        billingClientCollectionDialog.beginPost()
         try {
-            backend.postPayment(payload)
+            backend.postBillingClientReceipt(payload)
         } catch (e) {
-            quickPaymentInProgress = false
-            quickPaymentInvoiceKey = ""
-            quickPaymentDialog.finishPost(false, String(e))
+            billingReceiptInProgress = false
+            billingClientCollectionDialog.finishPost(false, String(e), ({}))
         }
     }
 
     function runPrimaryAction() {
-        if (saveInProgress || quickPaymentInProgress) return
+        if (saveInProgress || billingReceiptInProgress) return
         var payload = _buildPayload()
         var validation = _validatePayload(payload)
         if (validation.length > 0) {
@@ -743,30 +736,6 @@ Item {
         target: root._paymentBackend()
         ignoreUnknownSignals: true
         function onPaymentSaveFinished(result) {
-            if (root.quickPaymentInProgress) {
-                root.quickPaymentInProgress = false
-                var quickOk = !!(result && result.ok)
-                var quickMessage = root._clean(result && result.message)
-                var quickPaymentId = root._clean(result && result.paymentId)
-                root.lastSaveOk = quickOk
-                root.lastSavedPaymentId = quickPaymentId
-                root.saveMessage = quickMessage || (quickOk ? "Payment posted." : "Payment posting failed.")
-                if (quickOk && result && result.invoiceRow
-                        && root.selectedInvoiceNumber().toLowerCase() === root.quickPaymentInvoiceKey.toLowerCase()
-                        && !root.dirty) {
-                    root.selectedInvoice = result.invoiceRow
-                    root.selectedInvoiceKey = root._clean(result.invoiceRow.invoice)
-                    amountInput.text = Number(result.invoiceRow.balance || 0).toFixed(2)
-                }
-                root.quickPaymentInvoiceKey = ""
-                quickPaymentDialog.finishPost(quickOk, root.saveMessage)
-                if (quickOk) {
-                    root.refreshPartyFilterOptions()
-                    root.refreshInvoices()
-                    root.refreshHistory()
-                }
-                return
-            }
             if (!root.saveInProgress) return
             root.saveInProgress = false
             root.lastSaveOk = !!(result && result.ok)
@@ -819,22 +788,42 @@ Item {
             }
         }
         function onTransactionDataChanged() {
-            if (root.visible && root.backendReady() && !root.saveInProgress && !root.quickPaymentInProgress) {
+            if (root.visible && root.backendReady() && !root.saveInProgress && !root.billingReceiptInProgress) {
                 root.refreshPartyFilterOptions()
                 root.refreshInvoices()
             }
         }
     }
 
-    QuickPaymentDialog {
-        id: quickPaymentDialog
+    Connections {
+        target: root._paymentBackend()
+        ignoreUnknownSignals: true
+        function onBillingClientReceiptSaveFinished(result) {
+            if (!root.billingReceiptInProgress) return
+            root.billingReceiptInProgress = false
+            var ok = !!(result && result.ok)
+            var message = root._clean(result && result.message)
+            root.lastSaveOk = ok
+            root.lastSavedPaymentId = root._clean(result && (result.receiptId || result.paymentId))
+            root.saveMessage = message || (ok ? "Receipt posted." : "Receipt posting failed.")
+            billingClientCollectionDialog.finishPost(ok, root.saveMessage, result || ({}))
+            if (ok) {
+                root.refreshPartyFilterOptions()
+                root.refreshInvoices()
+                root.refreshHistory()
+            }
+        }
+    }
+
+    BillingClientARCollectionDialog {
+        id: billingClientCollectionDialog
         host: root
         t: root.t
         metrics: root.metrics
         appRef: root.appRef
         sfxBus: root.sfxBus
         onPostRequested: function(payload) {
-            root.runQuickPayment(payload)
+            root.runBillingClientReceipt(payload)
         }
     }
 
@@ -899,6 +888,18 @@ Item {
                     root._rebuildPartyFilterOptions()
                     root.refreshInvoices()
                 }
+            }
+
+            PillButton {
+                text: "Collect billing-client A/R"
+                t: root.t
+                metrics: root.metrics
+                appStyle: root.appStyle
+                primary: true
+                enabled: !root.saveInProgress && !root.billingReceiptInProgress
+                Layout.preferredWidth: 190
+                Layout.preferredHeight: root.fieldHeightPx
+                onClicked: root.openBillingClientCollection("")
             }
         }
 
@@ -1083,15 +1084,15 @@ Item {
                                     }
                                 }
                                 PillButton {
-                                    text: "Add Payment"
+                                    text: "Collect A/R"
                                     t: root.t
                                     metrics: root.metrics
                                     appStyle: root.appStyle
                                     primary: true
-                                    enabled: !root.saveInProgress && !root.quickPaymentInProgress
+                                    enabled: !root.saveInProgress && !root.billingReceiptInProgress
                                     Layout.preferredWidth: 96
                                     Layout.preferredHeight: 34
-                                    onClicked: root.openQuickPayment(rowData)
+                                    onClicked: root.openBillingClientCollection(rowData.billingClient || rowData.client)
                                 }
                             }
                         }
@@ -1325,7 +1326,7 @@ Item {
                                 metrics: root.metrics
                                 appStyle: root.appStyle
                                 primary: true
-                                enabled: !root.saveInProgress && !root.quickPaymentInProgress
+                                enabled: !root.saveInProgress && !root.billingReceiptInProgress
                                     && root._clean(root.selectedValue("invoice", "")).length > 0
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: root.fieldHeightPx

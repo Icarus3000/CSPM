@@ -279,6 +279,208 @@ def test_saved_payment_can_be_loaded_and_amended_without_creating_a_second_payme
     assert repo.tables[TBL_RECEIVABLES.table][0][sc.COL_RECV_STATUS] == "Partial"
 
 
+class _BillingClientReceiptRepo:
+    _money_round = ExcelRepo._money_round
+    _date_iso = ExcelRepo._date_iso
+    _parse_date_value = ExcelRepo._parse_date_value
+    _payment_invoice_snapshot = ExcelRepo._payment_invoice_snapshot
+    post_billing_client_receipt = ExcelRepo.post_billing_client_receipt
+
+    def __init__(self):
+        self.sequence = 0
+        self.saved_transaction_payloads = []
+        self.tables = {
+            TBL_TRANSACTIONS_MASTER.table: [],
+            TBL_LEDGER.table: [],
+            TBL_RECEIVABLES.table: [
+                {
+                    sc.COL_RECV_INVOICE_NUM: "26-0201",
+                    sc.COL_RECV_DATE: "2026-05-01",
+                    sc.COL_RECV_CLIENT: "Billing Parent Inc.",
+                    sc.COL_RECV_WORK_CLIENT: "Operating Company A",
+                    sc.COL_RECV_TOTAL_INVOICED: 100.0,
+                    sc.COL_RECV_AMOUNT_PAID: 0.0,
+                    sc.COL_RECV_CREDITS_ADJ: 0.0,
+                    sc.COL_RECV_BALANCE_DUE: 100.0,
+                    sc.COL_RECV_STATUS: "Open",
+                },
+                {
+                    sc.COL_RECV_INVOICE_NUM: "26-0202",
+                    sc.COL_RECV_DATE: "2026-05-15",
+                    sc.COL_RECV_CLIENT: "Billing Parent Inc.",
+                    sc.COL_RECV_WORK_CLIENT: "Operating Company B",
+                    sc.COL_RECV_TOTAL_INVOICED: 200.0,
+                    sc.COL_RECV_AMOUNT_PAID: 25.0,
+                    sc.COL_RECV_CREDITS_ADJ: 0.0,
+                    sc.COL_RECV_BALANCE_DUE: 175.0,
+                    sc.COL_RECV_STATUS: "Partial",
+                },
+            ],
+            TBL_TIME.table: [
+                {sc.COL_TIME_INVOICE_REF: "26-0201"},
+                {sc.COL_TIME_INVOICE_REF: "26-0202"},
+            ],
+            TBL_DISBURSEMENTS.table: [
+                {sc.COL_DISB_INVOICE_REF: "26-0202"},
+            ],
+        }
+
+    def ensure_schema(self):
+        return None
+
+    def _read_table_rows(self, table):
+        return [dict(row) for row in self.tables[table.table]]
+
+    def _replace_table_rows(self, table, rows):
+        self.tables[table.table] = [dict(row) for row in rows]
+
+    def _append_row_to_table(self, table, row):
+        self.tables[table.table].append(dict(row))
+
+    def _new_id(self, prefix):
+        self.sequence += 1
+        return f"{prefix}-TEST-{self.sequence}"
+
+    def save_transaction(self, payload):
+        stored = dict(payload)
+        self.saved_transaction_payloads.append(stored)
+        self.tables[TBL_TRANSACTIONS_MASTER.table].append(
+            {
+                sc.COL_TXN_ID: stored["transactionId"],
+                sc.COL_TXN_AMOUNT: stored["amount"],
+                sc.COL_TXN_INVOICE_REF: stored["invoiceRef"],
+                sc.COL_TXN_EXPENSE_DETAILS: stored["expenseDetails"],
+            }
+        )
+        return {
+            "ok": True,
+            "transactionId": stored["transactionId"],
+        }
+
+
+def test_billing_client_receipt_creates_one_bank_transaction_and_separate_allocations():
+    repo = _BillingClientReceiptRepo()
+
+    result = repo.post_billing_client_receipt(
+        {
+            "billingClient": "Billing Parent Inc.",
+            "date": "2026-06-20",
+            "totalAmount": 250.0,
+            "method": "EFT",
+            "depositAccount": "CIBC_GENERAL",
+            "reference": "EFT-900",
+            "notes": "June remittance",
+            "allocations": [
+                {"invoice": "26-0201", "amount": 100.0},
+                {"invoice": "26-0202", "amount": 150.0},
+            ],
+        }
+    )
+
+    assert result["ok"] is True
+    assert result["allocationCount"] == 2
+    assert len(repo.saved_transaction_payloads) == 1
+    transaction = repo.saved_transaction_payloads[0]
+    assert transaction["amount"] == 250.0
+    assert transaction["payee"] == "Billing Parent Inc."
+    assert transaction["fromAccount"] == "CIBC_GENERAL"
+    assert transaction["invoiceRef"] == "MULTI:26-0201,26-0202"
+
+    ledger_rows = repo.tables[TBL_LEDGER.table]
+    assert len(ledger_rows) == 2
+    assert {row[sc.COL_LEDGER_TRX_ID] for row in ledger_rows} == {result["receiptId"]}
+    assert {row[sc.COL_LEDGER_REFERENCE] for row in ledger_rows} == {"26-0201", "26-0202"}
+    assert sum(row[sc.COL_LEDGER_COLLECTED] for row in ledger_rows) == 250.0
+
+    receivables = {
+        row[sc.COL_RECV_INVOICE_NUM]: row
+        for row in repo.tables[TBL_RECEIVABLES.table]
+    }
+    assert receivables["26-0201"][sc.COL_RECV_BALANCE_DUE] == 0.0
+    assert receivables["26-0201"][sc.COL_RECV_STATUS] == "Paid"
+    assert receivables["26-0202"][sc.COL_RECV_BALANCE_DUE] == 25.0
+    assert receivables["26-0202"][sc.COL_RECV_STATUS] == "Partial"
+    assert repo.tables[TBL_TIME.table][0][sc.COL_TIME_PAYMENT_STATUS] == "Paid"
+    assert repo.tables[TBL_TIME.table][1][sc.COL_TIME_PAYMENT_STATUS] == "Partial"
+    assert repo.tables[TBL_DISBURSEMENTS.table][0][sc.COL_DISB_INVOICE_BALANCE_DUE] == 25.0
+
+
+def test_billing_client_receipt_rejects_unbalanced_or_cross_client_allocations_before_writing():
+    repo = _BillingClientReceiptRepo()
+    base = {
+        "billingClient": "Billing Parent Inc.",
+        "date": "2026-06-20",
+        "totalAmount": 100.0,
+        "method": "Cheque",
+        "depositAccount": "CIBC_GENERAL",
+        "allocations": [{"invoice": "26-0201", "amount": 90.0}],
+    }
+
+    try:
+        repo.post_billing_client_receipt(base)
+        assert False, "Expected an unbalanced allocation to be rejected."
+    except ValueError as exc:
+        assert "must equal amount received" in str(exc)
+
+    cross_client = dict(base)
+    cross_client["totalAmount"] = 100.0
+    cross_client["allocations"] = [{"invoice": "26-0201", "amount": 100.0}]
+    cross_client["billingClient"] = "Different Billing Client"
+    try:
+        repo.post_billing_client_receipt(cross_client)
+        assert False, "Expected a cross-client allocation to be rejected."
+    except ValueError as exc:
+        assert "belongs to billing client" in str(exc)
+
+    assert repo.saved_transaction_payloads == []
+    assert repo.tables[TBL_LEDGER.table] == []
+
+
+def test_multi_invoice_receipt_history_is_not_editable_as_one_invoice_payment():
+    repo = _PaymentHistoryRepo()
+    repo.ledger.append(
+        {
+            sc.COL_LEDGER_REFERENCE: "26-0102",
+            sc.COL_LEDGER_DATE: "2026-06-02",
+            sc.COL_LEDGER_COLLECTED: 25.0,
+            sc.COL_LEDGER_WRITE_OFF: 0.0,
+            sc.COL_LEDGER_TRX_ID: "TXN-POSTED",
+            sc.COL_LEDGER_EXTERNAL_REF_ID: "",
+            sc.COL_LEDGER_ID: "LED-2",
+            sc.COL_LEDGER_CATEGORY: "EFT",
+            sc.COL_LEDGER_DESCRIPTION: "Receipt TXN-POSTED allocated to invoice 26-0102",
+        }
+    )
+
+    history = ExcelRepo.list_invoice_payment_history(repo, "26-0101")
+    allocated = next(row for row in history if row["transactionId"] == "TXN-POSTED")
+
+    assert allocated["type"] == "Allocated receipt"
+    assert allocated["multiInvoiceReceipt"] is True
+    assert allocated["editable"] is False
+    assert allocated["openTarget"] == "receipt"
+
+
+def test_multi_invoice_receipt_is_rejected_by_single_invoice_editor():
+    repo = _PaymentEditRepo()
+    repo.tables[TBL_LEDGER.table].append(
+        {
+            sc.COL_LEDGER_ID: "LED-SECOND",
+            sc.COL_LEDGER_DATE: "2026-06-01",
+            sc.COL_LEDGER_REFERENCE: "26-OTHER",
+            sc.COL_LEDGER_COLLECTED: 25.0,
+            sc.COL_LEDGER_WRITE_OFF: 0.0,
+            sc.COL_LEDGER_TRX_ID: "TXN-PAY",
+            sc.COL_LEDGER_EXTERNAL_REF_ID: "EFT-001",
+        }
+    )
+
+    loaded = repo.get_invoice_payment_entry("TXN-PAY")
+
+    assert loaded["ok"] is False
+    assert "allocated across multiple invoices" in loaded["message"]
+
+
 class _InvoiceDirectoryRepo:
     def __init__(self):
         self.tables = {

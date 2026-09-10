@@ -2850,8 +2850,20 @@ class ExcelRepo:
             (self._date_iso(item.get("date")), self._money_round(item.get("amount")))
             for item in setoff_activity
         }
+        ledger_rows = self._read_table_rows(TBL_LEDGER)
+        receipt_invoice_sets: Dict[str, set[str]] = collections.defaultdict(set)
+        for row in ledger_rows:
+            transaction_id = _clean_text(row.get(sc.COL_LEDGER_TRX_ID)).casefold()
+            invoice_number = _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).casefold()
+            if (
+                transaction_id
+                and invoice_number
+                and self._money_round(row.get(sc.COL_LEDGER_COLLECTED)) > 0
+            ):
+                receipt_invoice_sets[transaction_id].add(invoice_number)
+
         ledger_transaction_ids = set()
-        for row in self._read_table_rows(TBL_LEDGER):
+        for row in ledger_rows:
             if _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).lower() != target_lc:
                 continue
             collected = self._money_round(row.get(sc.COL_LEDGER_COLLECTED))
@@ -2870,15 +2882,28 @@ class ExcelRepo:
             # in ExternalRef instead of TransactionID.
             if external_reference.lower().startswith("txn_"):
                 ledger_transaction_ids.add(external_reference.lower())
+            is_allocated_receipt = bool(
+                transaction_id
+                and len(receipt_invoice_sets.get(transaction_id.casefold(), set())) > 1
+            )
             rows.append(
                 {
                     "date": self._date_iso(row.get(sc.COL_LEDGER_DATE)),
-                    "type": "Payment" if collected > 0 else "Write-off/Adjustment",
+                    "type": (
+                        "Allocated receipt"
+                        if collected > 0 and is_allocated_receipt
+                        else ("Payment" if collected > 0 else "Write-off/Adjustment")
+                    ),
                     "paymentId": transaction_id
                     or _clean_text(row.get(sc.COL_LEDGER_ID)),
                     "transactionId": transaction_id,
                     "ledgerId": _clean_text(row.get(sc.COL_LEDGER_ID)),
-                    "editable": True,
+                    # A shared receipt must be amended as one governed object;
+                    # the legacy single-invoice editor cannot safely change
+                    # only one of its allocations.
+                    "editable": not is_allocated_receipt,
+                    "openTarget": "receipt" if is_allocated_receipt else "payment",
+                    "multiInvoiceReceipt": is_allocated_receipt,
                     "reference": transaction_id
                     or external_reference
                     or _clean_text(row.get(sc.COL_LEDGER_ID)),
@@ -3008,6 +3033,16 @@ class ExcelRepo:
         if not invoice:
             raise ValueError(f"Payment {target} is not linked to an invoice.")
 
+        allocation_invoices = {
+            _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).casefold()
+            for row in ledger_rows
+            if transaction_id
+            and _clean_text(row.get(sc.COL_LEDGER_TRX_ID)).casefold() == transaction_id.casefold()
+            and self._money_round(row.get(sc.COL_LEDGER_COLLECTED)) > 0
+            and _clean_text(row.get(sc.COL_LEDGER_REFERENCE))
+        }
+        multi_invoice_receipt = len(allocation_invoices) > 1
+
         return {
             "paymentId": transaction_id
             or _clean_text(ledger_row.get(sc.COL_LEDGER_ID))
@@ -3020,6 +3055,7 @@ class ExcelRepo:
             "transactionIndex": transaction_index,
             "transactionRow": transaction_row,
             "transactionRows": transaction_rows,
+            "multiInvoiceReceipt": multi_invoice_receipt,
         }
 
     def get_invoice_payment_entry(self, payment_id: str) -> Dict[str, Any]:
@@ -3027,6 +3063,11 @@ class ExcelRepo:
 
         try:
             record = self._invoice_payment_record(payment_id)
+            if record.get("multiInvoiceReceipt"):
+                raise ValueError(
+                    "This payment is one receipt allocated across multiple invoices and cannot be edited "
+                    "as a single-invoice payment. Record a correcting receipt or reversal instead."
+                )
             invoice = _clean_text(record.get("invoice"))
             ledger_row = dict(record.get("ledgerRow") or {})
             transaction_row = dict(record.get("transactionRow") or {})
@@ -3084,6 +3125,11 @@ class ExcelRepo:
         record = self._invoice_payment_record(
             _clean_text(data.get("paymentId") or data.get("transactionId"))
         )
+        if record.get("multiInvoiceReceipt"):
+            raise ValueError(
+                "This payment is one receipt allocated across multiple invoices and cannot be edited "
+                "as a single-invoice payment. Record a correcting receipt or reversal instead."
+            )
         invoice = _clean_text(record.get("invoice"))
         payment_date = _clean_text(data.get("date") or data.get("paymentDate"))
         if not _is_valid_iso_date(payment_date):
@@ -3489,6 +3535,294 @@ class ExcelRepo:
             "touchedTimeEntries": touched_time_entries,
             "invoiceRow": updated_invoice,
             "message": f"Transaction posted to invoice {invoice}.",
+        }
+
+    @with_financial_write_batch
+    def post_billing_client_receipt(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Post one general-account receipt allocated across open invoices.
+
+        The bank-facing transaction is stored once in Transactions Master.
+        Each invoice allocation is stored as its own ledger row sharing that
+        transaction ID, so A/R remains invoice-specific without duplicating the
+        deposited receipt during bank reconciliation.
+
+        This is deliberately a general-account workflow.  It does not receive,
+        hold, transfer, or otherwise account for trust funds.
+        """
+
+        self.ensure_schema()
+        data = dict(payload or {})
+        billing_client = _clean_text(data.get("billingClient") or data.get("client"))
+        if not billing_client:
+            raise ValueError("Select the billing client that made the payment.")
+
+        receipt_date = _clean_text(data.get("date") or data.get("paymentDate") or data.get("txnDate"))
+        if not receipt_date:
+            receipt_date = date.today().isoformat()
+        if not _is_valid_iso_date(receipt_date):
+            raise ValueError("Receipt date must be in YYYY-MM-DD format.")
+
+        total_amount = self._money_round(data.get("totalAmount") or data.get("amount"))
+        if total_amount <= 0:
+            raise ValueError("Amount received must be greater than 0.")
+
+        method = _clean_text(data.get("method") or data.get("paymentMethod"))
+        if not method:
+            raise ValueError("Payment method is required.")
+        deposit_account = _clean_text(data.get("depositAccount") or data.get("account"))
+        if not deposit_account:
+            raise ValueError("Select the active general account receiving this payment.")
+        reference = _clean_text(
+            data.get("reference") or data.get("ref") or data.get("cheque") or data.get("chequeNumber")
+        )
+        notes = _clean_text(data.get("notes"))
+
+        raw_allocations = data.get("allocations") or []
+        if not isinstance(raw_allocations, (list, tuple)):
+            raise ValueError("Invoice allocations must be provided as a list.")
+
+        allocations: List[Dict[str, Any]] = []
+        seen_invoices = set()
+        for raw in raw_allocations:
+            allocation = dict(raw or {})
+            invoice = _clean_text(
+                allocation.get("invoice")
+                or allocation.get("invoiceNumber")
+                or allocation.get("invoiceRef")
+            )
+            amount = self._money_round(allocation.get("amount"))
+            if amount <= 0:
+                continue
+            if not invoice:
+                raise ValueError("Every positive allocation must identify an invoice.")
+            invoice_key = invoice.casefold()
+            if invoice_key in seen_invoices:
+                raise ValueError(f"Invoice {invoice} appears more than once in the allocation list.")
+            seen_invoices.add(invoice_key)
+            allocations.append({"invoice": invoice, "amount": amount})
+
+        if not allocations:
+            raise ValueError("Allocate the received amount to at least one open invoice.")
+        allocated_total = self._money_round(sum(item["amount"] for item in allocations))
+        if abs(allocated_total - total_amount) > 0.005:
+            raise ValueError(
+                f"Allocated total ${allocated_total:,.2f} must equal amount received ${total_amount:,.2f}."
+            )
+
+        receivable_rows = self._read_table_rows(TBL_RECEIVABLES)
+        receivable_by_invoice = {
+            _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold(): (index, dict(row))
+            for index, row in enumerate(receivable_rows)
+            if _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
+        }
+        validated_allocations: List[Dict[str, Any]] = []
+        for allocation in allocations:
+            invoice = allocation["invoice"]
+            match = receivable_by_invoice.get(invoice.casefold())
+            if match is None:
+                raise ValueError(f"Invoice {invoice} was not found in Receivables.")
+            row_index, receivable = match
+            row_billing_client = _clean_text(receivable.get(sc.COL_RECV_CLIENT)) or _clean_text(
+                receivable.get(sc.COL_RECV_WORK_CLIENT)
+            )
+            if row_billing_client.casefold() != billing_client.casefold():
+                raise ValueError(
+                    f"Invoice {invoice} belongs to billing client {row_billing_client or '(blank)'}, "
+                    f"not {billing_client}."
+                )
+            status_key = _clean_text(receivable.get(sc.COL_RECV_STATUS)).casefold()
+            if status_key in {"void", "cancelled", "canceled", "closed", "paid"}:
+                raise ValueError(f"Invoice {invoice} is not open for payment.")
+            before_balance = self._money_round(receivable.get(sc.COL_RECV_BALANCE_DUE))
+            if before_balance <= 0:
+                raise ValueError(f"Invoice {invoice} has no remaining balance.")
+            amount = allocation["amount"]
+            if amount - before_balance > 0.01:
+                raise ValueError(
+                    f"Allocation ${amount:,.2f} exceeds invoice {invoice}'s balance ${before_balance:,.2f}."
+                )
+            validated_allocations.append(
+                {
+                    "invoice": invoice,
+                    "amount": amount,
+                    "rowIndex": row_index,
+                    "receivable": receivable,
+                    "beforeBalance": before_balance,
+                }
+            )
+
+        receipt_id = self._new_id("TXN")
+        allocation_evidence = [
+            {"invoice": item["invoice"], "amount": item["amount"]}
+            for item in validated_allocations
+        ]
+        transaction_notes = notes or (
+            f"{method} received from {billing_client}; allocated across "
+            f"{len(allocation_evidence)} invoices"
+        )
+        transaction_result = self.save_transaction(
+            {
+                "transactionId": receipt_id,
+                "txnDate": receipt_date,
+                "class": "Business",
+                "businessUnit": sc.SYSTEM_BUSINESS_UNIT_LEGAL_PRACTICE,
+                "type": "Income",
+                "fromAccount": deposit_account,
+                "payee": billing_client,
+                "client": billing_client,
+                "categoryCode": "INC_LEGAL_FEES",
+                "categoryName": "Legal Fees Revenue",
+                "member": "Cory",
+                "amount": total_amount,
+                "taxAmount": 0.0,
+                "taxFlag": "None",
+                "hstExempt": 1,
+                "invoiceRef": "MULTI:" + ",".join(item["invoice"] for item in validated_allocations),
+                "expenseDetails": json.dumps(
+                    {
+                        "recordType": "billing_client_ar_receipt",
+                        "billingClient": billing_client,
+                        "method": method,
+                        "externalReference": reference,
+                        "allocations": allocation_evidence,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                "status": "Cleared",
+                "currency": "CAD",
+                "notes": transaction_notes,
+                "clearedAt": receipt_date,
+            }
+        )
+        if not transaction_result.get("ok"):
+            raise ValueError(
+                _clean_text(transaction_result.get("message")) or "Receipt transaction was not saved."
+            )
+        receipt_id = _clean_text(transaction_result.get("transactionId")) or receipt_id
+
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        results: List[Dict[str, Any]] = []
+        invoice_updates: Dict[str, Dict[str, Any]] = {}
+        for allocation in validated_allocations:
+            invoice = allocation["invoice"]
+            amount = allocation["amount"]
+            receivable = dict(allocation["receivable"])
+            before_balance = allocation["beforeBalance"]
+            invoice_total = self._money_round(receivable.get(sc.COL_RECV_TOTAL_INVOICED))
+            next_paid = self._money_round(
+                self._money_round(receivable.get(sc.COL_RECV_AMOUNT_PAID)) + amount
+            )
+            next_credits = self._money_round(receivable.get(sc.COL_RECV_CREDITS_ADJ))
+            next_balance = self._money_round(invoice_total - next_paid - next_credits)
+            if abs(next_balance) <= 0.01:
+                next_balance = 0.0
+            next_status = "Paid" if next_balance <= 0 else "Partial"
+
+            ledger_id = self._new_id("LED")
+            description = f"Receipt {receipt_id} allocated to invoice {invoice} ({method})"
+            if notes:
+                description += f" - {notes}"
+            self._append_row_to_table(
+                TBL_LEDGER,
+                {
+                    sc.COL_LEDGER_ID: ledger_id,
+                    sc.COL_LEDGER_DATE: receipt_date,
+                    sc.COL_LEDGER_CLIENT_VENDOR: billing_client,
+                    sc.COL_LEDGER_DESCRIPTION: description,
+                    sc.COL_LEDGER_CATEGORY: method,
+                    sc.COL_LEDGER_REFERENCE: invoice,
+                    sc.COL_LEDGER_BILLINGS_EXCL_HST: 0.0,
+                    sc.COL_LEDGER_HST_COLLECTED: 0.0,
+                    sc.COL_LEDGER_EXPENSES_EXCL_HST: 0.0,
+                    sc.COL_LEDGER_HST_PAID: 0.0,
+                    sc.COL_LEDGER_COLLECTED: amount,
+                    sc.COL_LEDGER_WRITE_OFF: 0.0,
+                    sc.COL_LEDGER_RECEIVABLE: -amount,
+                    sc.COL_LEDGER_TRX_ID: receipt_id,
+                    sc.COL_LEDGER_EXTERNAL_REF_ID: reference,
+                    sc.COL_LEDGER_ORIGINAL_AMOUNT: amount,
+                    sc.COL_LEDGER_WORK_CLIENT: _clean_text(receivable.get(sc.COL_RECV_WORK_CLIENT)),
+                    sc.COL_LEDGER_CREATED_AT: now_stamp,
+                },
+            )
+
+            receivable[sc.COL_RECV_AMOUNT_PAID] = next_paid
+            receivable[sc.COL_RECV_BALANCE_DUE] = next_balance
+            receivable[sc.COL_RECV_STATUS] = next_status
+            receivable_rows[allocation["rowIndex"]] = receivable
+            invoice_updates[invoice.casefold()] = {
+                "status": next_status,
+                "invoiceTotal": invoice_total,
+                "amountPaid": self._money_round(next_paid + next_credits),
+                "balance": next_balance,
+                "invoiceDate": self._date_iso(receivable.get(sc.COL_RECV_DATE)),
+            }
+            results.append(
+                {
+                    "invoice": invoice,
+                    "amount": amount,
+                    "beforeBalance": before_balance,
+                    "afterBalance": next_balance,
+                    "status": next_status,
+                    "ledgerId": ledger_id,
+                    "invoiceRow": self._payment_invoice_snapshot(receivable),
+                }
+            )
+
+        self._replace_table_rows(TBL_RECEIVABLES, receivable_rows)
+
+        for table, invoice_column in (
+            (TBL_TIME, sc.COL_TIME_INVOICE_REF),
+            (TBL_DISBURSEMENTS, sc.COL_DISB_INVOICE_REF),
+        ):
+            rows = self._read_table_rows(table)
+            touched = False
+            updated_rows: List[Dict[str, Any]] = []
+            for row in rows:
+                next_row = dict(row)
+                update = invoice_updates.get(_clean_text(next_row.get(invoice_column)).casefold())
+                if update:
+                    touched = True
+                    next_row[
+                        sc.COL_TIME_PAYMENT_STATUS if table == TBL_TIME else sc.COL_DISB_PAYMENT_STATUS
+                    ] = update["status"]
+                    next_row[
+                        sc.COL_TIME_INVOICE_TOTAL if table == TBL_TIME else sc.COL_DISB_INVOICE_TOTAL
+                    ] = update["invoiceTotal"]
+                    next_row[
+                        sc.COL_TIME_INVOICE_AMOUNT_PAID
+                        if table == TBL_TIME
+                        else sc.COL_DISB_INVOICE_AMOUNT_PAID
+                    ] = update["amountPaid"]
+                    next_row[
+                        sc.COL_TIME_INVOICE_BALANCE_DUE
+                        if table == TBL_TIME
+                        else sc.COL_DISB_INVOICE_BALANCE_DUE
+                    ] = update["balance"]
+                    if table == TBL_TIME:
+                        next_row[sc.COL_TIME_INVOICE_DATE] = update["invoiceDate"]
+                updated_rows.append(next_row)
+            if touched:
+                self._replace_table_rows(table, updated_rows)
+
+        return {
+            "ok": True,
+            "mode": "Billing Client Receipt",
+            "receiptId": receipt_id,
+            "paymentId": receipt_id,
+            "transactionId": receipt_id,
+            "billingClient": billing_client,
+            "amount": total_amount,
+            "totalAmount": total_amount,
+            "allocatedAmount": allocated_total,
+            "allocationCount": len(results),
+            "allocations": results,
+            "message": (
+                f"Receipt {receipt_id} posted for {billing_client}: "
+                f"${total_amount:,.2f} allocated across {len(results)} invoice"
+                + ("s." if len(results) != 1 else ".")
+            ),
         }
 
     def _payment_invoice_snapshot(self, row: Dict[str, Any]) -> Dict[str, Any]:

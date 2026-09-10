@@ -1,6 +1,6 @@
 # CSPM Regulatory, Tax, Trust, And Financial-Context Roadmap
 
-Updated: 2026-08-16  
+Updated: 2026-09-10
 Status: approved long-term product direction; implementation is deferred until
 the current Excel-backed quality and financial-trust gates are complete.
 
@@ -40,6 +40,12 @@ This document complements, rather than displaces:
 Nothing in this document authorizes a broad database migration, a live trust
 module, tax filing, or a new financial data source during the current
 Excel-backed stabilization milestone.
+
+The Excel-backed billing-client A/R collection introduced on 2026-09-10 is
+therefore general-account-only. It records one received-payment transaction
+with separate invoice allocations; it does not receive trust money, maintain a
+client trust liability, or authorize a trust-to-general transfer. `Trust` must
+not be exposed as a method/account shortcut in that workflow.
 
 Before any workstream below begins, CSPM must meet the relevant 10/10 gates:
 
@@ -160,6 +166,11 @@ accounts.
   carried into a closed period.
 - Trust-to-general withdrawal workflow linked to a rendered bill, authorization,
   recipient, and appropriate supporting evidence.
+- Integrate an executed trust-to-general withdrawal with A/R as one source
+  receipt whose invoice allocations share the transfer identity. Preserve the
+  trust event, client/matter liability movements, rendered-invoice links,
+  authorization, bank evidence, and reconciliation period; never recreate the
+  transfer as unrelated per-invoice general-account receipts.
 - Form package generation, beginning with **LSO Form 9A — Electronic Trust
   Transfer Requisition**, with the required signatory/authorization fields,
   preserved generated document, confirmation evidence, and a clear status of
@@ -354,4 +365,3 @@ requires its corresponding gates and explicit authorization.
 - Retain human approval and professional review gates for legal, trust, and tax
   outputs. Automation must explain, not hide, source data, assumptions, and
   exceptions.
-

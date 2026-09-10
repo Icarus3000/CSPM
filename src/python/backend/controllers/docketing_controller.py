@@ -10,6 +10,7 @@ class DocketingController(QObject):
     transactionLookupDataChanged = Signal()
     transactionSaveFinished = Signal(dict)
     paymentSaveFinished = Signal(dict)
+    billingClientReceiptSaveFinished = Signal(dict)
     timeSaveFinished = Signal(dict)
     trademarkSaveFinished = Signal(dict)
     docketActivityReportFinished = Signal(dict)
@@ -132,6 +133,40 @@ class DocketingController(QObject):
         worker.signals.result.connect(partial(self._on_payment_saved, worker))
         worker.signals.error.connect(partial(self._on_payment_error, worker))
         self._start_worker(worker)
+
+    @Slot("QVariantMap")
+    def postBillingClientReceipt(self, payload):
+        worker = Worker(
+            self._excel_repo.post_billing_client_receipt,
+            dict(payload or {}),
+            name="postBillingClientReceipt",
+        )
+        worker.signals.result.connect(partial(self._on_billing_client_receipt_saved, worker))
+        worker.signals.error.connect(partial(self._on_billing_client_receipt_error, worker))
+        self._start_worker(worker)
+
+    def _on_billing_client_receipt_saved(self, worker, result):
+        try:
+            res_dict = dict(result or {})
+            if res_dict.get("ok"):
+                self.toast.emit(res_dict.get("message", "Billing-client receipt posted."))
+                self.transactionDataChanged.emit()
+            else:
+                self.error.emit(res_dict.get("message", "Billing-client receipt posting failed."))
+            self.billingClientReceiptSaveFinished.emit(res_dict)
+        finally:
+            self._release_worker(worker)
+
+    def _on_billing_client_receipt_error(self, worker, err_tuple):
+        try:
+            _, value, _ = err_tuple
+            self.error.emit(f"Could not post billing-client receipt: {value}")
+            self.billingClientReceiptSaveFinished.emit({
+                "ok": False,
+                "message": str(value),
+            })
+        finally:
+            self._release_worker(worker)
 
     def _on_payment_saved(self, worker, result):
         try:
