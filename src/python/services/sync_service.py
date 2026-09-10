@@ -20,10 +20,12 @@ import logging
 import os
 import shutil
 import socket
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 from uuid import uuid4
+from xml.etree import ElementTree
 
 from services.paths import AppPaths
 
@@ -87,6 +89,60 @@ class SyncService:
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest().upper()
+
+    @staticmethod
+    def _normalized_core_properties(raw: bytes) -> Optional[bytes]:
+        """Remove only the volatile OOXML modified timestamp for comparison."""
+        try:
+            root = ElementTree.fromstring(raw)
+        except ElementTree.ParseError:
+            return None
+        modified_tag = "{http://purl.org/dc/terms/}modified"
+        for element in root.iter(modified_tag):
+            element.text = ""
+        return ElementTree.tostring(root, encoding="utf-8")
+
+    @classmethod
+    def _workbook_payload_equal(cls, left: Path, right: Path) -> bool:
+        """Compare all OOXML payloads while ignoring only modified-at metadata.
+
+        Excel/openpyxl can write the local and cloud copies seconds apart even
+        when every worksheet, relationship, macro, and workbook property is
+        otherwise identical.  Raw package SHA-256 remains the synchronization
+        authority; this narrow comparison merely proves that such a mismatch
+        is safe to normalize back to one exact cloud hash.
+        """
+
+        if left.suffix.casefold() not in {".xlsx", ".xlsm"}:
+            return False
+        if right.suffix.casefold() not in {".xlsx", ".xlsm"}:
+            return False
+
+        def payload_manifest(path: Path) -> Optional[Dict[str, str]]:
+            try:
+                with zipfile.ZipFile(path, "r") as workbook:
+                    files = [item for item in workbook.infolist() if not item.is_dir()]
+                    names = [item.filename for item in files]
+                    if len(names) != len(set(names)):
+                        return None
+                    manifest: Dict[str, str] = {}
+                    for item in files:
+                        payload = workbook.read(item)
+                        if item.filename == "docProps/core.xml":
+                            normalized = cls._normalized_core_properties(payload)
+                            if normalized is None:
+                                return None
+                            payload = normalized
+                        manifest[item.filename] = hashlib.sha256(payload).hexdigest().upper()
+                    return manifest
+            except (OSError, zipfile.BadZipFile, RuntimeError):
+                return None
+
+        left_manifest = payload_manifest(left)
+        if left_manifest is None:
+            return False
+        right_manifest = payload_manifest(right)
+        return right_manifest is not None and left_manifest == right_manifest
 
     @staticmethod
     def _usable(path: Path) -> bool:
@@ -593,12 +649,21 @@ class SyncService:
                 "localBlank": local_is_blank,
             }
 
+        metadata_only_differences = [
+            name
+            for name, record in records.items()
+            if not record["localBlank"]
+            and record["localHash"] != record["cloudHash"]
+            and self._workbook_payload_equal(local_paths[name], cloud_paths[name])
+        ]
+
         unknown_divergence = [
             name
             for name, record in records.items()
             if not record["localBlank"]
             and record["localHash"] != record["cloudHash"]
             and not record["baseHash"]
+            and name not in metadata_only_differences
         ]
         if unknown_divergence:
             return self._result(
@@ -617,6 +682,8 @@ class SyncService:
                 cloud_only_changes.append(name)
                 continue
             if record["localHash"] == record["cloudHash"]:
+                continue
+            if name in metadata_only_differences:
                 continue
             base_hash = record["baseHash"]
             local_changed = record["localHash"] != base_hash
@@ -644,6 +711,19 @@ class SyncService:
         try:
             backups: Dict[str, str] = {}
             release: Optional[Dict[str, Any]] = None
+            for name in metadata_only_differences:
+                backup = self._copy_verified(
+                    cloud_paths[name],
+                    local_paths[name],
+                    "before_metadata_alignment",
+                )
+                if backup:
+                    backups[name] = str(backup)
+                records[name]["localHash"] = records[name]["cloudHash"]
+                logger.info(
+                    "SyncService aligned metadata-only workbook difference to cloud authority: %s",
+                    name,
+                )
             if local_only_changes:
                 direction = "push"
                 source_paths = local_paths
@@ -660,6 +740,15 @@ class SyncService:
                 hashes = {name: records[name]["cloudHash"] for name in self._FILES}
                 self._set_base_hashes(state, hashes)
                 self._save_state(state)
+                if metadata_only_differences:
+                    return self._result(
+                        True,
+                        "metadata-aligned",
+                        "Workbook content matched; local modified-time metadata was aligned to cloud safely.",
+                        phase=phase,
+                        metadataAligned=metadata_only_differences,
+                        recoveryCopies=backups,
+                    )
                 return self._result(True, "unchanged", "Cloud authority and local replica already match.", phase=phase)
 
             for name in self._FILES:
@@ -683,6 +772,7 @@ class SyncService:
                 phase=phase,
                 recoveryCopies=backups,
                 release=release,
+                metadataAligned=metadata_only_differences,
             )
         except Exception as exc:
             logger.exception("SyncService %s failed", phase)
@@ -722,6 +812,7 @@ class SyncService:
                 for name in self._FILES
                 if self._usable(local_paths[name])
                 and self._sha256(local_paths[name]) != self._sha256(cloud_paths[name])
+                and not self._workbook_payload_equal(local_paths[name], cloud_paths[name])
             ]
             if differing_local:
                 return self._result(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,26 @@ def _write_package(folder: Path, label: str) -> None:
     # lets the service exercise the normal checked-out replica path.
     (folder / "CSPM.xlsm").write_bytes((f"CSPM-{label}|".encode("utf-8")) * 7000)
     (folder / "Dockets.xlsm").write_bytes((f"DOCKETS-{label}|".encode("utf-8")) * 1200)
+
+
+def _write_ooxml_workbook(path: Path, modified_at: str, payload: str = "same-data") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    core = (
+        '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+        'xmlns:dcterms="http://purl.org/dc/terms/" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        '<dcterms:modified xsi:type="dcterms:W3CDTF">'
+        f"{modified_at}"
+        "</dcterms:modified><cp:lastModifiedBy>Cory Schneider</cp:lastModifiedBy>"
+        "</cp:coreProperties>"
+    )
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as workbook:
+        workbook.writestr("docProps/core.xml", core)
+        workbook.writestr("xl/workbook.xml", f"<workbook><payload>{payload}</payload></workbook>")
+        workbook.writestr("xl/vbaProject.bin", b"governed-macro-payload")
+        padding = zipfile.ZipInfo("xl/media/test-padding.bin")
+        padding.compress_type = zipfile.ZIP_STORED
+        workbook.writestr(padding, b"x" * 60_000)
 
 
 def _service(tmp_path: Path, name: str, cloud: Path, local: Path) -> SyncService:
@@ -84,6 +105,52 @@ def test_publish_refuses_cloud_change_after_checkout_and_preserves_both_copies(t
     assert (cloud / "CSPM.xlsm").read_bytes() == cloud_before_publish
     assert (local / "CSPM.xlsm").read_bytes() == local_before_publish
     assert not (cloud / service.LEASE_FILE_NAME).exists()
+
+
+def test_checkout_aligns_modified_timestamp_only_difference_to_exact_cloud_hash(tmp_path: Path) -> None:
+    cloud = tmp_path / "cloud"
+    local = tmp_path / "local"
+    _write_ooxml_workbook(cloud / "CSPM.xlsm", "2026-09-07T22:15:43Z")
+    _write_ooxml_workbook(cloud / "Dockets.xlsm", "2026-09-07T22:15:43Z")
+    service = _service(tmp_path, "a", cloud, local)
+    assert service.checkout_from_cloud()["ok"]
+    assert service.publish_and_release()["ok"]
+
+    _write_ooxml_workbook(local / "CSPM.xlsm", "2026-09-07T23:05:06Z")
+    _write_ooxml_workbook(cloud / "CSPM.xlsm", "2026-09-07T23:05:07Z")
+    restarted = _service(tmp_path, "a", cloud, local)
+
+    result = restarted.checkout_from_cloud()
+
+    assert result["ok"]
+    assert result["status"] == "metadata-aligned"
+    assert result["metadataAligned"] == ["CSPM.xlsm"]
+    assert (local / "CSPM.xlsm").read_bytes() == (cloud / "CSPM.xlsm").read_bytes()
+    assert restarted._get_state()["files"]["CSPM.xlsm"]["baseHash"] == restarted._sha256(
+        cloud / "CSPM.xlsm"
+    )
+    assert restarted.publish_and_release()["ok"]
+
+
+def test_modified_timestamp_tolerance_never_hides_workbook_payload_change(tmp_path: Path) -> None:
+    cloud = tmp_path / "cloud"
+    local = tmp_path / "local"
+    _write_ooxml_workbook(cloud / "CSPM.xlsm", "2026-09-07T22:15:43Z")
+    _write_ooxml_workbook(cloud / "Dockets.xlsm", "2026-09-07T22:15:43Z")
+    service = _service(tmp_path, "a", cloud, local)
+    assert service.checkout_from_cloud()["ok"]
+    assert service.publish_and_release()["ok"]
+
+    _write_ooxml_workbook(local / "CSPM.xlsm", "2026-09-07T23:05:06Z", payload="local-data")
+    _write_ooxml_workbook(cloud / "CSPM.xlsm", "2026-09-07T23:05:07Z", payload="cloud-data")
+    restarted = _service(tmp_path, "a", cloud, local)
+
+    result = restarted.checkout_from_cloud()
+
+    assert not result["ok"]
+    assert result["status"] == "conflict"
+    assert (local / "CSPM.xlsm").read_bytes() != (cloud / "CSPM.xlsm").read_bytes()
+    assert not (cloud / restarted.LEASE_FILE_NAME).exists()
 
 
 def test_unknown_existing_difference_is_a_conflict_not_an_automatic_copy(tmp_path: Path) -> None:

@@ -458,6 +458,14 @@ Rectangle {
             return
         }
 
+        if (root.appRef.legacyDocketsImportWritePreflight) {
+            var preflight = root.appRef.legacyDocketsImportWritePreflight()
+            if (preflight && preflight.ok === false) {
+                root.statusMessage = String(preflight.message || "Shared data is read-only. Restart CSPM after resolving the cloud checkout.")
+                return
+            }
+        }
+
         root.resetProgressState()
         root.importInProgress = true
         root.analysisStarted = true
@@ -488,6 +496,13 @@ Rectangle {
         if (!root.appRef || !root.appRef.startLegacyDocketsFilteredImport) {
             root.statusMessage = "Backend bridge not wired up yet."
             return
+        }
+        if (root.appRef.legacyDocketsImportWritePreflight) {
+            var preflight = root.appRef.legacyDocketsImportWritePreflight()
+            if (preflight && preflight.ok === false) {
+                root.statusMessage = String(preflight.message || "Shared data is read-only. Restart CSPM after resolving the cloud checkout.")
+                return
+            }
         }
 
         var payload = {

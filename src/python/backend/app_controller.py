@@ -5321,6 +5321,7 @@ class AppController(QObject):
     def startLegacyDocketsImport(self, raw_file_path, mode, start_date, end_date):
         """Start the legacy dockets import process."""
         try:
+            self._sync_service.assert_write_lease()
             with self._legacy_import_state_lock:
                 if getattr(self, "_legacy_import_active", False):
                     return False
@@ -5395,6 +5396,7 @@ class AppController(QObject):
     def startLegacyDocketsFilteredImport(self, payload):
         """Start the legacy dockets import process with filtered rows."""
         try:
+            self._sync_service.assert_write_lease()
             data = dict(payload or {})
             raw_file_path = str(data.get("filePath", ""))
             mode = str(data.get("mode", "all"))
@@ -5489,6 +5491,15 @@ class AppController(QObject):
             self._report_failure("Could not start legacy dockets import", context="import.legacy.start", exc=exc)
             self.importFinished.emit({"success": False, "errors": [str(exc)]})
             return False
+
+    @Slot(result=dict)
+    def legacyDocketsImportWritePreflight(self):
+        """Report writer-checkout readiness before opening import progress UI."""
+        try:
+            self._sync_service.assert_write_lease()
+            return {"ok": True, "message": "Shared data is checked out for writing."}
+        except PermissionError as exc:
+            return {"ok": False, "message": str(exc)}
 
     @Slot("QVariantMap", result=bool)
     def resolveLegacyDocketsDuplicate(self, payload):

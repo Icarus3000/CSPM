@@ -269,19 +269,31 @@ def deploy_to_programs(source_package_dir: Path, target_deploy_dir: Path) -> Non
 
     shutil.copytree(source_package_dir, target_deploy_dir, dirs_exist_ok=True, ignore=_ignore_existing_user_data)
 
-    # Clean up stale files in target_deploy_dir that no longer exist in source_package_dir
-    for existing in list(target_deploy_dir.rglob("*")):
-        if existing.is_file():
-            try:
-                rel = existing.relative_to(target_deploy_dir)
-                top_level = rel.parts[0].lower() if rel.parts else ""
-                if top_level in ("data", "backups", "logs"):
-                    continue
-                counterpart = source_package_dir / rel
-                if not counterpart.exists():
-                    existing.unlink()
-            except Exception:
-                pass
+    # Clean up stale runtime content that no longer exists in the new package.
+    # Process deepest paths first so now-empty package directories disappear as
+    # well as their files.  Leaving an empty top-level package such as ``numpy``
+    # behind can create an importable namespace module and break optional-
+    # dependency detection in the freshly deployed application.
+    existing_paths = sorted(
+        target_deploy_dir.rglob("*"),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for existing in existing_paths:
+        try:
+            rel = existing.relative_to(target_deploy_dir)
+            top_level = rel.parts[0].lower() if rel.parts else ""
+            if top_level in ("data", "backups", "logs"):
+                continue
+            counterpart = source_package_dir / rel
+            if existing.is_file() and not counterpart.exists():
+                existing.unlink()
+            elif existing.is_dir() and not counterpart.exists():
+                # Remove only empty stale directories.  Unexpected content is
+                # retained for review instead of being recursively deleted.
+                existing.rmdir()
+        except OSError:
+            pass
 
     print(f"[SUCCESS] Packaged executable deployed to {target_exe}")
     if target_exe.exists():
