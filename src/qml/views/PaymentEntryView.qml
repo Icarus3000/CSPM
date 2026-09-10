@@ -27,6 +27,12 @@ Item {
     property string currentNodeId: ""
     property bool _hydrating: false
     property var invoiceRows: []
+    property var partyUniverseRows: []
+    property string partyFilterMode: "All open invoices"
+    property string partyFilterValue: ""
+    property var partyFilterOptions: []
+    property bool quickPaymentInProgress: false
+    property string quickPaymentInvoiceKey: ""
     property string invoiceSortKey: "client"
     property bool invoiceSortAscending: true
     property var invoiceColumns: [
@@ -134,6 +140,81 @@ Item {
 
     function invoiceCellColor(column) {
         return _clean(column && column.key) === "balance" ? root._accent : root._text
+    }
+
+    function _partyValueForRow(row, mode) {
+        var filterMode = _clean(mode || partyFilterMode).toLowerCase()
+        if (filterMode === "billing client")
+            return _clean(row && (row.billingClient || row.client))
+        if (filterMode === "client")
+            return _clean(row && (row.workClient || row.client))
+        return ""
+    }
+
+    function _rebuildPartyFilterOptions() {
+        var unique = ({})
+        var options = []
+        var rows = partyUniverseRows || []
+        for (var i = 0; i < rows.length; i++) {
+            var value = _partyValueForRow(rows[i], partyFilterMode)
+            var key = value.toLowerCase()
+            if (value.length <= 0 || unique[key]) continue
+            unique[key] = true
+            options.push(value)
+        }
+        options.sort(function(a, b) { return String(a).localeCompare(String(b)) })
+        partyFilterOptions = options
+
+        var selected = _clean(partyFilterValue)
+        if (selected.length <= 0) return
+        var stillAvailable = false
+        for (var j = 0; j < options.length; j++) {
+            if (_clean(options[j]).toLowerCase() === selected.toLowerCase()) {
+                stillAvailable = true
+                break
+            }
+        }
+        if (!stillAvailable) {
+            partyFilterValue = ""
+            if (partyFilterCombo) partyFilterCombo.editText = ""
+        }
+    }
+
+    function refreshPartyFilterOptions() {
+        if (!backendReady() || !root.appRef || !root.appRef.listOpenPaymentInvoices) {
+            partyUniverseRows = []
+            partyFilterOptions = []
+            return
+        }
+        var rows = []
+        try {
+            rows = root.appRef.listOpenPaymentInvoices({})
+        } catch (e) {
+            console.warn("[Payment Entry] client-filter lookup failed", e)
+            rows = []
+        }
+        partyUniverseRows = rows && rows.length !== undefined ? rows : []
+        _rebuildPartyFilterOptions()
+    }
+
+    function setPartyFilterMode(mode) {
+        partyFilterMode = _clean(mode) || "All open invoices"
+        partyFilterValue = ""
+        if (partyFilterCombo) partyFilterCombo.editText = ""
+        _rebuildPartyFilterOptions()
+        refreshInvoices()
+    }
+
+    function setPartyFilterValue(value) {
+        partyFilterValue = _clean(value)
+        refreshInvoices()
+    }
+
+    function outstandingTotal() {
+        var total = 0
+        var rows = invoiceRows || []
+        for (var i = 0; i < rows.length; i++) total += Number(rows[i] && rows[i].balance || 0)
+        return total
     }
 
     function _invoiceSortValue(row, key) {
@@ -326,7 +407,11 @@ Item {
         }
         var rows = []
         try {
-            rows = root.appRef.listOpenPaymentInvoices({ "query": _clean(searchInput.text) })
+            rows = root.appRef.listOpenPaymentInvoices({
+                "query": _clean(searchInput.text),
+                "partyType": partyFilterMode,
+                "partyValue": partyFilterValue
+            })
         } catch (e) {
             console.warn("[Payment Entry] unpaid-invoice lookup failed", e)
             lastSaveOk = false
@@ -453,6 +538,12 @@ Item {
         refreshHistory()
     }
 
+    function openQuickPayment(row) {
+        if (saveInProgress || quickPaymentInProgress || !row) return
+        loadDepositAccounts()
+        quickPaymentDialog.openForInvoice(row)
+    }
+
     function resetDraft() {
         if (editingPaymentId) {
             loadPaymentForEdit(editingPaymentId)
@@ -497,23 +588,52 @@ Item {
         }
     }
 
-    function _validatePayload(payload) {
+    function _validatePayloadForInvoice(payload, invoiceRow, paymentId) {
         if (!_clean(payload.invoice)) return "Select an open invoice first."
         if (!_clean(payload.date).match(/^\d{4}-\d{2}-\d{2}$/)) return "Date must be in YYYY-MM-DD format."
         var paymentAmt = Number(payload.amount || 0)
         var adjAmt = Number(payload.adjustmentAmount || 0)
         if (paymentAmt <= 0 && adjAmt <= 0) return "You must enter a payment or adjustment amount greater than 0."
         var totalApplied = paymentAmt + adjAmt
-        var balance = Number(selectedValue("balance", 0) || 0)
-        if (!editingPaymentId && totalApplied - balance > 0.01) return "Total amount exceeds the selected invoice balance."
+        var balance = Number(invoiceRow && invoiceRow.balance !== undefined ? invoiceRow.balance : 0)
+        if (!_clean(paymentId) && totalApplied - balance > 0.01) return "Total amount exceeds the selected invoice balance."
         if (paymentAmt > 0 && _clean(payload.mode).toLowerCase().indexOf("payment") >= 0 && !_clean(payload.method)) return "Payment method is required."
         if (paymentAmt > 0 && _clean(payload.mode).toLowerCase().indexOf("payment") >= 0 && !_clean(payload.depositAccount)) return "Select the account receiving this payment."
         if (adjAmt > 0 && !_clean(payload.adjustmentReason)) return "Adjustment reason is required if an adjustment amount is entered."
         return ""
     }
 
+    function _validatePayload(payload) {
+        return _validatePayloadForInvoice(payload, selectedInvoice, editingPaymentId)
+    }
+
+    function runQuickPayment(payload) {
+        if (saveInProgress || quickPaymentInProgress) return
+        var invoiceRow = quickPaymentDialog.invoiceRow || ({})
+        var validation = _validatePayloadForInvoice(payload, invoiceRow, "")
+        if (validation.length > 0) {
+            quickPaymentDialog.showValidationError(validation)
+            return
+        }
+        var backend = _paymentBackend()
+        if (!backend || !backend.postPayment) {
+            quickPaymentDialog.showValidationError("Payment backend is unavailable.")
+            return
+        }
+        quickPaymentInvoiceKey = _clean(payload.invoice)
+        quickPaymentInProgress = true
+        quickPaymentDialog.beginPost()
+        try {
+            backend.postPayment(payload)
+        } catch (e) {
+            quickPaymentInProgress = false
+            quickPaymentInvoiceKey = ""
+            quickPaymentDialog.finishPost(false, String(e))
+        }
+    }
+
     function runPrimaryAction() {
-        if (saveInProgress) return
+        if (saveInProgress || quickPaymentInProgress) return
         var payload = _buildPayload()
         var validation = _validatePayload(payload)
         if (validation.length > 0) {
@@ -547,6 +667,8 @@ Item {
     function snapshotState() {
         return {
             "searchText": _clean(searchInput.text),
+            "partyFilterMode": partyFilterMode,
+            "partyFilterValue": partyFilterValue,
             "selectedInvoice": selectedInvoice,
             "selectedInvoiceNum": selectedInvoiceNumber(),
             "selectedInvoiceIndex": selectedInvoiceIndex,
@@ -564,6 +686,10 @@ Item {
         if (!state) return
         var paymentId = _clean(state.paymentId || state.editPaymentId)
         _hydrating = true
+        partyFilterMode = _clean(state.partyFilterMode) || "All open invoices"
+        partyFilterValue = _clean(state.partyFilterValue)
+        if (partyFilterModeCombo) partyFilterModeCombo.editText = partyFilterMode
+        if (partyFilterCombo) partyFilterCombo.editText = partyFilterValue
         var searchVal = String(state.invoiceNum || state.searchText || "")
         searchInput.text = _clean(searchVal)
         selectedInvoice = state.selectedInvoice || ({})
@@ -608,6 +734,7 @@ Item {
             loadPaymentForEdit(paymentId)
             return
         }
+        refreshPartyFilterOptions()
         refreshInvoices()
         refreshHistory()
     }
@@ -616,6 +743,30 @@ Item {
         target: root._paymentBackend()
         ignoreUnknownSignals: true
         function onPaymentSaveFinished(result) {
+            if (root.quickPaymentInProgress) {
+                root.quickPaymentInProgress = false
+                var quickOk = !!(result && result.ok)
+                var quickMessage = root._clean(result && result.message)
+                var quickPaymentId = root._clean(result && result.paymentId)
+                root.lastSaveOk = quickOk
+                root.lastSavedPaymentId = quickPaymentId
+                root.saveMessage = quickMessage || (quickOk ? "Payment posted." : "Payment posting failed.")
+                if (quickOk && result && result.invoiceRow
+                        && root.selectedInvoiceNumber().toLowerCase() === root.quickPaymentInvoiceKey.toLowerCase()
+                        && !root.dirty) {
+                    root.selectedInvoice = result.invoiceRow
+                    root.selectedInvoiceKey = root._clean(result.invoiceRow.invoice)
+                    amountInput.text = Number(result.invoiceRow.balance || 0).toFixed(2)
+                }
+                root.quickPaymentInvoiceKey = ""
+                quickPaymentDialog.finishPost(quickOk, root.saveMessage)
+                if (quickOk) {
+                    root.refreshPartyFilterOptions()
+                    root.refreshInvoices()
+                    root.refreshHistory()
+                }
+                return
+            }
             if (!root.saveInProgress) return
             root.saveInProgress = false
             root.lastSaveOk = !!(result && result.ok)
@@ -663,11 +814,27 @@ Item {
         function onBackendBootChanged() {
             if (root.visible && root.backendReady()) {
                 root.loadDepositAccounts()
+                root.refreshPartyFilterOptions()
                 root.refreshInvoices()
             }
         }
         function onTransactionDataChanged() {
-            if (root.visible && root.backendReady() && !root.saveInProgress) root.refreshInvoices()
+            if (root.visible && root.backendReady() && !root.saveInProgress && !root.quickPaymentInProgress) {
+                root.refreshPartyFilterOptions()
+                root.refreshInvoices()
+            }
+        }
+    }
+
+    QuickPaymentDialog {
+        id: quickPaymentDialog
+        host: root
+        t: root.t
+        metrics: root.metrics
+        appRef: root.appRef
+        sfxBus: root.sfxBus
+        onPostRequested: function(payload) {
+            root.runQuickPayment(payload)
         }
     }
 
@@ -675,6 +842,65 @@ Item {
         anchors.fill: parent
         anchors.margins: root.isProMode ? 14 : 10
         spacing: 10
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.fieldHeightPx
+            spacing: 8
+
+            ModernComboBox {
+                id: partyFilterModeCombo
+                t: root.t
+                metrics: root.metrics
+                appStyle: root.appStyle
+                label: "Filter by"
+                fullModel: ["All open invoices", "Client", "Billing client"]
+                smartFilterEnabled: false
+                Layout.preferredWidth: 190
+                Layout.preferredHeight: root.fieldHeightPx
+                Component.onCompleted: editText = root.partyFilterMode
+                onActivated: root.setPartyFilterMode(editText)
+            }
+
+            ModernComboBox {
+                id: partyFilterCombo
+                t: root.t
+                metrics: root.metrics
+                appStyle: root.appStyle
+                label: root.partyFilterMode === "Billing client" ? "Select billing client" : "Select client"
+                fullModel: root.partyFilterOptions
+                enabled: root.partyFilterMode !== "All open invoices"
+                preserveUnknownEditTextOnModelChanged: true
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.fieldHeightPx
+                onActivated: root.setPartyFilterValue(editText)
+                onEditTextChanged: {
+                    if (!enabled) return
+                    var value = root._clean(editText)
+                    if (value === root.partyFilterValue) return
+                    root.partyFilterValue = value
+                    root.refreshInvoices()
+                }
+            }
+
+            PillButton {
+                text: "Clear filters"
+                t: root.t
+                metrics: root.metrics
+                appStyle: root.appStyle
+                Layout.preferredWidth: 112
+                Layout.preferredHeight: root.fieldHeightPx
+                onClicked: {
+                    root.partyFilterMode = "All open invoices"
+                    root.partyFilterValue = ""
+                    partyFilterModeCombo.editText = root.partyFilterMode
+                    partyFilterCombo.editText = ""
+                    searchInput.text = ""
+                    root._rebuildPartyFilterOptions()
+                    root.refreshInvoices()
+                }
+            }
+        }
 
         RowLayout {
             Layout.fillWidth: true
@@ -705,11 +931,11 @@ Item {
             }
 
             PillButton {
-                text: "Reset"
+                text: "Clear search"
                 t: root.t
                 metrics: root.metrics
                 appStyle: root.appStyle
-                Layout.preferredWidth: 92
+                Layout.preferredWidth: 112
                 Layout.preferredHeight: root.fieldHeightPx
                 onClicked: {
                     searchInput.text = ""
@@ -749,7 +975,7 @@ Item {
                             font.weight: Font.DemiBold
                         }
                         Text {
-                            text: String(root.invoiceRows.length || 0)
+                            text: String(root.invoiceRows.length || 0) + " invoices  ·  " + root.money(root.outstandingTotal()) + " outstanding"
                             color: root._mutedText
                             font.family: "Segoe UI"
                             font.pixelSize: 12
@@ -799,6 +1025,16 @@ Item {
                                     }
                                 }
                             }
+                            Text {
+                Layout.preferredWidth: 96
+                                Layout.fillHeight: true
+                                text: "Action"
+                                color: root._mutedText
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
 
@@ -820,6 +1056,12 @@ Item {
                             border.width: 1
                             border.color: root.isSelectedInvoice(rowData) ? root._accent : root._border
 
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.selectInvoice(parent.rowData, index)
+                            }
+
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
@@ -840,11 +1082,17 @@ Item {
                                         elide: Text.ElideRight
                                     }
                                 }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: root.selectInvoice(parent.rowData, index)
+                                PillButton {
+                                    text: "Add Payment"
+                                    t: root.t
+                                    metrics: root.metrics
+                                    appStyle: root.appStyle
+                                    primary: true
+                                    enabled: !root.saveInProgress && !root.quickPaymentInProgress
+                                    Layout.preferredWidth: 96
+                                    Layout.preferredHeight: 34
+                                    onClicked: root.openQuickPayment(rowData)
+                                }
                             }
                         }
                     }
@@ -1077,7 +1325,7 @@ Item {
                                 metrics: root.metrics
                                 appStyle: root.appStyle
                                 primary: true
-                                enabled: !root.saveInProgress
+                                enabled: !root.saveInProgress && !root.quickPaymentInProgress
                                     && root._clean(root.selectedValue("invoice", "")).length > 0
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: root.fieldHeightPx
@@ -1160,6 +1408,7 @@ Item {
     onVisibleChanged: {
         if (visible && backendReady()) {
             loadDepositAccounts()
+            refreshPartyFilterOptions()
             refreshInvoices()
         }
     }
@@ -1168,6 +1417,7 @@ Item {
         resetDraft()
         if (backendReady()) {
             loadDepositAccounts()
+            refreshPartyFilterOptions()
             refreshInvoices()
         }
     }

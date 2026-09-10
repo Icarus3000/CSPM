@@ -1394,3 +1394,14 @@ dependencies merely because an individual report or screen already exists.
   - Unobtrusive floating glass toast notification informing the user that CSPM is running in the system tray, auto-dissolving with a smooth premium fade-out after ~3.2s.
   - Synchronized assets to `dist/CSPM/_internal/src/qml/`.
 - [x] Manual foreground verification: launch `dist/CSPM/CSPM.exe` and test right-click minimize to tray and tray restore.
+
+## Client-Filtered Open Invoices & Quick Payment Dialog (2026-09-10)
+
+- [x] Add an exact **Client / Billing client / All open invoices** selector to Payment & Adjustment Entry while preserving the existing invoice, matter, and balance search.
+- [x] Show the filtered open-invoice count and aggregate outstanding balance without changing workbook data.
+- [x] Add an **Add Payment** action to each open-invoice row.
+- [x] Open a focused modal with the complete Payment & Adjustment Entry payload: invoice/client/billing-client/matter context, totals, date, payment, adjustment/reason, mode, method, deposit account, reference, notes, and projected balance.
+- [x] Reuse the existing governed `postPayment` command and completion signal; block duplicate submission and refresh the filtered list after success.
+- [x] Add regression coverage for exact party filtering, combined search/filter behavior, dialog fields, routed posting, and saved filter state.
+- [x] Build and promote the non-production validation package at `dist/CSPM/CSPM.exe` (SHA-256 `E441F56426D8A25FA6CC4CA35D9DD0B439E05A469D4E6B1BD332ABA9F68668A1`); production packaging remains correctly blocked until the candidate workbook template receives Cory's approval.
+- [ ] Manually verify in the real app: filter once by Client and once by Billing client, open **Add Payment**, confirm the exact full balance is prefilled, post a test partial payment, and confirm the dialog closes while the same filter remains and the row balance decreases. Then settle the test invoice and confirm the row disappears.

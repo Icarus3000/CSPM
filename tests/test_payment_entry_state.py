@@ -8,6 +8,9 @@ PAYMENT_VIEW = (ROOT / "src" / "qml" / "views" / "PaymentEntryView.qml").read_te
 HOST_VIEW = (ROOT / "src" / "qml" / "views" / "PlaceholderSubmenuView.qml").read_text(
     encoding="utf-8"
 )
+QUICK_PAYMENT_DIALOG = (
+    ROOT / "src" / "qml" / "views" / "QuickPaymentDialog.qml"
+).read_text(encoding="utf-8")
 
 
 def test_payment_entry_retains_invoice_selection_across_list_refreshes():
@@ -36,3 +39,26 @@ def test_routed_payment_prefills_the_resolved_balance_and_includes_deposit_accou
 def test_payment_entry_state_is_preserved_by_its_parent_workspace():
     assert 'paymentEntryView && typeof paymentEntryView.snapshotState === "function"' in HOST_VIEW
     assert "var paymentState = paymentEntryView.snapshotState()" in HOST_VIEW
+
+
+def test_payment_entry_exposes_exact_party_filters_and_preserves_them_in_state():
+    assert 'fullModel: ["All open invoices", "Client", "Billing client"]' in PAYMENT_VIEW
+    assert '"partyType": partyFilterMode' in PAYMENT_VIEW
+    assert '"partyValue": partyFilterValue' in PAYMENT_VIEW
+    assert '"partyFilterMode": partyFilterMode' in PAYMENT_VIEW
+    assert '"partyFilterValue": partyFilterValue' in PAYMENT_VIEW
+
+
+def test_each_open_invoice_can_launch_the_full_quick_payment_dialog():
+    assert 'text: "Add Payment"' in PAYMENT_VIEW
+    assert "quickPaymentDialog.openForInvoice(row)" in PAYMENT_VIEW
+    assert "root.runQuickPayment(payload)" in PAYMENT_VIEW
+    assert 'text: "Record Payment"' in QUICK_PAYMENT_DIALOG
+    assert 'label: "Payment ($)"' in QUICK_PAYMENT_DIALOG
+    assert 'label: "Adjustment ($)"' in QUICK_PAYMENT_DIALOG
+    assert 'label: "Adjustment reason"' in QUICK_PAYMENT_DIALOG
+    assert 'label: "Mode"' in QUICK_PAYMENT_DIALOG
+    assert 'label: "Method"' in QUICK_PAYMENT_DIALOG
+    assert 'label: "Deposit account"' in QUICK_PAYMENT_DIALOG
+    assert 'label: "Reference / Cheque #"' in QUICK_PAYMENT_DIALOG
+    assert 'text: dialog.postInProgress ? "Posting..." : "Post Payment"' in QUICK_PAYMENT_DIALOG

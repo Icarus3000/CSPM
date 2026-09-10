@@ -196,3 +196,43 @@ def test_payment_invoice_filtering_handles_nulls_partial_currency_and_ineligible
     assert selected["balance"] == 1000.00
     assert {row["invoice"] for row in open_rows}.isdisjoint({"26-2000", "26-2001", "26-2002"})
     assert repo.source_rows == repo.original_rows
+
+
+def test_payment_invoice_filtering_supports_exact_client_and_billing_client_selectors():
+    repo = _PaymentInvoiceFilterRepo()
+
+    client_rows = repo.list_open_payment_invoices(
+        {"partyType": "Client", "partyValue": "northstar client"}
+    )
+    billing_rows = repo.list_open_payment_invoices(
+        {"partyType": "Billing client", "partyValue": "NORTHSTAR HOLDINGS"}
+    )
+    wrong_scope_rows = repo.list_open_payment_invoices(
+        {"partyType": "Billing client", "partyValue": "Northstar Client"}
+    )
+
+    assert [row["invoice"] for row in client_rows] == ["26-1000"]
+    assert [row["invoice"] for row in billing_rows] == ["26-1000"]
+    assert wrong_scope_rows == []
+
+
+def test_exact_party_selector_combines_with_the_existing_invoice_search():
+    repo = _PaymentInvoiceFilterRepo()
+
+    rows = repo.list_open_payment_invoices(
+        {
+            "partyType": "Client",
+            "partyValue": "Northstar Client",
+            "query": "Employment Advice",
+        }
+    )
+    excluded = repo.list_open_payment_invoices(
+        {
+            "partyType": "Client",
+            "partyValue": "Northstar Client",
+            "query": "Acquisition Review",
+        }
+    )
+
+    assert [row["invoice"] for row in rows] == ["26-1000"]
+    assert excluded == []

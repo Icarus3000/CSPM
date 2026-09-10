@@ -181,6 +181,10 @@ For every state machine, document source state, visual owner, native geometry ch
 
 ## Change Log
 
+- 2026-09-10: Added a focused in-app quick-payment modal to Payment Entry at
+  the user's direction. It uses the existing shared Popup/control styling and
+  introduces no new window-state or motion sequence; the Professional
+  maximize/restore manual acceptance gate remains pending and unchanged.
 - 2026-08-31: Replaced the rejected Professional texture/host choreography
   with Source-like native HWND maximize/restore ownership; manual visual
   acceptance remains pending.

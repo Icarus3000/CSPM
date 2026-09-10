@@ -2688,6 +2688,8 @@ class ExcelRepo:
         payload = dict(filters or {})
         as_of_date = payload.get("asOfDate") or payload.get("as_of_date") or date.today().isoformat()
         raw_query = payload.get("query") or payload.get("searchText") or payload.get("search") or ""
+        party_type = _clean_text(payload.get("partyType") or payload.get("party_type")).casefold()
+        party_value = _clean_text(payload.get("partyValue") or payload.get("party_value")).casefold()
         report = self.ar_aging_report(
             {
                 "asOfDate": as_of_date,
@@ -2743,6 +2745,15 @@ class ExcelRepo:
                 "balance": balance,
                 "display": f"{invoice} | {client or billing_client} | ${balance:,.2f}",
             }
+            if party_value:
+                if party_type in {"billing", "billing client", "billing_client"}:
+                    row_party = _clean_text(payment_row.get("billingClient") or payment_row.get("client"))
+                else:
+                    # The work client is the client whose matter generated the
+                    # invoice.  Older A/R rows may only expose ``client``.
+                    row_party = _clean_text(payment_row.get("workClient") or payment_row.get("client"))
+                if row_party.casefold() != party_value:
+                    continue
             if _payment_invoice_matches_query(payment_row, raw_query):
                 rows.append(payment_row)
         return rows
