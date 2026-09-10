@@ -53,7 +53,7 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     )
     assert "var commandScreen = screenOverride ? screenOverride : monitorOwningWindowControl();" in maximize
     assert "maximizedOwnerScreen = commandScreen;" in maximize
-    assert 'beginProfessionalWindowMotion("maximize"' in maximize
+    assert 'beginProfessionalWindowTransition("maximize"' in maximize
     assert "requestProfessionalNativeWindowState" not in maximize
 
     toggle = _function_body(
@@ -100,11 +100,11 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     assert "var restoreDestination = !cursorAnchored ? restoreGlyphDestinationScreen() : null;" in restore
     assert "var restoreScreen = restoreDestination ? restoreDestination.screen : null;" in restore
     assert "adoptTargetScreen(restoreScreen, true);" in restore
-    assert 'beginProfessionalWindowMotion("restore"' in restore
+    assert 'beginProfessionalWindowTransition("restore"' in restore
     assert "requestProfessionalNativeWindowState" not in restore
 
 
-def test_professional_maximize_restore_has_one_continuous_geometry_owner() -> None:
+def test_professional_maximize_restore_uses_frozen_overlay_and_one_geometry_commit() -> None:
     shell = (PROJECT_ROOT / "src" / "qml" / "DetachedShellWindow.qml").read_text(
         encoding="utf-8"
     )
@@ -116,29 +116,38 @@ def test_professional_maximize_restore_has_one_continuous_geometry_owner() -> No
         PROJECT_ROOT / "src" / "python" / "platform" / "win_shift_arrow.py"
     ).read_text(encoding="utf-8")
 
-    motion = _function_body(
+    begin = _function_body(
         shell,
-        "    function beginProfessionalWindowMotion(kind, sourceRect, targetRect, targetScreenOverride) {",
-        "    function finishProfessionalWindowMotion() {",
-    )
-    assert "professionalWindowMotionSourceHostX = Math.round(mainWin.x);" in motion
-    assert "professionalWindowMotionSourceHostW = Math.max(1, Math.round(mainWin.width));" in motion
-    assert "var targetHost = professionalMotionTargetHostRect(kind, targetRect);" in motion
-    assert "professionalWindowMotionTargetHostX = targetHost.x;" in motion
-    assert "professionalWindowMotionAnimation.restart();" in motion
-    assert "applyHostEnvelopeForTarget();" not in motion
-    assert "updateCanvasGeometry();" not in motion
-
-    finish = _function_body(
-        shell,
-        "    function finishProfessionalWindowMotion() {",
+        "    function beginProfessionalWindowTransition(kind, sourceRect, targetRect,",
         "    function resetDragFxState() {",
     )
-    assert "hostX = Math.round(professionalWindowMotionTargetHostX);" in finish
-    assert "hostW = Math.max(1, Math.round(professionalWindowMotionTargetHostW));" in finish
-    assert finish.index("updateCanvasGeometry();") < finish.index(
-        "professionalWindowMotionActive = false;"
+    assert "contentLayer.grabToImage(function(result)" not in begin
+    assert "createProfessionalWindowTransitionOverlay(sequence," in begin
+    assert "completeProfessionalWindowTransitionDirect(sequence," in begin
+
+    create_overlay = _function_body(
+        shell,
+        "    function createProfessionalWindowTransitionOverlay(sequence, kind,",
+        "    function beginProfessionalWindowTransition(kind, sourceRect, targetRect,",
     )
+    assert '"visible": false' in create_overlay
+    assert "mainWin.opacity = 0.0;" in create_overlay
+    assert "mainWin.commitProfessionalWindowTransitionTarget(kind, targetRect," in create_overlay
+    assert "overlayObj.startTransition();" in create_overlay
+    assert create_overlay.index("mainWin.opacity = 0.0;") < create_overlay.index(
+        "mainWin.commitProfessionalWindowTransitionTarget(kind, targetRect,"
+    ) < create_overlay.index(
+        "overlayObj.startTransition();"
+    )
+
+    commit = _function_body(
+        shell,
+        "    function commitProfessionalWindowTransitionTarget(kind, targetRect, targetScreenOverride) {",
+        "    function finishProfessionalWindowTransition(sequence, reason) {",
+    )
+    assert commit.count("applyHostEnvelopeForTarget();") == 1
+    assert commit.count("updateCanvasGeometry();") == 1
+    assert "uiMaximized = kind === \"maximize\";" in commit
 
     window_setup = _function_body(
         shell,
@@ -147,8 +156,9 @@ def test_professional_maximize_restore_has_one_continuous_geometry_owner() -> No
     )
     assert 'color: "transparent"' in window_setup
     assert "Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint" in window_setup
-    assert "professionalWindowMotionRenderHostW" in window_setup
-    assert "professionalWindowMotionRenderHostX" in window_setup
+    assert "width: hostW" in window_setup
+    assert "height: hostH" in window_setup
+    assert "professionalWindowMotion" not in window_setup
 
     startup_show = _function_body(
         shell,
@@ -162,8 +172,29 @@ def test_professional_maximize_restore_has_one_continuous_geometry_owner() -> No
     assert "requestProfessionalNativeWindowState" not in app_controller
     assert "_uses_native_professional_window_state" not in win_shift
     assert "professionalNativeWindow" not in shell
+    assert "professionalWindowMotion" not in shell
     assert "roundedSurfaceMaskEnabled: unifiedChrome.cornerRadius > 0" in shell
     assert "farGlowEnabled: !(mainWin.lowPerformanceMode" in shell
+
+    overlay = (PROJECT_ROOT / "src" / "qml" / "MaximizeOverlay.qml").read_text(
+        encoding="utf-8"
+    )
+    assert "CSPMMaximizeOverlay" in overlay
+    assert "Qt.WindowTransparentForInput" in overlay
+    assert "ChromeSurface {" in overlay
+    assert "MainContent {" in overlay
+    assert "roundedSurfaceMaskEnabled: false" in overlay
+    assert 'property: "transitionProgress"' in overlay
+    assert "duration:" in overlay
+    assert "x: overlayX" in overlay
+    assert "width: Math.max(1, overlayWidth)" in overlay
+    assert 'property: "x"' not in overlay
+    assert 'property: "width"' not in overlay
+
+    header = (
+        PROJECT_ROOT / "src" / "qml" / "components" / "ProfessionalTopHeader.qml"
+    ).read_text(encoding="utf-8")
+    assert "SemanticTheme.focusOverlay" not in header
 
 
 def test_cross_monitor_tray_minimize_launches_only_one_outbound_comet() -> None:

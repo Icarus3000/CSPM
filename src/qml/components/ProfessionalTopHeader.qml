@@ -77,14 +77,6 @@ Rectangle {
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: parent.top
-        height: 1
-        color: SemanticTheme.focusOverlay(topHeaderRoot.app ? topHeaderRoot.app.t : null, "Professional")
-    }
-
-    Rectangle {
-        anchors.left: parent.left
-        anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: 1
         color: topHeaderRoot.headerBorder
