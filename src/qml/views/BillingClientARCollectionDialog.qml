@@ -22,9 +22,11 @@ Popup {
     property string resultMessage: ""
     property var billingClientOptions: []
     property var allocationRows: []
-    property string invoiceFilterText: ""
+    readonly property string allWorkClientsLabel: "All clients"
+    property var workClientOptions: [allWorkClientsLabel]
+    property string selectedWorkClient: allWorkClientsLabel
     property int allocationRevision: 0
-    property var filteredAllocationRows: dialog._filteredAllocationRows()
+    property var filteredAllocationRows: dialog._clientFilteredAllocationRows()
     property var methodOptions: ["e-Transfer", "EFT", "Cheque", "Credit Card", "Cash", "Wire", "Other"]
     property var depositAccountOptions: host ? host.depositAccountOptions : []
     property string selectedBillingClient: ""
@@ -92,9 +94,12 @@ Popup {
         var client = _clean(clientName)
         selectedBillingClient = client
         billingClientCombo.editText = client
+        selectedWorkClient = allWorkClientsLabel
+        workClientCombo.editText = allWorkClientsLabel
         resultMessage = ""
         if (!client || !appRef || !appRef.listOpenPaymentInvoices) {
             allocationRows = []
+            workClientOptions = [allWorkClientsLabel]
             return
         }
         var raw = []
@@ -107,6 +112,7 @@ Popup {
             resultOk = false
             resultMessage = String(e)
             allocationRows = []
+            workClientOptions = [allWorkClientsLabel]
             return
         }
         var rows = []
@@ -128,8 +134,28 @@ Popup {
             return a.invoice.localeCompare(b.invoice)
         })
         for (var j = 0; j < rows.length; j++) rows[j].sourceIndex = j
+        refreshWorkClientOptions(rows)
         allocationRows = rows
         allocationRevision += 1
+    }
+
+    function refreshWorkClientOptions(rows) {
+        var options = [allWorkClientsLabel]
+        var clients = []
+        var seen = ({})
+        var source = rows || []
+        for (var i = 0; i < source.length; i++) {
+            var value = _clean(source[i] && source[i].client)
+            var key = value.toLowerCase()
+            if (!value || seen[key]) continue
+            seen[key] = true
+            clients.push(value)
+        }
+        clients.sort(function(a, b) { return String(a).localeCompare(String(b)) })
+        for (var j = 0; j < clients.length; j++) options.push(clients[j])
+        workClientOptions = options
+        selectedWorkClient = allWorkClientsLabel
+        workClientCombo.editText = allWorkClientsLabel
     }
 
     function openForBillingClient(clientName) {
@@ -144,8 +170,8 @@ Popup {
         depositAccountCombo.editText = accountValue
         referenceInput.text = ""
         notesInput.text = ""
-        invoiceFilterText = ""
-        invoiceFilterInput.text = ""
+        selectedWorkClient = allWorkClientsLabel
+        workClientCombo.editText = allWorkClientsLabel
         loadBillingClient(_clean(clientName))
         open()
         Qt.callLater(function() {
@@ -171,29 +197,26 @@ Popup {
         resultMessage = ""
     }
 
-    function _rowMatchesFilter(row) {
-        var query = _clean(invoiceFilterText).toLowerCase()
-        if (!query) return true
-        var haystack = [
-            _clean(row && row.invoice),
-            _clean(row && row.client),
-            _clean(row && row.matter),
-            _clean(row && row.date)
-        ].join(" | ").toLowerCase()
-        return haystack.indexOf(query) >= 0
+    function _rowMatchesSelectedClient(row) {
+        var selected = _clean(selectedWorkClient)
+        if (!selected || selected.toLowerCase() === allWorkClientsLabel.toLowerCase()) return true
+        return _clean(row && row.client).toLowerCase() === selected.toLowerCase()
     }
 
-    function _filteredAllocationRows() {
+    function _clientFilteredAllocationRows() {
         var rows = []
         var source = allocationRows || []
         for (var i = 0; i < source.length; i++) {
-            if (_rowMatchesFilter(source[i])) rows.push(source[i])
+            if (_rowMatchesSelectedClient(source[i])) rows.push(source[i])
         }
         return rows
     }
 
-    function setInvoiceFilter(value) {
-        invoiceFilterText = _clean(value)
+    function selectWorkClient(value) {
+        var selected = _clean(value)
+        selectedWorkClient = selected || allWorkClientsLabel
+        workClientCombo.editText = selectedWorkClient
+        resultMessage = ""
     }
 
     function totalOutstanding() {
@@ -243,7 +266,7 @@ Popup {
         var shownCount = 0
         for (var i = 0; i < allocationRows.length; i++) {
             var copy = Object.assign({}, allocationRows[i])
-            var isShown = _rowMatchesFilter(copy)
+            var isShown = _rowMatchesSelectedClient(copy)
             var applied = isShown
                 ? Math.min(Number(copy.balance || 0), Math.max(0, remaining))
                 : 0
@@ -253,7 +276,7 @@ Popup {
             rows.push(copy)
         }
         if (shownCount <= 0) {
-            showValidationError("No invoices match the current filter.")
+            showValidationError("No open invoices are available for the selected client.")
             return
         }
         allocationRows = rows
@@ -538,7 +561,10 @@ Popup {
                 Text {
                     Layout.fillWidth: true
                     text: dialog.selectedBillingClient
-                        ? (dialog.filteredAllocationRows.length + " of " + dialog.allocationRows.length
+                        ? ((dialog.selectedWorkClient === dialog.allWorkClientsLabel
+                                ? dialog.allWorkClientsLabel
+                                : "Client: " + dialog.selectedWorkClient)
+                            + " · " + dialog.filteredAllocationRows.length + " of " + dialog.allocationRows.length
                             + " open invoices · Shown A/R " + dialog.money(dialog.filteredOutstanding()))
                         : "Select a billing client to load open A/R."
                     color: dialog._text
@@ -547,25 +573,29 @@ Popup {
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
-                ModernTextField {
-                    id: invoiceFilterInput
+                ModernComboBox {
+                    id: workClientCombo
                     t: dialog.t
                     metrics: dialog.metrics
                     appStyle: dialog.appStyle
-                    label: "Filter invoice, client or matter"
+                    label: "Client"
+                    fullModel: dialog.workClientOptions
+                    sortSmartFilterResults: false
                     enabled: !dialog.postInProgress && dialog.allocationRows.length > 0
                     Layout.preferredWidth: 260
                     Layout.preferredHeight: 36
-                    onTextEdited: dialog.setInvoiceFilter(text)
+                    onActivated: dialog.selectWorkClient(editText)
                 }
                 PillButton {
-                    text: dialog.invoiceFilterText ? "Allocate shown oldest first" : "Allocate oldest first"
+                    text: dialog.selectedWorkClient !== dialog.allWorkClientsLabel
+                        ? "Allocate client oldest first"
+                        : "Allocate oldest first"
                     t: dialog.t
                     metrics: dialog.metrics
                     appStyle: dialog.appStyle
                     primary: true
                     enabled: !dialog.postInProgress && dialog.filteredAllocationRows.length > 0
-                    Layout.preferredWidth: dialog.invoiceFilterText ? 196 : 164
+                    Layout.preferredWidth: dialog.selectedWorkClient !== dialog.allWorkClientsLabel ? 206 : 164
                     Layout.preferredHeight: 34
                     onClicked: dialog.allocateOldestFirst()
                 }
@@ -683,8 +713,8 @@ Popup {
                 Text {
                     anchors.centerIn: parent
                     visible: dialog.selectedBillingClient.length > 0 && dialog.filteredAllocationRows.length <= 0
-                    text: dialog.invoiceFilterText
-                        ? "No open invoices match “" + dialog.invoiceFilterText + "”."
+                    text: dialog.selectedWorkClient !== dialog.allWorkClientsLabel
+                        ? "This billing client has no open invoices for client “" + dialog.selectedWorkClient + "”."
                         : "This billing client has no open invoices."
                     color: dialog._mutedText
                     font.family: "Segoe UI"
