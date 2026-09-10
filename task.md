@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## Authoritative Custom-Fee Accounting (2026-09-10)
+
+- [x] Preserve manually balanced invoice `26-0097`; make no historic workbook repair or live-data change.
+- [x] Make a draft-owned custom-fee line authoritative in backend draft recalculation and finalization even when the legacy `IsFlatFee` metadata was not separately set.
+- [x] Synchronize the custom fee and its recalculated HST into Invoice Log, Revenue ledger, Receivables, linked docket invoice totals, and therefore the open balance used by payment entry.
+- [x] Add a durable internal reconciliation row that reverses the ordinary docket valuation while retaining the custom-fee row, so generic linked-WIP totals equal the final billed fee without showing a discount on the invoice when Hidden Adjustment is selected.
+- [x] Add regression coverage for `$5,000.00` of ordinary dockets replaced by a `$4,500.00` custom fee: `$4,500.00` fees + `$585.00` HST = `$5,085.00` A/R. Sandbox-safe validation passed all **55** targeted custom-fee, discount, reversal, LIHDC, Invoice Builder, Invoice Directory, and payment tests; Python compilation and `git diff --check` passed.
+- [ ] Manual application acceptance against a new disposable draft only: stage `$5,000.00` of test dockets, add a `$4,500.00` custom fee with **Hidden Adjustment**, finalize under a new test invoice number, and confirm Invoice Directory and Payment Entry both show exactly `$5,085.00` outstanding. Do not alter `26-0097`.
+
 ## Billing-Client A/R Receipt Allocation (2026-09-10)
 
 - [x] Replace the invoice-row quick-payment concept with a billing-client collection session that loads every open/partially paid invoice for the selected billing client.

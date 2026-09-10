@@ -1,5 +1,14 @@
 # Implementation History
 
+## 2026-09-10: Authoritative Custom-Fee Accounting
+
+- The invoice preview already treated an Invoice Builder custom-fee line as a replacement for ordinary docket fees, but `InvoiceDraftService` recalculation/finalization required the separate legacy `IsFlatFee` field to be true. Current Add Custom Fee creates a durable, draft-owned `FeeOrigin:InvoiceDraft` line without setting that legacy flag, so the financial write summed the original dockets and custom fee even though the rendered invoice showed only the custom amount.
+- Backend draft recalculation now treats the structured custom-fee ownership marker as authoritative. When one or more such lines exist, their combined amount replaces the ordinary time-docket fee basis; HST and total due are recalculated from that basis before any financial rows are written. Invoice Log, Revenue ledger, Receivables, linked time-entry invoice totals, and payment-entry open balance therefore share the same final amount.
+- Finalization now records an auditable internal custom-fee reconciliation row. Because both the ordinary dockets and custom-fee line remain linked evidence, the adjustment reverses the ordinary docket valuation while the custom-fee row remains the billed revenue. The row carries gross/net/HST/total, matter/parent context, invoice totals, stable adjustment-origin audit metadata, and uses the Hidden Adjustment description without presenting a discount on the invoice. Financial reconciliation errors are no longer swallowed by a broad exception during finalization.
+- Regression coverage reproduces the requested future behavior: `$5,000.00` of ordinary dockets plus a `$4,500.00` custom fee produces `$4,500.00` fees, `$585.00` HST, and exactly `$5,085.00` in Invoice Log, Revenue ledger, Receivables, every linked docket balance, and aggregate linked WIP.
+- Invoice `26-0097` and the live workbook were deliberately untouched because Cory manually balanced that invoice. This is a prospective code repair only.
+- Sandbox-safe validation: `python -m py_compile src/python/services/invoice_draft_service.py` passed; **55 tests passed** across custom-fee lifecycle, discounts, reversal, LIHDC sharing, Invoice Builder responsiveness, Invoice Directory, invoice filtering, and payment entry; `git diff --check` passed with line-ending notices only. No Qt/WebEngine GUI test was run, so real application acceptance remains pending on a new disposable draft.
+
 ## 2026-09-10: Billing-Client A/R Receipt Allocation
 
 - The earlier row-level Quick Payment dialog did not represent a multi-invoice remittance correctly: posting each invoice independently would create several bank-facing income transactions even when the billing client made one deposit. It has been replaced by `BillingClientARCollectionDialog.qml`, opened either from the prominent **Collect billing-client A/R** command or a row's billing-client-scoped **Collect A/R** action.

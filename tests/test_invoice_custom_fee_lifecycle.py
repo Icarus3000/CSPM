@@ -4,6 +4,7 @@ import copy
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -333,6 +334,66 @@ def test_finalize_is_exactly_once_and_retry_recognizes_completed_footprint():
     assert finalized[sc.COL_TIME_MATTER_ID] == MATTER_ID
     with pytest.raises(RuntimeError, match="completion footprint is inconsistent"):
         service.finalize_draft(DRAFT_NUM, "26-DIFFERENT", "")
+
+
+def test_custom_fee_replaces_docket_total_in_receivable_and_linked_wip():
+    repo = _MemoryRepo()
+    repo.tables[sc.TBL_DISBURSEMENTS] = []
+    ordinary = repo.tables[sc.TBL_TIME][0]
+    ordinary[sc.COL_TIME_RATE] = "5000.00"
+    ordinary[sc.COL_TIME_GROSS] = "5000.00"
+    ordinary[sc.COL_TIME_NET] = "5000.00"
+    ordinary[sc.COL_TIME_HST] = "650.00"
+    ordinary[sc.COL_TIME_TOTAL] = "5650.00"
+    service = InvoiceDraftService(repo)
+
+    service.add_custom_fee_line(
+        DRAFT_NUM,
+        _request("CFR_authoritative_01", amount=4500),
+    )
+
+    draft = repo.tables[sc.TBL_DRAFT_INVOICES][0]
+    assert Decimal(draft[sc.COL_DRAFT_TOTAL_FEES]) == Decimal("4500.00")
+    assert Decimal(draft[sc.COL_DRAFT_TOTAL_TAX]) == Decimal("585.00")
+    assert Decimal(draft[sc.COL_DRAFT_TOTAL_DUE]) == Decimal("5085.00")
+
+    assert service.finalize_draft(DRAFT_NUM, "26-8500", "") is True
+
+    receivable = repo.tables[sc.TBL_RECEIVABLES][0]
+    invoice_log = repo.tables[sc.TBL_INVOICE_LOG][0]
+    revenue = repo.tables[sc.TBL_LEDGER][0]
+    assert Decimal(receivable[sc.COL_RECV_TOTAL_INVOICED]) == Decimal("5085.00")
+    assert Decimal(receivable[sc.COL_RECV_BALANCE_DUE]) == Decimal("5085.00")
+    assert Decimal(invoice_log[sc.COL_INV_TOTAL_FEES]) == Decimal("4500.00")
+    assert Decimal(invoice_log[sc.COL_INV_TOTAL_TAX]) == Decimal("585.00")
+    assert Decimal(invoice_log[sc.COL_INV_AGGREGATE_BILLED]) == Decimal("5085.00")
+    assert Decimal(revenue[sc.COL_LEDGER_BILLINGS_EXCL_HST]) == Decimal("4500.00")
+    assert Decimal(revenue[sc.COL_LEDGER_HST_COLLECTED]) == Decimal("585.00")
+    assert Decimal(revenue[sc.COL_LEDGER_RECEIVABLE]) == Decimal("5085.00")
+
+    linked_rows = [
+        row for row in repo.tables[sc.TBL_TIME]
+        if row.get(sc.COL_TIME_INVOICE_REF) == "26-8500"
+    ]
+    assert sum(
+        (Decimal(str(row.get(sc.COL_TIME_NET) or 0)) for row in linked_rows),
+        Decimal("0.00"),
+    ) == Decimal("4500.00")
+    assert sum(
+        (Decimal(str(row.get(sc.COL_TIME_HST) or 0)) for row in linked_rows),
+        Decimal("0.00"),
+    ) == Decimal("585.00")
+    assert all(
+        Decimal(row[sc.COL_TIME_INVOICE_TOTAL]) == Decimal("5085.00")
+        for row in linked_rows
+    )
+    adjustment = next(
+        row for row in linked_rows
+        if "AdjustmentOrigin:CustomFeeReconciliation"
+        in str(row.get(sc.COL_TIME_LOCK_AUDIT) or "")
+    )
+    assert Decimal(adjustment[sc.COL_TIME_NET]) == Decimal("-5000.00")
+    assert "Docket WIP Replaced" in adjustment[sc.COL_TIME_DESC]
 
 
 def test_finalize_recovers_lost_acknowledgement_without_billed_and_draft_split():

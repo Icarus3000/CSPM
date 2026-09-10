@@ -247,19 +247,38 @@ class InvoiceDraftService:
         draft_num = self._text(draft.get(sc.COL_DRAFT_INVOICE_NUM))
         fees = Decimal("0.0")
         tax = Decimal("0.0")
+        custom_fee_rows: List[Dict[str, Any]] = []
+        custom_fee_total = Decimal("0.0")
         for row in time_entries:
-            if self._text(row.get(sc.COL_TIME_INVOICE_REF)) == draft_num:
+            if (
+                self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+                == draft_num.casefold()
+            ):
                 entry_net, entry_tax = self._entry_invoice_amounts(row)
                 fees += entry_net
                 tax += entry_tax
+                if self._is_draft_custom_fee(row):
+                    custom_fee_rows.append(row)
+                    custom_fee_total += entry_net
 
         disb_total = Decimal("0.0")
         for row in disb_entries:
             if self._text(row.get(sc.COL_DISB_INVOICE_REF)) == draft_num:
                 disb_total += Decimal(str(row.get(sc.COL_DISB_AMOUNT) or 0))
 
-        is_flat_fee = self._text(draft.get(sc.COL_DRAFT_IS_FLAT_FEE)).lower() == "true"
-        flat_fee_amt = Decimal(str(draft.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT) or 0))
+        # A draft-owned custom-fee line is the durable instruction that its
+        # amount replaces the ordinary docket fee total.  The invoice preview
+        # already follows that rule; finalization must not depend on the
+        # separate legacy IsFlatFee metadata also having been set.
+        is_flat_fee = (
+            bool(custom_fee_rows)
+            or self._text(draft.get(sc.COL_DRAFT_IS_FLAT_FEE)).lower() == "true"
+        )
+        flat_fee_amt = (
+            custom_fee_total
+            if custom_fee_rows
+            else self._money(draft.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT))
+        )
         fees_to_use = flat_fee_amt if is_flat_fee else fees
 
         discount_type = self._normalize_discount_type(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE))
@@ -1645,63 +1664,149 @@ class InvoiceDraftService:
                         final_invoice_num=final_invoice_num,
                     )
                 
-        # 1b. Handle WIP Adjustments for Flat Fees or Discounts
-        try:
-            import uuid
-            is_flat_fee = str(draft.get(sc.COL_DRAFT_IS_FLAT_FEE) or "False").lower() == "true"
-            if is_flat_fee:
-                wip_fees = sum(Decimal(str(r.get(sc.COL_TIME_NET) or 0)) for r in time_entries if r.get(sc.COL_TIME_INVOICE_REF) == final_invoice_num)
-                flat_fee_amt = Decimal(str(draft.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT) or 0))
-                recon_mode = str(draft.get(sc.COL_DRAFT_RECONCILIATION_MODE) or "backend_adjustment")
-                diff = flat_fee_amt - wip_fees
-                if diff != 0:
-                    desc = f"Courtesy Discount ({draft.get(sc.COL_DRAFT_FLAT_FEE_DESC) or 'Flat Fee'})" if diff < 0 and recon_mode == "discount_line" else ("Flat Fee Adjustment (Write-Up)" if diff > 0 else "Flat Fee Adjustment (Write-Down)")
-                    time_entries.append({
-                        sc.COL_TIME_ENTRY_ID: f"WIP_{uuid.uuid4().hex[:8]}",
-                        sc.COL_TIME_DATE: date_str,
-                        sc.COL_TIME_CLIENT_ID: draft.get(sc.COL_DRAFT_CLIENT_ID),
-                        sc.COL_TIME_DESC: desc,
-                        sc.COL_TIME_NET: str(diff),
-                        sc.COL_TIME_HST: str(diff * Decimal('0.13')),
-                        sc.COL_TIME_TOTAL: str(diff * Decimal('1.13')),
-                        sc.COL_TIME_INVOICE_REF: final_invoice_num,
-                        sc.COL_TIME_INVOICE_STATUS: "Billed",
-                        sc.COL_TIME_STATUS: "Billed",
-                        sc.COL_TIME_INVOICE_DATE: date_str
-                    })
+        # 1b. Reconcile WIP to the authoritative billed fee. Custom-fee rows
+        # are themselves monetary rows, so the hidden adjustment reverses the
+        # ordinary docket valuation while leaving the custom fee as revenue.
+        # This keeps generic linked-WIP sums equal to the invoice fee and avoids
+        # carrying the original docket total into A/R.
+        is_flat_fee = (
+            bool(custom_fee_rows)
+            or self._text(draft.get(sc.COL_DRAFT_IS_FLAT_FEE)).lower() == "true"
+        )
+        if is_flat_fee:
+            wip_fees = sum(
+                (
+                    self._entry_invoice_amounts(row)[0]
+                    for row in time_entries
+                    if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+                    == final_invoice_num.casefold()
+                ),
+                Decimal("0.00"),
+            )
+            if custom_fee_rows:
+                # Match the already-recalculated financial totals exactly,
+                # including any existing agency split/discount controls. The
+                # disbursement amount remains outside linked time-entry WIP.
+                linked_disbursements = sum(
+                    (
+                        self._money(row.get(sc.COL_DISB_AMOUNT))
+                        for row in disb_entries
+                        if self._text(row.get(sc.COL_DISB_INVOICE_REF)).casefold()
+                        == self._text(draft_num).casefold()
+                    ),
+                    Decimal("0.00"),
+                )
+                target_time_fees = self._money(
+                    self._money(draft.get(sc.COL_DRAFT_TOTAL_FEES))
+                    - linked_disbursements
+                )
+                current_time_tax = sum(
+                    (
+                        self._entry_invoice_amounts(row)[1]
+                        for row in time_entries
+                        if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+                        == final_invoice_num.casefold()
+                    ),
+                    Decimal("0.00"),
+                )
+                diff = self._money(target_time_fees - wip_fees)
+                adjustment_hst = self._money(
+                    self._money(draft.get(sc.COL_DRAFT_TOTAL_TAX))
+                    - current_time_tax
+                )
             else:
-                discount_val = Decimal(str(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
-                discount_type = self._normalize_discount_type(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE))
-                if discount_type != "None" and discount_val > 0:
-                    wip_fees = sum(
-                        Decimal(str(r.get(sc.COL_TIME_NET) or 0))
-                        for r in time_entries
-                        if r.get(sc.COL_TIME_INVOICE_REF) == final_invoice_num
+                flat_fee_amt = self._money(draft.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT))
+                diff = self._money(flat_fee_amt - wip_fees)
+                adjustment_hst = self._money(diff * Decimal("0.13"))
+            if diff != Decimal("0.00") or adjustment_hst != Decimal("0.00"):
+                recon_mode = self._text(
+                    draft.get(sc.COL_DRAFT_RECONCILIATION_MODE)
+                ).casefold()
+                if custom_fee_rows:
+                    desc = (
+                        "Custom Fee Reconciliation (Invoice Courtesy Discount)"
+                        if recon_mode == "discount_line"
+                        else "Custom Fee Reconciliation (Docket WIP Replaced)"
                     )
-                    if discount_type == "Percentage":
-                        discount_amt = self._money(wip_fees * (discount_val / Decimal("100.0")))
-                        desc = f"Courtesy Discount ({discount_val}% {discount_type})"
-                    else:
-                        discount_amt = self._money(discount_val)
-                        desc = f"Courtesy Discount ({discount_type})"
+                    source_row = custom_fee_rows[0]
+                    audit = (
+                        "EntryType:InvoiceAdjustment || "
+                        "AdjustmentOrigin:CustomFeeReconciliation || "
+                        f"DraftOwnerID:{draft_id} || FinalInvoice:{final_invoice_num}"
+                    )
+                else:
+                    desc = (
+                        "Flat Fee Adjustment (Write-Up)"
+                        if diff > 0
+                        else "Flat Fee Adjustment (Write-Down)"
+                    )
+                    source_row = {}
+                    audit = "EntryType:InvoiceAdjustment || AdjustmentOrigin:FlatFee"
+                adjustment_total = diff + adjustment_hst
+                time_entries.append({
+                    sc.COL_TIME_ENTRY_ID: f"WIP_{uuid.uuid4().hex[:8]}",
+                    sc.COL_TIME_DATE: date_str,
+                    sc.COL_TIME_CLIENT_ID: draft.get(sc.COL_DRAFT_CLIENT_ID),
+                    sc.COL_TIME_MATTER_ID: source_row.get(sc.COL_TIME_MATTER_ID, ""),
+                    sc.COL_TIME_PARENT_ID: source_row.get(sc.COL_TIME_PARENT_ID, ""),
+                    sc.COL_TIME_DESC: desc,
+                    sc.COL_TIME_HOURS: "0.0",
+                    sc.COL_TIME_RATE: "0.0",
+                    sc.COL_TIME_SHARE_PCT: "100.0",
+                    sc.COL_TIME_GROSS: str(diff),
+                    sc.COL_TIME_NET: str(diff),
+                    sc.COL_TIME_HST: str(adjustment_hst),
+                    sc.COL_TIME_TOTAL: str(adjustment_total),
+                    sc.COL_TIME_SECONDS: "0",
+                    sc.COL_TIME_INVOICE_REF: final_invoice_num,
+                    sc.COL_TIME_INVOICE_STATUS: "Billed",
+                    sc.COL_TIME_STATUS: "Billed",
+                    sc.COL_TIME_PAYMENT_STATUS: "",
+                    sc.COL_TIME_INVOICE_TOTAL: str(final_invoice_total),
+                    sc.COL_TIME_INVOICE_AMOUNT_PAID: "0.00",
+                    sc.COL_TIME_INVOICE_BALANCE_DUE: str(final_invoice_total),
+                    sc.COL_TIME_INVOICE_DATE: date_str,
+                    sc.COL_TIME_REISSUE_INVOICE_NUM: "",
+                    sc.COL_TIME_LOCK_AUDIT: audit,
+                    sc.COL_TIME_CREATED: now_str,
+                })
+        else:
+            discount_val = Decimal(str(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
+            discount_type = self._normalize_discount_type(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE))
+            if discount_type != "None" and discount_val > 0:
+                wip_fees = sum(
+                    (
+                        Decimal(str(row.get(sc.COL_TIME_NET) or 0))
+                        for row in time_entries
+                        if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+                        == final_invoice_num.casefold()
+                    ),
+                    Decimal("0.00"),
+                )
+                if discount_type == "Percentage":
+                    discount_amt = self._money(
+                        wip_fees * (discount_val / Decimal("100.0"))
+                    )
+                    desc = f"Courtesy Discount ({discount_val}% {discount_type})"
+                else:
+                    discount_amt = discount_val
+                    desc = f"Courtesy Discount ({discount_type})"
 
-                    discount_hst = self._money(discount_amt * Decimal("0.13"))
-                    discount_total = discount_amt + discount_hst
-                    time_entries.append({
-                        sc.COL_TIME_ENTRY_ID: f"WIP_{uuid.uuid4().hex[:8]}",
-                        sc.COL_TIME_DATE: date_str,
-                        sc.COL_TIME_CLIENT_ID: draft.get(sc.COL_DRAFT_CLIENT_ID),
-                        sc.COL_TIME_DESC: desc,
-                        sc.COL_TIME_NET: str(-discount_amt),
-                        sc.COL_TIME_HST: str(-discount_hst),
-                        sc.COL_TIME_TOTAL: str(-discount_total),
-                        sc.COL_TIME_INVOICE_REF: final_invoice_num,
-                        sc.COL_TIME_INVOICE_STATUS: "Billed",
-                        sc.COL_TIME_STATUS: "Billed",
-                        sc.COL_TIME_INVOICE_DATE: date_str,
-                    })
-        except Exception as e:
-            print("Failed to apply WIP adjustment:", e)
+                discount_hst = self._money(discount_amt * Decimal("0.13"))
+                discount_total = discount_amt + discount_hst
+                time_entries.append({
+                    sc.COL_TIME_ENTRY_ID: f"WIP_{uuid.uuid4().hex[:8]}",
+                    sc.COL_TIME_DATE: date_str,
+                    sc.COL_TIME_CLIENT_ID: draft.get(sc.COL_DRAFT_CLIENT_ID),
+                    sc.COL_TIME_DESC: desc,
+                    sc.COL_TIME_NET: str(-discount_amt),
+                    sc.COL_TIME_HST: str(-discount_hst),
+                    sc.COL_TIME_TOTAL: str(-discount_total),
+                    sc.COL_TIME_INVOICE_REF: final_invoice_num,
+                    sc.COL_TIME_INVOICE_STATUS: "Billed",
+                    sc.COL_TIME_STATUS: "Billed",
+                    sc.COL_TIME_INVOICE_DATE: date_str,
+                })
 
         # 2. Update Disbursements
         for row in disb_entries:
