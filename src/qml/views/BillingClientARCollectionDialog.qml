@@ -22,6 +22,9 @@ Popup {
     property string resultMessage: ""
     property var billingClientOptions: []
     property var allocationRows: []
+    property string invoiceFilterText: ""
+    property int allocationRevision: 0
+    property var filteredAllocationRows: dialog._filteredAllocationRows()
     property var methodOptions: ["e-Transfer", "EFT", "Cheque", "Credit Card", "Cash", "Wire", "Other"]
     property var depositAccountOptions: host ? host.depositAccountOptions : []
     property string selectedBillingClient: ""
@@ -124,7 +127,9 @@ Popup {
             if (a.date > b.date) return 1
             return a.invoice.localeCompare(b.invoice)
         })
+        for (var j = 0; j < rows.length; j++) rows[j].sourceIndex = j
         allocationRows = rows
+        allocationRevision += 1
     }
 
     function openForBillingClient(clientName) {
@@ -139,6 +144,8 @@ Popup {
         depositAccountCombo.editText = accountValue
         referenceInput.text = ""
         notesInput.text = ""
+        invoiceFilterText = ""
+        invoiceFilterInput.text = ""
         loadBillingClient(_clean(clientName))
         open()
         Qt.callLater(function() {
@@ -149,20 +156,44 @@ Popup {
     }
 
     function allocationAmount(index) {
+        var revision = allocationRevision
         var row = allocationRows[index] || ({})
         return Math.max(0, _num(row.allocation, 0))
     }
 
     function setAllocation(index, value) {
         if (index < 0 || index >= allocationRows.length) return
-        var rows = []
-        for (var i = 0; i < allocationRows.length; i++) {
-            var copy = Object.assign({}, allocationRows[i])
-            if (i === index) copy.allocation = _clean(value)
-            rows.push(copy)
-        }
-        allocationRows = rows
+        // Do not replace allocationRows while the user types. Replacing the
+        // ListView model destroys its delegates, which used to drop focus
+        // after every character and make the row jump out of view.
+        allocationRows[index].allocation = _clean(value)
+        allocationRevision += 1
         resultMessage = ""
+    }
+
+    function _rowMatchesFilter(row) {
+        var query = _clean(invoiceFilterText).toLowerCase()
+        if (!query) return true
+        var haystack = [
+            _clean(row && row.invoice),
+            _clean(row && row.client),
+            _clean(row && row.matter),
+            _clean(row && row.date)
+        ].join(" | ").toLowerCase()
+        return haystack.indexOf(query) >= 0
+    }
+
+    function _filteredAllocationRows() {
+        var rows = []
+        var source = allocationRows || []
+        for (var i = 0; i < source.length; i++) {
+            if (_rowMatchesFilter(source[i])) rows.push(source[i])
+        }
+        return rows
+    }
+
+    function setInvoiceFilter(value) {
+        invoiceFilterText = _clean(value)
     }
 
     function totalOutstanding() {
@@ -172,8 +203,25 @@ Popup {
     }
 
     function totalAllocated() {
+        var revision = allocationRevision
         var total = 0
         for (var i = 0; i < allocationRows.length; i++) total += allocationAmount(i)
+        return _roundMoney(total)
+    }
+
+    function positiveAllocationCount() {
+        var revision = allocationRevision
+        var count = 0
+        for (var i = 0; i < allocationRows.length; i++) {
+            if (allocationAmount(i) > 0) count += 1
+        }
+        return count
+    }
+
+    function filteredOutstanding() {
+        var total = 0
+        var rows = filteredAllocationRows || []
+        for (var i = 0; i < rows.length; i++) total += Number(rows[i].balance || 0)
         return _roundMoney(total)
     }
 
@@ -192,14 +240,24 @@ Popup {
             return
         }
         var rows = []
+        var shownCount = 0
         for (var i = 0; i < allocationRows.length; i++) {
             var copy = Object.assign({}, allocationRows[i])
-            var applied = Math.min(Number(copy.balance || 0), Math.max(0, remaining))
+            var isShown = _rowMatchesFilter(copy)
+            var applied = isShown
+                ? Math.min(Number(copy.balance || 0), Math.max(0, remaining))
+                : 0
+            if (isShown) shownCount += 1
             copy.allocation = applied > 0 ? _roundMoney(applied).toFixed(2) : ""
             remaining = _roundMoney(remaining - applied)
             rows.push(copy)
         }
+        if (shownCount <= 0) {
+            showValidationError("No invoices match the current filter.")
+            return
+        }
         allocationRows = rows
+        allocationRevision += 1
         resultMessage = remaining > 0.005
             ? "The receipt exceeds this billing client's open A/R by " + money(remaining) + "."
             : ""
@@ -214,6 +272,7 @@ Popup {
             rows.push(copy)
         }
         allocationRows = rows
+        allocationRevision += 1
         resultMessage = ""
     }
 
@@ -479,8 +538,8 @@ Popup {
                 Text {
                     Layout.fillWidth: true
                     text: dialog.selectedBillingClient
-                        ? (dialog.allocationRows.length + " open invoice" + (dialog.allocationRows.length === 1 ? "" : "s")
-                            + " · Total A/R " + dialog.money(dialog.totalOutstanding()))
+                        ? (dialog.filteredAllocationRows.length + " of " + dialog.allocationRows.length
+                            + " open invoices · Shown A/R " + dialog.money(dialog.filteredOutstanding()))
                         : "Select a billing client to load open A/R."
                     color: dialog._text
                     font.family: "Segoe UI"
@@ -488,14 +547,25 @@ Popup {
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
+                ModernTextField {
+                    id: invoiceFilterInput
+                    t: dialog.t
+                    metrics: dialog.metrics
+                    appStyle: dialog.appStyle
+                    label: "Filter invoice, client or matter"
+                    enabled: !dialog.postInProgress && dialog.allocationRows.length > 0
+                    Layout.preferredWidth: 260
+                    Layout.preferredHeight: 36
+                    onTextEdited: dialog.setInvoiceFilter(text)
+                }
                 PillButton {
-                    text: "Allocate oldest first"
+                    text: dialog.invoiceFilterText ? "Allocate shown oldest first" : "Allocate oldest first"
                     t: dialog.t
                     metrics: dialog.metrics
                     appStyle: dialog.appStyle
                     primary: true
-                    enabled: !dialog.postInProgress && dialog.allocationRows.length > 0
-                    Layout.preferredWidth: 164
+                    enabled: !dialog.postInProgress && dialog.filteredAllocationRows.length > 0
+                    Layout.preferredWidth: dialog.invoiceFilterText ? 196 : 164
                     Layout.preferredHeight: 34
                     onClicked: dialog.allocateOldestFirst()
                 }
@@ -547,7 +617,7 @@ Popup {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        model: dialog.allocationRows
+                        model: dialog.filteredAllocationRows
                         spacing: 3
                         delegate: Rectangle {
                             id: allocationDelegate
@@ -568,6 +638,7 @@ Popup {
                                 Text { Layout.fillWidth: true; text: dialog._clean(allocationDelegate.modelData.client) + (dialog._clean(allocationDelegate.modelData.matter) ? " · " + dialog._clean(allocationDelegate.modelData.matter) : ""); color: dialog._text; font.pixelSize: 11; elide: Text.ElideRight }
                                 Text { Layout.preferredWidth: 96; text: dialog.money(allocationDelegate.modelData.balance); horizontalAlignment: Text.AlignRight; color: dialog._text; font.pixelSize: 12; font.weight: Font.DemiBold }
                                 TextField {
+                                    id: allocationInput
                                     Layout.preferredWidth: 124
                                     Layout.preferredHeight: 34
                                     text: dialog._clean(allocationDelegate.modelData.allocation)
@@ -578,7 +649,17 @@ Popup {
                                     font.family: "Segoe UI"
                                     font.pixelSize: 12
                                     validator: DoubleValidator { bottom: 0; decimals: 2 }
-                                    onTextEdited: dialog.setAllocation(allocationDelegate.index, text)
+                                    activeFocusOnTab: true
+                                    onActiveFocusChanged: {
+                                        if (!activeFocus) return
+                                        allocationList.currentIndex = allocationDelegate.index
+                                        allocationList.positionViewAtIndex(allocationDelegate.index, ListView.Contain)
+                                    }
+                                    onTextEdited: {
+                                        allocationList.currentIndex = allocationDelegate.index
+                                        dialog.setAllocation(allocationDelegate.modelData.sourceIndex, text)
+                                        allocationList.positionViewAtIndex(allocationDelegate.index, ListView.Contain)
+                                    }
                                     background: Rectangle {
                                         color: dialog._raisedPanel
                                         radius: dialog.isProMode ? 3 : 7
@@ -588,7 +669,7 @@ Popup {
                                 }
                                 Text {
                                     Layout.preferredWidth: 104
-                                    text: dialog.money(Math.max(0, Number(allocationDelegate.modelData.balance || 0) - dialog.allocationAmount(allocationDelegate.index)))
+                                    text: dialog.money(Math.max(0, Number(allocationDelegate.modelData.balance || 0) - dialog.allocationAmount(allocationDelegate.modelData.sourceIndex)))
                                     horizontalAlignment: Text.AlignRight
                                     color: dialog._accent
                                     font.pixelSize: 12
@@ -597,6 +678,17 @@ Popup {
                             }
                         }
                     }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: dialog.selectedBillingClient.length > 0 && dialog.filteredAllocationRows.length <= 0
+                    text: dialog.invoiceFilterText
+                        ? "No open invoices match “" + dialog.invoiceFilterText + "”."
+                        : "This billing client has no open invoices."
+                    color: dialog._mutedText
+                    font.family: "Segoe UI"
+                    font.pixelSize: 13
                 }
             }
 
@@ -667,7 +759,7 @@ Popup {
                 spacing: 10
                 Text {
                     Layout.fillWidth: true
-                    text: "Posting creates one receipt transaction and " + dialog.allocationRows.filter(function(row) { return dialog._num(row.allocation, 0) > 0 }).length + " invoice allocation record(s)."
+                    text: "Posting creates one receipt transaction and " + dialog.positiveAllocationCount() + " invoice allocation record(s)."
                     color: dialog._mutedText
                     font.family: "Segoe UI"
                     font.pixelSize: 11

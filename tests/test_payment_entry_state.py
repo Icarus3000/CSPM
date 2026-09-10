@@ -60,7 +60,7 @@ def test_payment_entry_launches_billing_client_ar_collection_workflow():
     assert 'label: "Payment method"' in COLLECTION_DIALOG
     assert 'label: "General deposit account"' in COLLECTION_DIALOG
     assert 'label: "Reference / Cheque #"' in COLLECTION_DIALOG
-    assert 'text: "Allocate oldest first"' in COLLECTION_DIALOG
+    assert '"Allocate shown oldest first" : "Allocate oldest first"' in COLLECTION_DIALOG
     assert 'text: dialog.postInProgress ? "Posting..." : "Post Received Payment"' in COLLECTION_DIALOG
     assert '"allocations": allocations' in COLLECTION_DIALOG
     assert "Allocated total must exactly equal the amount received." in COLLECTION_DIALOG
@@ -75,3 +75,16 @@ def test_billing_client_receipt_uses_a_dedicated_async_controller_signal():
     assert "def postBillingClientReceipt(self, payload):" in controller
     assert "self._excel_repo.post_billing_client_receipt" in controller
     assert "function onBillingClientReceiptSaveFinished(result)" in PAYMENT_VIEW
+
+
+def test_collection_filter_targets_invoice_client_or_matter_and_keeps_allocations_stable():
+    assert 'label: "Filter invoice, client or matter"' in COLLECTION_DIALOG
+    assert "function _filteredAllocationRows()" in COLLECTION_DIALOG
+    assert '_clean(row && row.invoice)' in COLLECTION_DIALOG
+    assert '_clean(row && row.client)' in COLLECTION_DIALOG
+    assert '_clean(row && row.matter)' in COLLECTION_DIALOG
+    assert 'text: dialog.invoiceFilterText ? "Allocate shown oldest first"' in COLLECTION_DIALOG
+    assert "allocationRows[index].allocation = _clean(value)" in COLLECTION_DIALOG
+    assert "allocationRevision += 1" in COLLECTION_DIALOG
+    assert "dialog.setAllocation(allocationDelegate.modelData.sourceIndex, text)" in COLLECTION_DIALOG
+    assert "allocationList.positionViewAtIndex(allocationDelegate.index, ListView.Contain)" in COLLECTION_DIALOG
