@@ -1559,6 +1559,7 @@ Item {
         var nodeId = String(tab && tab.nodeId ? tab.nodeId : "").trim()
         if (nodeId === "B01" || nodeId === "B03") return "time-docket"
         if (nodeId === "B02") return "fee-docket"
+        if (nodeId === "B06") return "disbursement-docket"
         if (nodeId === "B08") return "deadline-entry"
         if (nodeId === "B16") return "trademark-filing"
         if (nodeId === "A02" || nodeId === "A03") return "client-profile"

@@ -164,7 +164,7 @@ var MODULE_CONFIGS = [
         "shortTitle": "Docketing",
         "railLabel": "Dockets",
         "icon": "\uE823",
-        "subtitle": "Time/fee capture, rules, ticklers, and deadline risk controls",
+        "subtitle": "Time, fee, and expense capture with deadline risk controls",
         "defaultNodeId": "B01",
         "route": "/docketing",
         "sections": [
@@ -174,6 +174,7 @@ var MODULE_CONFIGS = [
                 "items": [
                     { "id": "B01", "label": "Time Docket Entry", "route": "/docketing/time-entry", "live": true, "singleInstanceKey": "docketing:time-entry", "saveCommand": "time-docket" },
                     { "id": "B02", "label": "Fee Docket Entry", "route": "/docketing/fee-entry", "live": true, "singleInstanceKey": "docketing:fee-entry", "saveCommand": "fee-docket" },
+                    { "id": "B06", "label": "Disbursement Entry", "route": "/docketing/disbursement-entry", "live": true, "singleInstanceKey": "docketing:disbursement-entry", "saveCommand": "disbursement-docket" },
                     { "id": "B05", "label": "Move Dockets Between Matters", "route": "/docketing/bulk-move", "live": true, "singleInstanceKey": "docketing:bulk-move" },
                     { "id": "B04", "label": "Docket Activity Report", "route": "/docketing/activity-report", "tabType": "report" }
                 ]
@@ -219,7 +220,7 @@ var MODULE_CONFIGS = [
                 "title": "Accounts & Expenses",
                 "items": [
                     { "id": "C18", "label": "Accounts Payable (Expenses)", "route": "/billing/accounts-payable", "tabType": "ap_setoff", "singleInstance": false },
-                    { "id": "C11", "label": "Transactions Master", "route": "/billing/transactions-master", "tabType": "transaction", "singleInstance": false, "saveCommand": "transaction" }
+                    { "id": "C11", "label": "Expenses & Banking", "route": "/billing/transactions-master", "tabType": "transaction", "singleInstance": false, "saveCommand": "transaction" }
                 ]
             }
         ]

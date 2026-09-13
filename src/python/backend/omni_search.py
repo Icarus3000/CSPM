@@ -46,6 +46,7 @@ SUBWINDOW_CATALOG = [
     (0, "A15", "Duplicate Merge Tool", ("duplicate merge", "merge clients", "merge matters")),
     (1, "B01", "Time Docket Entry", ("time docket", "docket entry", "new docket", "timer entry")),
     (1, "B02", "Fee Docket Entry", ("fee docket", "fee entry")),
+    (1, "B06", "Disbursement Entry", ("disbursement", "disbursement entry", "matter expense", "client expense", "out of pocket")),
     (1, "B03", "Timer Console", ("timer console", "stopwatch")),
     (1, "B04", "Docket Activity Report", ("docket activity report", "docket report", "time docket report", "docket review", "review queue")),
     (1, "B05", "Docket Adjustment/Void", ("docket adjustment", "void docket")),
@@ -71,7 +72,7 @@ SUBWINDOW_CATALOG = [
     # C08 (Open Invoice Selector) removed — keywords routed to C07
     (2, "C09", "Write-off/Adjustment Entry", ("write-off", "adjustment entry")),
     (2, "C10", "Collections Queue", ("collections", "ar collections")),
-    (2, "C11", "Transactions Master", ("transactions master", "expense entry", "log expense")),
+    (2, "C11", "Expenses & Banking", ("expenses", "banking", "expense entry", "log expense", "transactions master")),
     (2, "C12", "Vendor & Expense Category Manager", ("vendor", "expense category")),
     (2, "C13", "Disbursement Rebill Queue", ("disbursement rebill", "rebill queue")),
     (2, "C14", "HST/GST Remittance Center", ("hst remittance", "gst remittance", "tax remittance")),

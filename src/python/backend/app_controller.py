@@ -4890,6 +4890,23 @@ class AppController(QObject):
             self._report_failure("Could not save fee entry", context="repo.time.save_fee_entry", exc=exc)
             return {"ok": False, "entryId": "", "message": str(exc)}
 
+    @Slot("QVariantMap", result=dict)
+    def saveDisbursementDocketEntry(self, payload):
+        """Save a direct, matter-linked disbursement into invoiceable WIP."""
+        try:
+            result = dict(self._excel_repo.add_disbursement_entry(dict(payload or {})) or {})
+            if result.get("ok"):
+                self.toast.emit(f"Disbursement saved: {result.get('entryId', '')}")
+                self.clientDataChanged.emit()
+            else:
+                message = str(result.get("message", "Disbursement verification failed.") or "").strip()
+                if message:
+                    self.error.emit(message)
+            return result
+        except Exception as exc:
+            self._report_failure("Could not save disbursement entry", context="repo.disb.save", exc=exc)
+            return {"ok": False, "entryId": "", "message": str(exc)}
+
     @Slot(str, "QVariantMap", result=dict)
     def updateTimeDocketEntry(self, entry_id, changes):
         try:

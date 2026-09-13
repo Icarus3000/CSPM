@@ -436,6 +436,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     function currentDirtyState() {
         if (activeSubwindowId === "B04") return false; // DOCKET REPORT IS NEVER DIRTY
         if (root.activeIsFeeDocket()) return !!(feeDocketEntryPanel && feeDocketEntryPanel.dirty);
+        if (root.activeIsDisbursementDocket()) return !!(disbursementDocketEntryPanel && disbursementDocketEntryPanel.dirty);
         if (root.activeIsTrademarkEntry()) return !!root.trademarkFormDirty;
         if (root.activeIsTrademarkDirectory()) return !!(root.tf_state && root.tf_state.dirty);
         if (root.activeIsDeadlineEditor()) return !!root.deadlineFormDirty;
@@ -732,6 +733,10 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         return String(activeSubwindowId || "") === "B02"
     }
 
+
+    function activeIsDisbursementDocket() {
+        return String(activeSubwindowId || "") === "B06"
+    }
     function activeIsTimerConsole() {
         return String(activeSubwindowId || "") === "B03"
     }
@@ -753,7 +758,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function activeUsesDocketContext() {
-        return activeIsLiveDocket() || activeIsFeeDocket() || activeIsTimerConsole() || activeIsBulkDocketMove()
+        return activeIsLiveDocket() || activeIsFeeDocket() || activeIsDisbursementDocket() || activeIsTimerConsole() || activeIsBulkDocketMove()
     }
 
     function normalizedDocketStatus(value) {
@@ -1978,6 +1983,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         if (activeIsFeeDocket()) {
             return "Create a matter-linked fee directly in invoiceable WIP"
         }
+        if (activeIsDisbursementDocket()) {
+            return "Record an out-of-pocket matter expense as invoiceable WIP"
+        }
         if (activeIsBulkDocketMove()) {
             return "Review and move selected unbilled time and fee dockets to another matter"
         }
@@ -3159,7 +3167,6 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         }
         return Math.max(0, Math.floor(root.elapsedSeconds || 0)) / 3600.0
     }
-
     function calculateFees() {
         var hours = root.feeCalculationHours()
         var r = parseFloat(rateInput.text) || 0.0
@@ -3649,6 +3656,10 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                 return true
             }
             return false
+        }
+        if (saveCommand === "disbursement-docket") {
+            return !!(disbursementDocketEntryPanel && disbursementDocketEntryPanel.saveDisbursementEntry
+                      && disbursementDocketEntryPanel.saveDisbursementEntry())
         }
         return false
     }
@@ -5090,6 +5101,22 @@ Behavior on border.color {
                     }
                 }
 
+                DisbursementDocketEntryPanel {
+                    id: disbursementDocketEntryPanel
+                    visible: root.activeIsDisbursementDocket()
+                    enabled: visible
+                    Layout.fillWidth: true
+                    Layout.fillHeight: visible
+                    Layout.maximumHeight: visible ? 16777215 : 0
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    appRef: root.appRef
+                    sfxBus: root.sfxBus
+                    onSaved: function(result) {
+                        root.dirty = false
+                    }
+                }
+
                 BulkDocketMovePanel {
                     id: bulkDocketMovePanel
                     visible: root.activeIsBulkDocketMove()
@@ -5673,7 +5700,7 @@ Behavior on border.color {
                     Layout.fillWidth: true
                     Layout.fillHeight: visible
                     Layout.maximumHeight: visible ? 16777215 : 0
-                    visible: !root.activeIsLiveDocket() && !root.activeIsFeeDocket() && !root.activeIsBulkDocketMove() && !root.activeIsTimerConsole() && !root.activeIsDocketReport() && !root.activeIsTrademark()
+                    visible: !root.activeIsLiveDocket() && !root.activeIsFeeDocket() && !root.activeIsDisbursementDocket() && !root.activeIsBulkDocketMove() && !root.activeIsTimerConsole() && !root.activeIsDocketReport() && !root.activeIsTrademark()
                     enabled: visible
                     radius: root.activeIsDeadlineEditor() ? 0 : root.sectionRadiusPx
                     color: root.activeIsDeadlineEditor()

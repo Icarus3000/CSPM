@@ -6676,6 +6676,140 @@ class ExcelRepo:
             "message": "" if verified else "Fee entry write verification failed.",
         }
 
+    def add_disbursement_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a direct, matter-linked disbursement WIP line.
+
+        This is the docket-entry path for out-of-pocket matter expenses
+        (court fees, corporate searches, courier, travel).  It writes
+        directly to tblDisbursements with Unbilled/WIP status so the
+        expense appears in the WIP-to-Bill Workbench and Invoice Builder.
+
+        Unlike ``create_supplier_disbursement``, this path does not create
+        a ledger row — the invoice pipeline handles ledger posting at
+        finalization, matching the fee-entry pattern.
+        """
+        self.ensure_schema()
+        raw = dict(payload or {})
+
+        date_text = self._pick_text(raw, ["date", "dateText", sc.COL_DISB_DATE])
+        if not date_text:
+            raise ValueError("Date is required.")
+        if not _is_valid_iso_date(date_text):
+            raise ValueError("Date must be in YYYY-MM-DD format.")
+
+        amount = self._pick_float(raw, ["amount", sc.COL_DISB_AMOUNT])
+        if amount is None or not math.isfinite(float(amount)) or float(amount) <= 0:
+            raise ValueError("Disbursement amount must be greater than zero.")
+        amount = round(float(amount), 2)
+
+        bill_pct = self._pick_float(raw, ["billPct", sc.COL_DISB_BILL_PCT])
+        if bill_pct is None:
+            bill_pct = 100.0
+        bill_pct = round(float(bill_pct), 2)
+        if bill_pct < 0 or bill_pct > 100:
+            raise ValueError("Bill Claim % must be between 0 and 100.")
+
+        tax_exempt = self._to_bool_int(
+            self._pick_value(raw, ["taxExempt", sc.COL_DISB_TAX_EXEMPT]),
+            default=0,
+        )
+
+        requested_matter_id = self._pick_text(
+            raw,
+            ["matterId", "selectedMatterId", sc.COL_DISB_MATTER_ID, sc.COL_MATTER_ID],
+        )
+        requested_matter_text = self._pick_text(
+            raw,
+            ["matterName", "matterText", sc.COL_MATTER_NAME, "Matter"],
+        )
+        if not requested_matter_id and not requested_matter_text:
+            raise ValueError("Matter is required for a disbursement entry.")
+
+        matter_rows = [self._canonicalize_matter_row(r) for r in self._read_table_rows(TBL_MATTERS)]
+        matter_row: Optional[Dict[str, Any]] = None
+        if requested_matter_id:
+            for candidate in matter_rows:
+                if _clean_text(candidate.get(sc.COL_MATTER_ID)).lower() == requested_matter_id.lower():
+                    matter_row = candidate
+                    break
+
+        if matter_row is None and requested_matter_text:
+            lookup = requested_matter_text.lower()
+            for candidate in matter_rows:
+                matter_id = _clean_text(candidate.get(sc.COL_MATTER_ID)).lower()
+                matter_number = _clean_text(candidate.get(sc.COL_MATTER_NUMBER)).lower()
+                matter_name = _clean_text(candidate.get(sc.COL_MATTER_NAME)).lower()
+                display_name = _clean_text(candidate.get(sc.COL_MATTER_DISPLAY_NAME)).lower()
+                combined = (matter_number + " - " + matter_name).strip(" -")
+                if lookup in (matter_id, matter_number, matter_name, display_name, combined):
+                    matter_row = candidate
+                    break
+
+        if matter_row is None:
+            raise ValueError("Select an existing matter for the disbursement entry.")
+
+        self._ensure_matter_is_open_for_new_entry(matter_row, "disbursement")
+
+        matter_id = _clean_text(matter_row.get(sc.COL_MATTER_ID))
+        client_id = _clean_text(matter_row.get(sc.COL_MATTER_CLIENT_ID))
+        if not matter_id or not client_id:
+            raise ValueError("The selected matter is missing its client link.")
+
+        parent_id = _clean_text(matter_row.get(sc.COL_MATTER_PARENT_ID))
+        client_name = _clean_text(matter_row.get(sc.COL_MATTER_PARENT_NAME))
+        sub_client = _clean_text(matter_row.get(sc.COL_MATTER_CLIENT_NAME))
+
+        description = self._pick_text(raw, ["description", "descriptionText", sc.COL_DISB_DESCRIPTION])
+        if not description:
+            description = "Disbursement"
+
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        disbursement_id = self._new_id("DISB")
+
+        entry_row = {
+            sc.COL_DISB_ID: disbursement_id,
+            sc.COL_DISB_DATE: date_text,
+            sc.COL_DISB_CLIENT_NAME: client_name,
+            sc.COL_DISB_SUB_CLIENT: sub_client,
+            sc.COL_DISB_CLIENT_ID: client_id,
+            sc.COL_DISB_PARENT_ID: parent_id,
+            sc.COL_DISB_MATTER_ID: matter_id,
+            sc.COL_DISB_DESCRIPTION: description,
+            sc.COL_DISB_AMOUNT: amount,
+            sc.COL_DISB_TAX_EXEMPT: tax_exempt,
+            sc.COL_DISB_BILL_PCT: bill_pct,
+            sc.COL_DISB_INVOICE_REF: "",
+            sc.COL_DISB_PAYMENT_STATUS: "Unbilled",
+            sc.COL_DISB_INVOICE_TOTAL: 0.0,
+            sc.COL_DISB_INVOICE_AMOUNT_PAID: 0.0,
+            sc.COL_DISB_INVOICE_BALANCE_DUE: 0.0,
+            sc.COL_DISB_REISSUE_INVOICE_NUM: "",
+            sc.COL_DISB_CREATED_AT: now_stamp,
+            sc.COL_DISB_AP_BILL_ID: "",
+            sc.COL_DISB_AP_ALLOCATION_ID: "",
+            sc.COL_DISB_SOURCE_TRANSACTION_ID: "",
+            sc.COL_DISB_ORIGINAL_CURRENCY: "CAD",
+            sc.COL_DISB_ORIGINAL_AMOUNT: amount,
+            sc.COL_DISB_FX_RATE: 1.0,
+            sc.COL_DISB_SUPPLIER_INVOICE_REF: "",
+            sc.COL_DISB_DOCUMENT_PATH: "",
+        }
+        self._upsert_row_by_key(TBL_DISBURSEMENTS, sc.COL_DISB_ID, disbursement_id, entry_row)
+        persisted = None
+        for row in self._read_table_rows(TBL_DISBURSEMENTS):
+            if _clean_text(row.get(sc.COL_DISB_ID)) == disbursement_id:
+                persisted = row
+                break
+        verified = self._compare_rows_loose(entry_row, persisted) if persisted else False
+        return {
+            "ok": bool(verified),
+            "verifiedExact": bool(verified),
+            "entryId": disbursement_id,
+            "savedRow": entry_row,
+            "message": "" if verified else "Disbursement entry write verification failed.",
+        }
+
+
     def _bulk_docket_move_context(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         raw = dict(payload or {})
         source_key = _clean_text(raw.get("sourceMatterId") or raw.get("sourceMatter"))
