@@ -98,3 +98,9 @@ After meaningful implementation work, update the durable planning files as neede
 - The app is configured to write a fresh runtime log to logs/cspm.log on every launch (using mode='w').
 - When a user reports a bug, crash, or unexpected behavior in the Python/QML layers, agents MUST invisibly read the contents of logs/cspm.log (using the iew_file or un_command tool) BEFORE proposing any solutions.
 - Reviewing the runtime log first is mandatory to avoid guessing the source of backend/serialization/QML errors.
+
+## Current Continuity Checkpoint (2026-09-22)
+
+- **Status**: Suite-wide continuity backup completed for transition to new computer.
+- **Requirement 1**: Follow docs/NEW_COMPUTER_BOOTSTRAP.md in leviathan-suite for restoration.
+- **Handoff**: Halted for computer migration.
