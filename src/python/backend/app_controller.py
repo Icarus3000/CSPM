@@ -998,72 +998,68 @@ class AppController(QObject):
 
         self._startup_briefing_preparation_started = True
         self._startup_briefing_frame_marked = False
+        self._startup_briefing_fallback_released = False
         self._startup_briefing_snapshot = {}
         self._startup_readiness_error = ""
         self.startupBriefingSnapshotChanged.emit()
         self._set_startup_readiness("settings-loading", 0.05)
 
-        if self._settings_load_complete:
-            self._begin_startup_briefing_backend_boot()
-            return
-        if self._settings_load_started:
-            self._wait_for_startup_briefing_settings()
-            return
-        self._start_startup_briefing_settings_load()
-
-    def _wait_for_startup_briefing_settings(self) -> None:
-        if self._settings_load_complete:
-            self._begin_startup_briefing_backend_boot()
-            return
-        if self._settings_load_started:
-            QTimer.singleShot(50, self._wait_for_startup_briefing_settings)
-            return
-        self._start_startup_briefing_settings_load()
-
-    def _start_startup_briefing_settings_load(self) -> None:
-        if self._settings_load_started:
-            self._wait_for_startup_briefing_settings()
-            return
-        self._settings_load_started = True
-        runtime_settings_path = self._paths.user_settings_path()
-        legacy_settings_path = self._legacy_settings_path
-        prefs_settings_path = self._prefs_settings_path
-
-        def _do_load() -> Dict[str, Any]:
-            return AppController._collect_settings_payload(
-                runtime_settings_path,
-                legacy_settings_path,
-                prefs_settings_path,
-            )
-
-        def _on_loaded(payload: Dict[str, Any]) -> None:
+        def _step_1_load_settings() -> None:
             try:
+                runtime_settings_path = self._paths.user_settings_path()
+                legacy_settings_path = self._legacy_settings_path
+                prefs_settings_path = self._prefs_settings_path
+                payload = AppController._collect_settings_payload(
+                    runtime_settings_path,
+                    legacy_settings_path,
+                    prefs_settings_path,
+                )
                 self._apply_settings_payload(payload, emit_theme_signal=True)
-                # The normal settings path also establishes the governed
-                # checkout.  Preserve that safety boundary before reading the
-                # source workbook for the hidden first workspace.
                 self._checkout_shared_data("startup practice briefing preload")
                 self._settings_load_complete = True
                 self._settings_load_started = False
                 self._set_startup_readiness("settings-ready", 0.16)
-                self._begin_startup_briefing_backend_boot()
+                QTimer.singleShot(0, _step_2_boot_backend)
             except Exception as exc:
                 self._settings_load_started = False
                 self._fail_startup_readiness(exc, context="startup.briefing.settings")
 
-        def _on_failed(err_tuple) -> None:
-            self._settings_load_started = False
-            _, exc, _ = err_tuple
-            self._fail_startup_readiness(exc, context="startup.briefing.settings")
+        def _step_2_boot_backend() -> None:
+            if self._startup_readiness_state == "failed":
+                return
+            if self._is_booted:
+                self._set_startup_readiness("workbook-ready", 0.48)
+                QTimer.singleShot(0, _step_3_load_briefing_snapshot)
+                return
+            boot_start = time.perf_counter()
+            self._set_startup_readiness("workbook-booting", 0.30)
+            try:
+                self._bootstrap_workbook_schema()
+                self._on_boot_complete(boot_start)
+                self._set_startup_readiness("workbook-ready", 0.48)
+                QTimer.singleShot(0, _step_3_load_briefing_snapshot)
+            except Exception as exc:
+                self._is_booted = False
+                self.backendBootChanged.emit()
+                self._fail_startup_readiness(exc, context="startup.briefing.workbook_boot")
 
-        self._start_background_worker(
-            _do_load,
-            name="startup_briefing_settings",
-            on_result=_on_loaded,
-            on_error=_on_failed,
-            priority=self._background_low_priority,
-        )
+        def _step_3_load_briefing_snapshot() -> None:
+            if self._startup_readiness_state == "failed":
+                return
+            filters = dict(self.getPracticeBriefingFilters() or {})
+            self._set_startup_readiness("briefing-snapshot-loading", 0.62)
+            try:
+                payload = self._excel_repo.practice_briefing(filters)
+                if not isinstance(payload, dict) or not bool(payload.get("ok")):
+                    payload = self._startup_briefing_fallback_payload()
+            except Exception as exc:
+                logging.getLogger("startup").warning(
+                    "[STARTUP-READINESS] practice briefing snapshot load caught error: %s; using fallback",
+                    exc,
+                )
+                payload = self._startup_briefing_fallback_payload()
 
+<<<<<<< Updated upstream
     def _begin_startup_briefing_backend_boot(self) -> None:
         if self._startup_readiness_state == "failed":
             return
@@ -1115,6 +1111,8 @@ class AppController(QObject):
                     context="startup.briefing.snapshot",
                 )
                 return
+=======
+>>>>>>> Stashed changes
             self._startup_briefing_snapshot = dict(payload or {})
             self.startupBriefingSnapshotChanged.emit()
             self._set_startup_readiness("briefing-snapshot-ready", 0.86)
@@ -1123,6 +1121,7 @@ class AppController(QObject):
                 len(self._startup_briefing_snapshot),
             )
 
+<<<<<<< Updated upstream
         def _on_failed(err_tuple) -> None:
             _, exc, _ = err_tuple
             self._fail_startup_readiness(exc, context="startup.briefing.snapshot")
@@ -1295,6 +1294,9 @@ class AppController(QObject):
         except Exception:
             pass
         self._finish_startup_briefing_process(state)
+=======
+        QTimer.singleShot(0, _step_1_load_settings)
+>>>>>>> Stashed changes
 
     @Slot()
     def markStartupBriefingFrameReady(self) -> None:

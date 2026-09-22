@@ -589,6 +589,7 @@ Item {
 
     function _requestHiddenBriefingAcknowledgement(reason) {
         if (!_phaseOnePreloadStarted || _phaseOneFailureObserved) return false
+<<<<<<< Updated upstream
         // The heavyweight shell is intentionally not created until the
         // isolated briefing worker has completed.  Requesting it before that
         // point only creates a rapid no-component retry loop that competes
@@ -597,6 +598,11 @@ Item {
         if (readiness !== "briefing-snapshot-ready" && readiness !== "ready-to-reveal") return false
         if (!mainWindowRef) {
             _scheduleHiddenWindowPreloadAfterSnapshot("phase1-wait-hidden-window:" + String(reason || "unknown"))
+=======
+        if (_phaseOneReadinessState() !== "briefing-snapshot-ready") return false
+        if (!mainWindowRef) {
+            _scheduleHiddenWindowPreloadAfterSnapshot(reason)
+>>>>>>> Stashed changes
             return false
         }
         try {
@@ -771,7 +777,6 @@ Item {
         if (mainWindowRef) return true
         if (!_mainComponent) {
             _lagLog("_tryCreateMainWindow skipped: no component reason=" + reason)
-            _scheduleCreateRetry("no-component:" + reason, allowPrewarm)
             return false
         }
         var prewarm = (allowPrewarm === true)
@@ -905,7 +910,7 @@ Item {
     }
 
     function _scheduleMainWindowPrewarm() {
-        if (_disableSplashPrewarm) return
+        if (_disableSplashPrewarm || _phaseOnePreloadStarted) return
         if (mainWindowRef || _launchGateOpen) return
         _prewarmRequested = true
         var splashGoneMs = _splashGoneMs()
@@ -966,12 +971,16 @@ Item {
         _componentLoadStartedAtMs = Date.now()
         _componentReadyAtMs = 0
         _lagLog("_preloadMainWindow createComponent begin")
+<<<<<<< Updated upstream
         // The shell is intentionally prepared while the native splash owns
         // every visible pixel. Prefer asynchronous compilation so the GUI
         // event loop can keep painting the native progress sequence and the
         // isolated Practice Briefing worker can start immediately instead of
         // waiting behind one long synchronous QML compile.
         _mainComponent = Qt.createComponent("DetachedShellWindow.qml", Component.Asynchronous)
+=======
+        _mainComponent = Qt.createComponent("DetachedShellWindow.qml", Component.PreferSynchronous)
+>>>>>>> Stashed changes
         if (!_mainComponent) {
             console.warn("[BOOT] Failed to allocate main component")
             return

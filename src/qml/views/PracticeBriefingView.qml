@@ -33,6 +33,7 @@ Rectangle {
     // window is hidden.  Keep the placeholder model strictly off the visible
     // first frame; normal user-requested refreshes still read live data.
     property bool startupSnapshotApplied: false
+    property bool startupSnapshotWasFallback: false
 
     signal openScreenRequested(string moduleId, string nodeId)
     signal navigateRequested(int tileIndex, string nodeId, var state)
@@ -105,7 +106,8 @@ Rectangle {
     }
 
     function applyPreparedStartupBriefing() {
-        if (!root.appRef || root.startupSnapshotApplied) return root.startupSnapshotApplied
+        if (!root.appRef || (root.startupSnapshotApplied && !root.startupSnapshotWasFallback))
+            return root.startupSnapshotApplied
         if (root.appRef.startupBriefingSnapshotReady !== true) return false
         var payload = root.appRef.startupBriefingSnapshot
         if (!payload || typeof payload !== "object" || payload.ok !== true) return false
@@ -113,6 +115,7 @@ Rectangle {
         root.briefingJsonStr = JSON.stringify(payload)
         root.statusText = ""
         root.startupSnapshotApplied = true
+        root.startupSnapshotWasFallback = payload.startupFallback === true
         return true
     }
 

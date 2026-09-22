@@ -1,5 +1,6 @@
 # Implementation History
 
+<<<<<<< Updated upstream
 ## 2026-09-10: Authoritative Custom-Fee Accounting
 
 - The invoice preview already treated an Invoice Builder custom-fee line as a replacement for ordinary docket fees, but `InvoiceDraftService` recalculation/finalization required the separate legacy `IsFlatFee` field to be true. Current Add Custom Fee creates a durable, draft-owned `FeeOrigin:InvoiceDraft` line without setting that legacy flag, so the financial write summed the original dockets and custom fee even though the rendered invoice showed only the custom amount.
@@ -667,6 +668,125 @@
   the packaged `DetachedShellWindow.qml` exactly matches source.  The prior
   EXE package remains recoverable at
   `to_delete\\dist__manual_replaced_release_20260818_125930`.
+=======
+> **Visual/FX continuation priority (2026-08-20):** The user-directed next
+> workstream is documented in `docs/VISUAL_FX_AUDIT_AND_HANDOFF_2026-08-20.md`.
+> Start with its Professional maximize/restore manual acceptance gate before
+> moving to another animation state machine.
+
+## 2026-08-20: Professional Frozen-Surface Maximize / Restore Handoff
+
+- **Observed issue:** Maximizing a compact Professional window could retain its outer rectangle briefly but show the already reflowed full-screen responsive layout scaled down inside it. Panels and text therefore appeared to jump even where the window edge itself grew continuously.
+- **Repair:** `DetachedShellWindow.qml` now captures `contentLayer` before assigning the monitor-sized host. Once the capture is texture-ready, it becomes the sole visible surface while its `x`, `y`, `width`, and `height` interpolate directly from the exact source rect to the exact destination rect. The live scene can reflow behind it but is held hidden until the final matching frame. The Professional path is a restrained 260 ms maximize / 230 ms restore `OutCubic` transform; capture is bounded to 180 ms, with the existing live transform retained only as a compatibility fallback if GPU readback is unavailable.
+- **Regression coverage:** Updated `tests/test_maximized_restore_and_close_choreography.py` to require the capture routing, frozen-surface progress animation, and target-rectangle handoff. Focused pytest validation passed: **4 passed**.
+- **Validation status:** The pytest check is sandbox-safe. The required `scripts/qmllint.ps1` wrapper emitted no diagnostics but did not return before this environment's 120-second command ceiling, so QML lint is **inconclusive**, not marked passed. Real Qt/WebEngine foreground validation must run outside the sandbox: launch with `./launch.ps1`, maximize from a smaller Professional window, restore, and repeat after moving the maximized window with `Win+Shift+Arrow`.
+
+## 2026-08-19: Maximize Position Jump Elimination & Cold-Start QML Compilation Safety
+
+- **Observed issues:**
+  - On Maximize, the smaller window jumped to a different position on the screen at its compact size for 1 frame before beginning the maximize growth animation.
+  - The app intermittently crashed on cold starts during CS splash at `[STARTUP-READINESS] state=briefing-snapshot-loading progress=0.620`.
+- **Root causes diagnosed:**
+  1. In `DetachedShellWindow.qml`, `Scale.origin.x` and `Scale.origin.y` on `animationCanvasLayer` were calling JavaScript functions (`settledScaleOriginX()` / `settledScaleOriginY()`). Because QML property dependency tracking cannot inspect JS function bodies, `origin.x` remained evaluated at default monitor center `(960, 520)`. Scaling full-screen $1920 \times 1040$ content by $0.742$ around $(960, 520)$ shifted top-left by $+248\text{px}$ horizontally and $+101\text{px}$ vertically. Adding the translation delta $(111, 123)$ landed top-left at $(359, 224)$, jumping the compact window $+248\text{px}$ sideways and $+101\text{px}$ down before growth began.
+  2. In `BootstrapRoot.qml`, `DetachedShellWindow.qml` was loaded via `Component.Asynchronous` on an internal C++ background worker thread while Python backend threads were reading the Practice Briefing snapshot, causing uncatchable native access violations on cold starts.
+- **Cause and repair:**
+  1. In `DetachedShellWindow.qml`, bound `Scale`, `Translate`, and `Rotation` directly to reactive QML properties (`origin.x: mainWin.maximizeAnimInProgress ? mainWin.contentLocalX : ...`, `origin.y: mainWin.maximizeAnimInProgress ? mainWin.contentLocalY : ...`). Top-left is now locked to $(0, 0)$ origin, so the scaled window begins from its exact screen coordinates $(111, 123)$ and grows directly into full screen with zero position jump.
+  2. In `BootstrapRoot.qml`, switched `_preloadMainWindow` to `Component.PreferSynchronous` so QML component compilation executes safely and deterministically on the main GUI thread while the native CS splash window is active.
+- **Validation:** Clean syntax verified with `qmllint.ps1`; unit test suite verified (`4 passed in 0.54s`).
+- **Manual check required:** Launch CSPM via `launch.bat`, click Maximize on the compact window; verify that the window grows directly from its resting position with zero jumping.
+
+
+- **Observed issues:**
+  - On every other launch (every 2 times), the CS logo flashed for a second and then the app abruptly disappeared / crashed mid-splash. The subsequent launch would then succeed.
+- **Root cause diagnosed from `logs/cspm.log` and `main.py`:**
+  1. `TrayRoot.qml` was loaded via `engine.load(tray_url)` before `Main.qml`.
+  2. Because `TrayRoot.qml` was loaded first, `engine.rootObjects()[0]` resolved to `TrayRoot` rather than `BootstrapRoot`.
+  3. `TrayRoot` has a native Windows window handle (`winId()`). Consequently, `_resolve_hook_target_window()` immediately matched `TrayRoot` and set `runtime_hook_state["installed"] = True` on frame 0.
+  4. Concurrently, `_bootstrap_startup_pending()` inspected properties on `root` (`TrayRoot`). Since `TrayRoot` did not have bootstrap lifecycle properties (`_startupState`, `mainWindowRef`, etc.), `_bootstrap_startup_pending()` returned `False`.
+  5. As soon as the background workbook boot finished (~1.5s into launch, setting `controller.backendBooted = True`), `on_last_window_closed()` saw `installed == True` and `backendBooted == True` and invoked `app.quit()`, instantly terminating the app mid-splash!
+  6. Furthermore, because `load_main_window` was deferred to `QTimer.singleShot(0, load_main_window)`, running `_find_bootstrap_root()` synchronously at Python import/init time returned `None`, leaving `cinematicRevealRequested` and `cinematicBloomPrestageComplete` unattached to `custom_splash`.
+- **Cause and repair:**
+  1. Introduced helper `_find_bootstrap_root()` and `_bind_bootstrap_root()` that dynamically wire `BootstrapRoot` signals (`mainWindowReady`, `cinematicRevealRequested`, `cinematicBloomPrestageComplete`) both on `engine.objectCreated` and inside `load_main_window()`.
+  2. Updated `_bootstrap_startup_pending()`, `_resolve_hook_target_window()`, and signal bindings to use `_find_bootstrap_root()`.
+  3. Hardened `on_last_window_closed()` with explicit guards to never trigger `app.quit()` while `_bootstrap_startup_pending()` is True or while `custom_splash.isVisible()`.
+- **Validation:** Clean syntax compilation verified with `py_compile`; unit test suite verified (11/11 tests passed).
+- **Manual check required:** Launch CSPM multiple consecutive times via `launch.bat` and confirm 100% reliable startup every single time with zero crashes.
+
+## 2026-08-19: Smooth Single-Growth Window Maximize and Restore (No Jumping)
+
+- **Observed issues:**
+  - When clicking Maximize from a static position, the window jumped across 2 to 3 different locations on the screen before settling into maximized state.
+  - Console animations used multi-phase `SequentialAnimation` keyframes that oscillated scale, added lateral translation steps (+14px/-12px/-9px/+7px), and applied rotation (-1.5° / +1.9°).
+  - Professional maximize used asynchronous `grabToImage` frame capture which delayed motion and mismatched coordinates with asynchronous OS window repositioning.
+- **Cause and repair:**
+  1. In `DetachedShellWindow.qml`, resolved origin and scale compounding: on Maximize, `contentLayer` layout sets target geometry `(targetX, targetY, targetW, targetH)` and seeds GPU transform `scaleX = sourceW / targetW`, `scaleY = sourceH / targetH`, `transX = sourceX - targetX`, `transY = sourceY - targetY` with origin `(contentLocalX, contentLocalY)`. Over 240ms (`Easing.OutCubic`), scale smoothly animates `sx -> 1.0` and translate `tx -> 0.0` with zero layout reflow or coordinate jumps.
+  2. On Restore, seeds GPU transform `scaleX = sourceW / nextW`, `scaleY = sourceH / nextH`, `transX = sourceX - nextX`, `transY = sourceY - nextY` with origin `(contentLocalX, contentLocalY)`. Over 220ms (`Easing.OutCubic`), scale smoothly animates `sx -> 1.0` and translate `tx -> 0.0` down to the exact restored window coordinates with zero flash or visual displacement.
+  3. Ensured `contentLocalX` and `contentLocalY` in `updateCanvasGeometry` preserve the window position relative to the full-monitor canvas during `maximizeAnimInProgress` so the origin stays locked to the top-left of the content layer in both modes.
+  4. Simplified all maximize and restore animations (`maximizeFxAnimation`, `maximizeRestoreFxAnimation`, `professionalMaximizeFxAnimation`, `professionalRestoreMaxFxAnimation`) to single `ParallelAnimation` blocks using smooth `Easing.OutCubic` with zero intermediate keyframe jumps or rotations.
+  5. Fixed post-restore canvas mask rounding: when restore finished, `maximizeAnimInProgress` was cleared after geometry updates, leaving `canvasW/H` pinned to monitor size (`1920x1040`) while `finalW/H` was compact (`1425x838`), which dynamically expanded `shellVisualCornerRadiusPx` by 248px into a stadium/capsule oval mask. Fixed by clearing `maximizeAnimInProgress` before calling `updateCanvasGeometry()` and correctly checking `mainWin.appStyle === "Professional"` in `chromeCornerRadiusPx()`.
+- **Validation:** Updated `tests/test_maximized_restore_and_close_choreography.py` assertions; QML and Python compile tests verified.
+- **Manual check required:** Launch CSPM via `launch.bat`, test maximizing from a smaller window and restoring from maximized; verify single continuous growth and contraction with zero jumping, flashing, or layout reflow jitter.
+
+## 2026-08-19: Elimination of Full-Screen App Window Flash, grabToImage Warning, and Burst-to-Bloom Delay
+
+- **Observed issues:**
+  1. `[WARNING] QML: ... DetachedShellWindow.qml:9410:5: QML QQuickItem*: grabToImage: item's window is not visible` appeared in console.
+  2. Noticeable delay/pause between the CS logo burst/implosion disappearing and the main app blooming out from the center pinpoint.
+  3. Brief flash of full-screen application window while splash was still visible.
+  4. `[WARNING] sync_service: SyncService reclaimed abandoned same-PC checkout ...` was logged to console on startup when an abandoned same-machine lease was reclaimed.
+- **Root causes diagnosed:**
+  1. In `DetachedShellWindow.qml`, `prestageStartupCinematicBloom()` was attempting to call `animationCanvasLayer.grabToImage()` on an invisible window (`visible: false`), which emitted the QML warning. Because the window was invisible, `grabToImage` never resolved its callback and stalled until the `startupCinematicSnapshotFallbackTimer` timeout, creating a dead pause between splash implosion and window bloom.
+  2. During Phase 2 native prestage (`startupCinematicBloomPrestageOnly = true`), `startProfessionalLaunchNow` was calling `mainWin.show()` and `_finishStartupCinematicPrestage` was setting `mainWin.opacity = 1.0` while `CustomSplash` was still on screen.
+  3. `sync_service.py` logged routine startup same-PC lease self-healing with `logger.warning(...)`.
+- **Cause and repair:**
+  1. Replaced asynchronous `grabToImage` frame capture in `prestageStartupCinematicBloom()` with instant, synchronous live bloom staging. `startupCinematicBloomStaged()` is now emitted in 0ms without calling `grabToImage` on invisible items, eliminating the QML warning and removing the 6-second fallback delay completely.
+  2. In `DetachedShellWindow.qml`, ensured `mainWin.opacity = 0.0` is maintained during prestage, suppressed `mainWin.show()` while `startupCinematicBloomPrestageOnly` is active, and only sets `mainWin.opacity = 1.0` and calls `mainWin.show()` inside `releaseStartupCinematicBloom()`. Reduced `startupCinematicBloomAnimation` duration to `320ms` with `Easing.OutCubic` for snappy, high-energy expansion.
+  3. In `src/python/main.py`, eliminated dead hold time (`_ACT_II_HOLD_MS = 0`), tightened vortex/implosion timing (`480ms` / `160ms`), and emitted `self.cinematicRevealReady.emit()` before calling `self.hide()` so the blooming app window is already rendering at the pinpoint on the exact frame the plasma singularity finishes, eliminating any black/empty frames.
+  4. In `src/python/backend/controllers/tray_controller.py`, downgraded `[TRAY-PY]` logging from `warning` to `debug` / `info`, and in `DetachedShellWindow.qml`, changed `[TRAY-ANIM]` / `[TRAY-GEOM]` diagnostics from `console.warn` to `console.log`, eliminating noisy tray warnings during window minimize, restore, and exit.
+  5. In `src/python/services/sync_service.py`, downgraded the abandoned lease reclamation log level from `logger.warning(...)` to `logger.info(...)`.
+- **Validation:** Sandbox-safe Python compile and QML structure verified. 7/7 unit tests passed.
+- **Manual check required:** Launch CSPM via `launch.bat` and confirm:
+  - No `grabToImage: item's window is not visible` warning in console.
+  - No `[TRAY-` warnings in console.
+  - Zero delay / seamless instant emergence of the main app from the center pinpoint right as the light burst implodes.
+  - Zero window flash before or during splash.
+
+## 2026-08-19: Shared-Data Checkout Lease Auto-Recovery and Machine Identity Sync
+
+- **Observed error:** `Shared-data checkout blocked during startup practice briefing preload: Shared data is checked out by another CSPM session. This session is read-only.` followed by `Shared-data publish was not completed: CSPM cannot save because this local copy is read-only.`
+- **Cause and repair:** 
+  1. `sync_service.py` was checking a local machine ID in `Y:\Projects\__CSPM\cloud_checkout_machine.json` that diverged from `AppData\Local\CSPM\cloud_checkout_machine.json`, preventing abandoned local lease auto-reclamation.
+  2. `_acquire_checkout_lease` used exclusive file creation mode (`open("x")`) which failed with `FileExistsError` when an empty or corrupt marker was on disk, without checking for or recovering abandoned local/empty leases.
+  3. Synced machine identities across environments and updated `_acquire_checkout_lease` to clean up empty/corrupt markers and perform automated recovery retry on `FileExistsError`.
+- **Validation:** Both dev mode and frozen mode now resolve the same machine identity and cleanly acquire exclusive read-write leases.
+
+## 2026-08-19: Native CS Splash Cinematic Reverse Dissolve & Shimmer Entrance (Source, Pending Foreground Check)
+
+- **Observed startup appearance:** On launch, the native CS splash window became
+  visible abruptly without an entrance transition, and a subsequent launch crashed
+  during QML loading.
+- **Root causes diagnosed:**
+  1. `_entrance_clock` was starting during pre-import initialization at `t=0.0s`.
+     Because synchronous Python module imports (`AppController`, `TrayController`, etc.)
+     take ~0.85 seconds before the Qt event loop starts, the 680ms entrance timer
+     had already expired before the first event loop turn began, jumping straight to 100%.
+  2. The blocking pump loop with `self.repaint()` + `app.processEvents()` inside
+     `show_first_frame()` was triggering re-entrant `WM_PAINT` messages in Qt Quick /
+     PySide6, and `_draw_entrance` was allocating temporary `QPixmap` and `QPainter`
+     instances inside `paintEvent()`, which caused painter recursion and crash.
+- **Cause and repair:** 
+  1. Decoupled the entrance clock from pre-import time. `CustomSplash` now primes
+     transparently (`pending-entrance`), and fires `custom_splash.start_entrance()` on
+     the first turn of the Qt Event Loop via `QTimer.singleShot(0, custom_splash.start_entrance)`.
+  2. Removed all blocking event pump loops from `show_first_frame()`, allowing Qt's
+     `progress_timer` (ticking every 16ms / 60 FPS) to drive `CustomSplash.update()` smoothly.
+  3. Re-architected `_draw_entrance` to paint directly to the existing `QPainter` with
+     opacity and clipped `QLinearGradient` shimmer sweep, eliminating all temporary pixmap allocations.
+  4. Moved `QPointF` import to `PySide6.QtCore`.
+- **Validation:** Python compile verified.
+- **Manual check required:** Launch CSPM via `launch.bat` and observe the 680ms
+  cinematic reverse-dissolve shimmer sequence smoothly materializing the CS logo at 60 FPS.
+>>>>>>> Stashed changes
 
 ## 2026-08-18: Native CS Splash 0% Startup Stall and Source Crash (Source and Local EXE, Pending Foreground Check)
 
@@ -2254,6 +2374,7 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
   - `scripts/qmllint.ps1` completed with 0 errors.
   - Assets synchronized and verified at `dist/CSPM/_internal/src/qml/`.
 
+<<<<<<< Updated upstream
 ## Startup Animation & Maximize/Tray Comet Fixes (2026-08-18)
 
 - Fixed startupCinematicBloomPrestageOnly 'black box' visual bug and missing first-pixel handshake signal by correcting the animationCanvasLayer visibility constraints and signal emission location.
@@ -2271,3 +2392,12 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 - Sandbox-safe validation completed: Python compilation passed; the focused billing/invoice/payment/report suite passed (**57 tests**); direct QML component compilation reported both changed components **Ready**; governed QML lint exited 0 with existing warning-level diagnostics only; `git diff --check` passed.
 - Release packaging: the production builder correctly refused the still-unapproved `CANDIDATE_AWAITING_CORY_APPROVAL` workbook template. The supported candidate-validation build completed and promoted a full runnable package at `dist/CSPM/CSPM.exe` (SHA-256 `E441F56426D8A25FA6CC4CA35D9DD0B439E05A469D4E6B1BD332ABA9F68668A1`). Both changed QML resources match source byte-for-byte, Recovery and data directories are present, and the EXE has no `Zone.Identifier`. The prior release is recoverable at `to_delete/dist__replaced_release_20260910_092951/`.
 - Real Qt/WebEngine startup and the end-to-end financial posting interaction remain to be validated outside the sandbox. The Professional maximize/restore manual acceptance gate remains open and unchanged; this feature adds no window-state animation.
+=======
+## 2026-08-18: Startup Briefing Launch Escape Hatch
+
+- **Diagnosis:** `logs/cspm.log` showed that backend boot completed but the workbook-backed Practice Briefing remained in `briefing-snapshot-loading`, leaving `BootstrapRoot` without a main component and the native splash visible indefinitely.
+- **Repair:** `AppController` now publishes a shape-complete, explicitly marked `startupFallback` briefing after 8 seconds (and on a briefing-read failure), allowing the hidden shell to complete its normal handoff. A delayed successful worker result replaces that fallback without regressing the ready-to-reveal state.
+- **QML handoff:** `DailyOperationsHome.qml` and `PracticeBriefingView.qml` retain the temporary snapshot only until a non-fallback payload is signalled, then consume the live briefing automatically.
+- **Validation:** sandbox-safe `python -m py_compile src/python/main.py src/python/backend/app_controller.py` passed; `pytest tests/test_startup_briefing_readiness.py -q` passed (7 passed). `scripts/qmllint.ps1` was invoked through its required wrapper but did not return in this environment, so QML lint and real Qt/WebEngine startup remain unvalidated here.
+- **Release:** a fresh PyInstaller candidate was built at `to_delete\dist_staging_33264__unpromoted_build_20260818_223558`. The normal build call exceeded the automation host limit before reporting its promotion result, so the repository's guarded promotion utility installed that already-validated candidate. That command was similarly interrupted before its audit write, but the installed `dist` was independently compared with the candidate: **4,272 files**, **674,100,312 bytes**, manifest SHA-256 `6F7656FF01BF015EC89ED88D0DE109E446A9FCC60865D6EE87D11A8134796128`, exact match. The installed `dist\CSPM\CSPM.exe` is SHA-256 `AAAC85186BFF8372180B61380D117FE26498C90F1B37DE0EA0F0799C6A0FEDC7`; the prior release is recoverable at `to_delete\dist__manual_replaced_release_20260818_223924`.
+>>>>>>> Stashed changes

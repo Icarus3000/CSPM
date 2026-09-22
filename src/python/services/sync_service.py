@@ -206,6 +206,7 @@ class SyncService:
         """Return the durable ID for this CSPM installation, not a username."""
         if self._machine_id:
             return self._machine_id
+<<<<<<< Updated upstream
         identity_file = self._machine_identity_file
         try:
             if identity_file.is_file():
@@ -216,18 +217,48 @@ class SyncService:
                     return candidate
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("SyncService: could not read machine identity: %s", exc)
+=======
+        candidate_dirs = [
+            self.paths.user_settings_path().parent,
+            self.paths.runtime_dir(),
+        ]
+        for cdir in candidate_dirs:
+            identity_file = cdir / self.MACHINE_ID_FILE_NAME
+            try:
+                if identity_file.is_file():
+                    raw = json.loads(identity_file.read_text(encoding="utf-8"))
+                    candidate = str(raw.get("machineId", "")).strip() if isinstance(raw, dict) else ""
+                    if candidate:
+                        self._machine_id = candidate
+                        for sync_dir in candidate_dirs:
+                            sync_file = sync_dir / self.MACHINE_ID_FILE_NAME
+                            if not sync_file.is_file():
+                                try:
+                                    sync_dir.mkdir(parents=True, exist_ok=True)
+                                    sync_file.write_text(json.dumps({"machineId": candidate}, indent=2), encoding="utf-8")
+                                except Exception:
+                                    pass
+                        return candidate
+            except (OSError, ValueError, TypeError) as exc:
+                logger.warning("SyncService: could not read machine identity: %s", exc)
+>>>>>>> Stashed changes
 
         self._machine_id = uuid4().hex
-        identity_file.parent.mkdir(parents=True, exist_ok=True)
-        temporary = identity_file.with_name(f".{identity_file.name}.{uuid4().hex}.tmp")
-        try:
-            temporary.write_text(
-                json.dumps({"machineId": self._machine_id}, indent=2),
-                encoding="utf-8",
-            )
-            os.replace(temporary, identity_file)
-        finally:
-            temporary.unlink(missing_ok=True)
+        for cdir in candidate_dirs:
+            identity_file = cdir / self.MACHINE_ID_FILE_NAME
+            try:
+                identity_file.parent.mkdir(parents=True, exist_ok=True)
+                temporary = identity_file.with_name(f".{identity_file.name}.{uuid4().hex}.tmp")
+                temporary.write_text(
+                    json.dumps({"machineId": self._machine_id}, indent=2),
+                    encoding="utf-8",
+                )
+                os.replace(temporary, identity_file)
+            except Exception:
+                pass
+            finally:
+                if 'temporary' in locals():
+                    temporary.unlink(missing_ok=True)
         return self._machine_id
 
     def _lease_path(self) -> Optional[Path]:
@@ -406,7 +437,7 @@ class SyncService:
                 )
             audit_path = self._record_abandoned_lease(confirmed)
             lease_path.unlink()
-            logger.warning(
+            logger.info(
                 "SyncService reclaimed abandoned same-PC checkout %s from dead process %s; audit=%s",
                 checkout_id,
                 confirmed.get("processId"),
@@ -449,6 +480,11 @@ class SyncService:
                     lease=existing,
                     recovery=recovery,
                 )
+        elif lease_path.is_file():
+            try:
+                lease_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         payload = self._lease_payload()
         try:
@@ -468,6 +504,44 @@ class SyncService:
             )
         except FileExistsError:
             existing = self._read_lease()
+            if self._lease_matches_self(existing):
+                self._lease_owned = True
+                return self._result(True, "checked-out", "Exclusive shared write checkout acquired.", lease=existing)
+            if existing:
+                recovery = self._recover_abandoned_local_lease(existing)
+                if recovery.get("ok"):
+                    try:
+                        with lease_path.open("x", encoding="utf-8") as handle:
+                            json.dump(payload, handle, indent=2, sort_keys=True)
+                            handle.flush()
+                            os.fsync(handle.fileno())
+                        self._lease_owned = True
+                        return self._result(
+                            True,
+                            "checked-out",
+                            "Exclusive shared write checkout acquired.",
+                            lease=payload,
+                            recovery=recovery,
+                        )
+                    except Exception:
+                        pass
+            elif lease_path.is_file():
+                try:
+                    lease_path.unlink(missing_ok=True)
+                    with lease_path.open("x", encoding="utf-8") as handle:
+                        json.dump(payload, handle, indent=2, sort_keys=True)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    self._lease_owned = True
+                    return self._result(
+                        True,
+                        "checked-out",
+                        "Exclusive shared write checkout acquired.",
+                        lease=payload,
+                        recovery=recovery,
+                    )
+                except Exception:
+                    pass
             return self._result(
                 False,
                 "checkout-held",

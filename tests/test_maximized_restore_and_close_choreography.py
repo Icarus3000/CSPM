@@ -53,8 +53,12 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     )
     assert "var commandScreen = screenOverride ? screenOverride : monitorOwningWindowControl();" in maximize
     assert "maximizedOwnerScreen = commandScreen;" in maximize
+<<<<<<< Updated upstream
     assert 'beginProfessionalWindowTransition("maximize"' in maximize
     assert "requestProfessionalNativeWindowState" not in maximize
+=======
+    assert 'beginProfessionalMaximizeSnapshotCapture("maximize", {' in maximize
+>>>>>>> Stashed changes
 
     toggle = _function_body(
         shell,
@@ -100,8 +104,12 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     assert "var restoreDestination = !cursorAnchored ? restoreGlyphDestinationScreen() : null;" in restore
     assert "var restoreScreen = restoreDestination ? restoreDestination.screen : null;" in restore
     assert "adoptTargetScreen(restoreScreen, true);" in restore
+<<<<<<< Updated upstream
     assert 'beginProfessionalWindowTransition("restore"' in restore
     assert "requestProfessionalNativeWindowState" not in restore
+=======
+    assert 'beginProfessionalMaximizeSnapshotCapture("restore", {' in restore
+>>>>>>> Stashed changes
 
 
 def test_professional_maximize_restore_uses_frozen_overlay_and_one_geometry_commit() -> None:
@@ -116,6 +124,7 @@ def test_professional_maximize_restore_uses_frozen_overlay_and_one_geometry_comm
         PROJECT_ROOT / "src" / "python" / "platform" / "win_shift_arrow.py"
     ).read_text(encoding="utf-8")
 
+<<<<<<< Updated upstream
     begin = _function_body(
         shell,
         "    function beginProfessionalWindowTransition(kind, sourceRect, targetRect,",
@@ -224,6 +233,26 @@ def test_cross_monitor_tray_minimize_launches_only_one_outbound_comet() -> None:
     )
     assert "!mainWin._crossMonitorTrayFlightLaunched" in finished
     assert finished.count("launchCrossMonitorTrayMinimizeFlightOnce()") == 1
+=======
+    # Professional maximize and restore capture the source surface before the
+    # native host changes size. The frozen source rectangle, rather than the
+    # reflowed live layout, is what expands or contracts on screen.
+    assert "id: professionalMaximizeFxAnimation" in shell
+    assert "id: professionalRestoreMaxFxAnimation" in shell
+    assert "function beginProfessionalMaximizeSnapshotCapture(kind, context)" in shell
+    assert "requested = contentLayer.grabToImage" in shell
+    assert "id: professionalMaximizeSnapshotImage" in shell
+    assert "professionalMaximizeSnapshotCoverReady" in shell
+    assert "property: \"professionalMaximizeSnapshotProgress\"" in shell
+    assert "professionalMaximizeSnapshotTargetX" in shell
+    assert "professionalMaximizeSnapshotTargetW" in shell
+    assert "property: \"maximizeFxScaleX\"" in shell
+    assert "property: \"maximizeFxScaleY\"" in shell
+    assert "property: \"maximizeFxTransX\"" in shell
+    assert "property: \"maximizeFxTransY\"" in shell
+    assert "easing.type: Easing.OutCubic" in shell
+    assert "running: mainWin.maximizeAnimInProgress && mainWin.maximizeFxSequenceRunning()" in shell
+>>>>>>> Stashed changes
 
 
 def test_modern_combo_box_height_is_independent_of_its_implicit_height() -> None:

@@ -19,6 +19,7 @@ Item {
     // hidden startup window can be revealed; otherwise its WIP card briefly
     // paints the zero-valued fallback model.
     property bool startupSnapshotApplied: false
+    property bool startupSnapshotWasFallback: false
 
     readonly property bool tight: width < 760 || height < 540
     readonly property int queueRowLimit: height < 560 ? 2 : (height < 760 ? 3 : 4)
@@ -221,12 +222,14 @@ Item {
     }
 
     function applyPreparedStartupBriefing() {
-        if (!root.appRef || root.startupSnapshotApplied) return root.startupSnapshotApplied
+        if (!root.appRef || (root.startupSnapshotApplied && !root.startupSnapshotWasFallback))
+            return root.startupSnapshotApplied
         if (root.appRef.startupBriefingSnapshotReady !== true) return false
         var payload = root.appRef.startupBriefingSnapshot
         if (!payload || typeof payload !== "object" || payload.ok !== true) return false
         root.briefing = payload
         root.startupSnapshotApplied = true
+        root.startupSnapshotWasFallback = payload.startupFallback === true
         return true
     }
 

@@ -1,4 +1,40 @@
-# CSPM Task And Validation Ledger
+# CSPM Master Task Tracker
+
+## Current Sprints / Focused Tasks
+- [ ] **Visual FX and animation polish — user-directed next priority (2026-08-20)**
+  - Before visual work, read `docs/VISUAL_FX_AUDIT_AND_HANDOFF_2026-08-20.md`.
+  - Start with its P0 Professional maximize/restore manual acceptance gate; do
+    not advance to another FX state machine until the user confirms that the
+    current path is clean in the real application.
+  - Preserve the report's validation split: source/static checks are not a
+    substitute for a real Qt/WebEngine visual check.
+- [x] **Native CS Splash Cinematic Fade-In / Dissolve (2026-08-19)** <!-- id: 1 -->
+  - [x] Fixed entrance animation trigger: decoupled from synchronous import time and connected to Qt Event Loop turn 0 via `QTimer.singleShot(0, custom_splash.start_entrance)`. <!-- id: 2 -->
+  - [x] Fixed crash/re-entrancy in `CustomSplash`: removed `repaint()` within `processEvents()`, removed nested `QPixmap` allocations, hardened `_draw_progress_bar` with painter state isolation (`save`/`restore`), safe coordinate clamping, and `try`/`finally` on `painter.end()`. <!-- id: 3 -->
+  - [x] Fixed full-screen main window flash during splash: ensured `DetachedShellWindow` maintains `opacity = 0.0` and remains invisible throughout splash Act I & Act II prestage, revealing cleanly only at `releaseStartupCinematicBloom()`. <!-- id: 4 -->
+  - [x] Eliminated `grabToImage: item's window is not visible` warning and removed 6-second prestage timeout delay by switching to instant, synchronous live bloom staging. <!-- id: 5 -->
+  - [x] Seamless burst-to-bloom handoff: eliminated dead hold time (`_ACT_II_HOLD_MS = 0`), tightened vortex/implosion (480ms/160ms), accelerated bloom duration (320ms), and emitted `cinematicRevealReady` before hiding splash to eliminate any black or empty frame. <!-- id: 6 -->
+  - [x] Cleaned up tray diagnostics: downgraded `[TRAY-PY]` logging from `warning` to `debug`/`info` and switched `[TRAY-ANIM]` / `[TRAY-GEOM]` in `DetachedShellWindow.qml` from `console.warn` to `console.log`. <!-- id: 7 -->
+  - [x] Fixed cold-start intermittent crash: switched `BootstrapRoot.qml` from `Component.Asynchronous` to `Component.PreferSynchronous` to eliminate PySide6/GIL race conditions during practice briefing snapshot load.
+- [x] Repaired Professional maximize/restore visual handoff (2026-08-20): capture the compact/full-screen source surface before changing the native host, animate that single frozen image to the exact destination rectangle (260 ms maximize / 230 ms restore, `OutCubic`), then reveal the already-reflowed live UI only when it is pixel-aligned. The capture deadline is bounded at 180 ms; a missing/failed capture uses the pre-existing direct transform compatibility fallback.
+  - [x] Removed accidental duplicate `Scale {` header in `DetachedShellWindow.qml` transform block.
+- [ ] User manual verification of splash cinematic reverse-dissolve shimmer, zero window flash, smooth single-growth Professional maximize/restore without jumping or internal-layout reflow, and crash-free launches in the live app via `launch.ps1`. <!-- id: 12 -->
+
+## Native CS Splash Cinematic Fade-In / Dissolve (2026-08-19)
+
+- [x] Diagnose splash logo appearance: `show_first_frame()` was calling
+  `self.setWindowOpacity(1.0)` immediately after painting its zero-opacity
+  backing buffer, causing the splash logo to appear abruptly on screen instead
+  of smoothly fading in.
+- [x] Restore smooth cinematic dissolve: trigger `self.anim_in.start()` (460 ms
+  InOutCubic window opacity animation) in `show_first_frame()` so the initial CS
+  splash logo dissolves/fades into place cleanly while pre-event-loop and event-loop
+  startup work proceeds in parallel.
+- [x] Update regression coverage in `tests/test_startup_briefing_readiness.py` to
+  assert `self.anim_in.start()` in `show_first_frame()`.
+- [ ] Manual foreground check: launch CSPM via `./launch.ps1` or `dist\CSPM\CSPM.exe`
+  and confirm the CS splash logo smoothly dissolves/fades into place rather than
+  snapping in instantly.
 
 ## Authoritative Custom-Fee Accounting (2026-09-10)
 
@@ -1422,6 +1458,7 @@ dependencies merely because an individual report or screen already exists.
   - Synchronized assets to `dist/CSPM/_internal/src/qml/`.
 - [x] Manual foreground verification: launch `dist/CSPM/CSPM.exe` and test right-click minimize to tray and tray restore.
 
+<<<<<<< Updated upstream
 ## Client-Filtered Open Invoices & Quick Payment Dialog (2026-09-10)
 
 - [x] Add an exact **Client / Billing client / All open invoices** selector to Payment & Adjustment Entry while preserving the existing invoice, matter, and balance search.
@@ -1432,3 +1469,12 @@ dependencies merely because an individual report or screen already exists.
 - [x] Add regression coverage for exact party filtering, combined search/filter behavior, dialog fields, routed posting, and saved filter state.
 - [x] Build and promote the non-production validation package at `dist/CSPM/CSPM.exe` (SHA-256 `E441F56426D8A25FA6CC4CA35D9DD0B439E05A469D4E6B1BD332ABA9F68668A1`); production packaging remains correctly blocked until the candidate workbook template receives Cory's approval.
 - [ ] Manually verify in the real app: filter once by Client and once by Billing client, open **Add Payment**, confirm the exact full balance is prefilled, post a test partial payment, and confirm the dialog closes while the same filter remains and the row balance decreases. Then settle the test invoice and confirm the row disappears.
+=======
+## Startup Briefing Launch Escape Hatch (2026-08-18)
+
+- [x] Prevent the Professional hidden-first-workspace gate from holding the native splash forever when its workbook-backed Practice Briefing read is slow or fails.
+- [x] Publish a shape-complete, explicitly marked fallback briefing after 8 seconds so the shell can open; replace it automatically if the original worker returns live data.
+- [x] Ensure both Daily Operations and Practice Briefing views accept the delayed live payload after rendering the fallback.
+- [x] Build and promote the repaired `dist\CSPM\CSPM.exe`; the promoted 4,272-file package was independently matched to its built candidate by whole-tree SHA-256 manifest.
+- [ ] Manually launch with `./launch.ps1` and confirm that the main CSPM window is visible within the fallback limit, then that its live Daily Operations data replaces any temporary zero-valued briefing.
+>>>>>>> Stashed changes

@@ -72,7 +72,11 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget
 from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QLinearGradient, QRadialGradient, QPen
+<<<<<<< Updated upstream
 from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QTimer, QVariantAnimation, Property, QEasingCurve
+=======
+from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QPointF, QTimer, QVariantAnimation, Property, QEasingCurve, QPropertyAnimation
+>>>>>>> Stashed changes
 
 class CustomSplash(QWidget):
     """Native, readiness-driven splash and the first two opening acts.
@@ -85,6 +89,7 @@ class CustomSplash(QWidget):
     cinematicBloomPrestageRequested = QtCore.Signal()
     cinematicRevealReady = QtCore.Signal()
 
+<<<<<<< Updated upstream
     _ACT_I_VORTEX_MS = 550
     _ACT_II_BURST_MS = 150
     _ACT_II_HOLD_MS = 80
@@ -102,6 +107,15 @@ class CustomSplash(QWidget):
     # how quickly the painted indicator catches up to a milestone that already
     # arrived, so the loader never looks stalled after background work finishes.
     _PROGRESS_MAX_RATE_PER_SEC = 1.20
+=======
+    _ACT_ENTRANCE_MS = 680
+    _ACT_I_VORTEX_MS = 480
+    _ACT_II_BURST_MS = 140
+    _ACT_II_HOLD_MS = 0
+    _ACT_II_IMPLODE_MS = 160
+    _BAR_COMPLETION_MS = 160
+    _PROGRESS_MAX_RATE_PER_SEC = 0.25
+>>>>>>> Stashed changes
 
     def __init__(self, pixmap_path):
         # This splash deliberately owns the visual foreground until the plasma
@@ -143,6 +157,7 @@ class CustomSplash(QWidget):
         self.setAttribute(Qt.WA_NoSystemBackground)
         self.setAutoFillBackground(False)
         self.setFocusPolicy(Qt.StrongFocus)
+<<<<<<< Updated upstream
         # Windows can coalesce top-level window opacity/position updates into
         # a single composed frame.  Keep the native surface fully opaque and
         # animate the pixels we paint instead, which guarantees a real dissolve
@@ -156,6 +171,15 @@ class CustomSplash(QWidget):
         self._intro_animation.setEasingCurve(QEasingCurve.InOutCubic)
         self._intro_animation.valueChanged.connect(self._set_logo_intro_progress)
         self._intro_animation.finished.connect(self._on_logo_intro_finished)
+=======
+        self.setWindowOpacity(1.0)
+
+        self.anim_in = QPropertyAnimation(self, b"windowOpacity", self)
+        self.anim_in.setDuration(460)
+        self.anim_in.setStartValue(0.0)
+        self.anim_in.setEndValue(1.0)
+        self.anim_in.setEasingCurve(QEasingCurve.InOutCubic)
+>>>>>>> Stashed changes
 
         self._progress = 0.0
         self._progress_target = 0.0
@@ -163,9 +187,10 @@ class CustomSplash(QWidget):
         self._startup_error_message = ""
         self._progress_clock = QElapsedTimer()
         self._cinematic_clock = QElapsedTimer()
+        self._entrance_clock = QElapsedTimer()
         self._last_progress_tick_ms = 0
         self._bar_completion_start = 0.0
-        self._cinematic_mode = "loading"  # loading | prestage | completing-bar | vortex | plasma
+        self._cinematic_mode = "pending-entrance"  # pending-entrance | entrance | loading | prestage | completing-bar | vortex | plasma
         self._logo_rotation = 0.0
         self._logo_scale = 1.0
         self._plasma_scale = 0.0
@@ -248,6 +273,7 @@ class CustomSplash(QWidget):
         self._logo_scale = 0.0
         self._plasma_scale = 0.0
         self.progress_timer.stop()
+<<<<<<< Updated upstream
         # ``hide`` updates Qt synchronously but Windows/DWM presents it on a
         # later composition pass.  Do not release QML in this same turn: doing
         # so lets its full-size native host race the last splash frame.
@@ -270,11 +296,28 @@ class CustomSplash(QWidget):
         logging.getLogger("startup").info(
             "Native CS splash compositor handoff complete; releasing QML bloom"
         )
+=======
+>>>>>>> Stashed changes
         self.cinematicRevealReady.emit()
+        self.hide()
 
     def _update_progress(self) -> None:
         if not self._progress_started or self._startup_error_message:
             return
+
+        if self._cinematic_mode == "entrance":
+            if not self._entrance_clock.isValid():
+                return
+            elapsed = self._entrance_clock.elapsed()
+            if elapsed < self._ACT_ENTRANCE_MS:
+                self.update()
+                return
+            else:
+                self._cinematic_mode = "loading"
+                self._start_progress_after_visible_paint()
+                self.update()
+                return
+
         if not self._progress_clock.isValid():
             return
 
@@ -326,6 +369,7 @@ class CustomSplash(QWidget):
         if not self.progress_timer.isActive():
             self.progress_timer.start(16)
 
+<<<<<<< Updated upstream
     def _set_logo_intro_progress(self, value) -> None:
         """Advance the actual painted splash pixels, not window opacity."""
         self._logo_intro_progress = self._clamp01(value)
@@ -340,6 +384,84 @@ class CustomSplash(QWidget):
         self._logo_intro_progress = 1.0
         logging.getLogger("startup").info("Native CS splash content intro completed")
         self.update()
+=======
+    def _draw_entrance(self, painter: QPainter, width: int, height: int) -> None:
+        if self._logo_pixmap.isNull():
+            return
+        elapsed = max(0, self._entrance_clock.elapsed()) if self._entrance_clock.isValid() else 0
+        t = self._clamp01(elapsed / float(self._ACT_ENTRANCE_MS))
+
+        fade = self._ease_out_cubic(t)
+        scale = 0.88 + 0.12 * self._ease_out_cubic(t)
+        cx, cy = width / 2.0, height / 2.0
+        logo_w = self._logo_pixmap.width()
+        logo_h = self._logo_pixmap.height()
+
+        # 1. Coalescing Genesis Aura (radial glow behind logo)
+        aura_peak = 1.0 - abs(t - 0.45) / 0.55 if t <= 0.90 else (1.0 - t) * 1.0
+        aura_peak = max(0.0, min(1.0, aura_peak))
+        if aura_peak > 0.01:
+            aura_radius = (width * 0.42) * (0.6 + 0.4 * t)
+            aura = QRadialGradient(cx, cy, aura_radius)
+            aura.setColorAt(0.0, QColor(255, 255, 255, int(150 * aura_peak)))
+            aura.setColorAt(0.35, QColor(56, 189, 248, int(90 * aura_peak)))
+            aura.setColorAt(0.70, QColor(99, 102, 241, int(45 * aura_peak)))
+            aura.setColorAt(1.0, QColor(99, 102, 241, 0))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(aura)
+            painter.drawEllipse(QRectF(cx - aura_radius, cy - aura_radius, aura_radius * 2.0, aura_radius * 2.0))
+
+        # 2. Inward Coalescing Shimmering Ember Dust (Reverse Dissolve Particles)
+        if t < 0.92:
+            particle_fade = (1.0 - (t / 0.92)) * fade
+            for i in range(20):
+                angle = (i / 20.0) * 6.28318530718 + (t * 2.2)
+                dist = (190.0 * (1.0 - t * 0.75)) * (0.8 + 0.3 * ((i % 5) / 4.0))
+                px = cx + math.cos(angle) * dist
+                py = cy + math.sin(angle) * dist
+                dot_size = max(1.0, 2.5 * (1.0 - t * 0.4))
+                p_alpha = int(220 * particle_fade * (0.6 + 0.4 * (i % 3)))
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(255 if i % 2 == 0 else 180, 240 if i % 3 == 0 else 225, 255, p_alpha))
+                painter.drawEllipse(QRectF(px - dot_size, py - dot_size, dot_size * 2.0, dot_size * 2.0))
+
+        # 3. Base Logo with Reverse Dissolve Fade and Scale
+        painter.save()
+        painter.translate(cx, cy)
+        painter.scale(scale, scale)
+        painter.setOpacity(fade)
+        painter.drawPixmap(int(-logo_w / 2), int(-logo_h / 2), self._logo_pixmap)
+        painter.restore()
+
+        # 4. Cinematic Caustic Shimmer Light Sweep across the logo
+        sweep_progress = (t - 0.15) / 0.70  # Sweeps across t=0.15 to 0.85
+        if 0.0 <= sweep_progress <= 1.2:
+            clip_path = QPainterPath()
+            lw_scaled = logo_w * scale
+            lh_scaled = logo_h * scale
+            clip_path.addRoundedRect(QRectF(cx - lw_scaled / 2.0, cy - lh_scaled / 2.0, lw_scaled, lh_scaled), 40.0 * scale, 40.0 * scale)
+            painter.save()
+            painter.setClipPath(clip_path)
+            painter.setOpacity(fade)
+
+            sweep_cx = cx - (lw_scaled * 0.6) + (lw_scaled * 1.2 * sweep_progress)
+            sweep_cy = cy - (lh_scaled * 0.6) + (lh_scaled * 1.2 * sweep_progress)
+            band_w = lw_scaled * 0.35
+
+            p1 = QPointF(sweep_cx - band_w, sweep_cy - band_w)
+            p2 = QPointF(sweep_cx + band_w, sweep_cy + band_w)
+            shimmer_grad = QLinearGradient(p1, p2)
+            shimmer_grad.setColorAt(0.0, QColor(255, 255, 255, 0))
+            shimmer_grad.setColorAt(0.35, QColor(255, 255, 255, int(60 * fade)))
+            shimmer_grad.setColorAt(0.50, QColor(255, 255, 255, int(220 * fade)))
+            shimmer_grad.setColorAt(0.65, QColor(180, 230, 255, int(80 * fade)))
+            shimmer_grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(shimmer_grad)
+            painter.drawRect(QRectF(cx - lw_scaled / 2.0, cy - lh_scaled / 2.0, lw_scaled, lh_scaled))
+            painter.restore()
+>>>>>>> Stashed changes
 
     def _draw_logo(self, painter: QPainter, width: int, height: int) -> None:
         if self._logo_scale <= 0.001 or self._logo_pixmap.isNull():
@@ -399,6 +521,7 @@ class CustomSplash(QWidget):
             painter.drawEllipse(QRectF(sx - dot, sy - dot, dot * 2.0, dot * 2.0))
 
     def _draw_progress_bar(self, painter: QPainter, width: int, height: int) -> None:
+<<<<<<< Updated upstream
         # Let the mark establish itself before the loading chrome appears.
         bar_opacity = self._clamp01((self._logo_intro_progress - 0.18) / 0.82)
         if bar_opacity <= 0.001:
@@ -462,6 +585,83 @@ class CustomSplash(QWidget):
         # The backing surface now owns a transparent CS frame.  Starting the
         # content animation on the next event turn guarantees the first visible
         # pixel is authored splash art, never an unpainted native rectangle.
+=======
+        painter.save()
+        try:
+            if self._cinematic_mode == "entrance":
+                elapsed = max(0, self._entrance_clock.elapsed()) if self._entrance_clock.isValid() else 0
+                t = self._clamp01(elapsed / float(self._ACT_ENTRANCE_MS))
+                if t < 0.65:
+                    return
+                painter.setOpacity((t - 0.65) / 0.35)
+
+            bar_width = min(width - 28.0, max(width * 0.84, 180.0))
+            bar_height = 10.0
+            x = (width - bar_width) / 2.0
+            y = height - 46.0
+            track = QRectF(x, y, bar_width, bar_height)
+            radius = bar_height / 2.0
+            painter.setPen(Qt.NoPen)
+            for inset, color in ((8.0, QColor(34, 211, 238, 18)), (5.0, QColor(59, 130, 246, 28)), (2.0, QColor(99, 102, 241, 48))):
+                glow_rect = track.adjusted(-inset, -inset / 2.0, inset, inset / 2.0)
+                painter.setBrush(color)
+                painter.drawRoundedRect(glow_rect, glow_rect.height() / 2.0, glow_rect.height() / 2.0)
+            track_gradient = QLinearGradient(track.left(), track.top(), track.left(), track.bottom())
+            track_gradient.setColorAt(0.0, QColor(18, 46, 74, 232))
+            track_gradient.setColorAt(0.48, QColor(7, 22, 44, 238))
+            track_gradient.setColorAt(1.0, QColor(3, 12, 29, 242))
+            painter.setPen(QPen(QColor(174, 225, 255, 148), 1.0))
+            painter.setBrush(track_gradient)
+            painter.drawRoundedRect(track, radius, radius)
+            inner = track.adjusted(1.25, 1.25, -1.25, -1.25)
+            fill_width = inner.width() * self._clamp01(self._progress)
+            if fill_width > 0.5:
+                fill = QRectF(inner.left(), inner.top(), fill_width, inner.height())
+                fill_path = QPainterPath()
+                r_x = min(inner.height() / 2.0, fill.width() / 2.0)
+                r_y = inner.height() / 2.0
+                fill_path.addRoundedRect(fill, r_x, r_y)
+                plasma_gradient = QLinearGradient(inner.left(), inner.top(), inner.right(), inner.top())
+                plasma_gradient.setColorAt(0.00, QColor(34, 211, 238))
+                plasma_gradient.setColorAt(0.30, QColor(56, 189, 248))
+                plasma_gradient.setColorAt(0.62, QColor(99, 102, 241))
+                plasma_gradient.setColorAt(1.00, QColor(192, 132, 252))
+                painter.setPen(Qt.NoPen)
+                painter.fillPath(fill_path, plasma_gradient)
+                if fill_width > 2.0:
+                    painter.setPen(QPen(QColor(240, 253, 255, 175), 0.85))
+                    painter.drawLine(inner.left() + 1.0, inner.top() + 1.0, inner.left() + fill_width - 1.0, inner.top() + 1.0)
+        finally:
+            painter.restore()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.setCompositionMode(QPainter.CompositionMode_Source)
+            painter.fillRect(self.rect(), Qt.transparent)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
+            if self._cinematic_mode == "pending-entrance":
+                pass
+            elif self._cinematic_mode == "entrance":
+                self._draw_entrance(painter, self.width(), self.height())
+            else:
+                self._draw_logo(painter, self.width(), self.height())
+                self._draw_plasma(painter, self.width(), self.height())
+
+            if self._show_progress_bar and self._cinematic_mode != "pending-entrance":
+                self._draw_progress_bar(painter, self.width(), self.height())
+            if self._startup_error_message:
+                message_rect = QRectF(24.0, max(24.0, self.height() - 138.0), max(1.0, self.width() - 48.0), 68.0)
+                painter.setPen(QColor(255, 235, 235, 238))
+                painter.drawText(message_rect, Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
+                                 "CSPM could not prepare the Practice Briefing.\n" + self._startup_error_message)
+        finally:
+            painter.end()
+
+>>>>>>> Stashed changes
         if self._fade_in_waiting_for_first_paint:
             self._fade_in_waiting_for_first_paint = False
             QTimer.singleShot(0, self._begin_fade_in_after_first_paint)
@@ -491,6 +691,7 @@ class CustomSplash(QWidget):
         self._fade_in_waiting_for_first_paint = True
 
     def show_first_frame(self) -> None:
+<<<<<<< Updated upstream
         """Paint, then play the native CS introduction before startup work.
 
         The normal Qt event loop starts only after Python has finished loading
@@ -499,14 +700,22 @@ class CustomSplash(QWidget):
         which Windows can display as a black square. Prime that surface at
         zero opacity, then run the short native animation in its own Qt event
         loop so synchronous initialization cannot skip it to the final frame.
+=======
+        """Present a primed splash surface before synchronous startup work begins.
+
+        Primes the native surface transparently so Windows never shows an unpainted
+        rectangle, then launches the 680ms reverse-dissolve shimmer sequence when
+        the event loop starts.
+>>>>>>> Stashed changes
         """
         if self._cinematic_complete:
             return
         self._progress = 0.0
         self._progress_target = 0.0
         self._progress_clock.invalidate()
-        self._progress_started = True
+        self._progress_started = False
         self._fade_in_waiting_for_first_paint = False
+<<<<<<< Updated upstream
         self._intro_animation.stop()
         self._logo_intro_progress = 0.0
         self.setWindowOpacity(1.0)
@@ -532,12 +741,25 @@ class CustomSplash(QWidget):
         QTimer.singleShot(self._INTRO_DURATION_MS + 120, intro_loop.quit)
         intro_loop.exec()
 
+=======
+        self._cinematic_mode = "pending-entrance"
+        self.setWindowOpacity(1.0)
+        self.show()
+>>>>>>> Stashed changes
         self.raise_()
         self.activateWindow()
         self.setFocus(Qt.ActiveWindowFocusReason)
-        self.repaint()
-        if app is not None:
-            app.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+    def start_entrance(self) -> None:
+        """Launch the smooth 680ms 60 FPS reverse-dissolve shimmer entrance."""
+        if self._cinematic_complete:
+            return
+        self._cinematic_mode = "entrance"
+        self._progress_started = True
+        self._entrance_clock.start()
+        if not self.progress_timer.isActive():
+            self.progress_timer.start(16)
+        self.update()
 
     def start_fade_out(self):
         """Compatibility fallback for legacy callers; never overlap the main UI."""
@@ -572,9 +794,9 @@ class CustomSplash(QWidget):
         self._request_skip()
         event.accept()
 
+
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
-
 from backend.native_svg import NativeSvgItem
 
 APP_MAINTAINER = "Tim"
@@ -618,7 +840,6 @@ def _cspm_find_ap_expense_gateway(root_object):
             attributes = vars(current)
         except Exception:
             attributes = {}
-        for name, child in attributes.items():
             low = str(name).lower()
             if any(token in low for token in ('repo','excel','workbook','backend','billing','finance','transaction')) and child is not None and id(child) not in seen:
                 queue.append((child, path + '.' + str(name), depth + 1))
@@ -644,6 +865,8 @@ def _print_np_status_and_exit():
     print(f"current_step_id: {cur}")
     print(f"last_completed_step_id: {last}")
     sys.exit(0)
+
+
 SPLASH_LOGO_ANIMATED_PATH = PROJECT_ROOT / "assets" / "splash_logo.svg"
 SPLASH_AUDIO_PATHS = [
     PROJECT_ROOT / "assets" / "splash_sound.wav",
@@ -758,6 +981,8 @@ _QT_SUPPRESSED_SUBSTRINGS = (
     "Retrying to obtain clipboard.",
     # Qt internal warning during multi-monitor/high-DPI expose; not an app failure.
     "cached device pixel ratio value was stale on window expose",
+    # Qt Quick internal timer cleanup before render driver attaches.
+    "QUnifiedTimer::stopAnimationDriver",
 )
 _QT_SUPPRESSED_WARNING_SNIPPETS = (
     # Frequent Qt warning when requestActivate() is called on non-focusable tool windows.
@@ -784,6 +1009,9 @@ def _qt_message_handler(mode: QtMsgType, context: Any, message: str) -> None:
         and _QT_SUPPRESSED_WARNING_SNIPPETS[0] in text
         and _QT_SUPPRESSED_WARNING_SNIPPETS[1] in text
     ):
+        return
+
+    if any(fragment in text for fragment in _QT_SUPPRESSED_SUBSTRINGS):
         return
 
     # Route QML tray diagnostics to the file logger
@@ -1854,7 +2082,7 @@ def main() -> None:
         startup_main_object_prewarm_enabled=startup_main_object_prewarm_enabled,
         startup_main_object_prewarm_lead_ms=startup_main_object_prewarm_lead_ms,
         startup_fast_launch_focus_enabled=startup_fast_launch_focus_enabled,
-        startup_queue_wait_for_first_input=startup_queue_wait_for_first_input,
+                startup_queue_wait_for_first_input=startup_queue_wait_for_first_input,
         startup_queue_input_fallback_ms=startup_queue_input_fallback_ms,
         startup_background_idle_ms=startup_background_idle_ms,
     )
@@ -1941,13 +2169,28 @@ def main() -> None:
             return fallback
         return fallback
 
-    def _bootstrap_startup_pending() -> bool:
+    def _find_bootstrap_root():
+        nonlocal native_splash_bootstrap_root
+        if native_splash_bootstrap_root is not None:
+            return native_splash_bootstrap_root
         try:
-            root_obj = root
-        except NameError:
-            return True
+            for obj in engine.rootObjects():
+                if obj is not None and getattr(obj, "mainWindowReady", None) is not None:
+                    native_splash_bootstrap_root = obj
+                    return obj
+            if len(engine.rootObjects()) > 0:
+                for obj in engine.rootObjects():
+                    if obj is not None and _qml_property_safe(obj, "_startupState") is not None:
+                        native_splash_bootstrap_root = obj
+                        return obj
+        except Exception:
+            pass
+        return None
+
+    def _bootstrap_startup_pending() -> bool:
+        root_obj = _find_bootstrap_root()
         if root_obj is None:
-            return False
+            return True
         if _qml_property_safe(root_obj, "mainWindowRef") is not None:
             return True
         if _qml_property_safe(root_obj, "splashRef") is not None:
@@ -1963,6 +2206,10 @@ def main() -> None:
             "init",
             "splash-starting",
             "splash-running",
+            "phase1-preloading",
+            "hidden-window-created",
+            "ready-to-reveal",
+            "cinematic-running",
             "gate-open",
             "main-created",
             "core-launch-dispatched",
@@ -1984,9 +2231,6 @@ def main() -> None:
         # Do NOT delete the engine here and do NOT call os._exit().
         try:
             if controller is not None and hasattr(controller, "shutdown"):
-                # A checked-out CSPM session publishes a verified cloud release
-                # (or reports a safe conflict) before its normal exit releases
-                # the exclusive write lease.
                 controller.shutdown()
         except Exception as exc:
             _report_nonfatal_startup_failure("aboutToQuit.publishSharedData", exc)
@@ -2035,9 +2279,6 @@ def main() -> None:
         # If the app is living in the system tray, don't quit.
         tray_icon = getattr(app, '_tray_icon', None)
         tray_exit = getattr(app, '_tray_exit_requested', False)
-        # A main-shell close can legitimately pass through this Qt signal
-        # while CSPM is still tray-resident.  Record it for diagnostics without
-        # presenting a normal lifecycle path as a startup warning.
         logging.getLogger("startup").info(
             "lastWindowClosed observed: tray_icon=%s tray_exit=%s isVisible=%s",
             tray_icon is not None, tray_exit,
@@ -2048,16 +2289,17 @@ def main() -> None:
                 "lastWindowClosed ignored: app is tray-resident"
             )
             return
-        # Ignore transient startup window churn until the real runtime window hooks
-        # are installed; otherwise releasing temporary bootstrap windows can tear
-        # down splash/main windows before launch.
+        if _bootstrap_startup_pending() or (custom_splash is not None and custom_splash.isVisible()):
+            logging.getLogger("startup").info(
+                "Ignoring lastWindowClosed while bootstrap/splash is active"
+            )
+            return
         if not runtime_hook_state.get("installed", False):
             logging.getLogger("startup").info(
                 "Ignoring lastWindowClosed before runtime hooks install"
             )
 
             def _recheck_startup_window_closure() -> None:
-                # If app became tray-resident, stop the watchdog.
                 tray_icon = getattr(app, '_tray_icon', None)
                 tray_exit = getattr(app, '_tray_exit_requested', False)
                 if tray_icon is not None and not tray_exit:
@@ -2101,8 +2343,6 @@ def main() -> None:
     app.aboutToQuit.connect(on_about_to_quit)
     app.lastWindowClosed.connect(on_last_window_closed)
     if startup_defer_settings_load:
-        # Keep the safety fallback well after the splash + settle path so it does
-        # not compete with first paint or the opening motion.
         startup_deferred_settings_fallback_ms = max(12000, splash_total_ms + 2500)
         QTimer.singleShot(
             startup_deferred_settings_fallback_ms,
@@ -2135,6 +2375,40 @@ def main() -> None:
     
     main_window_load_requested = False
 
+    def _bind_bootstrap_root(root):
+        nonlocal native_splash_signal_bound, native_splash_bootstrap_root
+        if root is None:
+            return
+        if getattr(root, "mainWindowReady", None) is None and _qml_property_safe(root, "_startupState") is None:
+            return
+        native_splash_bootstrap_root = root
+        if not native_splash_signal_bound:
+            try:
+                root.setProperty("nativeStartupCinematicActive", custom_splash is not None)
+                main_window_ready = getattr(root, "mainWindowReady", None)
+                if main_window_ready is not None:
+                    main_window_ready.connect(_bind_native_splash_to_main_window)
+                    main_window_ready.connect(lambda _window=None: QTimer.singleShot(0, _install_runtime_native_features))
+                if custom_splash is not None:
+                    cinematic_reveal = getattr(root, "cinematicRevealRequested", None)
+                    if cinematic_reveal is not None:
+                        cinematic_reveal.connect(custom_splash.begin_cinematic_reveal)
+                    cinematic_prestage_complete = getattr(root, "cinematicBloomPrestageComplete", None)
+                    if cinematic_prestage_complete is not None:
+                        cinematic_prestage_complete.connect(custom_splash.confirm_cinematic_bloom_prestaged)
+                    if bool(root.property("_phaseTwoCinematicRequested")):
+                        QTimer.singleShot(0, custom_splash.begin_cinematic_reveal)
+                native_splash_signal_bound = True
+                logging.getLogger("startup").info("BootstrapRoot signals successfully bound to native splash and runtime hooks.")
+            except Exception as exc:
+                _report_nonfatal_startup_failure("nativeSplash.bindBootstrap", exc)
+
+    def _on_engine_object_created(obj, url):
+        if obj is not None:
+            _bind_bootstrap_root(obj)
+
+    engine.objectCreated.connect(_on_engine_object_created)
+
     def load_main_window():
         nonlocal main_window_load_requested
         if main_window_load_requested:
@@ -2148,6 +2422,9 @@ def main() -> None:
             logging.getLogger("startup").error("Main QML component failed to load: %s", qml_url.toString())
             _report_terminal_failure("Startup failed: main QML component did not load. See the CSPM diagnostic log.")
             sys.exit(1)
+        bootstrap_root = _find_bootstrap_root()
+        if bootstrap_root is not None:
+            _bind_bootstrap_root(bootstrap_root)
 
     controller.requestMainWindowLoad.connect(load_main_window)
 
@@ -2205,9 +2482,16 @@ def main() -> None:
             # completing its setup; that is capable of crashing the source
             # process with an access violation.  This introduces no timed
             # delay: the native CS frame has already been painted and the
+<<<<<<< Updated upstream
             # queued callback runs as soon as app.exec() begins.  The
             # objectCreated handler binds BootstrapRoot directly; tray QML is
             # deliberately deferred until after the cinematic handoff.
+=======
+            # queued callback runs as soon as app.exec() begins.  The existing
+            # objectCreated handler binds BootstrapRoot even though TrayRoot
+            # has been created first.
+            QTimer.singleShot(0, custom_splash.start_entrance)
+>>>>>>> Stashed changes
             QTimer.singleShot(0, load_main_window)
         else:
             load_main_window()
@@ -2280,6 +2564,7 @@ def main() -> None:
     except Exception as exc:
         logging.getLogger("startup").exception("Failed to initialize native system tray")
 
+<<<<<<< Updated upstream
     if custom_splash is not None:
         custom_splash.cinematicRevealReady.connect(
             lambda: QTimer.singleShot(1200, _ensure_tray_qml_loaded)
@@ -2292,38 +2577,23 @@ def main() -> None:
         None,
     )
 
+=======
+    root = _find_bootstrap_root()
+>>>>>>> Stashed changes
     if root is not None:
-        if not native_splash_signal_bound:
-            try:
-                root.setProperty("nativeStartupCinematicActive", custom_splash is not None)
-                main_window_ready = getattr(root, "mainWindowReady", None)
-                if main_window_ready is not None:
-                    main_window_ready.connect(_bind_native_splash_to_main_window)
-                    native_splash_bootstrap_root = root
-                    if custom_splash is not None:
-                        cinematic_reveal = getattr(root, "cinematicRevealRequested", None)
-                        if cinematic_reveal is None:
-                            raise RuntimeError("BootstrapRoot.cinematicRevealRequested is unavailable.")
-                        cinematic_reveal.connect(custom_splash.begin_cinematic_reveal)
-                        cinematic_prestage_complete = getattr(root, "cinematicBloomPrestageComplete", None)
-                        if cinematic_prestage_complete is None:
-                            raise RuntimeError("BootstrapRoot.cinematicBloomPrestageComplete is unavailable.")
-                        cinematic_prestage_complete.connect(custom_splash.confirm_cinematic_bloom_prestaged)
-                        if bool(root.property("_phaseTwoCinematicRequested")):
-                            QTimer.singleShot(0, custom_splash.begin_cinematic_reveal)
-                    native_splash_signal_bound = True
-            except Exception as exc:
-                _report_nonfatal_startup_failure("nativeSplash.bindBootstrapFallback", exc)
-        from PySide6.QtGui import QKeyEvent
-        class GlobalSplashSkipFilter(QObject):
-            def eventFilter(self, watched: QObject, event: Any) -> bool:
-                return False
+        _bind_bootstrap_root(root)
 
-        _splash_skip_filter = GlobalSplashSkipFilter(app)
-        app.installEventFilter(_splash_skip_filter)
-        app._splash_skip_filter = _splash_skip_filter # type: ignore[attr-defined]
+    from PySide6.QtGui import QKeyEvent
+    class GlobalSplashSkipFilter(QObject):
+        def eventFilter(self, watched: QObject, event: Any) -> bool:
+            return False
+
+    _splash_skip_filter = GlobalSplashSkipFilter(app)
+    app.installEventFilter(_splash_skip_filter)
+    app._splash_skip_filter = _splash_skip_filter # type: ignore[attr-defined]
 
     def _resolve_hook_target_window():
+<<<<<<< Updated upstream
         nonlocal root
         if root is None:
             root = next(
@@ -2358,20 +2628,34 @@ def main() -> None:
                 except Exception:
                     pass
         for candidate in _top_level_windows_safe():
+=======
+        bootstrap = _find_bootstrap_root()
+        candidate = None
+        if bootstrap is not None:
+>>>>>>> Stashed changes
             try:
-                obj_name = str(candidate.objectName() or "")
+                candidate = bootstrap.property("mainWindowRef")
             except Exception:
-                obj_name = ""
-            if obj_name not in ("CSPMMainWindow", "CSPMFloatingDocketWindow"):
-                continue
+                candidate = None
+        if candidate is not None:
             try:
                 win_id_fn = getattr(candidate, "winId", None)
-                if callable(win_id_fn):
-                    win_id = win_id_fn()
-                    if win_id is not None:
-                        return candidate
+                if callable(win_id_fn) and win_id_fn() is not None:
+                    return candidate
             except Exception:
-                continue
+                pass
+        for top_win in _top_level_windows_safe():
+            try:
+                obj_name = str(top_win.objectName() or "")
+            except Exception:
+                obj_name = ""
+            if obj_name in ("CSPMMainWindow", "CSPMFloatingDocketWindow"):
+                try:
+                    win_id_fn = getattr(top_win, "winId", None)
+                    if callable(win_id_fn) and win_id_fn() is not None:
+                        return top_win
+                except Exception:
+                    continue
         return None
 
     def _install_runtime_native_features() -> None:
@@ -2385,7 +2669,6 @@ def main() -> None:
             return
         runtime_hook_state["installed"] = True
         runtime_hook_state["startup_close_rechecks"] = 0
-        # app.setQuitOnLastWindowClosed(True) # Disabled to keep tray app alive
         try:
             icon_sync = getattr(app, "_cspm_app_icon_sync", None)
             if icon_sync is not None and hasattr(icon_sync, "apply_all"):
@@ -2424,17 +2707,16 @@ def main() -> None:
         except Exception as exc:
             _vlog(f"[WINHOOK] Failed to install click-through filter: {exc}")
 
-
     # Install native hooks/filters after the event loop starts, not on the pre-handoff path.
     try:
-        ready_signal = getattr(root, "mainWindowReady", None)
+        bootstrap_target = _find_bootstrap_root()
+        ready_signal = getattr(bootstrap_target, "mainWindowReady", None) if bootstrap_target is not None else None
         if ready_signal is not None:
             ready_signal.connect(lambda _window=None: QTimer.singleShot(0, _install_runtime_native_features))
     except Exception as exc:
         _report_nonfatal_startup_failure("root.mainWindowReady.connectRuntimeHooks", exc)
     QTimer.singleShot(0, _install_runtime_native_features)
 
-    
     # Keep splash overlays visually above other windows during early startup
     # without repeatedly forcing focus (which can spam requestActivate warnings
     # on non-focusable tool windows).
@@ -2465,9 +2747,8 @@ def main() -> None:
 
     # The startup splash interval has ended; do not reclaim the foreground.
     QTimer.singleShot(3500, _finish_startup_visibility_period)
-    pass # Removed hardcoded splash timer
 
-    code = startup_logger.info(f'[{time.perf_counter()-t0:.3f}s] Handing off to Qt Engine Event Loop')
+    startup_logger.info(f'[{time.perf_counter()-t0:.3f}s] Handing off to Qt Engine Event Loop')
     code = app.exec()
     sys.exit(code)
 

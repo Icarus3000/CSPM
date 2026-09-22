@@ -395,14 +395,14 @@ class TrayController(QObject):
             app = QApplication.instance()
             for win in app.topLevelWindows():
                 if win.objectName() == "CSPMMainWindow":
-                    logging.warning("[TRAY-PY] open_cspm: found CSPMMainWindow isVisible=%s", win.isVisible())
+                    logging.debug("[TRAY-PY] open_cspm: found CSPMMainWindow isVisible=%s", win.isVisible())
                     if not win.isVisible():
                         # Window is hidden (tray-resident) — trigger restore animation
-                        logging.warning("[TRAY-PY] open_cspm: emitting requestRestoreFromTray")
+                        logging.debug("[TRAY-PY] open_cspm: emitting requestRestoreFromTray")
                         self.requestRestoreFromTray.emit()
                     else:
                         # Window is visible — just bring to front
-                        logging.warning("[TRAY-PY] open_cspm: window visible, bringing to front")
+                        logging.debug("[TRAY-PY] open_cspm: window visible, bringing to front")
                         win.showNormal()
                         try:
                             if hasattr(self._app_controller, "forceWindowForeground"):
@@ -413,7 +413,7 @@ class TrayController(QObject):
                             win.requestActivate()
                     return
             # If the main window wasn't found (e.g. started in tray-only mode), we must tell the engine to load it.
-            logging.warning("[TRAY-PY] open_cspm: Main window not found")
+            logging.info("[TRAY-PY] open_cspm: Main window not found")
             if hasattr(self._app_controller, 'requestMainWindowLoad'):
                 self._app_controller.requestMainWindowLoad.emit()
         except Exception as e:
@@ -466,7 +466,7 @@ class TrayController(QObject):
             app = QApplication.instance()
             if app:
                 app._tray_exit_requested = True
-            logging.warning("[TRAY-PY] exit_cspm: emitting requestExitFromTray")
+            logging.debug("[TRAY-PY] exit_cspm: emitting requestExitFromTray")
             self.requestExitFromTray.emit()
             # Failsafe: if the QML animation doesn't complete within 8s, force quit
             QTimer.singleShot(8000, self.force_exit)

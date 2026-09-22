@@ -90,7 +90,7 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertTrue(controller.startupReadyToReveal)
         self.assertEqual(controller.startupReadinessProgress, 1.0)
 
-    def test_invalid_snapshot_holds_startup_in_failed_state(self):
+    def test_invalid_snapshot_releases_a_safe_fallback(self):
         controller = self._controller()
         controller._excel_repo.practice_briefing.return_value = {"ok": False}
         failures = []
@@ -98,9 +98,15 @@ class TestStartupBriefingReadiness(unittest.TestCase):
 
         controller.prepareStartupPracticeBriefing()
 
-        self.assertEqual(controller.startupReadinessState, "failed")
+        self.assertEqual(controller.startupReadinessState, "briefing-snapshot-ready")
+        self.assertTrue(controller.startupBriefingSnapshotReady)
+        self.assertTrue(controller.startupBriefingSnapshot["startupFallback"])
         self.assertFalse(controller.startupReadyToReveal)
-        self.assertTrue(failures)
+        self.assertFalse(failures)
+
+        controller.markStartupBriefingFrameReady()
+
+        self.assertTrue(controller.startupReadyToReveal)
 
     def test_professional_landing_home_consumes_the_prepared_snapshot(self):
         """The visible Daily Operations home must not reintroduce zero cards."""
@@ -113,6 +119,8 @@ class TestStartupBriefingReadiness(unittest.TestCase):
 
         self.assertIn("function applyPreparedStartupBriefing()", home_qml)
         self.assertIn("function onStartupBriefingSnapshotChanged()", home_qml)
+        self.assertIn("property bool startupSnapshotWasFallback: false", home_qml)
+        self.assertIn("payload.startupFallback === true", home_qml)
         self.assertIn("if (!root.startupReadinessBlocksDirectLoad()) initialBriefingTimer.start()", home_qml)
         self.assertIn("id: dailyOperationsHome", main_content_qml)
         self.assertIn("var homePrepared = dailyOperationsHome.applyPreparedStartupBriefing() === true", main_content_qml)
@@ -190,6 +198,22 @@ class TestStartupBriefingReadiness(unittest.TestCase):
 
         self.assertIn("controller.startupReadinessChanged.connect(_sync_native_splash_readiness_progress)", main_py)
         self.assertIn("cinematicBloomPrestageRequested = QtCore.Signal()", main_py)
+
+    def test_phase_two_keeps_the_native_acts_ahead_of_the_qml_bloom(self):
+        """The 100% handoff must never let the main window overlap the splash."""
+        main_py = (ROOT_DIR / "src" / "python" / "main.py").read_text(encoding="utf-8")
+        bootstrap_qml = (ROOT_DIR / "src" / "qml" / "BootstrapRoot.qml").read_text(
+            encoding="utf-8"
+        )
+        shell_qml = (ROOT_DIR / "src" / "qml" / "DetachedShellWindow.qml").read_text(
+            encoding="utf-8"
+        )
+        main_content_qml = (ROOT_DIR / "src" / "qml" / "views" / "MainContent.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("controller.startupReadinessChanged.connect(_sync_native_splash_readiness_progress)", main_py)
+        self.assertIn("cinematicBloomPrestageRequested = QtCore.Signal()", main_py)
         self.assertIn("def confirm_cinematic_bloom_prestaged", main_py)
         self.assertIn("Qt.WindowStaysOnTopHint", main_py)
         self.assertIn("class CustomSplash(QWidget)", main_py)
@@ -198,14 +222,19 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("self.setAutoFillBackground(False)", main_py)
         self.assertIn("_begin_fade_in_after_first_paint", main_py)
         self.assertIn("radius = 76.0 * self._plasma_scale", main_py)
-        self.assertIn("_ACT_I_VORTEX_MS = 550", main_py)
-        self.assertIn("_ACT_II_HOLD_MS = 80", main_py)
-        self.assertIn("_ACT_II_IMPLODE_MS = 220", main_py)
+        self.assertIn("_ACT_I_VORTEX_MS = 480", main_py)
+        self.assertIn("_ACT_II_HOLD_MS = 0", main_py)
+        self.assertIn("_ACT_II_IMPLODE_MS = 160", main_py)
         self.assertIn("self.hide()", main_py)
         self.assertIn("self.cinematicRevealReady.emit", main_py)
         self.assertIn("def show_first_frame(self) -> None:", main_py)
         self.assertIn("Native CS splash first frame primed", main_py)
         self.assertIn("custom_splash.show_first_frame()", main_py)
+<<<<<<< Updated upstream
+=======
+        self.assertIn("self.anim_in.start()", main_py)
+        self.assertIn("leaving the splash at 0% forever", main_py)
+>>>>>>> Stashed changes
         self.assertNotIn("custom_splash.anim_in.finished.connect", main_py)
         launch_block_start = main_py.index("if not is_tray_only:")
         tray_load_start = main_py.index("tray_url = QUrl.fromLocalFile", launch_block_start)
@@ -276,10 +305,8 @@ class TestStartupBriefingReadiness(unittest.TestCase):
         self.assertIn("function releaseStartupCinematicBloom()", shell_qml)
         self.assertIn("property bool startupCinematicBloomReleaseStarted", shell_qml)
         self.assertIn("property bool startupCinematicSnapshotActive", shell_qml)
-        self.assertIn("property int startupCinematicSnapshotFallbackMs: 6000", shell_qml)
-        self.assertIn("id: startupCinematicSnapshotFallbackTimer", shell_qml)
-        self.assertIn("Act III snapshot capture timed out; using live bloom fallback", shell_qml)
         self.assertIn("function prestageStartupCinematicBloom()", shell_qml)
+        self.assertIn("Act III prestage ready (live bloom staged)", shell_qml)
         self.assertIn("id: startupCinematicBloomSnapshot", shell_qml)
         self.assertIn(
             "mainWin.opacity = mainWin.startupCinematicBloomPrestageOnly ? 0.0 : 1.0;",
@@ -294,8 +321,7 @@ class TestStartupBriefingReadiness(unittest.TestCase):
             shell_qml,
         )
         self.assertIn("!mainWin.startupCinematicBloomPrestageOnly", shell_qml)
-        self.assertIn("hidden final window geometry prepared during native splash", shell_qml)
-        self.assertIn("duration: 400", shell_qml)
+        self.assertIn("duration: 320", shell_qml)
         self.assertIn("function cancelAsyncStartupWork(reason)", main_content_qml)
         self.assertIn("active: !root.shutdownRequested", main_content_qml)
 
