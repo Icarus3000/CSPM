@@ -51,6 +51,22 @@ def test_initial_draft_selection_uses_one_background_workspace_payload():
     assert "draftLineItems = billingBackend.getDraftLineItems(draftNum)" not in qml
 
 
+def test_invoice_builder_focus_mode_is_responsive_and_keeps_settings_with_preview():
+    view = Path("src/qml/views/InvoiceBuilderView.qml").read_text(encoding="utf-8")
+    workspace = Path("src/qml/views/InvoiceBuilderWorkspace.qml").read_text(encoding="utf-8")
+    controller = Path("src/python/backend/controllers/billing_controller.py").read_text(encoding="utf-8")
+
+    assert "focusMode: true" in view
+    assert "property bool focusMode: false" in workspace
+    assert "visible: !workspace.focusMode" in workspace
+    assert 'text: workspace.focusMode ? "Exit Zen" : "Zen Preview"' in workspace
+    assert "Flow prevents fixed-width" in workspace
+    assert "Responsive actions wrap" in workspace
+    assert 'text: "Show total professional time"' in workspace
+    assert '{"showTotalHours": checked}' in workspace
+    assert 'if "showTotalHours" in meta_changes:' in controller
+
+
 def test_pdf_post_processing_can_run_without_webengine(tmp_path):
     """The worker's CPU/I/O portion is independently safe to run off-thread."""
     from pypdf import PdfReader

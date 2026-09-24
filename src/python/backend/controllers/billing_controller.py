@@ -1749,10 +1749,22 @@ class BillingController(QObject):
 
             raise ValueError(f"Draft {draft_num} not found")
 
-        from repositories.excel_repo import TBL_TIME, TBL_DISBURSEMENTS
+        from repositories.excel_repo import (
+            TBL_DISBURSEMENTS,
+            TBL_TIME,
+            TBL_TRANSACTIONS_MASTER,
+        )
 
         rows = self._excel_repo._read_table_rows(TBL_TIME)
         disb_rows = self._excel_repo._read_table_rows(TBL_DISBURSEMENTS)
+        transaction_rows = self._excel_repo._read_table_rows(TBL_TRANSACTIONS_MASTER)
+        supplier_by_transaction_id = {
+            str(row.get(sc.COL_TXN_ID) or "").strip().casefold():
+                str(row.get(sc.COL_TXN_PAYEE) or "").strip()
+            for row in transaction_rows
+            if str(row.get(sc.COL_TXN_ID) or "").strip()
+            and str(row.get(sc.COL_TXN_PAYEE) or "").strip()
+        }
 
         matters_map = {}
         service_client_names = []
@@ -2158,15 +2170,36 @@ class BillingController(QObject):
             except (ValueError, TypeError):
                 bill_pct = 100.0
 
+            description = clean_desc(str(row.get(sc.COL_DISB_DESCRIPTION) or ""))
+            source_transaction_id = str(
+                row.get(sc.COL_DISB_SOURCE_TRANSACTION_ID) or ""
+            ).strip().casefold()
+            supplier_name = supplier_by_transaction_id.get(source_transaction_id, "")
+            if supplier_name:
+                description = re.sub(
+                    r"\bsupplier(?=\s+invoice\b)",
+                    lambda _match: supplier_name,
+                    description,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            if tax_exempt and "(tax exempt)" not in description.casefold():
+                description = description.rstrip()
+                if description.endswith((".", "!", "?")):
+                    description = f"{description[:-1]} (Tax Exempt){description[-1]}"
+                else:
+                    description = f"{description} (Tax Exempt)"
+
             disbursement_lines.append({
                 "entryId": str(row.get(sc.COL_DISB_ID) or ""),
                 "date": str(row.get(sc.COL_DISB_DATE) or ""),
-                "description": clean_desc(str(row.get(sc.COL_DISB_DESCRIPTION) or "")),
+                "description": description,
                 "hours": 0.0,
                 "rate": 0.0,
                 "is_custom_fee": False,
                 "isDisbursement": True,
                 "taxExempt": tax_exempt,
+                "supplierName": supplier_name,
                 "amount": net,
                 "amount_client": net, 
                 "amount_firm": net,

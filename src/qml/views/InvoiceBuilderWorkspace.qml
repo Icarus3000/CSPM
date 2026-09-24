@@ -7,6 +7,8 @@ import "../components"
 Item {
     id: workspace
     property var host
+    property bool focusMode: false
+    clip: true
 
     component ThemedComboBox: ComboBox {
         id: control
@@ -81,6 +83,7 @@ Item {
 
         ColumnLayout {
             Layout.fillWidth: true
+            visible: !workspace.focusMode
             spacing: 4
             Text {
                 text: "Invoice Builder"
@@ -105,8 +108,9 @@ Item {
             spacing: 16
 
             Rectangle {
-                Layout.preferredWidth: 450
-                Layout.minimumWidth: 350
+                visible: !workspace.focusMode
+                Layout.preferredWidth: Math.min(420, Math.max(290, workspace.width * 0.34))
+                Layout.minimumWidth: 280
                 Layout.fillHeight: true
                 color: host.panelColor
                 border.color: host.borderColor
@@ -211,6 +215,7 @@ Item {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        Layout.minimumWidth: 0
                         color: host.isDark ? "#262b33" : "#fbfcfe"
                         border.color: host.borderColor
                         border.width: 1
@@ -386,6 +391,7 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.minimumWidth: 0
                 color: host.panelColor
                 border.color: host.borderColor
                 border.width: 1
@@ -405,14 +411,15 @@ Item {
                             color: host.textColor
                             font.pixelSize: 17
                             font.weight: Font.DemiBold
+                            elide: Text.ElideRight
                         }
                         PillButton {
                             t: host.t
-                            text: "Zen Preview"
+                            text: workspace.focusMode ? "Exit Zen" : "Zen Preview"
                             primary: false
                             Layout.preferredWidth: 108
                             Layout.preferredHeight: 32
-                            onClicked: host.zenModeOpen = true
+                            onClicked: host.zenModeOpen = !workspace.focusMode
                         }
                     }
 
@@ -452,6 +459,7 @@ Item {
                     Rectangle {
                         id: controls
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         Layout.preferredHeight: controlsContent.implicitHeight + 22
                         color: host.isDark ? "#252a31" : "#f8fafc"
                         border.color: host.borderColor
@@ -531,36 +539,41 @@ Item {
                                 }
                             }
 
-                            // Settings row
-                            RowLayout {
+                            // Responsive settings row. Flow prevents fixed-width
+                            // controls from forcing the builder past the monitor edge.
+                            Flow {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.preferredHeight: implicitHeight
                                 spacing: 9
-                                ColumnLayout {
-                                    Layout.preferredWidth: 88
+                                flow: Flow.LeftToRight
+
+                                Column {
+                                    width: 96
                                     spacing: 3
                                     Text { text: "Grouping"; color: host.mutedColor; font.pixelSize: 11 }
                                     ThemedComboBox {
                                         id: groupingCombo
                                         host: workspace.host
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 31
+                                        width: parent.width
+                                        height: 31
                                         model: ["Matter", "Client", "Combined"]
                                         currentIndex: host.selectedDraftData ? Math.max(0, ["matter", "client", "combined"].indexOf(String(host.selectedDraftData.GroupingPref || "matter").toLowerCase())) : 0
                                         onActivated: host.billingBackend.updateDraftGrouping(host.selectedDraftNum, currentText.toLowerCase())
                                     }
                                 }
-                                ColumnLayout {
-                                    Layout.preferredWidth: 182
+                                Column {
+                                    width: 204
                                     spacing: 3
                                     Text { text: "Courtesy Discount"; color: host.mutedColor; font.pixelSize: 11 }
-                                    RowLayout {
-                                        Layout.fillWidth: true
+                                    Row {
+                                        width: parent.width
                                         spacing: 4
                                         ThemedComboBox {
                                             id: discountTypeCombo
                                             host: workspace.host
-                                            Layout.preferredWidth: 101
-                                            Layout.preferredHeight: 31
+                                            width: 104
+                                            height: 31
                                             model: ["Percentage", "Flat Amount"]
                                             currentIndex: host.selectedDraftData && ["flat", "fixed", "flat amount"].indexOf(String(host.selectedDraftData.DiscountType || "").toLowerCase()) >= 0 ? 1 : 0
                                             onActivated: {
@@ -571,8 +584,8 @@ Item {
                                         }
                                         TextField {
                                             id: discountValue
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 31
+                                            width: 52
+                                            height: 31
                                             text: host.selectedDraftData ? String(host.selectedDraftData.DiscountValue || "0.0") : "0.0"
                                             color: host.textColor
                                             font.pixelSize: 11
@@ -581,20 +594,20 @@ Item {
                                             onEditingFinished: host.billingBackend.applyDiscount(host.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0)
                                             onAccepted: host.billingBackend.applyDiscount(host.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0)
                                         }
-                                        PillButton { t: host.t; text: "Apply"; primary: false; Layout.preferredWidth: 50; Layout.preferredHeight: 31; onClicked: host.billingBackend.applyDiscount(host.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0) }
+                                        PillButton { t: host.t; text: "Apply"; primary: false; width: 40; height: 31; onClicked: host.billingBackend.applyDiscount(host.selectedDraftNum, discountTypeCombo.currentIndex === 0 ? "Percentage" : "Flat", parseFloat(discountValue.text) || 0) }
                                     }
                                 }
-                                ColumnLayout {
-                                    Layout.preferredWidth: 108
+                                Column {
+                                    width: 116
                                     spacing: 3
                                     Text { text: "Agency Split %"; color: host.mutedColor; font.pixelSize: 11 }
-                                    RowLayout {
-                                        Layout.fillWidth: true
+                                    Row {
+                                        width: parent.width
                                         spacing: 4
                                         TextField {
                                             id: agencySplit
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 31
+                                            width: 68
+                                            height: 31
                                             text: host.selectedDraftData ? String(host.selectedDraftData.AgencySplitPercent || "0.0") : "0.0"
                                             color: host.textColor
                                             font.pixelSize: 11
@@ -603,54 +616,78 @@ Item {
                                             onEditingFinished: host.billingBackend.applyAgencySplit(host.selectedDraftNum, parseFloat(agencySplit.text) || 0)
                                             onAccepted: host.billingBackend.applyAgencySplit(host.selectedDraftNum, parseFloat(agencySplit.text) || 0)
                                         }
-                                        PillButton { t: host.t; text: "Set"; primary: false; Layout.preferredWidth: 42; Layout.preferredHeight: 31; onClicked: host.billingBackend.applyAgencySplit(host.selectedDraftNum, parseFloat(agencySplit.text) || 0) }
+                                        PillButton { t: host.t; text: "Set"; primary: false; width: 44; height: 31; onClicked: host.billingBackend.applyAgencySplit(host.selectedDraftNum, parseFloat(agencySplit.text) || 0) }
                                     }
                                 }
-                                ColumnLayout {
+                                Column {
                                     visible: host.reconciliationRequired
-                                    Layout.preferredWidth: 138
+                                    width: visible ? 144 : 0
                                     spacing: 3
                                     Text { text: "Reconciliation"; color: host.mutedColor; font.pixelSize: 11 }
                                     ThemedComboBox {
                                         id: reconciliationCombo
                                         host: workspace.host
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 31
+                                        width: parent.width
+                                        height: 31
                                         model: ["Discount Line", "Hidden Adjustment"]
                                         currentIndex: host._reconciliationMode() === "discount_line" ? 0 : 1
                                         onActivated: host.billingBackend.updateDraftReconciliationMode(host.selectedDraftNum, currentText)
                                     }
                                 }
-                                ColumnLayout {
-                                    Layout.preferredWidth: 116
+                                Column {
+                                    width: 124
                                     spacing: 3
                                     Text { text: "Time Dockets"; color: host.mutedColor; font.pixelSize: 11 }
                                     ThemedComboBox {
                                         id: docketDisplayCombo
                                         host: workspace.host
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 31
+                                        width: parent.width
+                                        height: 31
                                         enabled: host.hasCustomFees
                                         model: ["Show all", "Hide all", "Combine as tasks"]
                                         currentIndex: host._docketDisplayIndex()
                                         onActivated: host.billingBackend.updateDraftDocketDisplayMode(host.selectedDraftNum, currentIndex === 1 ? "hide" : (currentIndex === 2 ? "tasks" : "show"))
                                     }
                                 }
-                                Item { Layout.fillWidth: true }
+                                Column {
+                                    width: 204
+                                    spacing: 3
+                                    Text { text: "Invoice Summary"; color: host.mutedColor; font.pixelSize: 11 }
+                                    CheckBox {
+                                        width: parent.width
+                                        height: 31
+                                        text: "Show total professional time"
+                                        checked: host._showTotalProfessionalTime()
+                                        palette.windowText: host.textColor
+                                        font.pixelSize: 11
+                                        onClicked: {
+                                            if (host.billingBackend && host.selectedDraftNum) {
+                                                host.billingBackend.updateDraftMeta(
+                                                    host.selectedDraftNum,
+                                                    {"showTotalHours": checked}
+                                                )
+                                            }
+                                        }
+                                        ToolTip.visible: hovered && host.hasAnyFlatFees
+                                        ToolTip.text: "Flat-fee invoices hide total time automatically."
+                                    }
+                                }
                             }
 
-                            // Actions row
-                            RowLayout {
+                            // Responsive actions wrap instead of extending beyond
+                            // the bottom-right corner of a smaller monitor.
+                            Flow {
                                 Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.preferredHeight: implicitHeight
                                 spacing: 8
-                                Item { Layout.fillWidth: true }
                                 PillButton {
                                     t: host.t
                                     text: "Add Flat Fee Line"
                                     primary: false
                                     visible: !host.hasCustomFees
-                                    Layout.preferredWidth: 146
-                                    Layout.preferredHeight: 34
+                                    width: 146
+                                    height: 34
                                     onClicked: host.openAdditiveFlatFeeDialog()
                                 }
                                 PillButton {
@@ -658,13 +695,23 @@ Item {
                                     text: host.hasCustomFees ? "Invoice Flat Fee Set" : "Set Invoice Flat Fee"
                                     primary: false
                                     enabled: !host.hasCustomFees
-                                    Layout.preferredWidth: 154
-                                    Layout.preferredHeight: 34
+                                    width: 154
+                                    height: 34
                                     onClicked: host.openInvoiceFlatFeeDialog()
                                 }
-                                PillButton { t: host.t; text: "Cancel"; primary: false; Layout.preferredWidth: 82; Layout.preferredHeight: 34; onClicked: host._clearSelection() }
-                                PillButton { t: host.t; text: "Delete Draft"; primary: false; Layout.preferredWidth: 104; Layout.preferredHeight: 34; onClicked: host._deleteDraft() }
-                                PillButton { t: host.t; text: host.isFinalized ? "Finalized" : "Finalize Invoice"; primary: true; enabled: !host.isFinalized; Layout.preferredWidth: 132; Layout.preferredHeight: 34; onClicked: host._finalizeDraft() }
+                                PillButton {
+                                    t: host.t
+                                    text: workspace.focusMode ? "Exit Zen" : "Cancel"
+                                    primary: false
+                                    width: 82
+                                    height: 34
+                                    onClicked: {
+                                        if (workspace.focusMode) host.zenModeOpen = false
+                                        else host._clearSelection()
+                                    }
+                                }
+                                PillButton { t: host.t; text: "Delete Draft"; primary: false; width: 104; height: 34; onClicked: host._deleteDraft() }
+                                PillButton { t: host.t; text: host.isFinalized ? "Finalized" : "Finalize Invoice"; primary: true; enabled: !host.isFinalized; width: 132; height: 34; onClicked: host._finalizeDraft() }
                             }
                         }
                     }

@@ -181,6 +181,7 @@ For every state machine, document source state, visual owner, native geometry ch
 
 ## Change Log
 
+- 2026-09-24: Scoped Invoice Builder responsiveness repair at the user's direction. Fixed-width settings/action rows now wrap within the available monitor width, and Zen Preview reuses a focus-mode preview/settings workspace without the left draft pane. This does not alter the Professional maximize/restore state machine or close its still-pending manual acceptance gate; the Invoice Builder layout has its own foreground monitor check pending.
 - 2026-09-10: Added a focused in-app quick-payment modal to Payment Entry at
   the user's direction. It uses the existing shared Popup/control styling and
   introduces no new window-state or motion sequence; the Professional

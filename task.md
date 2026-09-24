@@ -1,5 +1,15 @@
 # CSPM Task And Validation Ledger
 
+## Invoice Builder Summary, Zen Layout, And Disbursement Labels (2026-09-24)
+
+- [x] Add a per-draft **Show total professional time** summary control. The stored `ShowTotalHours` preference governs hourly-only invoices; any invoice containing a flat fee continues to suppress total time automatically.
+- [x] Make Invoice Builder responsive on the reported smaller/logically scaled monitor: the draft pane narrows safely, the preview pane may shrink, settings/actions wrap instead of extending beyond the bottom-right screen edge, and the workspace clips accidental paint overflow.
+- [x] Expand **Zen Preview** into a focused invoice workspace containing the preview and the same settings/actions below it while hiding the draft list and line-item pane on the left.
+- [x] Resolve a linked disbursement supplier from its source transaction and replace generic `supplier invoice ...` text with the actual payee name. Append `(Tax Exempt)` to every tax-exempt disbursement description without duplicating the marker.
+- [x] Sandbox-safe validation passed: Python compilation, governed QML lint with warning-only existing diagnostics, `git diff --check`, and **42 focused/adjacent invoice, payment, and UI-contract tests**. A real Chromium PDF render was visually inspected on both pages and showed `CIPO invoice 20576109 (Tax Exempt)` cleanly in the separate disbursements section.
+- [ ] Rebuild/deploy the candidate-validation executable, push the repair to the cloud branch, and validate installed Qt/WebEngine startup.
+- [ ] Manual application acceptance on the reported monitor: confirm no control crosses the bottom/right screen edge; open Zen Preview and confirm only preview plus settings/actions appear; toggle total professional time on an hourly-only disposable draft and confirm the summary responds. No existing finalized invoice should be altered.
+
 ## Mixed Hourly / Flat-Fee / Disbursement Invoices (2026-09-24)
 
 - [x] Preserve the existing **Set Invoice Flat Fee** concept as an invoice-wide replacement fee: it replaces ordinary professional WIP and may show the difference as a courtesy discount or keep it as a hidden adjustment.

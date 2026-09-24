@@ -105,6 +105,15 @@ Item {
         return total
     }
     property bool hasCustomFees: root.customFeeTotal > 0
+    property bool hasAnyFlatFees: {
+        for (var i = 0; i < root.draftLineItems.length; ++i) {
+            var item = root.draftLineItems[i] || {}
+            if (root._isCustomFeeItem(item)
+                    || item.isAdditiveFlatFee === true
+                    || String(item.feeTreatment || "") === "Additive") return true
+        }
+        return false
+    }
     property bool reconciliationRequired: root.hasCustomFees
                                         && root.customFeeTotal < root.docketedTimeTotal
 
@@ -194,6 +203,13 @@ Item {
         if (value === "hide") return 1
         if (value === "tasks") return 2
         return 0
+    }
+
+    function _showTotalProfessionalTime() {
+        if (!root.selectedDraftData) return true
+        var value = root.selectedDraftData.ShowTotalHours
+        if (value === undefined || value === null || String(value).trim() === "") return true
+        return ["true", "1", "yes", "y", "on"].indexOf(String(value).trim().toLowerCase()) >= 0
     }
 
     function _clearSelection() {
@@ -1626,44 +1642,20 @@ Item {
             }
         }
             
-        // Paper Area
+        // Focus workspace: preview plus the same invoice settings/actions as
+        // the docked builder, without the draft list and line-item pane.
         Rectangle {
             anchors.top: zenToolbar.bottom
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.margins: 24
-            color: SemanticTheme.surfacePanel(root.t, root.appStyle)
-            border.color: root.borderColor
-            border.width: 1
-            
-            WebEngineView {
-                id: zenWebView
+            color: root.bgSurface
+            clip: true
+
+            InvoiceBuilderWorkspace {
                 anchors.fill: parent
-                anchors.margins: 24
-                backgroundColor: "transparent"
-                
-                Connections {
-                    target: root
-                    function onPreviewHtmlChanged() {
-                        if (root.previewHtml) zenWebView.loadHtml(root.previewHtml, "http://localhost")
-                    }
-                }
-                Component.onCompleted: {
-                    if (root.previewHtml) zenWebView.loadHtml(root.previewHtml, "http://localhost")
-                }
-                
-                Connections {
-                    target: zenWebView
-                    function onPdfPrintingFinished(filePath, success) {
-                        if (success) {
-                            if (appRef && appRef.stampPdfPageNumbers) {
-                                appRef.stampPdfPageNumbers(filePath)
-                            }
-                            Qt.openUrlExternally("file:///" + filePath)
-                        }
-                    }
-                }
+                host: root
+                focusMode: true
             }
         }
 

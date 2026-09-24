@@ -75,6 +75,7 @@ class _MixedInvoiceRepo:
                 sc.COL_DISB_TAX_EXEMPT: "True",
                 sc.COL_DISB_INVOICE_REF: DRAFT_NUM,
                 sc.COL_DISB_REISSUE_INVOICE_NUM: "",
+                sc.COL_DISB_SOURCE_TRANSACTION_ID: "TXN-CIPO-1",
             }],
             sc.TBL_MATTERS: [{
                 sc.COL_MATTER_ID: MATTER_ID,
@@ -86,7 +87,10 @@ class _MixedInvoiceRepo:
             sc.TBL_INVOICE_LOG: [],
             sc.TBL_RECEIVABLES: [],
             sc.TBL_LEDGER: [],
-            sc.TBL_TRANSACTIONS_MASTER: [],
+            sc.TBL_TRANSACTIONS_MASTER: [{
+                sc.COL_TXN_ID: "TXN-CIPO-1",
+                sc.COL_TXN_PAYEE: "CIPO",
+            }],
         }
 
     @staticmethod
@@ -198,10 +202,16 @@ def test_mixed_hourly_additive_flat_fee_and_disbursement_render_separately():
     assert len(payload["hourly_matters"][0]["line_items"]) == 2
     assert len(payload["additive_flat_fee_lines"]) == 1
     assert len(payload["disbursement_lines"]) == 1
+    assert payload["disbursement_lines"][0]["supplierName"] == "CIPO"
+    assert payload["disbursement_lines"][0]["description"] == (
+        "CIPO Filing Fees - CIPO invoice 20576109 (Tax Exempt)."
+    )
 
     html = controller._doc_svc.generate_html("Concept_A2", payload)
     assert "Flat Fees" in html
     assert "Disbursements" in html
+    assert "CIPO Filing Fees - CIPO invoice 20576109 (Tax Exempt)." in html
+    assert "supplier invoice 20576109" not in html
     assert "Total Professional Time" not in html
     assert "$1,520.00" in html
     assert "$491.06" in html
@@ -238,3 +248,22 @@ def test_legacy_amount_only_fee_is_additive_not_an_invoice_override():
     assert payload["has_any_flat_fee"] is True
     assert payload["gross_professional_fees"] == 1520.0
     assert payload["additive_flat_fee_lines"][0]["amount"] == 950.0
+
+
+def test_total_professional_time_can_be_hidden_on_an_hourly_only_invoice():
+    repo = _MixedInvoiceRepo()
+    repo.tables[sc.TBL_TIME] = repo.tables[sc.TBL_TIME][:2]
+    repo.tables[sc.TBL_DISBURSEMENTS] = []
+    repo.tables[sc.TBL_DRAFT_INVOICES][0][sc.COL_DRAFT_SHOW_TOTAL_HOURS] = "False"
+    service = InvoiceDraftService(repo)
+    controller = _controller(repo, service)
+
+    payload = controller._build_invoice_payload(DRAFT_NUM)
+    assert payload["has_any_flat_fee"] is False
+    assert payload["show_total_hours"] is False
+    assert "Total Professional Time" not in controller._doc_svc.generate_html("Concept_A2", payload)
+
+    controller.updateDraftMeta(DRAFT_NUM, {"showTotalHours": True})
+    refreshed = controller._build_invoice_payload(DRAFT_NUM)
+    assert refreshed["show_total_hours"] is True
+    assert "Total Professional Time" in controller._doc_svc.generate_html("Concept_A2", refreshed)
