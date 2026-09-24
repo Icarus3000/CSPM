@@ -2346,10 +2346,10 @@ class ExcelRepo:
         row = {
             sc.COL_DISB_ID: disbursement_id,
             sc.COL_DISB_DATE: _clean_text(data.get("Date") or data.get("InvoiceDate")) or date.today().isoformat(),
-            sc.COL_DISB_CLIENT_NAME: _clean_text(matter.get(sc.COL_MATTER_PARENT_NAME)),
+            sc.COL_DISB_CLIENT_NAME: _clean_text(matter.get(sc.COL_MATTER_PARENT_NAME)) or _clean_text(matter.get(sc.COL_MATTER_CLIENT_NAME)),
             sc.COL_DISB_SUB_CLIENT: _clean_text(matter.get(sc.COL_MATTER_CLIENT_NAME)),
             sc.COL_DISB_CLIENT_ID: _clean_text(matter.get(sc.COL_MATTER_CLIENT_ID)),
-            sc.COL_DISB_PARENT_ID: _clean_text(matter.get(sc.COL_MATTER_PARENT_ID)),
+            sc.COL_DISB_PARENT_ID: _clean_text(matter.get(sc.COL_MATTER_PARENT_ID)) or _clean_text(matter.get(sc.COL_MATTER_CLIENT_ID)),
             sc.COL_DISB_MATTER_ID: _clean_text(matter.get(sc.COL_MATTER_ID)),
             sc.COL_DISB_DESCRIPTION: description,
             sc.COL_DISB_AMOUNT: amount,
@@ -2404,6 +2404,73 @@ class ExcelRepo:
             "amount": amount,
             "message": "Client disbursement added to WIP.",
         }
+
+    @with_financial_write_batch
+    def sync_supplier_disbursement(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Syncs the client-facing WIP entry when a governed supplier bill is updated.
+        """
+        self.ensure_schema()
+        self._assert_write_permitted()
+        data = dict(payload or {})
+        ap_bill_id = _clean_text(data.get("APBillID"))
+        allocation_id = _clean_text(data.get("APAllocationID")) or self._new_id("APA")
+        if not ap_bill_id:
+            raise ValueError("APBillID is required to sync a supplier disbursement.")
+
+        matter_id = _clean_text(data.get("MatterID") or data.get("matterId") or data.get("Matter"))
+        amount = self._money_round(data.get("Amount") or data.get("BaseAmount") or 0)
+        bill_pct = self._money_round(data.get("BillPct") if data.get("BillPct") not in (None, "") else 0)
+
+        should_exist = bool(matter_id and amount > 0 and bill_pct > 0)
+
+        disbursement_rows = self._read_table_rows(TBL_DISBURSEMENTS)
+        existing_idx = next(
+            (i for i, row in enumerate(disbursement_rows) if
+             _clean_text(row.get(sc.COL_DISB_AP_BILL_ID)).casefold() == ap_bill_id.casefold()),
+            -1
+        )
+
+        if not should_exist:
+            if existing_idx >= 0:
+                row = disbursement_rows[existing_idx]
+                disb_id = _clean_text(row.get(sc.COL_DISB_ID))
+                if _clean_text(row.get(sc.COL_DISB_PAYMENT_STATUS)) not in ("", "PENDING", "Unbilled"):
+                    raise ValueError("Cannot remove a disbursement that has already been billed.")
+                del disbursement_rows[existing_idx]
+                self._replace_table_rows(TBL_DISBURSEMENTS, disbursement_rows)
+                return {"ok": True, "action": "deleted", "disbursementId": disb_id}
+            return {"ok": True, "action": "none"}
+
+        matter = self._find_matter_row(matter_id)
+        if matter is None:
+            raise ValueError("The selected client matter could not be found.")
+
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        description = _clean_text(data.get("Description")) or "Supplier disbursement"
+        supplier_reference = _clean_text(data.get("SupplierInvoiceRef"))
+        if supplier_reference and f"supplier invoice {supplier_reference}" not in description:
+            description += f" - supplier invoice {supplier_reference}"
+
+        if existing_idx >= 0:
+            row = disbursement_rows[existing_idx]
+            disbursement_id = _clean_text(row.get(sc.COL_DISB_ID))
+            if _clean_text(row.get(sc.COL_DISB_PAYMENT_STATUS)) not in ("", "PENDING", "Unbilled"):
+                raise ValueError("Cannot modify a disbursement that has already been billed.")
+            
+            row[sc.COL_DISB_DATE] = _clean_text(data.get("Date") or data.get("InvoiceDate")) or row.get(sc.COL_DISB_DATE)
+            row[sc.COL_DISB_CLIENT_NAME] = _clean_text(matter.get(sc.COL_MATTER_PARENT_NAME)) or _clean_text(matter.get(sc.COL_MATTER_CLIENT_NAME))
+            row[sc.COL_DISB_SUB_CLIENT] = _clean_text(matter.get(sc.COL_MATTER_CLIENT_NAME))
+            row[sc.COL_DISB_CLIENT_ID] = _clean_text(matter.get(sc.COL_MATTER_CLIENT_ID))
+            row[sc.COL_DISB_PARENT_ID] = _clean_text(matter.get(sc.COL_MATTER_PARENT_ID)) or _clean_text(matter.get(sc.COL_MATTER_CLIENT_ID))
+            row[sc.COL_DISB_MATTER_ID] = matter_id
+            row[sc.COL_DISB_DESCRIPTION] = description
+            row[sc.COL_DISB_AMOUNT] = amount
+            row[sc.COL_DISB_TAX_EXEMPT] = "Y" if _clean_text(data.get("ClientTaxExempt")) else ""
+            row[sc.COL_DISB_BILL_PCT] = bill_pct
+            self._replace_table_rows(TBL_DISBURSEMENTS, disbursement_rows)
+            return {"ok": True, "action": "updated", "disbursementId": disbursement_id}
+        else:
+            return self.create_supplier_disbursement(payload)
 
     @with_financial_write_batch
     def link_historical_supplier_disbursement(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -12499,8 +12566,22 @@ class ExcelRepo:
             bill_claim_pct = 0.0
 
         if txn_type_lc == "expense" and bill_claim_pct > 0:
-            if not (parent and client and matter):
-                raise ValueError("Billable expense requires Parent, Client, and Matter when BillClaimPct > 0.")
+            if not parent or not client or not matter:
+                raise ValueError("Select a client and matter before saving a recoverable expense. The selected client/matter record is incomplete and cannot be billed.")
+            
+            profile = self.get_matter_profile(matter)
+            if not profile or not profile.get("matter"):
+                raise ValueError("The selected matter could not be resolved.")
+                
+            resolved_matter = profile.get("matter", {})
+            resolved_client = resolved_matter.get("clientId") or resolved_matter.get("clientName")
+            resolved_parent = resolved_matter.get("parentId") or resolved_matter.get("parentName")
+            
+            if not resolved_client or (client != resolved_matter.get("clientId") and client != resolved_matter.get("clientName")):
+                raise ValueError("The selected matter could not be linked to its client. Re-select the matter or refresh the client list.")
+                
+            if resolved_parent and parent != resolved_matter.get("parentId") and parent != resolved_matter.get("parentName"):
+                raise ValueError("The selected client/matter record is incomplete and cannot be billed.")
 
         total_claim_amount = round((amount + tax_amount) * (bill_claim_pct / 100.0), 2)
 

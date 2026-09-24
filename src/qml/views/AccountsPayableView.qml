@@ -86,6 +86,8 @@ Item {
     property string selectedMatterId: ""
     property string selectedMatterClientId: ""
     property string selectedMatterClientName: ""
+    property string selectedMatterParentId: ""
+    property string selectedMatterParentName: ""
     property string selectedMatterName: ""
     property bool clientTaxExempt: false
     property string supplierDocumentSourcePath: ""
@@ -175,6 +177,8 @@ Item {
             var matterName = root.firstValue(row, ["MatterName", "matterName", "matter_name", "Name", "name", "Description", "description"], matterId)
             var clientId = root.firstValue(row, ["ClientID", "clientId", "client_id", "ClientKey", "clientKey"], "")
             var clientName = root.firstValue(row, ["ClientName", "clientName", "client_name", "Client", "client"], "")
+            var parentId = root.firstValue(row, ["ParentID", "parentId", "parent_id", "ParentKey", "parentKey"], "") || clientId
+            var parentName = root.firstValue(row, ["ParentName", "parentName", "parent_name", "Parent", "parent"], "") || clientName
             var status = root.firstValue(row, ["Status", "status", "MatterStatus", "matterStatus"], "")
             if (!matterId && !matterName)
                 continue
@@ -189,6 +193,8 @@ Item {
                 "matterName": matterName,
                 "clientId": clientId,
                 "clientName": clientName,
+                "parentId": parentId,
+                "parentName": parentName,
                 "status": status,
                 "search": (clientName + " " + matterName + " " + matterId).toLowerCase()
             })
@@ -262,6 +268,8 @@ Item {
         root.selectedMatterName = ""
         root.selectedMatterClientId = ""
         root.selectedMatterClientName = ""
+        root.selectedMatterParentId = ""
+        root.selectedMatterParentName = ""
         matterField.clearSelection()
     }
 
@@ -371,12 +379,16 @@ Item {
         root.selectedMatterName = root.selectedMatterId
         root.selectedMatterClientId = String(row.clientId || "")
         root.selectedMatterClientName = root.selectedMatterClientId
+        root.selectedMatterParentId = String(row.parentId || "") || root.selectedMatterClientId
+        root.selectedMatterParentName = root.selectedMatterParentId
         for (var i = 0; i < root.matterOptions.length; i++) {
             var option = root.matterOptions[i] || {}
             if (String(option.id || "") === root.selectedMatterId) {
                 root.selectedMatterName = String(option.matterName || root.selectedMatterId)
                 root.selectedMatterClientId = String(option.clientId || root.selectedMatterClientId)
                 root.selectedMatterClientName = String(option.clientName || root.selectedMatterClientName)
+                root.selectedMatterParentId = String(option.parentId || root.selectedMatterParentId)
+                root.selectedMatterParentName = String(option.parentName || root.selectedMatterParentName)
                 matterField.selectedId = root.selectedMatterId
                 matterField.selectedLabel = String(option.label || root.selectedMatterName)
                 break
@@ -651,6 +663,9 @@ Item {
             "MatterName": root.selectedMatterName,
             "ClientID": root.selectedMatterClientId,
             "ClientName": root.selectedMatterClientName,
+            "Parent": root.selectedMatterParentId,
+            "ParentID": root.selectedMatterParentId,
+            "ParentName": root.selectedMatterParentName,
             "ExpenseTreatment": root.selectedTreatmentId,
             "BillClaimPct": root.selectedTreatmentId === "matter" ? root.apNumber(billClaimPctField.text) : 0,
             "ClientTaxExempt": root.clientTaxExempt,
@@ -2588,6 +2603,8 @@ Item {
                                         root.selectedMatterName = String(option.matterName || "")
                                         root.selectedMatterClientId = String(option.clientId || "")
                                         root.selectedMatterClientName = String(option.clientName || "")
+                                        root.selectedMatterParentId = String(option.parentId || "")
+                                        root.selectedMatterParentName = String(option.parentName || "")
                                     }
                                 }
 

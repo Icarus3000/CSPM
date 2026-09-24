@@ -1144,8 +1144,22 @@ class FinanceRepo:
             bill_claim_pct = 0.0
 
         if txn_type_lc == "expense" and bill_claim_pct > 0:
-            if not (parent and client and matter):
-                raise ValueError("Billable expense requires Parent, Client, and Matter when BillClaimPct > 0.")
+            if not parent or not client or not matter:
+                raise ValueError("Select a client and matter before saving a recoverable expense. The selected client/matter record is incomplete and cannot be billed.")
+            
+            profile = self.db.get_matter_profile(matter)
+            if not profile or not profile.get("matter"):
+                raise ValueError("The selected matter could not be resolved.")
+                
+            resolved_matter = profile.get("matter", {})
+            resolved_client = resolved_matter.get("clientId") or resolved_matter.get("clientName")
+            resolved_parent = resolved_matter.get("parentId") or resolved_matter.get("parentName")
+            
+            if not resolved_client or (client != resolved_matter.get("clientId") and client != resolved_matter.get("clientName")):
+                raise ValueError("The selected matter could not be linked to its client. Re-select the matter or refresh the client list.")
+                
+            if resolved_parent and parent != resolved_matter.get("parentId") and parent != resolved_matter.get("parentName"):
+                raise ValueError("The selected client/matter record is incomplete and cannot be billed.")
 
         total_claim_amount = round((amount + tax_amount) * (bill_claim_pct / 100.0), 2)
 

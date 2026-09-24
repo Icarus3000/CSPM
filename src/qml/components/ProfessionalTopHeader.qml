@@ -236,7 +236,7 @@ Rectangle {
         Text {
             Layout.alignment: Qt.AlignVCenter
             Layout.fillWidth: true
-            text: "Cory Schneider Law Office Practice Management"
+            text: "Cory Schneider Law Office Practice Management [BUILD 2026-09-23 DISBURSEMENT PATCH]"
             color: topHeaderRoot.headerInk
             font.family: "Segoe UI"
             font.pixelSize: topHeaderRoot.titlePixelSize

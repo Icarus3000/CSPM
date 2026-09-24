@@ -241,8 +241,7 @@ class BillingController(QObject):
 
         started = time.perf_counter()
 
-        from repositories.excel_repo import TBL_TIME, TBL_CLIENTS, TBL_MATTERS
-
+        from repositories.excel_repo import TBL_TIME, TBL_DISBURSEMENTS, TBL_CLIENTS, TBL_MATTERS
 
         # A cold WIP load used to parse the macro workbook once per table.
         # Read the related tables from one immutable workbook snapshot instead.
@@ -252,6 +251,7 @@ class BillingController(QObject):
             sc.TBL_PARENTS,
             TBL_MATTERS,
             TBL_TIME,
+            TBL_DISBURSEMENTS,
         ])
         clients = table_rows.get(TBL_CLIENTS.table, [])
         profiles = table_rows.get(sc.TBL_CLIENT_PROFILES, [])
@@ -471,6 +471,67 @@ class BillingController(QObject):
                 
                 "rawSeconds": int(self._excel_repo._parse_float(row.get(sc.COL_TIME_SECONDS)) or 0),
 
+            })
+
+        disbursements = table_rows.get(TBL_DISBURSEMENTS.table, [])
+        for row in disbursements:
+            invoice_ref = str(row.get(sc.COL_DISB_INVOICE_REF) or "").strip()
+            status = str(row.get(sc.COL_DISB_PAYMENT_STATUS) or "Unbilled").strip().lower()
+            
+            # WIP = not already billed
+            if status in ("billed", "reconciled", "merged"):
+                continue
+
+            try:
+                amount = float(row.get(sc.COL_DISB_AMOUNT) or 0)
+                bill_pct = float(row.get(sc.COL_DISB_BILL_PCT) or 100.0)
+                net = round(amount * (bill_pct / 100.0), 2)
+            except (ValueError, TypeError):
+                net = 0.0
+
+            tax_exempt = str(row.get(sc.COL_DISB_TAX_EXEMPT) or "0").strip()
+            hst = 0.0 if tax_exempt == "1" else round(net * 0.13, 2)
+
+            client_id_raw = str(row.get(sc.COL_DISB_CLIENT_ID) or "")
+            client_id = client_id_raw.split(',')[0].strip() if ',' in client_id_raw else client_id_raw.strip()
+
+            matter_id_raw = str(row.get(sc.COL_DISB_MATTER_ID) or "")
+            matter_id = matter_id_raw.split(',')[0].strip() if ',' in matter_id_raw else matter_id_raw.strip()
+
+            if matter_id.casefold() in non_operational_matter_ids:
+                continue
+
+            disb_parent_id_raw = str(row.get(sc.COL_DISB_PARENT_ID) or "").strip()
+            disb_parent_id = disb_parent_id_raw.split(',')[0].strip() if ',' in disb_parent_id_raw else disb_parent_id_raw.strip()
+
+            profile_parent = client_parent_map.get(client_id)
+            parent_id = profile_parent if profile_parent else (disb_parent_id if disb_parent_id else client_id)
+
+            if parent_id in parent_map:
+                parent_name = parent_map[parent_id]
+            else:
+                parent_name = client_map.get(parent_id, parent_id)
+
+            wip_rows.append({
+                "entryId": str(row.get(sc.COL_DISB_ID) or ""),
+                "date": str(row.get(sc.COL_DISB_DATE) or ""),
+                "clientId": client_id,
+                "clientName": client_map.get(client_id, client_id),
+                "matterId": matter_id,
+                "matterName": matter_map.get(matter_id, matter_id),
+                "parentId": parent_id,
+                "parentName": parent_name,
+                "description": clean_desc(str(row.get(sc.COL_DISB_DESCRIPTION) or "")),
+                "hours": 0.0,
+                "rate": 0.0,
+                "net": net,
+                "hst": hst,
+                "invoiceRef": invoice_ref,
+                "invoiceStatus": status,
+                "status": status.title() if status else "Draft",
+                "sharePct": 100.0,
+                "grossToClient": net,
+                "rawSeconds": 0,
             })
 
         # Sort by client, then date
@@ -783,6 +844,29 @@ class BillingController(QObject):
 
                     })
 
+
+            from repositories.excel_repo import TBL_DISBURSEMENTS
+            disbursements = self._excel_repo._read_table_rows(TBL_DISBURSEMENTS)
+            for row in disbursements:
+                if str(row.get(sc.COL_DISB_INVOICE_REF) or "") == str(draft_num):
+                    try:
+                        net = float(row.get(sc.COL_DISB_AMOUNT) or 0)
+                    except (ValueError, TypeError):
+                        net = 0.0
+
+                    matter_id = str(row.get(sc.COL_DISB_MATTER_ID) or "").strip()
+
+                    items.append({
+                        "entryId": str(row.get(sc.COL_DISB_ID) or ""),
+                        "date": str(row.get(sc.COL_DISB_DATE) or ""),
+                        "description": clean_desc(str(row.get(sc.COL_DISB_DESCRIPTION) or "")),
+                        "hours": 0.0,
+                        "rate": 0.0,
+                        "amount": round(net, 2),
+                        "isFee": False,
+                        "matterId": matter_id,
+                        "matterDisplay": matter_display.get(matter_id.casefold(), matter_id),
+                    })
             draft_sort_order = []
             drafts = self._excel_repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
             for d in drafts:
@@ -1646,9 +1730,10 @@ class BillingController(QObject):
 
             raise ValueError(f"Draft {draft_num} not found")
 
-        from repositories.excel_repo import TBL_TIME
+        from repositories.excel_repo import TBL_TIME, TBL_DISBURSEMENTS
 
         rows = self._excel_repo._read_table_rows(TBL_TIME)
+        disb_rows = self._excel_repo._read_table_rows(TBL_DISBURSEMENTS)
 
         matters_map = {}
         service_client_names = []
@@ -1952,9 +2037,96 @@ class BillingController(QObject):
             
             total_hours += hours
 
-        # A custom fee is a zero-hour/zero-rate positive line deliberately added
-        # by the invoice builder.  Its amount replaces the docketed fee total.
+        # ── Disbursements linked to this draft ────────────────────────────────
         time_based_total = 0.0
+        disbursement_total = 0.0
+
+        for row in disb_rows:
+            if str(row.get(sc.COL_DISB_INVOICE_REF) or "") != draft_num:
+                continue
+
+            append_unique(
+                service_client_names,
+                service_client_name(row.get(sc.COL_DISB_CLIENT_ID)),
+            )
+            append_unique(
+                service_matter_names,
+                service_matter_name(
+                    row.get(sc.COL_DISB_MATTER_ID),
+                    row.get(sc.COL_DISB_CLIENT_ID),
+                ),
+            )
+
+            if grouping_pref == "client":
+                group_id = str(row.get(sc.COL_DISB_CLIENT_ID) or "General")
+                group_res = self._excel_repo.get_client_profile(group_id)
+                group_data = group_res.get("client", {}) if group_res.get("ok") else {}
+                cname = group_data.get("displayName") or group_data.get("clientName") or group_id
+                display_name = f"RE: {cname}"
+
+            elif grouping_pref == "combined":
+                group_id = "General"
+                display_name = "Services Rendered"
+
+            else: # "matter"
+                group_id = str(row.get(sc.COL_DISB_MATTER_ID) or "General")
+                group_res = self._excel_repo.get_matter_profile(group_id)
+                group_data = group_res.get("matter", {}) if group_res.get("ok") else {}
+                mname = group_data.get("displayName") or group_data.get("description") or group_id
+                
+                c_id_for_matter = str(row.get(sc.COL_DISB_CLIENT_ID) or "")
+                if str(billing_client_id or "").casefold() != c_id_for_matter.casefold():
+                    mname = service_matter_name(group_id, c_id_for_matter)
+                    c_res = self._excel_repo.get_client_profile(c_id_for_matter)
+                    c_data = c_res.get("client", {}) if c_res.get("ok") else {}
+                    cname = c_data.get("displayName") or c_data.get("clientName") or c_id_for_matter
+                    display_name = f"RE: {cname} - {mname}"
+                else:
+                    display_name = f"RE: {mname}"
+
+            if group_id not in matters_map:
+                matters_map[group_id] = {
+                    "name": group_id,
+                    "display_name": display_name,
+                    "line_items": [],
+                    "total_fees": 0.0,
+                    "total_tax": 0.0,
+                    "total_hours": 0.0,
+                }
+
+            try:
+                net = float(row.get(sc.COL_DISB_AMOUNT) or 0)
+            except (ValueError, TypeError):
+                net = 0.0
+
+            tax_exempt = bool(row.get(sc.COL_DISB_TAX_EXEMPT))
+            hst = 0.0 if tax_exempt else round(net * 0.13, 2) 
+            
+            try:
+                bill_pct = float(row.get(sc.COL_DISB_BILL_PCT) or 100.0)
+            except (ValueError, TypeError):
+                bill_pct = 100.0
+
+            matters_map[group_id]["line_items"].append({
+                "entryId": str(row.get(sc.COL_DISB_ID) or ""),
+                "date": str(row.get(sc.COL_DISB_DATE) or ""),
+                "description": clean_desc(str(row.get(sc.COL_DISB_DESCRIPTION) or "")),
+                "hours": 0.0,
+                "rate": 0.0,
+                "is_custom_fee": False,
+                "isDisbursement": True,
+                "taxExempt": tax_exempt,
+                "amount": net,
+                "amount_client": net, 
+                "amount_firm": net,
+            })
+
+            matters_map[group_id]["total_fees"] += net
+            matters_map[group_id]["total_tax"] += hst
+            total_fees += net
+            total_tax += hst
+            disbursement_total += net
+
         custom_fee_total = 0.0
         flat_fees_list = []
         for matter in matters_map.values():
@@ -1994,14 +2166,11 @@ class BillingController(QObject):
         flat_fee_section_label = "Flat Fee"
 
         if is_flat_fee:
-            # A lower custom fee can be expressed as a visible courtesy discount.
-            # Equal, higher, and explicitly hidden reconciliations use only the
-            # adjusted subtotal, so no synthetic discount is printed.
             if (
                 flat_fee_amount < time_based_total
                 and reconciliation_mode == "discount_line"
             ):
-                total_fees = time_based_total
+                total_fees = time_based_total + disbursement_total
                 flat_fee_courtesy_discount = time_based_total - flat_fee_amount
                 discount_amount = flat_fee_courtesy_discount
                 display_source = flat_fees_list[0] if flat_fees_list else {}
@@ -2016,7 +2185,7 @@ class BillingController(QObject):
                 }]
                 flat_fee_section_label = "Services Rendered"
             else:
-                total_fees = flat_fee_amount
+                total_fees = flat_fee_amount + disbursement_total
                 discount_amount = 0.0
 
             # The flat-fee invoice template owns the visible fee line; docket
@@ -2036,9 +2205,15 @@ class BillingController(QObject):
         agency_split_amount = subtotal_after_discount * (agency_split_percent / 100.0)
 
         final_fees = max(0.0, subtotal_after_discount - agency_split_amount)
-
-        # Always calculate total_tax based on final_fees to avoid line-item accumulation rounding errors
-        total_tax = round(final_fees * 0.13, 2)
+        
+        # Calculate tax separating tax-exempt disbursements
+        taxable_fees = final_fees
+        for matter in matters_map.values():
+            for item in matter["line_items"]:
+                if item.get("isDisbursement") and item.get("taxExempt"):
+                    taxable_fees -= float(item.get("amount") or 0)
+        
+        total_tax = round(max(0.0, taxable_fees) * 0.13, 2)
 
         if not is_flat_fee:
             for m in matters_map.values():
