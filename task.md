@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## Invoice 26-0109 Posting Recovery And Finalization Guard (2026-09-24)
+
+- [x] Diagnose the apparent finalization: CSPM wrote the final-looking PDF first, then rejected the accounting commit because additive flat-fee line `CF_be74fe7637655147b867` still carried owner draft `00F2` after its visible `InvoiceRef` moved to replacement draft `CCE7`.
+- [x] Repair and post live invoice `26-0109` through the normal finalization service. Exactly one Invoice Log, Receivable, and Revenue ledger row now records `$1,250.00` professional fees, `$491.06` disbursements, `$162.50` HST, and `$1,903.56` billed/open. The draft is removed; its two hourly lines, additive flat-fee line, courtesy-discount adjustment, and CIPO disbursement point to `26-0109`.
+- [x] Reconcile the separately returned one-hour `$950.00` source docket to `SEE FLAT FEE 26-0109`. Its time/amount history and a durable audit explanation are preserved, but it is non-billable and cannot reappear in WIP. A source-code WIP projection now returns zero Truexperiences rows.
+- [x] Make draft recreation transfer both `InvoiceRef` and the structured custom-fee `DraftOwnerID`/`DraftRef` markers, preserving request/line identity and fee treatment. Regression coverage recreates a draft containing a custom fee and proves the replacement can finalize.
+- [x] Post accounting records before exporting a final-looking PDF. A failed financial commit can no longer leave a PDF that appears finalized; if the later file export fails, the UI keeps the posted accounting state authoritative and refreshes the workspace.
+- [x] Stop treating supplier `PaymentStatus` as client-billing status in WIP. A disbursement linked to a posted Invoice Log/A/R record is excluded even while its supplier remains `PENDING`; a paid but genuinely unbilled supplier expense remains available for billing.
+- [x] Governed live-data backups were created before both writes. The final shared-data release is `20260924T192026Z_8c6f1469_bf48dd2c`; local/cloud `CSPM.xlsm` match at SHA-256 `F1632E49E76E174ACA15CD67BAAC1D527BDB182CFEB03C04B9F14D1A0854FFA8`.
+- [x] Sandbox-safe validation passed Python compilation, `git diff --check`, governed QML lint with existing warning-only diagnostics, and **53 invoice/WIP tests**.
+- [ ] Manual installed-app acceptance: open WIP-to-Bill and confirm Truexperiences has no residual rows; open Invoice Directory and confirm `26-0109` is unpaid with `$1,903.56` outstanding and the expected PDF opens.
+
 ## Invoice Builder Summary, Zen Layout, And Disbursement Labels (2026-09-24)
 
 - [x] Add a per-draft **Show total professional time** summary control. The stored `ShowTotalHours` preference governs hourly-only invoices; any invoice containing a flat fee continues to suppress total time automatically.

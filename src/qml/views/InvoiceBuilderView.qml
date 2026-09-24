@@ -459,10 +459,11 @@ Item {
             }
             root.previewHtml = html
             root.isPreviewLoading = false
-            root.finalizationStage = "Saving the finalized PDF…"
-            // Finalization has an explicit “Open Final PDF” control.  Keep
-            // focus in CSPM while its accounting commit completes.
-            root.billingBackend.exportHtmlToPdf(html, root.pendingFinalizePath, false)
+            // Post the accounting records before creating a final-looking
+            // document.  If posting fails, no PDF is left behind that could
+            // be mistaken for a finalized invoice.
+            root.finalizationStage = "Posting the accounting records…"
+            root.billingBackend.finalizeDraft(root.selectedDraftNum, root.pendingFinalizeInvoiceNum, root.pendingFinalizePath)
         }
         function onFinalizedInvoiceHtmlFailed(draftNum, invoiceNum, message) {
             if (draftNum !== root.selectedDraftNum || invoiceNum !== root.pendingFinalizeInvoiceNum) return
@@ -475,17 +476,24 @@ Item {
             if (!result || result.ok !== true) {
                 root.isFinalizingExport = false
                 root.finalizationStage = ""
+                root.pendingFinalizeInvoiceNum = ""
+                root.pendingFinalizePath = ""
+                // Finalized HTML includes the requested invoice number.  If
+                // posting fails, restore the authoritative draft preview so
+                // the screen cannot continue to look finalized either.
+                if (root.selectedDraftNum && root.billingBackend) {
+                    root.isPreviewLoading = true
+                    root.billingBackend.loadDraftWorkspace(root.selectedDraftNum, root.selectedConcept)
+                }
                 return
             }
             root.finalInvoiceNum = String(result.invoiceNum || root.pendingFinalizeInvoiceNum)
-            root.finalizationStage = "Refreshing the workspace…"
-            root.isFinalizingExport = false
             root.isFinalized = true
-            root.zenModeOpen = false // Ensure Zen is closed
-            root._loadDrafts()
-            root.pendingFinalizeInvoiceNum = ""
-            root.pendingFinalizePath = ""
-            root.finalizationStage = ""
+            root.finalizationStage = "Saving the finalized PDF…"
+            // The accounting post is now authoritative.  Export the HTML
+            // that was prepared immediately before posting and keep focus in
+            // CSPM until the file operation completes.
+            root.billingBackend.exportHtmlToPdf(root.previewHtml, root.pendingFinalizePath, false)
         }
         function onDraftUpdated(draft) {
             if (root.deletingDraftNum.length > 0) return
@@ -497,25 +505,25 @@ Item {
         }
         function onPdfExportFinished(path, success) {
             if (root.isFinalizingExport && success && path === root.pendingFinalizePath) {
-                // PDF saved — close Zen immediately so user sees the main workspace
                 root.zenModeOpen = false
                 root.finalPdfPath = path
-                // Finalize in database (isFinalizingExport stays true as a loading indicator)
-                root.finalizationStage = "Updating the accounting records…"
-                root.billingBackend.finalizeDraft(root.selectedDraftNum, root.pendingFinalizeInvoiceNum, root.pendingFinalizePath)
             } else if (root.isFinalizingExport && !success) {
-                root.isFinalizingExport = false
-                root.finalizationStage = ""
-                root.pendingFinalizeInvoiceNum = ""
-                root.pendingFinalizePath = ""
+                // The invoice is already posted.  The backend reports the
+                // file error; refresh the workspace without pretending the
+                // accounting post failed.
+                root.zenModeOpen = false
+            } else {
+                return
             }
+            root.finalizationStage = "Refreshing the workspace…"
+            root.isFinalizingExport = false
+            root._loadDrafts()
+            root.pendingFinalizeInvoiceNum = ""
+            root.pendingFinalizePath = ""
+            root.finalizationStage = ""
         }
         function onCustomFeeLineCompleted(result) {
             addFeeDialog.handleCompletion(result || {})
-        }
-        function onDraftFinalizationError(msg) {
-            root.isFinalizingExport = false
-            root.finalizationStage = ""
         }
     }
 

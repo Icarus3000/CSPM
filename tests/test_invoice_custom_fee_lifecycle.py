@@ -335,6 +335,44 @@ def test_abandon_draft_destroys_custom_fee_but_releases_ordinary_work():
     assert repo.tables[sc.TBL_DRAFT_INVOICES] == []
 
 
+def test_recreating_draft_transfers_custom_fee_owner_and_allows_finalization():
+    repo = _MemoryRepo()
+    service = InvoiceDraftService(repo)
+    created = service.add_custom_fee_line(
+        DRAFT_NUM,
+        _request("CFR_transfer_0001", fee_treatment="additive"),
+    )
+
+    replacement_num = service.create_draft(
+        CLIENT_ID,
+        "Lifecycle Client",
+        ["TIME-ORDINARY-1", created["entryId"]],
+        ["DISB-1"],
+    )
+
+    assert replacement_num != DRAFT_NUM
+    assert len(repo.tables[sc.TBL_DRAFT_INVOICES]) == 1
+    replacement = repo.tables[sc.TBL_DRAFT_INVOICES][0]
+    moved_fee = next(
+        row for row in repo.tables[sc.TBL_TIME]
+        if row[sc.COL_TIME_ENTRY_ID] == created["entryId"]
+    )
+    markers = service._audit_markers(moved_fee)
+    assert moved_fee[sc.COL_TIME_INVOICE_REF] == replacement_num
+    assert markers["draftownerid"] == replacement[sc.COL_DRAFT_ID]
+    assert markers["draftref"] == replacement_num
+    assert markers["requestid"] == "CFR_transfer_0001"
+    assert markers["customfeelineid"] == created["entryId"]
+    assert markers["customfeestate"] == "Draft"
+    assert markers["feetreatment"] == "Additive"
+
+    assert service.finalize_draft(replacement_num, "26-8999", "") is True
+    assert repo.tables[sc.TBL_DRAFT_INVOICES] == []
+    assert len(repo.tables[sc.TBL_RECEIVABLES]) == 1
+    assert len(repo.tables[sc.TBL_INVOICE_LOG]) == 1
+    assert len(repo.tables[sc.TBL_LEDGER]) == 1
+
+
 def test_financial_dependency_blocks_custom_fee_edit_remove_and_draft_delete():
     repo = _MemoryRepo()
     service = InvoiceDraftService(repo)

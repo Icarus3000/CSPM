@@ -27,6 +27,16 @@ def test_finalization_and_draft_refresh_stay_off_the_qml_thread():
     assert "billingBackend.loadInvoiceNumberReuseStatus(requestedNum)" in qml
     assert "billingBackend.loadNextInvoiceNumber()" in qml
     assert "root.finalInvoiceNum = String(result.invoiceNum || root.pendingFinalizeInvoiceNum)" in qml
+    html_ready_handler = qml.split("function onFinalizedInvoiceHtmlReady", 1)[1].split(
+        "function onFinalizedInvoiceHtmlFailed", 1
+    )[0]
+    posted_handler = qml.split("function onDraftFinalized", 1)[1].split(
+        "function onDraftUpdated", 1
+    )[0]
+    assert "billingBackend.finalizeDraft(" in html_ready_handler
+    assert "billingBackend.exportHtmlToPdf(" not in html_ready_handler
+    assert "billingBackend.exportHtmlToPdf(" in posted_handler
+    assert "billingBackend.loadDraftWorkspace(root.selectedDraftNum, root.selectedConcept)" in posted_handler
     assert "var finalHtml = root.billingBackend.getFinalizedHtml" not in qml
     assert "CSPM is safely completing this step. Keep this window open." in qml
     assert 'name="mergeInvoicePdf"' in controller

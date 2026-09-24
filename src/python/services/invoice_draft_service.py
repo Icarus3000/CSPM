@@ -601,6 +601,35 @@ class InvoiceDraftService:
                 old_ref = str(row.get(sc.COL_TIME_INVOICE_REF) or "").strip()
                 if old_ref and old_ref != draft_num:
                     affected_old_drafts.add(old_ref)
+
+                # A custom fee has two ownership references: the ordinary
+                # InvoiceRef column and the stable owner markers in LockAudit.
+                # When selected work is moved from an existing draft into a
+                # replacement draft, both references must move together.  A
+                # prior implementation updated only InvoiceRef, leaving the
+                # fee owned by the deleted draft internally and making the
+                # replacement impossible to finalize.
+                if self._is_draft_custom_fee(row):
+                    markers = self._audit_markers(row)
+                    if markers.get("customfeestate", "").casefold() != "draft":
+                        raise ValueError(
+                            "Only a Draft-state custom fee can be moved to another invoice draft."
+                        )
+                    request_id = self._validate_custom_fee_request_id(markers.get("requestid"))
+                    entry_id = self._text(row.get(sc.COL_TIME_ENTRY_ID))
+                    marker_line_id = self._text(markers.get("customfeelineid"))
+                    if not entry_id or marker_line_id.casefold() != entry_id.casefold():
+                        raise ValueError(
+                            "A custom fee has an invalid stable line identity. Run Support Diagnostics."
+                        )
+                    row[sc.COL_TIME_LOCK_AUDIT] = self._custom_fee_lock_audit(
+                        draft_id=draft_id,
+                        draft_num=draft_num,
+                        request_id=request_id,
+                        line_id=entry_id,
+                        state="Draft",
+                        fee_treatment=markers.get("feetreatment", FEE_TREATMENT_INVOICE_WIDE),
+                    )
                     
                 row[sc.COL_TIME_INVOICE_REF] = draft_num
                 row[sc.COL_TIME_INVOICE_STATUS] = "Draft"

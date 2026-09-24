@@ -252,6 +252,8 @@ class BillingController(QObject):
             TBL_MATTERS,
             TBL_TIME,
             TBL_DISBURSEMENTS,
+            sc.TBL_INVOICE_LOG,
+            sc.TBL_RECEIVABLES,
         ])
         clients = table_rows.get(TBL_CLIENTS.table, [])
         profiles = table_rows.get(sc.TBL_CLIENT_PROFILES, [])
@@ -474,11 +476,28 @@ class BillingController(QObject):
             })
 
         disbursements = table_rows.get(TBL_DISBURSEMENTS.table, [])
+        # PaymentStatus tracks whether the firm has paid the supplier; it is
+        # not the client-billing state.  A paid or still-pending supplier
+        # expense can be unbilled, while a finalized client invoice can quite
+        # properly retain PENDING here.  Use the posted A/R records to decide
+        # whether a disbursement still belongs in WIP.
+        finalized_invoice_refs = {
+            str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().casefold()
+            for row in table_rows.get(sc.TBL_INVOICE_LOG, [])
+            if str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip()
+        }
+        finalized_invoice_refs.update({
+            str(row.get(sc.COL_RECV_INVOICE_NUM) or "").strip().casefold()
+            for row in table_rows.get(sc.TBL_RECEIVABLES, [])
+            if str(row.get(sc.COL_RECV_INVOICE_NUM) or "").strip()
+        })
         for row in disbursements:
             invoice_ref = str(row.get(sc.COL_DISB_INVOICE_REF) or "").strip()
             status = str(row.get(sc.COL_DISB_PAYMENT_STATUS) or "Unbilled").strip().lower()
             
             # WIP = not already billed
+            if invoice_ref.casefold() in finalized_invoice_refs:
+                continue
             if status in ("billed", "reconciled", "merged"):
                 continue
 

@@ -10,7 +10,7 @@ if str(SOURCE_ROOT) not in sys.path:
 
 from backend.controllers.billing_controller import BillingController
 from domain import schema_constants as sc
-from repositories.excel_repo import TBL_CLIENTS, TBL_MATTERS, TBL_TIME
+from repositories.excel_repo import TBL_CLIENTS, TBL_DISBURSEMENTS, TBL_MATTERS, TBL_TIME
 
 
 class _Paths:
@@ -87,7 +87,7 @@ def test_wip_loader_uses_one_bulk_snapshot_and_preserves_wip_identity():
     payload = controller._load_unbilled_wip_impl(repo.signature)
 
     assert len(repo.bulk_requests) == 1
-    assert len(repo.bulk_requests[0]) == 5
+    assert len(repo.bulk_requests[0]) == 8
     assert payload["signature"] == repo.signature
     assert len(payload["rows"]) == 1
     row = payload["rows"][0]
@@ -131,6 +131,42 @@ def test_wip_loader_excludes_reconciled_entries_and_archived_matters():
     payload = _controller(repo)._load_unbilled_wip_impl(repo.signature)
 
     assert [row["entryId"] for row in payload["rows"]] == ["TIME-1"]
+
+
+def test_wip_loader_uses_posted_invoice_records_not_supplier_payment_status():
+    repo = _WipRepo()
+    repo.tables[TBL_DISBURSEMENTS.table] = [
+        {
+            sc.COL_DISB_ID: "DISB-POSTED",
+            sc.COL_DISB_DATE: "2026-05-04",
+            sc.COL_DISB_CLIENT_ID: "CLIENT-1",
+            sc.COL_DISB_MATTER_ID: "MAT-1",
+            sc.COL_DISB_DESCRIPTION: "Posted supplier expense",
+            sc.COL_DISB_AMOUNT: 75,
+            sc.COL_DISB_BILL_PCT: 100,
+            sc.COL_DISB_INVOICE_REF: "26-0109",
+            sc.COL_DISB_PAYMENT_STATUS: "PENDING",
+        },
+        {
+            sc.COL_DISB_ID: "DISB-UNBILLED-PAID",
+            sc.COL_DISB_DATE: "2026-05-03",
+            sc.COL_DISB_CLIENT_ID: "CLIENT-1",
+            sc.COL_DISB_MATTER_ID: "MAT-1",
+            sc.COL_DISB_DESCRIPTION: "Paid but not billed supplier expense",
+            sc.COL_DISB_AMOUNT: 25,
+            sc.COL_DISB_BILL_PCT: 100,
+            sc.COL_DISB_INVOICE_REF: "",
+            sc.COL_DISB_PAYMENT_STATUS: "PAID",
+        },
+    ]
+    repo.tables[sc.TBL_INVOICE_LOG] = [{sc.COL_INV_INVOICE_NUM: "26-0109"}]
+    repo.tables[sc.TBL_RECEIVABLES] = [{sc.COL_RECV_INVOICE_NUM: "26-0109"}]
+
+    payload = _controller(repo)._load_unbilled_wip_impl(repo.signature)
+
+    entry_ids = {row["entryId"] for row in payload["rows"]}
+    assert "DISB-POSTED" not in entry_ids
+    assert "DISB-UNBILLED-PAID" in entry_ids
 
 
 def test_wip_cache_avoids_a_second_worker_until_forced_refresh():
