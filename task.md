@@ -11,6 +11,7 @@
 - [x] Governed live-data backups were created before both writes. The final shared-data release is `20260924T192026Z_8c6f1469_bf48dd2c`; local/cloud `CSPM.xlsm` match at SHA-256 `F1632E49E76E174ACA15CD67BAAC1D527BDB182CFEB03C04B9F14D1A0854FFA8`.
 - [x] Sandbox-safe validation passed Python compilation, `git diff --check`, governed QML lint with existing warning-only diagnostics, and **53 invoice/WIP tests**.
 - [ ] Manual installed-app acceptance: open WIP-to-Bill and confirm Truexperiences has no residual rows; open Invoice Directory and confirm `26-0109` is unpaid with `$1,903.56` outstanding and the expected PDF opens.
+- [x] Source repair `1065a81` pushed to `origin/wip/ap-defect-validation`; candidate package rebuilt and deployed to `C:\Programs\CSPM\CSPM.exe`. Installed/dist EXE SHA-256 matches `723BA642AE9C449579A81E4BBF77876A1EF4E65ADDBEF65B30454105CC3F7B2A`. Outside-sandbox installed startup reached input-ready and closed normally; shared checkout released and repaired workbook hashes remained unchanged.
 
 ## Invoice Builder Summary, Zen Layout, And Disbursement Labels (2026-09-24)
 
