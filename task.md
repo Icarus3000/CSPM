@@ -1,5 +1,16 @@
 # CSPM Task And Validation Ledger
 
+## Mixed Hourly / Flat-Fee / Disbursement Invoices (2026-09-24)
+
+- [x] Preserve the existing **Set Invoice Flat Fee** concept as an invoice-wide replacement fee: it replaces ordinary professional WIP and may show the difference as a courtesy discount or keep it as a hidden adjustment.
+- [x] Add a distinct **Add Flat Fee Line** workflow for an amount-only professional-services line that coexists with hourly work, carries no hours or hourly rate, and does not negate other professional fees.
+- [x] Render hourly services, additive flat-fee services, and disbursements in separate invoice sections. Suppress **Total Professional Time** whenever any flat fee is present and show disbursements separately in the summary.
+- [x] Keep discounts and agency deductions scoped to professional fees, calculate HST from net professional fees plus taxable disbursements, and record professional fees and disbursements separately in Invoice Log on finalization.
+- [x] Add regression coverage for the reported example: `$570.00` hourly work + `$950.00` additive flat fee + `$491.06` tax-exempt disbursement - `$270.00` courtesy discount + `$162.50` HST = `$1,903.56` due.
+- [x] Sandbox-safe validation passed: Python compilation, governed QML lint with warning-only existing diagnostics, `git diff --check`, and **58 focused/adjacent tests**. A real Chromium PDF render was visually inspected across both pages after correcting first-page header clearance.
+- [ ] Build and deploy the updated local executable, validate real Qt/WebEngine startup, and push the invoice repair to the cloud repository.
+- [ ] Manual application acceptance on a new disposable draft: combine hourly dockets, an additive flat-fee line, and a disbursement; confirm the three sections and summary; separately confirm **Set Invoice Flat Fee** still replaces all professional WIP and its discount/hidden-adjustment choice behaves as labelled. Do not alter an existing finalized invoice.
+
 ## Authoritative Custom-Fee Accounting (2026-09-10)
 
 - [x] Preserve manually balanced invoice `26-0097`; make no historic workbook repair or live-data change.

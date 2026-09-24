@@ -644,7 +644,24 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 8
                                 Item { Layout.fillWidth: true }
-                                PillButton { t: host.t; text: "Add Custom Fee"; primary: false; Layout.preferredWidth: 132; Layout.preferredHeight: 34; onClicked: host.openAddFeeDialog() }
+                                PillButton {
+                                    t: host.t
+                                    text: "Add Flat Fee Line"
+                                    primary: false
+                                    visible: !host.hasCustomFees
+                                    Layout.preferredWidth: 146
+                                    Layout.preferredHeight: 34
+                                    onClicked: host.openAdditiveFlatFeeDialog()
+                                }
+                                PillButton {
+                                    t: host.t
+                                    text: host.hasCustomFees ? "Invoice Flat Fee Set" : "Set Invoice Flat Fee"
+                                    primary: false
+                                    enabled: !host.hasCustomFees
+                                    Layout.preferredWidth: 154
+                                    Layout.preferredHeight: 34
+                                    onClicked: host.openInvoiceFlatFeeDialog()
+                                }
                                 PillButton { t: host.t; text: "Cancel"; primary: false; Layout.preferredWidth: 82; Layout.preferredHeight: 34; onClicked: host._clearSelection() }
                                 PillButton { t: host.t; text: "Delete Draft"; primary: false; Layout.preferredWidth: 104; Layout.preferredHeight: 34; onClicked: host._deleteDraft() }
                                 PillButton { t: host.t; text: host.isFinalized ? "Finalized" : "Finalize Invoice"; primary: true; enabled: !host.isFinalized; Layout.preferredWidth: 132; Layout.preferredHeight: 34; onClicked: host._finalizeDraft() }

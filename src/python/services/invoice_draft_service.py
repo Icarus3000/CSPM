@@ -20,6 +20,8 @@ _DRAFT_LIFECYCLE_LOCK = threading.RLock()
 
 
 CUSTOM_FEE_ORIGIN = "InvoiceDraft"
+FEE_TREATMENT_INVOICE_WIDE = "InvoiceWide"
+FEE_TREATMENT_ADDITIVE = "Additive"
 
 class InvoiceDraftService:
     def __init__(self, repo: ExcelRepo):
@@ -97,6 +99,42 @@ class InvoiceDraftService:
         )
 
     @staticmethod
+    def _normalize_fee_treatment(value: Any) -> str:
+        normalized = str(value or "").strip().casefold().replace("-", "_")
+        if normalized in {"additive", "additive_flat_fee", "flat_fee_line", "line"}:
+            return FEE_TREATMENT_ADDITIVE
+        return FEE_TREATMENT_INVOICE_WIDE
+
+    @classmethod
+    def fee_treatment(cls, row: Dict[str, Any]) -> str:
+        """Classify a fee row without confusing amount-only work with an invoice override.
+
+        Historic invoice-draft custom fees predate the explicit marker, so an
+        InvoiceDraft fee with no FeeTreatment remains invoice-wide. Ordinary
+        Fee Docket Entry rows are additive professional-fee lines.
+        """
+        markers = cls._audit_markers(row)
+        if markers.get("entrytype", "").casefold() != "fee":
+            return ""
+        explicit = markers.get("feetreatment", "")
+        if explicit:
+            return cls._normalize_fee_treatment(explicit)
+        if markers.get("feeorigin", "").casefold() == CUSTOM_FEE_ORIGIN.casefold():
+            return FEE_TREATMENT_INVOICE_WIDE
+        return FEE_TREATMENT_ADDITIVE
+
+    @classmethod
+    def _is_invoice_wide_custom_fee(cls, row: Dict[str, Any]) -> bool:
+        return (
+            cls._is_draft_custom_fee(row)
+            and cls.fee_treatment(row) == FEE_TREATMENT_INVOICE_WIDE
+        )
+
+    @classmethod
+    def _is_additive_flat_fee(cls, row: Dict[str, Any]) -> bool:
+        return cls.fee_treatment(row) == FEE_TREATMENT_ADDITIVE
+
+    @staticmethod
     def _validate_custom_fee_request_id(request_id: Any) -> str:
         value = str(request_id or "").strip()
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{8,128}", value):
@@ -121,6 +159,7 @@ class InvoiceDraftService:
         request_id: str,
         line_id: str,
         state: str,
+        fee_treatment: str = FEE_TREATMENT_INVOICE_WIDE,
         final_invoice_num: str = "",
     ) -> str:
         parts = [
@@ -131,6 +170,7 @@ class InvoiceDraftService:
             f"RequestID:{request_id}",
             f"CustomFeeLineID:{line_id}",
             f"CustomFeeState:{state}",
+            f"FeeTreatment:{InvoiceDraftService._normalize_fee_treatment(fee_treatment)}",
         ]
         if final_invoice_num:
             parts.append(f"FinalInvoice:{final_invoice_num}")
@@ -153,6 +193,7 @@ class InvoiceDraftService:
             "requestId": markers.get("requestid", ""),
             "draftId": markers.get("draftownerid", ""),
             "state": markers.get("customfeestate", "Draft") or "Draft",
+            "feeTreatment": cls.fee_treatment(row),
             "alreadyCreated": bool(already_created),
             "alreadyFinalized": bool(already_finalized),
             "recovered": bool(recovered),
@@ -247,8 +288,8 @@ class InvoiceDraftService:
         draft_num = self._text(draft.get(sc.COL_DRAFT_INVOICE_NUM))
         fees = Decimal("0.0")
         tax = Decimal("0.0")
-        custom_fee_rows: List[Dict[str, Any]] = []
-        custom_fee_total = Decimal("0.0")
+        invoice_flat_fee_rows: List[Dict[str, Any]] = []
+        invoice_flat_fee_total = Decimal("0.0")
         for row in time_entries:
             if (
                 self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
@@ -257,26 +298,26 @@ class InvoiceDraftService:
                 entry_net, entry_tax = self._entry_invoice_amounts(row)
                 fees += entry_net
                 tax += entry_tax
-                if self._is_draft_custom_fee(row):
-                    custom_fee_rows.append(row)
-                    custom_fee_total += entry_net
+                if self._is_invoice_wide_custom_fee(row):
+                    invoice_flat_fee_rows.append(row)
+                    invoice_flat_fee_total += entry_net
 
         disb_total = Decimal("0.0")
         for row in disb_entries:
             if self._text(row.get(sc.COL_DISB_INVOICE_REF)) == draft_num:
                 disb_total += Decimal(str(row.get(sc.COL_DISB_AMOUNT) or 0))
 
-        # A draft-owned custom-fee line is the durable instruction that its
+        # An invoice-wide custom-fee line is the durable instruction that its
         # amount replaces the ordinary docket fee total.  The invoice preview
         # already follows that rule; finalization must not depend on the
         # separate legacy IsFlatFee metadata also having been set.
         is_flat_fee = (
-            bool(custom_fee_rows)
+            bool(invoice_flat_fee_rows)
             or self._text(draft.get(sc.COL_DRAFT_IS_FLAT_FEE)).lower() == "true"
         )
         flat_fee_amt = (
-            custom_fee_total
-            if custom_fee_rows
+            invoice_flat_fee_total
+            if invoice_flat_fee_rows
             else self._money(draft.get(sc.COL_DRAFT_FLAT_FEE_AMOUNT))
         )
         fees_to_use = flat_fee_amt if is_flat_fee else fees
@@ -284,29 +325,49 @@ class InvoiceDraftService:
         discount_type = self._normalize_discount_type(draft.get(sc.COL_DRAFT_DISCOUNT_TYPE))
         discount_value = Decimal(str(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
         agency_split_percent = Decimal(str(draft.get(sc.COL_DRAFT_AGENCY_SPLIT_PERCENT) or 0))
-        total_base = fees_to_use + disb_total
         if discount_type == "Percentage":
-            discount_amt = total_base * (discount_value / Decimal("100.0"))
+            discount_amt = fees_to_use * (discount_value / Decimal("100.0"))
         elif discount_type == "Flat":
             discount_amt = discount_value
         else:
             discount_amt = Decimal("0.0")
 
-        subtotal = max(Decimal("0.0"), total_base - discount_amt)
+        # Discounts and agency deductions apply to professional fees only.
+        # Recoverable client expenses remain a separately stated charge.
+        subtotal = max(Decimal("0.0"), fees_to_use - discount_amt)
         agency_split_amt = subtotal * (agency_split_percent / Decimal("100.0"))
-        new_fees = max(Decimal("0.0"), subtotal - agency_split_amt)
+        net_professional_fees = max(Decimal("0.0"), subtotal - agency_split_amt)
+
+        taxable_disbursements = Decimal("0.0")
+        for row in disb_entries:
+            if self._text(row.get(sc.COL_DISB_INVOICE_REF)) != draft_num:
+                continue
+            tax_exempt = self._text(row.get(sc.COL_DISB_TAX_EXEMPT)).casefold() in {
+                "true", "1", "yes", "y", "on",
+            }
+            if not tax_exempt:
+                taxable_disbursements += self._money(row.get(sc.COL_DISB_AMOUNT))
 
         # If flat fee, agency split, or discount is applied, compute tax on final net fees
         if is_flat_fee or agency_split_percent > 0 or discount_amt > 0:
-            final_tax = round(new_fees * Decimal("0.13"), 2)
-            fees_billed = new_fees
+            final_tax = self._money(
+                (net_professional_fees + taxable_disbursements) * Decimal("0.13")
+            )
         else:
-            final_tax = tax
-            fees_billed = fees_to_use + disb_total
+            final_tax = self._money(
+                tax + (taxable_disbursements * Decimal("0.13"))
+            )
 
-        draft[sc.COL_DRAFT_TOTAL_FEES] = str(self._money(fees_billed))
+        billings_excluding_tax = self._money(net_professional_fees + disb_total)
+
+        # DraftInvoices has no separate disbursement-total column. Keep this
+        # legacy field as total billings excluding tax; the finalized Invoice
+        # Log records professional fees and disbursements separately.
+        draft[sc.COL_DRAFT_TOTAL_FEES] = str(billings_excluding_tax)
         draft[sc.COL_DRAFT_TOTAL_TAX] = str(self._money(final_tax))
-        draft[sc.COL_DRAFT_TOTAL_DUE] = str(self._money(new_fees + final_tax))
+        draft[sc.COL_DRAFT_TOTAL_DUE] = str(
+            self._money(billings_excluding_tax + final_tax)
+        )
         draft[sc.COL_DRAFT_UPDATED_AT] = datetime.now().astimezone().isoformat()
 
     def _assert_invoice_number_available(self, invoice_num: str) -> None:
@@ -1126,13 +1187,27 @@ class InvoiceDraftService:
         )
 
     def add_custom_fee_line(self, draft_num: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create or recover one draft-owned custom fee for one logical request."""
+        """Create or recover one draft-owned fee for one logical request.
+
+        ``InvoiceWide`` preserves the historic custom-fee behaviour: one
+        authoritative fee replaces the value of the draft's underlying WIP.
+        ``Additive`` creates an amount-only professional-fee line that remains
+        in addition to the hourly work.
+        """
         with _DRAFT_LIFECYCLE_LOCK:
             request = dict(data or {})
             request_id = self._validate_custom_fee_request_id(request.get("requestId"))
+            fee_treatment = self._normalize_fee_treatment(
+                request.get("feeTreatment")
+            )
+            fee_label = (
+                "flat-fee line"
+                if fee_treatment == FEE_TREATMENT_ADDITIVE
+                else "invoice flat fee"
+            )
             draft_num = self._text(draft_num)
             if not draft_num:
-                raise ValueError("Select an invoice draft before adding a custom fee.")
+                raise ValueError(f"Select an invoice draft before adding a {fee_label}.")
 
             tables = self._read_tables_once([
                 sc.TBL_DRAFT_INVOICES,
@@ -1172,6 +1247,12 @@ class InvoiceDraftService:
                     draft_num=draft_num,
                 )
                 state = self._audit_markers(existing[0]).get("customfeestate", "Draft")
+                existing_treatment = self.fee_treatment(existing[0])
+                if existing_treatment != fee_treatment:
+                    raise RuntimeError(
+                        "This fee request was already used for a different fee type. "
+                        "Close and reopen the dialog."
+                    )
                 if (
                     state.casefold() != "draft"
                     or self._text(existing[0].get(sc.COL_TIME_INVOICE_REF)).casefold()
@@ -1195,17 +1276,39 @@ class InvoiceDraftService:
                     already_created=True,
                 )
 
+            invoice_flat_fee_rows = [
+                row
+                for row in time_entries
+                if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
+                == draft_num.casefold()
+                and self._is_invoice_wide_custom_fee(row)
+            ]
+            if (
+                fee_treatment == FEE_TREATMENT_INVOICE_WIDE
+                and invoice_flat_fee_rows
+            ):
+                raise ValueError(
+                    "This draft already has an invoice-wide flat fee. Edit or remove it instead."
+                )
+            if (
+                fee_treatment == FEE_TREATMENT_ADDITIVE
+                and invoice_flat_fee_rows
+            ):
+                raise ValueError(
+                    "Remove the invoice-wide flat fee before adding an additive flat-fee line."
+                )
+
             date_text = self._text(request.get("date"))
             try:
                 parsed_date = datetime.strptime(date_text, "%Y-%m-%d")
             except ValueError as exc:
-                raise ValueError("Enter the custom-fee date as YYYY-MM-DD.") from exc
+                raise ValueError(f"Enter the {fee_label} date as YYYY-MM-DD.") from exc
             if parsed_date.strftime("%Y-%m-%d") != date_text:
-                raise ValueError("Enter a valid custom-fee date as YYYY-MM-DD.")
+                raise ValueError(f"Enter a valid {fee_label} date as YYYY-MM-DD.")
 
             description = self._text(request.get("description"))
             if not description:
-                raise ValueError("Enter a description for the custom fee.")
+                raise ValueError(f"Enter a description for the {fee_label}.")
 
             try:
                 amount = Decimal(str(request.get("amount"))).quantize(
@@ -1213,9 +1316,9 @@ class InvoiceDraftService:
                     rounding=ROUND_HALF_UP,
                 )
             except Exception as exc:
-                raise ValueError("Enter a valid custom-fee amount.") from exc
+                raise ValueError(f"Enter a valid {fee_label} amount.") from exc
             if not amount.is_finite() or amount <= Decimal("0.00"):
-                raise ValueError("Custom-fee amount must be greater than zero.")
+                raise ValueError(f"The {fee_label} amount must be greater than zero.")
 
             matter_id = self._text(request.get("matterId"))
             matter = next(
@@ -1227,7 +1330,7 @@ class InvoiceDraftService:
                 None,
             )
             if not matter_id or not matter:
-                raise ValueError("Select a valid matter for the custom fee.")
+                raise ValueError(f"Select a valid matter for the {fee_label}.")
 
             draft_client_id = self._text(draft.get(sc.COL_DRAFT_CLIENT_ID))
             matter_client_id = self._text(matter.get(sc.COL_MATTER_CLIENT_ID))
@@ -1292,6 +1395,7 @@ class InvoiceDraftService:
                     request_id=request_id,
                     line_id=line_id,
                     state="Draft",
+                    fee_treatment=fee_treatment,
                 ),
                 sc.COL_TIME_CREATED: now_stamp,
             }
@@ -1564,14 +1668,18 @@ class InvoiceDraftService:
         time_entries = table_rows[sc.TBL_TIME]
         disb_entries = table_rows[sc.TBL_DISBURSEMENTS]
         draft_id = self._text(draft.get(sc.COL_DRAFT_ID))
-        custom_fee_rows = [
+        draft_owned_fee_rows = [
             row
             for row in time_entries
             if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
             == self._text(draft_num).casefold()
             and self._is_draft_custom_fee(row)
         ]
-        if custom_fee_rows and not draft_id:
+        invoice_flat_fee_rows = [
+            row for row in draft_owned_fee_rows
+            if self._is_invoice_wide_custom_fee(row)
+        ]
+        if draft_owned_fee_rows and not draft_id:
             raise ValueError("The invoice draft is missing its stable DraftID.")
 
         matters_by_id = {
@@ -1590,7 +1698,7 @@ class InvoiceDraftService:
                 sc.TBL_TRANSACTIONS_MASTER,
             )
         }
-        for row in custom_fee_rows:
+        for row in draft_owned_fee_rows:
             self._assert_custom_fee_owner(row, draft_id=draft_id, draft_num=draft_num)
             markers = self._audit_markers(row)
             if markers.get("customfeestate", "").casefold() != "draft":
@@ -1661,6 +1769,10 @@ class InvoiceDraftService:
                         request_id=custom_fee_markers["requestid"],
                         line_id=custom_fee_markers["customfeelineid"],
                         state="Finalized",
+                        fee_treatment=custom_fee_markers.get(
+                            "feetreatment",
+                            self.fee_treatment(row),
+                        ),
                         final_invoice_num=final_invoice_num,
                     )
                 
@@ -1670,7 +1782,7 @@ class InvoiceDraftService:
         # This keeps generic linked-WIP sums equal to the invoice fee and avoids
         # carrying the original docket total into A/R.
         is_flat_fee = (
-            bool(custom_fee_rows)
+            bool(invoice_flat_fee_rows)
             or self._text(draft.get(sc.COL_DRAFT_IS_FLAT_FEE)).lower() == "true"
         )
         if is_flat_fee:
@@ -1683,7 +1795,7 @@ class InvoiceDraftService:
                 ),
                 Decimal("0.00"),
             )
-            if custom_fee_rows:
+            if invoice_flat_fee_rows:
                 # Match the already-recalculated financial totals exactly,
                 # including any existing agency split/discount controls. The
                 # disbursement amount remains outside linked time-entry WIP.
@@ -1722,13 +1834,13 @@ class InvoiceDraftService:
                 recon_mode = self._text(
                     draft.get(sc.COL_DRAFT_RECONCILIATION_MODE)
                 ).casefold()
-                if custom_fee_rows:
+                if invoice_flat_fee_rows:
                     desc = (
                         "Custom Fee Reconciliation (Invoice Courtesy Discount)"
                         if recon_mode == "discount_line"
                         else "Custom Fee Reconciliation (Docket WIP Replaced)"
                     )
-                    source_row = custom_fee_rows[0]
+                    source_row = invoice_flat_fee_rows[0]
                     audit = (
                         "EntryType:InvoiceAdjustment || "
                         "AdjustmentOrigin:CustomFeeReconciliation || "
@@ -1844,6 +1956,19 @@ class InvoiceDraftService:
         bill_to_client_name = self._bill_to_snapshot_client_name(bill_to_snapshot) or self._text(
             draft.get(sc.COL_DRAFT_CLIENT_NAME)
         )
+        finalized_disbursement_total = sum(
+            (
+                self._money(row.get(sc.COL_DISB_AMOUNT))
+                for row in disb_entries
+                if self._text(row.get(sc.COL_DISB_INVOICE_REF)).casefold()
+                == final_invoice_num.casefold()
+            ),
+            Decimal("0.00"),
+        )
+        finalized_professional_fees = self._money(
+            self._money(draft.get(sc.COL_DRAFT_TOTAL_FEES))
+            - finalized_disbursement_total
+        )
 
         # 3. Create Receivables entry
         receivables = table_rows[sc.TBL_RECEIVABLES]
@@ -1863,7 +1988,8 @@ class InvoiceDraftService:
             sc.COL_INV_INVOICE_NUM: final_invoice_num,
             sc.COL_INV_CLIENT_NAME: bill_to_client_name,
             sc.COL_INV_INVOICE_DATE: date_str,
-            sc.COL_INV_TOTAL_FEES: draft.get(sc.COL_DRAFT_TOTAL_FEES),
+            sc.COL_INV_TOTAL_FEES: str(finalized_professional_fees),
+            sc.COL_INV_TOTAL_DISBURSEMENTS: str(finalized_disbursement_total),
             sc.COL_INV_TOTAL_TAX: draft.get(sc.COL_DRAFT_TOTAL_TAX),
             sc.COL_INV_AGGREGATE_BILLED: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_INV_BILL_TO_CLIENT: bill_to_client_name,

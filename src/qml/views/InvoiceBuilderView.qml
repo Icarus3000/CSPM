@@ -91,7 +91,8 @@ Item {
         var total = 0
         for (var i = 0; i < root.draftLineItems.length; ++i) {
             var item = root.draftLineItems[i]
-            if (!root._isCustomFeeItem(item)) total += Number(item.amount || 0)
+            if (!item.isDisbursement && !root._isCustomFeeItem(item))
+                total += Number(item.amount || 0)
         }
         return total
     }
@@ -173,10 +174,8 @@ Item {
 
     function _isCustomFeeItem(item) {
         if (!item) return false
-        return item.isFee === true
-                || (Number(item.hours || 0) === 0
-                && Number(item.rate || 0) === 0
-                && Number(item.amount || 0) > 0)
+        return item.isInvoiceFlatFee === true
+                || String(item.feeTreatment || "") === "InvoiceWide"
     }
 
     function _reconciliationMode() {
@@ -205,8 +204,12 @@ Item {
         root.previewHtml = ""
     }
 
-    function openAddFeeDialog() {
-        addFeeDialog.prepareAndOpen()
+    function openInvoiceFlatFeeDialog() {
+        addFeeDialog.prepareAndOpen("invoice_wide")
+    }
+
+    function openAdditiveFlatFeeDialog() {
+        addFeeDialog.prepareAndOpen("additive")
     }
     function openDatePickerFor(field, px, py) {
         _activeDateField = field
@@ -1077,21 +1080,49 @@ Item {
                                                         }
                                                     }
 
-                                                    // Add Custom Fee
+                                                    // Additive amount-only professional fee
                                                     Rectangle {
+                                                        visible: !root.hasCustomFees
                                                         Layout.alignment: Qt.AlignVCenter
-                                                        width: 140
+                                                        width: 150
                                                         height: 36
                                                         radius: 18
                                                         color: "transparent"
                                                         border.color: root.accentColor
                                                         border.width: 1
-                                                        Text { anchors.centerIn: parent; text: "Add Custom Fee"; color: root.accentColor; font.pixelSize: 14 }
+                                                        opacity: root.hasCustomFees ? 0.45 : 1.0
+                                                        Text { anchors.centerIn: parent; text: "Add Flat Fee Line"; color: root.accentColor; font.pixelSize: 13 }
                                                         MouseArea {
-                                                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                            anchors.fill: parent
+                                                            enabled: !root.hasCustomFees
+                                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                             onClicked: {
-                                                                root.openAddFeeDialog()
+                                                                root.openAdditiveFlatFeeDialog()
                                                             }
+                                                        }
+                                                    }
+
+                                                    // One invoice-wide replacement fee
+                                                    Rectangle {
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        width: 160
+                                                        height: 36
+                                                        radius: 18
+                                                        color: "transparent"
+                                                        border.color: root.accentColor
+                                                        border.width: 1
+                                                        opacity: root.hasCustomFees ? 0.45 : 1.0
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: root.hasCustomFees ? "Invoice Flat Fee Set" : "Set Invoice Flat Fee"
+                                                            color: root.accentColor
+                                                            font.pixelSize: 13
+                                                        }
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            enabled: !root.hasCustomFees
+                                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                            onClicked: root.openInvoiceFlatFeeDialog()
                                                         }
                                                     }
 
@@ -1786,7 +1817,7 @@ Item {
 
     Window {
         id: addFeeDialog
-        title: "Add Custom Fee"
+        title: feeTreatment === "additive" ? "Add Flat Fee Line" : "Set Invoice Flat Fee"
         width: 440
         height: 380
         flags: Qt.Dialog | Qt.WindowStaysOnTopHint
@@ -1796,12 +1827,18 @@ Item {
         property string ownerDraftNum: ""
         property bool submissionPending: false
         property string validationMessage: ""
+        property string feeTreatment: "invoice_wide"
 
-        function prepareAndOpen() {
+        readonly property string feeName: feeTreatment === "additive"
+                                                 ? "flat-fee line"
+                                                 : "invoice flat fee"
+
+        function prepareAndOpen(treatment) {
             if (!root.billingBackend || !root.selectedDraftNum) {
-                appToast("Select an invoice draft before adding a custom fee.")
+                appToast("Select an invoice draft before adding a fee.")
                 return
             }
+            feeTreatment = treatment === "additive" ? "additive" : "invoice_wide"
             requestId = String(root.billingBackend.newCustomFeeRequestId() || "")
             ownerDraftNum = String(root.selectedDraftNum)
             submissionPending = false
@@ -1820,7 +1857,7 @@ Item {
             if (submissionPending) return
             validationMessage = ""
             if (!root.billingBackend || requestId === "" || ownerDraftNum === "") {
-                validationMessage = "This request is no longer valid. Close and reopen Add Custom Fee."
+                validationMessage = "This request is no longer valid. Close and reopen " + title + "."
                 return
             }
             var normalizedDate = root._normalizedInvoiceDate(newFeeDate.text)
@@ -1833,7 +1870,7 @@ Item {
                 return
             }
             if (description === "") {
-                validationMessage = "Enter a description for the custom fee."
+                validationMessage = "Enter a description for the " + feeName + "."
                 return
             }
             if (!isFinite(amount) || amount <= 0) {
@@ -1851,6 +1888,7 @@ Item {
                 "date": normalizedDate,
                 "description": description,
                 "isFee": true,
+                "feeTreatment": feeTreatment,
                 "amount": amount,
                 "matterId": String(selectedMatter.matterId)
             })
@@ -1860,7 +1898,7 @@ Item {
             if (!result || String(result.requestId || "") !== requestId) return
             submissionPending = false
             if (result.ok !== true) {
-                validationMessage = String(result.message || "The custom fee could not be verified. Retry this request.")
+                validationMessage = String(result.message || "The fee could not be verified. Retry this request.")
                 return
             }
             requestId = ""
@@ -1938,8 +1976,10 @@ Item {
                 text: addFeeDialog.validationMessage !== ""
                         ? addFeeDialog.validationMessage
                         : (root.customFeeMatterOptions.length === 0
-                            ? "This draft has no valid matter. Add matter-linked WIP before adding a custom fee."
-                            : "The fee remains owned by this draft until it is finalized or removed.")
+                            ? "This draft has no valid matter. Add matter-linked WIP before adding a fee."
+                            : (addFeeDialog.feeTreatment === "additive"
+                                ? "This amount-only professional fee is added to the hourly work. It has no hours or hourly rate."
+                                : "This single fee replaces all underlying professional work on the invoice. The difference can be shown as a courtesy discount or kept as a hidden adjustment."))
                 color: addFeeDialog.validationMessage !== "" ? "#D14343" : root.mutedColor
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
@@ -1960,7 +2000,11 @@ Item {
                     }
                 }
                 Button {
-                    text: addFeeDialog.submissionPending ? "Adding…" : "Add Fee"
+                    text: addFeeDialog.submissionPending
+                            ? "Saving…"
+                            : (addFeeDialog.feeTreatment === "additive"
+                                ? "Add Flat Fee"
+                                : "Set Flat Fee")
                     enabled: !addFeeDialog.submissionPending
                             && root.customFeeMatterOptions.length > 0
                     onClicked: addFeeDialog.submit()

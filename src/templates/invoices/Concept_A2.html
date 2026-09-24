@@ -49,7 +49,7 @@
         .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; }
         
         /* To ensure the matter section on Page 1 doesn't overlap the absolute header, we add a spacer */
-        .page-1-spacer { height: 305px; }
+        .page-1-spacer { height: 340px; }
         
         /* Left Column: Brand & Client */
         .header-left { width: 55%; }
@@ -334,11 +334,11 @@
                 </table>
             </div>
             {% else %}
-            {% for matter in matters %}
+            {% for matter in hourly_matters %}
             <div class="matter-section">
                 <div class="matter-header">
                     <span>{{ matter.display_name }}</span>
-                    {% if matters|length == 1 %}
+                    {% if hourly_matters|length == 1 %}
                     <span class="matter-header-label">Matter Detail</span>
                     {% endif %}
                 </div>
@@ -364,7 +364,7 @@
                     </tbody>
                 </table>
                 
-                {% if matters|length > 1 %}
+                {% if hourly_matters|length > 1 %}
                 <div class="subtotal-container">
                     <div class="subtotal-wrapper">
                         <div class="subtotal-row" style="width: 50%;">
@@ -376,12 +376,66 @@
             </div>
             {% endfor %}
             {% endif %}
+
+            {% if additive_flat_fee_lines %}
+            <div class="matter-section">
+                <div class="matter-header">
+                    <span>Professional Services</span>
+                    <span class="matter-header-label">Flat Fees</span>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th class="col-date" style="width: 15%;">Date</th>
+                            <th class="col-desc" style="width: 70%;">Description</th>
+                            <th class="col-fee" style="width: 15%;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for fee in additive_flat_fee_lines %}
+                        <tr>
+                            <td class="col-date" style="width: 15%;">{{ fee.date }}</td>
+                            <td class="col-desc" style="width: 70%;">{{ fee.description }}</td>
+                            <td class="col-fee" style="width: 15%;">${{ "{:,.2f}".format(fee.amount) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if disbursement_lines %}
+            <div class="matter-section">
+                <div class="matter-header">
+                    <span>Disbursements</span>
+                    <span class="matter-header-label">Client Expenses</span>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th class="col-date" style="width: 15%;">Date</th>
+                            <th class="col-desc" style="width: 70%;">Description</th>
+                            <th class="col-fee" style="width: 15%;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in disbursement_lines %}
+                        <tr>
+                            <td class="col-date" style="width: 15%;">{{ item.date }}</td>
+                            <td class="col-desc" style="width: 70%;">{{ item.description }}</td>
+                            <td class="col-fee" style="width: 15%;">${{ "{:,.2f}".format(item.amount) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
             
             <div class="final-invoice-conclusion" style="page-break-inside: avoid; break-inside: avoid;">
                 <div class="totals-container">
                     <div class="totals-wrapper">
                         <div class="totals-block">
-                            {% if show_total_hours and not is_flat_fee %}
+                            {% if show_total_hours and not has_any_flat_fee %}
                             <div class="totals-row">
                                 <span>Total Professional Time</span>
                                 <span class="totals-val">{{ "{:,.1f}".format(total_hours) }} hours</span>
@@ -414,9 +468,15 @@
                             {% if discount_amount > 0 or agency_split_amount > 0 %}
                             <div class="totals-row">
                                 <span>{% if agency_split_amount > 0 and discount_amount > 0 %}Net Fees After Discount &amp; Deduction{% elif agency_split_amount > 0 %}Net Fees After Deduction{% else %}Net Fees After Discount{% endif %}</span>
-                                <span class="totals-val">${{ "{:,.2f}".format(total_fees - discount_amount - agency_split_amount) }}</span>
+                                <span class="totals-val">${{ "{:,.2f}".format(net_professional_fees) }}</span>
                             </div>
                             {% endif %}
+                            {% endif %}
+                            {% if disbursement_total > 0 %}
+                            <div class="totals-row">
+                                <span>Disbursements</span>
+                                <span class="totals-val">${{ "{:,.2f}".format(disbursement_total) }}</span>
+                            </div>
                             {% endif %}
                             <div class="totals-row sub-row">
                                 <span>HST (13%)</span>

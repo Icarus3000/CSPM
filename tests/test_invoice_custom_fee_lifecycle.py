@@ -123,8 +123,14 @@ class _MemoryRepo:
             return f"{prefix}-{self._ids}"
 
 
-def _request(request_id: str, *, description: str = "Special advisory fee", amount=250):
-    return {
+def _request(
+    request_id: str,
+    *,
+    description: str = "Special advisory fee",
+    amount=250,
+    fee_treatment: str | None = None,
+):
+    request = {
         "requestId": request_id,
         "date": "2026-08-30",
         "description": description,
@@ -132,6 +138,9 @@ def _request(request_id: str, *, description: str = "Special advisory fee", amou
         "matterId": MATTER_ID,
         "isFee": True,
     }
+    if fee_treatment is not None:
+        request["feeTreatment"] = fee_treatment
+    return request
 
 
 def _custom_fees(repo: _MemoryRepo):
@@ -142,19 +151,45 @@ def _custom_fees(repo: _MemoryRepo):
     ]
 
 
-def test_one_request_is_idempotent_but_two_deliberate_requests_may_match_content():
+def test_invoice_flat_fee_request_is_idempotent_and_second_replacement_is_rejected():
     repo = _MemoryRepo()
     service = InvoiceDraftService(repo)
 
     first = service.add_custom_fee_line(DRAFT_NUM, _request("CFR_request_0001"))
     duplicate = service.add_custom_fee_line(DRAFT_NUM, _request("CFR_request_0001"))
-    second = service.add_custom_fee_line(DRAFT_NUM, _request("CFR_request_0002"))
-
     assert first["entryId"] == duplicate["entryId"]
+    assert duplicate["alreadyCreated"] is True
+    with pytest.raises(ValueError, match="already has an invoice-wide flat fee"):
+        service.add_custom_fee_line(DRAFT_NUM, _request("CFR_request_0002"))
+    assert len(_custom_fees(repo)) == 1
+    assert {row[sc.COL_TIME_MATTER_ID] for row in _custom_fees(repo)} == {MATTER_ID}
+
+
+def test_two_deliberate_additive_flat_fee_requests_may_match_content():
+    repo = _MemoryRepo()
+    service = InvoiceDraftService(repo)
+
+    first = service.add_custom_fee_line(
+        DRAFT_NUM,
+        _request("CFR_additive_0001", fee_treatment="additive"),
+    )
+    duplicate = service.add_custom_fee_line(
+        DRAFT_NUM,
+        _request("CFR_additive_0001", fee_treatment="additive"),
+    )
+    second = service.add_custom_fee_line(
+        DRAFT_NUM,
+        _request("CFR_additive_0002", fee_treatment="additive"),
+    )
+
+    assert duplicate["entryId"] == first["entryId"]
     assert duplicate["alreadyCreated"] is True
     assert second["entryId"] != first["entryId"]
     assert len(_custom_fees(repo)) == 2
-    assert {row[sc.COL_TIME_MATTER_ID] for row in _custom_fees(repo)} == {MATTER_ID}
+    assert all(
+        service.fee_treatment(row) == "Additive"
+        for row in _custom_fees(repo)
+    )
 
 
 def test_simultaneous_duplicate_calls_create_one_stable_line():
@@ -259,8 +294,14 @@ def test_replay_refuses_a_billed_fee_while_its_owner_draft_still_exists():
 def test_remove_deletes_only_exact_custom_fee_and_releases_ordinary_wip():
     repo = _MemoryRepo()
     service = InvoiceDraftService(repo)
-    first = service.add_custom_fee_line(DRAFT_NUM, _request("CFR_remove_00001"))
-    second = service.add_custom_fee_line(DRAFT_NUM, _request("CFR_remove_00002"))
+    first = service.add_custom_fee_line(
+        DRAFT_NUM,
+        _request("CFR_remove_00001", fee_treatment="additive"),
+    )
+    second = service.add_custom_fee_line(
+        DRAFT_NUM,
+        _request("CFR_remove_00002", fee_treatment="additive"),
+    )
 
     result = service.remove_line_item(DRAFT_NUM, first["entryId"], False)
     assert result["removedCustomFee"] is True
@@ -450,6 +491,9 @@ def test_qml_and_controller_use_request_identity_pending_guard_and_real_matter()
     assert "customFeeMatterOptions" in view
     assert "draftMatterOptions" in view
     assert "addDraftCustomFee" in view
+    assert '"Add Flat Fee Line"' in view
+    assert '"Set Invoice Flat Fee"' in view
+    assert '"feeTreatment": feeTreatment' in view
     assert "customFeeLineCompleted" in controller
     assert "_custom_fee_requests_in_progress" in controller
     assert '"matterOptions": matter_options' in controller

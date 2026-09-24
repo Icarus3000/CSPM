@@ -816,10 +816,15 @@ class BillingController(QObject):
 
                     lock_audit = str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower()
                     matter_id = str(row.get(sc.COL_TIME_MATTER_ID) or "").strip()
+                    fee_treatment = self._draft_svc.fee_treatment(row)
+                    if not fee_treatment and hours == 0.0 and rate == 0.0 and net > 0.0:
+                        # Historic amount-only fee rows may predate EntryType
+                        # audit markers. They are additive, never an implicit
+                        # invoice-wide replacement.
+                        fee_treatment = "Additive"
                     is_fee = (
-                        "entrytype:fee" in lock_audit
-                        or "feeorigin:invoicedraft" in lock_audit
-                        or (hours == 0.0 and rate == 0.0 and net > 0.0)
+                        bool(fee_treatment)
+                        or "entrytype:fee" in lock_audit
                     )
 
                     items.append({
@@ -837,6 +842,14 @@ class BillingController(QObject):
                         "amount": round(net, 2),
 
                         "isFee": is_fee,
+
+                        "feeTreatment": fee_treatment,
+
+                        "isInvoiceFlatFee": fee_treatment == "InvoiceWide",
+
+                        "isAdditiveFlatFee": fee_treatment == "Additive",
+
+                        "isDisbursement": False,
 
                         "matterId": matter_id,
 
@@ -864,6 +877,10 @@ class BillingController(QObject):
                         "rate": 0.0,
                         "amount": round(net, 2),
                         "isFee": False,
+                        "feeTreatment": "",
+                        "isInvoiceFlatFee": False,
+                        "isAdditiveFlatFee": False,
+                        "isDisbursement": True,
                         "matterId": matter_id,
                         "matterDisplay": matter_display.get(matter_id.casefold(), matter_id),
                     })
@@ -965,7 +982,7 @@ class BillingController(QObject):
 
     @Slot(str, 'QVariantMap')
     def addDraftCustomFee(self, draft_num, data):
-        """Persist a custom fee off the QML thread with backend idempotency."""
+        """Persist an invoice-wide or additive flat fee off the QML thread."""
         request = dict(data or {})
         request_id = str(request.get("requestId") or "").strip()
         draft_key = str(draft_num or "").strip().casefold()
@@ -1004,10 +1021,12 @@ class BillingController(QObject):
             payload = dict(result or {})
             payload.setdefault("ok", True)
             self.draftUpdated.emit({})
+            additive = str(payload.get("feeTreatment") or "") == "Additive"
+            fee_name = "Flat-fee line" if additive else "Invoice flat fee"
             self.toast.emit(
-                "Custom fee already recorded"
+                f"{fee_name} already recorded"
                 if payload.get("alreadyCreated")
-                else "Custom fee added"
+                else f"{fee_name} added"
             )
             self.customFeeLineCompleted.emit(payload)
         finally:
@@ -1813,6 +1832,10 @@ class BillingController(QObject):
 
         total_hours = 0.0
 
+        additive_flat_fee_lines = []
+        invoice_flat_fee_lines = []
+        disbursement_lines = []
+
         
 
         # Fetch client profiles to resolve billing parent
@@ -2013,17 +2036,43 @@ class BillingController(QObject):
 
                 rate = 0.0
 
-            matters_map[group_id]["line_items"].append({
+            fee_treatment = self._draft_svc.fee_treatment(row)
+            if not fee_treatment and hours == 0.0 and rate == 0.0 and net > 0.0:
+                fee_treatment = "Additive"
+            is_invoice_flat_fee = fee_treatment == "InvoiceWide"
+            is_additive_flat_fee = fee_treatment == "Additive"
+            line_item = {
                 "entryId": str(row.get(sc.COL_TIME_ENTRY_ID) or ""),
                 "date": str(row.get(sc.COL_TIME_DATE) or ""),
                 "description": clean_desc(str(row.get(sc.COL_TIME_DESC) or "")),
                 "hours": hours,
                 "rate": rate,
-                "is_custom_fee": hours == 0 and rate == 0 and net > 0,
+                "is_custom_fee": is_invoice_flat_fee,
+                "is_invoice_flat_fee": is_invoice_flat_fee,
+                "is_additive_flat_fee": is_additive_flat_fee,
+                "fee_treatment": fee_treatment,
                 "amount": net,
                 "amount_client": net,
                 "amount_firm": net * (1.0 - (agency_split_percent / 100.0)) if agency_split_percent > 0 else net,
-            })
+            }
+            matters_map[group_id]["line_items"].append(line_item)
+
+            if is_invoice_flat_fee:
+                invoice_flat_fee_lines.append({
+                    "entryId": line_item["entryId"],
+                    "date": line_item["date"],
+                    "description": line_item["description"],
+                    "amount": net,
+                    "matter_display": display_name,
+                })
+            elif is_additive_flat_fee:
+                additive_flat_fee_lines.append({
+                    "entryId": line_item["entryId"],
+                    "date": line_item["date"],
+                    "description": line_item["description"],
+                    "amount": net,
+                    "matter_display": display_name,
+                })
 
             matters_map[group_id]["total_fees"] += net
 
@@ -2099,7 +2148,9 @@ class BillingController(QObject):
             except (ValueError, TypeError):
                 net = 0.0
 
-            tax_exempt = bool(row.get(sc.COL_DISB_TAX_EXEMPT))
+            tax_exempt = str(row.get(sc.COL_DISB_TAX_EXEMPT) or "").strip().casefold() in {
+                "true", "1", "yes", "y", "on",
+            }
             hst = 0.0 if tax_exempt else round(net * 0.13, 2) 
             
             try:
@@ -2107,7 +2158,7 @@ class BillingController(QObject):
             except (ValueError, TypeError):
                 bill_pct = 100.0
 
-            matters_map[group_id]["line_items"].append({
+            disbursement_lines.append({
                 "entryId": str(row.get(sc.COL_DISB_ID) or ""),
                 "date": str(row.get(sc.COL_DISB_DATE) or ""),
                 "description": clean_desc(str(row.get(sc.COL_DISB_DESCRIPTION) or "")),
@@ -2119,25 +2170,19 @@ class BillingController(QObject):
                 "amount": net,
                 "amount_client": net, 
                 "amount_firm": net,
+                "matter_display": display_name,
             })
 
-            matters_map[group_id]["total_fees"] += net
-            matters_map[group_id]["total_tax"] += hst
-            total_fees += net
             total_tax += hst
             disbursement_total += net
 
         custom_fee_total = 0.0
-        flat_fees_list = []
+        flat_fees_list = list(invoice_flat_fee_lines)
+        time_based_total = 0.0
         for matter in matters_map.values():
             for item in matter["line_items"]:
-                if item.get("is_custom_fee"):
+                if item.get("is_invoice_flat_fee"):
                     custom_fee_total += float(item.get("amount") or 0)
-                    flat_fees_list.append({
-                        "date": item.get("date", ""),
-                        "description": item.get("description", "Custom Fee"),
-                        "amount": float(item.get("amount") or 0),
-                    })
                 else:
                     time_based_total += float(item.get("amount") or 0)
 
@@ -2170,7 +2215,7 @@ class BillingController(QObject):
                 flat_fee_amount < time_based_total
                 and reconciliation_mode == "discount_line"
             ):
-                total_fees = time_based_total + disbursement_total
+                gross_professional_fees = time_based_total
                 flat_fee_courtesy_discount = time_based_total - flat_fee_amount
                 discount_amount = flat_fee_courtesy_discount
                 display_source = flat_fees_list[0] if flat_fees_list else {}
@@ -2185,7 +2230,7 @@ class BillingController(QObject):
                 }]
                 flat_fee_section_label = "Services Rendered"
             else:
-                total_fees = flat_fee_amount + disbursement_total
+                gross_professional_fees = flat_fee_amount
                 discount_amount = 0.0
 
             # The flat-fee invoice template owns the visible fee line; docket
@@ -2193,25 +2238,28 @@ class BillingController(QObject):
             for matter in matters_map.values():
                 matter["total_fees"] = 0.0
                 matter["total_tax"] = 0.0
-        elif discount_type == "Percentage":
-            discount_amount = total_fees * (discount_value / 100.0)
-        elif discount_type == "Flat":
-            discount_amount = discount_value
         else:
-            discount_amount = 0.0
+            gross_professional_fees = total_fees
+            if discount_type == "Percentage":
+                discount_amount = gross_professional_fees * (discount_value / 100.0)
+            elif discount_type == "Flat":
+                discount_amount = discount_value
+            else:
+                discount_amount = 0.0
 
-        subtotal_after_discount = max(0.0, total_fees - discount_amount)
+        subtotal_after_discount = max(0.0, gross_professional_fees - discount_amount)
 
         agency_split_amount = subtotal_after_discount * (agency_split_percent / 100.0)
 
-        final_fees = max(0.0, subtotal_after_discount - agency_split_amount)
+        net_professional_fees = max(0.0, subtotal_after_discount - agency_split_amount)
         
         # Calculate tax separating tax-exempt disbursements
-        taxable_fees = final_fees
-        for matter in matters_map.values():
-            for item in matter["line_items"]:
-                if item.get("isDisbursement") and item.get("taxExempt"):
-                    taxable_fees -= float(item.get("amount") or 0)
+        taxable_disbursements = sum(
+            float(item.get("amount") or 0)
+            for item in disbursement_lines
+            if not item.get("taxExempt")
+        )
+        taxable_fees = net_professional_fees + taxable_disbursements
         
         total_tax = round(max(0.0, taxable_fees) * 0.13, 2)
 
@@ -2222,7 +2270,7 @@ class BillingController(QObject):
                     m_sub = max(0.0, m["total_fees"] - (discount_value * (m["total_fees"] / total_fees)))
                 m["total_tax"] = round((m_sub - (m_sub * (agency_split_percent / 100.0))) * 0.13, 2)
 
-        total_due = final_fees + total_tax
+        total_due = net_professional_fees + disbursement_total + total_tax
 
         
 
@@ -2279,13 +2327,30 @@ class BillingController(QObject):
             order_map = {entry_id: i for i, entry_id in enumerate(draft_sort_order)}
             for m in matters_map.values():
                 m["line_items"].sort(key=lambda item: order_map.get(item.get("entryId"), 999999))
+            additive_flat_fee_lines.sort(
+                key=lambda item: order_map.get(item.get("entryId"), 999999)
+            )
+            flat_fees_list.sort(
+                key=lambda item: order_map.get(item.get("entryId"), 999999)
+            )
+            flat_fee_display_lines.sort(
+                key=lambda item: order_map.get(item.get("entryId"), 999999)
+            )
+            disbursement_lines.sort(
+                key=lambda item: order_map.get(item.get("entryId"), 999999)
+            )
         else:
             for m in matters_map.values():
                 m["line_items"].sort(key=lambda item: item.get("date", ""))
+            additive_flat_fee_lines.sort(key=lambda item: item.get("date", ""))
+            flat_fees_list.sort(key=lambda item: item.get("date", ""))
+            flat_fee_display_lines.sort(key=lambda item: item.get("date", ""))
+            disbursement_lines.sort(key=lambda item: item.get("date", ""))
 
         docket_display_mode = str(draft.get("DocketDisplayMode") or "show").lower()
         
-        # If we have a flat fee (via Fee Entries or Draft Meta), apply the display mode filter
+        # Invoice-wide flat fees may suppress or neutralize the underlying WIP
+        # detail. Additive flat-fee lines never trigger that replacement mode.
         if is_flat_fee:
             for m in matters_map.values():
                 new_line_items = []
@@ -2304,6 +2369,26 @@ class BillingController(QObject):
                         else:
                             new_line_items.append(item) # default behavior if missing
                 m["line_items"] = new_line_items
+
+        hourly_matters = []
+        for matter in matters_map.values():
+            hourly_items = [
+                item
+                for item in matter["line_items"]
+                if not item.get("is_invoice_flat_fee")
+                and not item.get("is_additive_flat_fee")
+            ]
+            if not hourly_items:
+                continue
+            hourly_matters.append({
+                "name": matter.get("name", ""),
+                "display_name": matter.get("display_name", ""),
+                "line_items": hourly_items,
+                "total_fees": sum(float(item.get("amount") or 0) for item in hourly_items),
+                "total_hours": sum(float(item.get("hours") or 0) for item in hourly_items),
+            })
+
+        has_any_flat_fee = bool(is_flat_fee or additive_flat_fee_lines)
 
         # A draft can be created from a legacy row with no attached work items.
         # Still identify the selected client rather than leaving the recipient
@@ -2340,7 +2425,13 @@ class BillingController(QObject):
             "grouping_pref": grouping_pref,
             "date": date_formatted,
             "matters": list(matters_map.values()),
-            "total_fees": total_fees,
+            "hourly_matters": hourly_matters,
+            "additive_flat_fee_lines": additive_flat_fee_lines,
+            "disbursement_lines": disbursement_lines,
+            "disbursement_total": disbursement_total,
+            "total_fees": gross_professional_fees,
+            "gross_professional_fees": gross_professional_fees,
+            "net_professional_fees": net_professional_fees,
             "total_tax": total_tax,
             "discount_amount": discount_amount,
             "agency_split_amount": agency_split_amount,
@@ -2350,6 +2441,7 @@ class BillingController(QObject):
             "discount_type": discount_type,
             "signature_path": "",
             "is_flat_fee": is_flat_fee,
+            "has_any_flat_fee": has_any_flat_fee,
             "flat_fee_desc": flat_fee_desc,
             "flat_fee_amount": flat_fee_amount if is_flat_fee else 0.0,
             "flat_fees_list": flat_fees_list,
