@@ -255,12 +255,22 @@ class BillingController(QObject):
             sc.TBL_INVOICE_LOG,
             sc.TBL_RECEIVABLES,
         ])
+        canonicalize = getattr(self._excel_repo, "_canonicalize_row", None)
+
+        def canonical_rows(table_ref):
+            raw_rows = table_rows.get(table_ref.table, [])
+            if not callable(canonicalize):
+                return raw_rows
+            return [canonicalize(table_ref, row) for row in raw_rows]
+
         clients = table_rows.get(TBL_CLIENTS.table, [])
         profiles = table_rows.get(sc.TBL_CLIENT_PROFILES, [])
 
         client_map = {}
 
         client_parent_map = {}
+
+        client_id_by_name = {}
 
         for c in clients:
 
@@ -270,6 +280,8 @@ class BillingController(QObject):
             if c_id:
 
                 client_map[c_id] = c_name or c_id
+                if c_name:
+                    client_id_by_name.setdefault(c_name.casefold(), c_id)
 
         for p in profiles:
 
@@ -297,6 +309,7 @@ class BillingController(QObject):
         matters = table_rows.get(TBL_MATTERS.table, [])
 
         matter_map = {}
+        matter_rows_by_key = {}
         non_operational_matter_ids = set()
 
         for m in matters:
@@ -344,9 +357,25 @@ class BillingController(QObject):
             if m_id:
 
                 matter_map[m_id] = display or m_id
+                for matter_key in (
+                    m_id,
+                    m_number,
+                    str(m.get(sc.COL_MATTER_DISPLAY_NAME) or "").strip(),
+                ):
+                    if matter_key:
+                        matter_rows_by_key.setdefault(matter_key.casefold(), m)
                 matter_status = str(m.get(sc.COL_MATTER_STATUS) or "").strip().lower()
                 if matter_status in ("inactive", "closed", "archived"):
                     non_operational_matter_ids.add(m_id.casefold())
+
+        parent_id_by_name = {
+            str(name).casefold(): parent_id
+            for parent_id, name in parent_map.items()
+            if str(name).strip()
+        }
+
+        def resolved_matter(raw_value):
+            return matter_rows_by_key.get(str(raw_value or "").strip().casefold())
 
         rows = table_rows.get(TBL_TIME.table, [])
 
@@ -475,7 +504,7 @@ class BillingController(QObject):
 
             })
 
-        disbursements = table_rows.get(TBL_DISBURSEMENTS.table, [])
+        disbursements = canonical_rows(TBL_DISBURSEMENTS)
         # PaymentStatus tracks whether the firm has paid the supplier; it is
         # not the client-billing state.  A paid or still-pending supplier
         # expense can be unbilled, while a finalized client invoice can quite
@@ -511,16 +540,36 @@ class BillingController(QObject):
             tax_exempt = str(row.get(sc.COL_DISB_TAX_EXEMPT) or "0").strip()
             hst = 0.0 if tax_exempt == "1" else round(net * 0.13, 2)
 
-            client_id_raw = str(row.get(sc.COL_DISB_CLIENT_ID) or "")
+            matter_row = resolved_matter(row.get(sc.COL_DISB_MATTER_ID))
+
+            raw_billing_name = str(row.get(sc.COL_DISB_CLIENT_NAME) or "").strip()
+            raw_service_name = str(row.get(sc.COL_DISB_SUB_CLIENT) or "").strip()
+
+            client_id_raw = str(
+                row.get(sc.COL_DISB_CLIENT_ID)
+                or (matter_row or {}).get(sc.COL_MATTER_CLIENT_ID)
+                or client_id_by_name.get(raw_service_name.casefold(), "")
+                or client_id_by_name.get(raw_billing_name.casefold(), "")
+                or ""
+            )
             client_id = client_id_raw.split(',')[0].strip() if ',' in client_id_raw else client_id_raw.strip()
 
-            matter_id_raw = str(row.get(sc.COL_DISB_MATTER_ID) or "")
+            matter_id_raw = str(
+                (matter_row or {}).get(sc.COL_MATTER_ID)
+                or row.get(sc.COL_DISB_MATTER_ID)
+                or ""
+            )
             matter_id = matter_id_raw.split(',')[0].strip() if ',' in matter_id_raw else matter_id_raw.strip()
 
             if matter_id.casefold() in non_operational_matter_ids:
                 continue
 
-            disb_parent_id_raw = str(row.get(sc.COL_DISB_PARENT_ID) or "").strip()
+            disb_parent_id_raw = str(
+                row.get(sc.COL_DISB_PARENT_ID)
+                or (matter_row or {}).get(sc.COL_MATTER_PARENT_ID)
+                or parent_id_by_name.get(raw_billing_name.casefold(), "")
+                or ""
+            ).strip()
             disb_parent_id = disb_parent_id_raw.split(',')[0].strip() if ',' in disb_parent_id_raw else disb_parent_id_raw.strip()
 
             profile_parent = client_parent_map.get(client_id)
@@ -529,18 +578,47 @@ class BillingController(QObject):
             if parent_id in parent_map:
                 parent_name = parent_map[parent_id]
             else:
-                parent_name = client_map.get(parent_id, parent_id)
+                parent_name = (
+                    raw_billing_name
+                    or str((matter_row or {}).get(sc.COL_MATTER_PARENT_NAME) or "").strip()
+                    or client_map.get(parent_id, parent_id)
+                )
+
+            client_name = (
+                client_map.get(client_id)
+                or raw_service_name
+                or str((matter_row or {}).get(sc.COL_MATTER_CLIENT_NAME) or "").strip()
+                or raw_billing_name
+                or client_id
+            )
+            matter_name = (
+                matter_map.get(matter_id)
+                or str((matter_row or {}).get(sc.COL_MATTER_DESCRIPTION) or "").strip()
+                or str((matter_row or {}).get(sc.COL_MATTER_NAME) or "").strip()
+                or matter_id
+            )
+            date_text = str(row.get(sc.COL_DISB_DATE) or "").strip()
+            if not date_text:
+                date_text = str(row.get(sc.COL_DISB_CREATED_AT) or "").strip()[:10]
+            description = str(row.get(sc.COL_DISB_DESCRIPTION) or "").strip()
+            if not description:
+                supplier_ref = str(row.get(sc.COL_DISB_SUPPLIER_INVOICE_REF) or "").strip()
+                description = (
+                    f"Client disbursement — supplier invoice {supplier_ref}"
+                    if supplier_ref
+                    else "Client disbursement"
+                )
 
             wip_rows.append({
                 "entryId": str(row.get(sc.COL_DISB_ID) or ""),
-                "date": str(row.get(sc.COL_DISB_DATE) or ""),
+                "date": date_text,
                 "clientId": client_id,
-                "clientName": client_map.get(client_id, client_id),
+                "clientName": client_name,
                 "matterId": matter_id,
-                "matterName": matter_map.get(matter_id, matter_id),
+                "matterName": matter_name,
                 "parentId": parent_id,
                 "parentName": parent_name,
-                "description": clean_desc(str(row.get(sc.COL_DISB_DESCRIPTION) or "")),
+                "description": clean_desc(description),
                 "hours": 0.0,
                 "rate": 0.0,
                 "net": net,

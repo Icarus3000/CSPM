@@ -2089,6 +2089,22 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         if (!root.dirty) root.scheduleBucketRefresh()
     }
 
+    function openFlatFeeEntrySubwindow() {
+        var transferDate = String(dateInput ? dateInput.text : "").trim()
+        var transferClient = String(clientCombo ? clientCombo.editText : "").trim()
+        var transferMatter = String(matterCombo ? matterCombo.editText : "").trim()
+        var transferDescription = String(descInput ? descInput.text : "").trim()
+        root.activeSubwindowId = "B02"
+        root.ensureActiveSubwindow()
+        Qt.callLater(function() {
+            if (feeDocketEntryPanel && feeDocketEntryPanel.prefillFromTimeEntry) {
+                feeDocketEntryPanel.prefillFromTimeEntry(
+                    transferDate, transferClient, transferMatter, transferDescription
+                )
+            }
+        })
+    }
+
     function openDocketReportSubwindow() {
         root.activeSubwindowId = "B04"
         root.ensureActiveSubwindow()
@@ -4702,6 +4718,26 @@ Behavior on border.color {
                     }
 
                     Item { Layout.fillWidth: true }
+
+                    PillButton {
+                        t: root.t
+                        metrics: root.responsiveMetrics
+                        sfxBus: root.sfxBus
+                        visible: root.activeIsLiveDocket() || root.activeIsFeeDocket()
+                        enabled: visible && !root.isRunning
+                        text: root.activeIsFeeDocket() ? "Time Entry" : "Flat Fee"
+                        primary: root.activeIsFeeDocket()
+                        Layout.preferredWidth: 124
+                        Layout.preferredHeight: 40
+                        onClicked: {
+                            if (root.activeIsFeeDocket()) root.openTimeEntrySubwindow()
+                            else root.openFlatFeeEntrySubwindow()
+                        }
+                        ToolTip.visible: hovered
+                        ToolTip.text: root.activeIsFeeDocket()
+                            ? "Return to timed docket entry"
+                            : "Carry this client, matter, date, and description into a flat-fee docket"
+                    }
 
                     RowLayout {
                         Layout.alignment: Qt.AlignRight

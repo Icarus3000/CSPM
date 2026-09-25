@@ -2314,7 +2314,7 @@ Item {
                                 Layout.alignment: Qt.AlignHCenter
                             }
                             Text {
-                                text: "All time entries are either billed or have an invoice reference."
+                                text: "No unbilled time, fee, or client-disbursement entries match these filters."
                                 color: mutedColor
                                 font.pixelSize: 13
                                 font.family: "Inter"
@@ -2471,11 +2471,11 @@ Item {
                                                     
                                                     text: {
                                                         var item = rowDelegate.modelData
-                                                        if (bodyCell.modelData.key === "date") return item.date || "";
-                                                        if (bodyCell.modelData.key === "client") return item.clientName || item.clientId || "";
-                                                        if (bodyCell.modelData.key === "billing_client") return item.parentName || item.parentId || "";
-                                                        if (bodyCell.modelData.key === "matter") return item.matterName || item.matterId || "";
-                                                        if (bodyCell.modelData.key === "description") return item.description || "";
+                                                        if (bodyCell.modelData.key === "date") return item.date || "Date unavailable";
+                                                        if (bodyCell.modelData.key === "client") return item.clientName || item.clientId || "Client unavailable";
+                                                        if (bodyCell.modelData.key === "billing_client") return item.parentName || item.parentId || item.clientName || "Billing client unavailable";
+                                                        if (bodyCell.modelData.key === "matter") return item.matterName || item.matterId || "No matter";
+                                                        if (bodyCell.modelData.key === "description") return item.description || "Client disbursement";
                                                         if (bodyCell.modelData.key === "hours") return (item.hours || 0).toFixed(1);
                                                         if (bodyCell.modelData.key === "amount") return "$" + (item.net || 0).toLocaleString(Qt.locale("en_CA"), 'f', 2);
                                                         return ""

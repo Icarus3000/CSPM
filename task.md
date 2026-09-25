@@ -1468,3 +1468,12 @@ dependencies merely because an individual report or screen already exists.
 - [x] Add regression coverage for exact party filtering, combined search/filter behavior, dialog fields, routed posting, and saved filter state.
 - [x] Build and promote the non-production validation package at `dist/CSPM/CSPM.exe` (SHA-256 `E441F56426D8A25FA6CC4CA35D9DD0B439E05A469D4E6B1BD332ABA9F68668A1`); production packaging remains correctly blocked until the candidate workbook template receives Cory's approval.
 - [ ] Manually verify in the real app: filter once by Client and once by Billing client, open **Add Payment**, confirm the exact full balance is prefilled, post a test partial payment, and confirm the dialog closes while the same filter remains and the row balance decreases. Then settle the test invoice and confirm the row disappears.
+## WIP-to-Bill Disbursement Identity & Flat-Fee Entry Repair (2026-09-24)
+
+- [x] Normalize legacy and A/P-created disbursement aliases before building the WIP worklist.
+- [x] Resolve a disbursement's service client from `SubClient`, matter ownership, or client-name identity when `ClientID` is absent.
+- [x] Resolve matter-number references to the canonical matter ID/display name so disbursement-only matters remain searchable and billable.
+- [x] Give blank WIP identity cells explicit fallbacks instead of rendering visually empty rows.
+- [x] Add a visible **Flat Fee** action to Time Docket Entry and carry the current date, client, matter, and description into the governed Fee Docket Entry form.
+- [x] Add synthetic regression coverage; focused billing/A/P/WIP suite passes 49 tests and governed QML lint exits 0 with existing warning-only diagnostics.
+- [ ] Manual foreground verification: refresh WIP-to-Bill, search for a disbursement-only synthetic matter, create its draft, and confirm the Time Entry → Flat Fee handoff before using the repair with live data.

@@ -161,6 +161,19 @@ Rectangle {
         root.feedbackText = ""
     }
 
+    function prefillFromTimeEntry(dateText, clientText, matterText, descriptionText) {
+        root._hydrating = true
+        refreshLookupLists()
+        if (String(dateText || "").trim().length > 0) dateInput.text = String(dateText).trim()
+        if (String(clientText || "").trim().length > 0) clientCombo.editText = String(clientText).trim()
+        if (String(matterText || "").trim().length > 0) matterCombo.editText = String(matterText).trim()
+        if (String(descriptionText || "").trim().length > 0) descriptionInput.text = String(descriptionText).trim()
+        rebuildLookupOptions("matter")
+        root._hydrating = false
+        root.dirty = String(feeAmountInput.text || "").trim().length > 0
+            || String(descriptionInput.text || "").trim().length > 0
+    }
+
     function saveFeeEntry(skipArchivedGuard) {
         var selectedMatter = findMatter(matterCombo.editText)
         if (!selectedMatter || !String(selectedMatter.matterId || "").trim().length) {

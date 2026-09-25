@@ -10,7 +10,7 @@ if str(SOURCE_ROOT) not in sys.path:
 
 from backend.controllers.billing_controller import BillingController
 from domain import schema_constants as sc
-from repositories.excel_repo import TBL_CLIENTS, TBL_DISBURSEMENTS, TBL_MATTERS, TBL_TIME
+from repositories.excel_repo import ExcelRepo, TBL_CLIENTS, TBL_DISBURSEMENTS, TBL_MATTERS, TBL_TIME
 
 
 class _Paths:
@@ -21,6 +21,7 @@ class _Paths:
 class _WipRepo:
     def __init__(self):
         self.paths = _Paths()
+        self._canonicalizer = object.__new__(ExcelRepo)
         self.signature = "100:200"
         self.bulk_requests = []
         self.tables = {
@@ -74,6 +75,9 @@ class _WipRepo:
             table_name = getattr(table_ref, "table", table_ref)
             result[table_name] = [dict(row) for row in self.tables.get(table_name, [])]
         return result
+
+    def _canonicalize_row(self, table_ref, row):
+        return self._canonicalizer._canonicalize_row(table_ref, row)
 
 
 def _controller(repo):
@@ -167,6 +171,51 @@ def test_wip_loader_uses_posted_invoice_records_not_supplier_payment_status():
     entry_ids = {row["entryId"] for row in payload["rows"]}
     assert "DISB-POSTED" not in entry_ids
     assert "DISB-UNBILLED-PAID" in entry_ids
+
+
+def test_wip_loader_resolves_legacy_disbursement_identity_without_time_wip():
+    repo = _WipRepo()
+    repo.tables[TBL_CLIENTS.table].append({
+        sc.COL_CLIENT_ID: "CLIENT-HARBOUR",
+        sc.COL_CLIENT_NAME: "Harbour Foods Inc.",
+    })
+    repo.tables[TBL_MATTERS.table].append({
+        sc.COL_MATTER_ID: "MAT-HARBOUR",
+        sc.COL_MATTER_NUMBER: "26-0099",
+        sc.COL_MATTER_NAME: "Annual corporate work",
+        sc.COL_MATTER_CLIENT_ID: "CLIENT-HARBOUR",
+        sc.COL_MATTER_CLIENT_NAME: "Harbour Foods Inc.",
+    })
+    repo.tables[TBL_TIME.table] = []
+    repo.tables[TBL_DISBURSEMENTS.table] = [{
+        sc.COL_DISB_ID: "DISB-HARBOUR",
+        "CreatedDate": "2026-09-24 10:30:00",
+        "Client": "Harbour Foods Inc.",
+        "Sub-Client": "Harbour Foods Inc.",
+        "Client Id": "",
+        "Parent Id": "",
+        "MatterNumber": "26-0099",
+        "Narrative": "",
+        "Supplier Invoice": "SYNTH-100",
+        "DisbursementAmount": 84.25,
+        "Bill %": 100,
+        "Invoice #": "",
+        sc.COL_DISB_PAYMENT_STATUS: "PENDING",
+    }]
+
+    payload = _controller(repo)._load_unbilled_wip_impl(repo.signature)
+
+    assert len(payload["rows"]) == 1
+    row = payload["rows"][0]
+    assert row["entryId"] == "DISB-HARBOUR"
+    assert row["date"] == "2026-09-24"
+    assert row["clientId"] == "CLIENT-HARBOUR"
+    assert row["clientName"] == "Harbour Foods Inc."
+    assert row["parentName"] == "Harbour Foods Inc."
+    assert row["matterId"] == "MAT-HARBOUR"
+    assert row["matterName"] == "Annual corporate work - 26-0099"
+    assert row["description"] == "Client disbursement — supplier invoice SYNTH-100."
+    assert row["net"] == 84.25
 
 
 def test_wip_cache_avoids_a_second_worker_until_forced_refresh():
