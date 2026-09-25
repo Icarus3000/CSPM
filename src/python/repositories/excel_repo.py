@@ -2470,7 +2470,10 @@ class ExcelRepo:
             self._replace_table_rows(TBL_DISBURSEMENTS, disbursement_rows)
             return {"ok": True, "action": "updated", "disbursementId": disbursement_id}
         else:
-            return self.create_supplier_disbursement(payload)
+            result = dict(self.create_supplier_disbursement(payload) or {})
+            if result.get("ok") and result.get("disbursementId"):
+                result["action"] = "created"
+            return result
 
     @with_financial_write_batch
     def link_historical_supplier_disbursement(self, payload: Dict[str, Any]) -> Dict[str, Any]:

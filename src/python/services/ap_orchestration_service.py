@@ -688,7 +688,9 @@ class APOrchestrationService:
             
             if disbursement_result.get("action") == "deleted":
                 payload["DisbursementID"] = ""
-            elif disbursement_result.get("action") in ("created", "updated") and disbursement_result.get("disbursementId"):
+            elif disbursement_result.get("disbursementId"):
+                # Persist the authoritative ID even when a compatible gateway
+                # returns the older create result without an explicit action.
                 payload["DisbursementID"] = clean_text(disbursement_result.get("disbursementId"))
 
         except Exception as exc:

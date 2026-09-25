@@ -84,6 +84,12 @@ class _HistoricalGateway:
         return []
 
 
+class _LegacyCreateContractGateway(_Gateway):
+    def sync_supplier_disbursement(self, payload: dict):
+        self.disbursement = dict(payload)
+        return {"ok": True, "disbursementId": "DISB-LEGACY-CREATE"}
+
+
 def test_usd_supplier_bill_uses_cad_expense_and_single_client_wip_entry() -> None:
     repo = _Repo()
     gateway = _Gateway()
@@ -185,6 +191,38 @@ def test_paid_bill_update_can_create_missing_disbursement_at_correct_amount() ->
     assert result.ok is True
     assert gateway.disbursement["Amount"] == 491.06
     assert repo.rows["APB-PAID-1"]["DisbursementID"] == "DISB-1"
+
+
+def test_paid_bill_update_persists_id_from_legacy_create_result() -> None:
+    repo = _Repo()
+    repo.rows["APB-PAID-LEGACY"] = {
+        "APBillID": "APB-PAID-LEGACY",
+        "ExpenseTransactionID": "TXN-AP-PAID-LEGACY",
+        "Subtotal": 491.06,
+        "TaxAmount": 0,
+        "Total": 491.06,
+        "BillClaimPct": 0,
+    }
+    repo.list_active_payments = lambda _bill_id: [{"APPaymentID": "APP-LEGACY"}]
+    gateway = _LegacyCreateContractGateway()
+
+    result = APOrchestrationService(repo, gateway).update_bill({
+        "APBillID": "APB-PAID-LEGACY",
+        "Vendor": "Government filing office",
+        "VendorInvoiceNumber": "TEST-LEGACY",
+        "InvoiceDate": "2026-09-24",
+        "Subtotal": 491.06,
+        "TaxAmount": 0,
+        "Total": 491.06,
+        "TaxExempt": True,
+        "Currency": "CAD",
+        "MatterID": "MATTER-1",
+        "ExpenseTreatment": "matter",
+        "BillClaimPct": 100,
+    })
+
+    assert result.ok is True
+    assert repo.rows["APB-PAID-LEGACY"]["DisbursementID"] == "DISB-LEGACY-CREATE"
 
 
 def test_historical_candidate_follows_verified_ledger_invoice_link_when_legacy_expense_has_no_matter() -> None:
