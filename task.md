@@ -1476,4 +1476,7 @@ dependencies merely because an individual report or screen already exists.
 - [x] Give blank WIP identity cells explicit fallbacks instead of rendering visually empty rows.
 - [x] Add a visible **Flat Fee** action to Time Docket Entry and carry the current date, client, matter, and description into the governed Fee Docket Entry form.
 - [x] Add synthetic regression coverage; focused billing/A/P/WIP suite passes 49 tests and governed QML lint exits 0 with existing warning-only diagnostics.
+- [x] Replace the misleading A/P recovery placeholder with a real 100% default and show the calculated client-WIP amount before save.
+- [x] Require explicit confirmation in both UI and service layers before a client matter expense may be saved at 0% recovery.
+- [x] Repair paid-bill editing so changing a stored 0% recovery to a positive percentage creates the missing disbursement using the correct CAD total; focused suite now passes 57 tests.
 - [ ] Manual foreground verification: refresh WIP-to-Bill, search for a disbursement-only synthetic matter, create its draft, and confirm the Time Entry → Flat Fee handoff before using the repair with live data.

@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src" / "python"
@@ -11,6 +13,7 @@ if str(SOURCE_ROOT) not in sys.path:
     # ``platform`` module with CSPM's own compatibility package.
     sys.path.append(str(SOURCE_ROOT))
 
+from domain.ap_lifecycle import APValidationError
 from services.ap_orchestration_service import APOrchestrationService
 
 
@@ -23,6 +26,9 @@ class _Repo:
 
     def list_bills(self):
         return list(self.rows.values())
+
+    def list_active_payments(self, _bill_id: str):
+        return []
 
     def create_bill(self, bill: dict):
         saved = dict(bill)
@@ -54,6 +60,10 @@ class _Gateway:
     def create_supplier_disbursement(self, payload: dict):
         self.disbursement = dict(payload)
         return {"ok": True, "disbursementId": "DISB-1"}
+
+    def sync_supplier_disbursement(self, payload: dict):
+        self.disbursement = dict(payload)
+        return {"ok": True, "action": "created", "disbursementId": "DISB-1"}
 
 
 class _HistoricalGateway:
@@ -105,6 +115,76 @@ def test_usd_supplier_bill_uses_cad_expense_and_single_client_wip_entry() -> Non
     assert gateway.disbursement["Amount"] == 2179.99
     assert gateway.disbursement["OriginalCurrency"] == "USD"
     assert repo.rows["APB-USD-1"]["DisbursementID"] == "DISB-1"
+
+
+def test_matter_bill_defaults_to_full_recovery_when_percentage_is_missing() -> None:
+    prepared = APOrchestrationService.prepare_governed_bill({
+        "Subtotal": 491.06,
+        "TaxAmount": 0,
+        "Total": 491.06,
+        "TaxExempt": True,
+        "Currency": "CAD",
+        "MatterID": "MATTER-1",
+        "ExpenseTreatment": "matter",
+    })
+
+    assert prepared["BillClaimPct"] == 100.0
+
+
+def test_zero_recovery_matter_bill_requires_explicit_confirmation() -> None:
+    payload = {
+        "Subtotal": 491.06,
+        "TaxAmount": 0,
+        "Total": 491.06,
+        "TaxExempt": True,
+        "Currency": "CAD",
+        "MatterID": "MATTER-1",
+        "ExpenseTreatment": "matter",
+        "BillClaimPct": 0,
+    }
+
+    with pytest.raises(APValidationError, match="intentionally non-recoverable"):
+        APOrchestrationService.prepare_governed_bill(payload)
+
+    prepared = APOrchestrationService.prepare_governed_bill({
+        **payload,
+        "NonRecoverableMatterConfirmed": True,
+    })
+    assert prepared["BillClaimPct"] == 0.0
+
+
+def test_paid_bill_update_can_create_missing_disbursement_at_correct_amount() -> None:
+    repo = _Repo()
+    repo.rows["APB-PAID-1"] = {
+        "APBillID": "APB-PAID-1",
+        "ExpenseTransactionID": "TXN-AP-PAID-1",
+        "Subtotal": 491.06,
+        "TaxAmount": 0,
+        "Total": 491.06,
+        "BillClaimPct": 0,
+    }
+    repo.list_active_payments = lambda _bill_id: [{"APPaymentID": "APP-1"}]
+    gateway = _Gateway()
+    service = APOrchestrationService(repo, gateway)
+
+    result = service.update_bill({
+        "APBillID": "APB-PAID-1",
+        "Vendor": "Government filing office",
+        "VendorInvoiceNumber": "TEST-100",
+        "InvoiceDate": "2026-09-24",
+        "Subtotal": 491.06,
+        "TaxAmount": 0,
+        "Total": 491.06,
+        "TaxExempt": True,
+        "Currency": "CAD",
+        "MatterID": "MATTER-1",
+        "ExpenseTreatment": "matter",
+        "BillClaimPct": 100,
+    })
+
+    assert result.ok is True
+    assert gateway.disbursement["Amount"] == 491.06
+    assert repo.rows["APB-PAID-1"]["DisbursementID"] == "DISB-1"
 
 
 def test_historical_candidate_follows_verified_ledger_invoice_link_when_legacy_expense_has_no_matter() -> None:

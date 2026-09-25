@@ -110,7 +110,7 @@ Item {
         t: root.t
         appRef: root.appRef
         entryKind: "disbursement"
-        onEntryConfirmed: root.saveBill(true)
+        onEntryConfirmed: root.saveBill(true, false)
     }
 
     Timer {
@@ -353,6 +353,21 @@ Item {
         return isFinite(rate) && rate > 0 ? total * rate : 0
     }
 
+    function clientRecoveryPercentage() {
+        var raw = String(billClaimPctField.text || "").replace(/,/g, "").trim()
+        if (raw.length === 0)
+            return NaN
+        var percentage = Number(raw)
+        return isFinite(percentage) ? percentage : NaN
+    }
+
+    function clientRecoveryAmount() {
+        var percentage = root.clientRecoveryPercentage()
+        if (!isFinite(percentage) || percentage <= 0)
+            return 0
+        return root.baseInvoiceTotal() * percentage / 100
+    }
+
     function filenameFromUrl(value) {
         var text = String(value || "")
         var slash = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"))
@@ -527,7 +542,7 @@ Item {
         root.apController.loadAPInvoices()
     }
 
-    function validateBill(skipArchivedGuard) {
+    function validateBill(skipArchivedGuard, skipZeroRecoveryGuard) {
         if (!vendorField.text.trim()) {
             root.statusMessage = "Enter a vendor or supplier."
             return false
@@ -547,6 +562,24 @@ Item {
         if (root.selectedTreatmentId === "matter" && !root.selectedMatterId) {
             root.statusMessage = "Select a client matter for a client matter expense."
             return false
+        }
+        if (root.selectedTreatmentId === "matter") {
+            var recoveryText = String(billClaimPctField.text || "").replace(/,/g, "").trim()
+            var recoveryPct = Number(recoveryText)
+            if (recoveryText.length === 0 || !isFinite(recoveryPct)) {
+                root.statusMessage = "Enter the client recovery percentage. A placeholder is not a saved value."
+                return false
+            }
+            if (recoveryPct < 0 || recoveryPct > 100) {
+                root.statusMessage = "Client recovery percentage must be between 0 and 100."
+                return false
+            }
+            if (recoveryPct === 0 && !skipZeroRecoveryGuard) {
+                zeroRecoveryWarningDialog.skipArchivedGuard = skipArchivedGuard === true
+                zeroRecoveryWarningDialog.open()
+                root.statusMessage = "Confirm whether this matter expense should be saved without client WIP."
+                return false
+            }
         }
         if (root.selectedCurrency() === "USD" && (!isFinite(root.currentFXRate()) || root.currentFXRate() <= 0)) {
             root.statusMessage = "Enter the CAD exchange rate used for this USD supplier invoice."
@@ -640,7 +673,7 @@ Item {
         }
     }
 
-    function billPayload() {
+    function billPayload(nonRecoverableMatterConfirmed) {
         return {
             "APBillID": root.editingBillId || root.generatedId("APB"),
             "Vendor": vendorField.text.trim(),
@@ -668,6 +701,7 @@ Item {
             "ParentName": root.selectedMatterParentName,
             "ExpenseTreatment": root.selectedTreatmentId,
             "BillClaimPct": root.selectedTreatmentId === "matter" ? root.apNumber(billClaimPctField.text) : 0,
+            "NonRecoverableMatterConfirmed": nonRecoverableMatterConfirmed === true,
             "ClientTaxExempt": root.clientTaxExempt,
             "DocumentSourcePath": root.supplierDocumentSourcePath,
             "DisbursementDescription": disbursementDescriptionField.text.trim(),
@@ -681,8 +715,8 @@ Item {
         }
     }
 
-    function saveBill(skipArchivedGuard) {
-        if (!root.validateBill(skipArchivedGuard)) {
+    function saveBill(skipArchivedGuard, skipZeroRecoveryGuard) {
+        if (!root.validateBill(skipArchivedGuard, skipZeroRecoveryGuard)) {
             root.errorState = true
             return
         }
@@ -691,10 +725,11 @@ Item {
         root.beginBusy(update ? "update_bill" : "save_bill")
         root.statusMessage = update ? "Saving bill changes..." : "Saving supplier bill..."
         console.log("[AP] save requested", root.operationVersion, update ? "update" : "create")
+        var payload = root.billPayload(skipZeroRecoveryGuard === true)
         if (update)
-            root.apController.updateAPInvoice(root.billPayload())
+            root.apController.updateAPInvoice(payload)
         else
-            root.apController.saveAPInvoice(root.billPayload())
+            root.apController.saveAPInvoice(payload)
     }
 
     function savePayment() {
@@ -1014,7 +1049,12 @@ Item {
         treatmentField.selectedLabel = root.selectedTreatmentId === "matter" ? "Client matter expense" : "General office expense"
         matterField.selectedId = root.selectedMatterId
         matterField.selectedLabel = root.selectedMatterName
-        billClaimPctField.text = String(bill.BillClaimPct || transaction.billClaimPct || (root.selectedMatterId ? "100" : "0"))
+        var storedClaimPct = bill.BillClaimPct
+        if (storedClaimPct === undefined || storedClaimPct === null || String(storedClaimPct).trim().length === 0)
+            storedClaimPct = transaction.billClaimPct
+        if (storedClaimPct === undefined || storedClaimPct === null || String(storedClaimPct).trim().length === 0)
+            storedClaimPct = root.selectedMatterId ? 100 : 0
+        billClaimPctField.text = String(storedClaimPct)
         disbursementDescriptionField.text = String(bill.DisbursementDescription || "")
         root.supplierDocumentSourcePath = ""
         root.supplierDocumentDisplayName = String(bill.DocumentOriginalName || bill.DocumentPath || "")
@@ -1695,6 +1735,61 @@ Item {
             background: Rectangle {
                 color: deleteBillMenuItem.highlighted ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "error", root.appStyle), 0.12) : "#FCEBEC") : "transparent"
                 radius: visualRules.isPro ? visualRules.radiusControl : 4
+            }
+        }
+    }
+
+    Dialog {
+        id: zeroRecoveryWarningDialog
+        property bool skipArchivedGuard: false
+        modal: true
+        focus: true
+        title: "No client disbursement will be created"
+        standardButtons: Dialog.NoButton
+        anchors.centerIn: Overlay.overlay
+        width: 520
+
+        background: Rectangle {
+            color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : "#FFFFFF"
+            radius: visualRules.isPro ? visualRules.radiusPopup : 8
+            border.width: 1
+            border.color: root.isProMode
+                ? SemanticTheme.alpha(SemanticTheme.tone(root.t, "warning", root.appStyle), 0.75)
+                : "#C28A24"
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 14
+
+            Label {
+                Layout.fillWidth: true
+                text: "This is a client matter expense, but its recovery percentage is 0%. CSPM will save the supplier expense without creating billable client WIP."
+                color: root.isProMode ? SemanticTheme.inkPrimary(root.t, root.appStyle) : "#172A40"
+                wrapMode: Text.Wrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "Choose Cancel to enter the percentage normally charged to the client. Continue only when this expense is intentionally non-recoverable."
+                color: root.isProMode ? SemanticTheme.inkMuted(root.t, root.appStyle) : "#52677C"
+                wrapMode: Text.Wrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Cancel"
+                    onClicked: zeroRecoveryWarningDialog.close()
+                }
+                Button {
+                    text: "Save without client WIP"
+                    onClicked: {
+                        var archivedWasConfirmed = zeroRecoveryWarningDialog.skipArchivedGuard
+                        zeroRecoveryWarningDialog.close()
+                        root.saveBill(archivedWasConfirmed, true)
+                    }
+                }
             }
         }
     }
@@ -2519,8 +2614,11 @@ Item {
                                     selectedLabel: "General office expense"
                                     onOptionChosen: function(option) {
                                         root.selectedTreatmentId = String(option.id || "office")
-                                        if (root.selectedTreatmentId !== "matter")
+                                        if (root.selectedTreatmentId !== "matter") {
                                             root.clearMatterSelection()
+                                        } else if (String(billClaimPctField.text || "").trim().length === 0) {
+                                            billClaimPctField.text = "100"
+                                        }
                                     }
                                 }
 
@@ -2532,8 +2630,33 @@ Item {
                                     id: billClaimPctField
                                     visible: root.selectedTreatmentId === "matter"
                                     Layout.preferredHeight: visible ? implicitHeight : 0
+                                    text: "100"
                                     placeholderText: "100"
                                     inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                }
+                                Label {
+                                    visible: root.selectedTreatmentId === "matter"
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? implicitHeight : 0
+                                    text: {
+                                        var percentage = root.clientRecoveryPercentage()
+                                        if (!isFinite(percentage))
+                                            return "Enter a recovery percentage; blank values cannot be saved."
+                                        if (percentage === 0)
+                                            return "Warning: no client WIP disbursement will be created."
+                                        return "Client WIP disbursement to create: "
+                                            + root.moneyText(root.clientRecoveryAmount())
+                                            + " CAD (" + percentage.toFixed(2) + "%)."
+                                    }
+                                    color: {
+                                        var percentage = root.clientRecoveryPercentage()
+                                        return !isFinite(percentage) || percentage === 0
+                                            ? (root.isProMode ? SemanticTheme.tone(root.t, "warning", root.appStyle) : "#9A6700")
+                                            : (root.isProMode ? SemanticTheme.tone(root.t, "success", root.appStyle) : "#285C37")
+                                    }
+                                    font.pixelSize: 11
+                                    font.weight: Font.DemiBold
+                                    wrapMode: Text.Wrap
                                 }
                                 CheckBox {
                                     id: clientTaxExemptCheckBox

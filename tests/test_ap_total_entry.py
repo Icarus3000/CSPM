@@ -87,3 +87,17 @@ def test_setoff_uses_a_receivable_selection_workflow_not_free_text() -> None:
     assert "function validateSetoffAllocations()" in qml
     assert "id: setoffAllocationsField" not in qml
     assert "ScrollBar.vertical.policy: ScrollBar.AsNeeded" in qml
+
+
+def test_matter_expense_recovery_is_real_default_with_zero_percent_guard() -> None:
+    qml = (PROJECT_ROOT / "src" / "qml" / "views" / "AccountsPayableView.qml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'id: billClaimPctField' in qml
+    assert 'text: "100"' in qml
+    assert 'id: zeroRecoveryWarningDialog' in qml
+    assert 'text: "Save without client WIP"' in qml
+    assert '"NonRecoverableMatterConfirmed": nonRecoverableMatterConfirmed === true' in qml
+    assert 'return "Warning: no client WIP disbursement will be created."' in qml
+    assert 'storedClaimPct === undefined || storedClaimPct === null' in qml

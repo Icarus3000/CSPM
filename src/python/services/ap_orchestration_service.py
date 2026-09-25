@@ -136,6 +136,16 @@ class APOrchestrationService:
         claim_pct = money(prepared.get("BillClaimPct") if prepared.get("BillClaimPct") not in (None, "") else (100 if clean_text(prepared.get("MatterID") or prepared.get("Matter")) else 0), "client recovery percentage")
         if claim_pct < 0 or claim_pct > 100:
             raise APValidationError("Client recovery percentage must be between 0 and 100.")
+        matter_id = clean_text(prepared.get("MatterID") or prepared.get("Matter"))
+        confirmation_value = prepared.get("NonRecoverableMatterConfirmed")
+        non_recoverable_confirmed = confirmation_value is True or clean_text(confirmation_value).casefold() in {
+            "1", "true", "yes",
+        }
+        if matter_id and claim_pct == 0 and not non_recoverable_confirmed:
+            raise APValidationError(
+                "A client matter expense at 0% creates no client WIP disbursement. "
+                "Confirm that the expense is intentionally non-recoverable before saving."
+            )
         prepared.update({
             "Currency": currency,
             "OriginalCurrency": currency,
@@ -607,7 +617,11 @@ class APOrchestrationService:
         }
 
     def update_bill(self, bill: Mapping[str, Any]) -> APOrchestrationResult:
-        normalized_bill = self.normalize_bill_amounts(bill)
+        # Re-run the same governed currency/recovery preparation used at bill
+        # creation.  Besides enforcing the explicit 0% acknowledgement, this
+        # supplies BaseTotal so adding a missing disbursement to an existing
+        # (including already-paid) bill uses the correct CAD amount.
+        normalized_bill = self.prepare_governed_bill(bill)
         bill_id = clean_text(normalized_bill.get("APBillID"))
         existing = self.ap_repository.get_bill(bill_id)
         if existing is None:
