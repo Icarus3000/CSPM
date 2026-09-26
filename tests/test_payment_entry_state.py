@@ -96,3 +96,17 @@ def test_collection_filter_selects_exact_work_client_and_keeps_allocations_stabl
     assert "allocationRevision += 1" in COLLECTION_DIALOG
     assert "dialog.setAllocation(allocationDelegate.modelData.sourceIndex, text)" in COLLECTION_DIALOG
     assert "allocationList.positionViewAtIndex(allocationDelegate.index, ListView.Contain)" in COLLECTION_DIALOG
+
+
+def test_collection_rows_toggle_full_balance_without_overwriting_received_amount():
+    assert "function toggleFullBalanceAllocation(index)" in COLLECTION_DIALOG
+    assert 'setAllocation(index, current > 0.005 ? "" : balance.toFixed(2))' in COLLECTION_DIALOG
+    assert "dialog.toggleFullBalanceAllocation(allocationDelegate.modelData.sourceIndex)" in COLLECTION_DIALOG
+    assert "readonly property bool hasAllocation" in COLLECTION_DIALOG
+    assert "border.color: hasAllocation ? dialog._accent" in COLLECTION_DIALOG
+    assert '"Click to apply this invoice\'s full balance"' in COLLECTION_DIALOG
+    assert '"Click to clear this invoice allocation"' in COLLECTION_DIALOG
+    toggle_block = COLLECTION_DIALOG.split("function toggleFullBalanceAllocation(index)", 1)[1].split(
+        "function _rowMatchesSelectedClient", 1
+    )[0]
+    assert "amountInput.text" not in toggle_block

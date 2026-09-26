@@ -197,6 +197,16 @@ Popup {
         resultMessage = ""
     }
 
+    function toggleFullBalanceAllocation(index) {
+        if (postInProgress || index < 0 || index >= allocationRows.length) return
+        var current = allocationAmount(index)
+        var balance = _roundMoney(Math.max(0, Number(allocationRows[index].balance || 0)))
+        // A selected row is an allocation with a positive amount. Clicking it
+        // again is an explicit deselection; partial values typed by the user
+        // remain untouched until that deliberate row click.
+        setAllocation(index, current > 0.005 ? "" : balance.toFixed(2))
+    }
+
     function _rowMatchesSelectedClient(row) {
         var selected = _clean(selectedWorkClient)
         if (!selected || selected.toLowerCase() === allWorkClientsLabel.toLowerCase()) return true
@@ -657,10 +667,34 @@ Popup {
                             id: allocationDelegate
                             required property var modelData
                             required property int index
+                            readonly property bool hasAllocation: dialog.allocationAmount(modelData.sourceIndex) > 0.005
                             width: ListView.view.width
                             height: 48
-                            color: index % 2 === 0 ? dialog._input : dialog._panel
-                            border.width: 0
+                            color: hasAllocation
+                                ? SemanticTheme.alpha(dialog._accent, 0.12)
+                                : allocationRowMouse.containsMouse
+                                    ? SemanticTheme.hoverOverlay(dialog.t, dialog.appStyle)
+                                    : (index % 2 === 0 ? dialog._input : dialog._panel)
+                            border.width: hasAllocation ? 1 : 0
+                            border.color: hasAllocation ? dialog._accent : "transparent"
+                            ToolTip.visible: allocationRowMouse.containsMouse
+                            ToolTip.delay: 450
+                            ToolTip.text: hasAllocation
+                                ? "Click to clear this invoice allocation"
+                                : "Click to apply this invoice's full balance"
+
+                            MouseArea {
+                                id: allocationRowMouse
+                                anchors.fill: parent
+                                enabled: !dialog.postInProgress
+                                hoverEnabled: true
+                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: {
+                                    allocationList.currentIndex = allocationDelegate.index
+                                    dialog.toggleFullBalanceAllocation(allocationDelegate.modelData.sourceIndex)
+                                    allocationList.positionViewAtIndex(allocationDelegate.index, ListView.Contain)
+                                }
+                            }
 
                             RowLayout {
                                 anchors.fill: parent
