@@ -171,6 +171,22 @@ def test_parent_bill_to_is_frozen_for_ordinary_draft_and_used_by_finalization():
     assert ledger[sc.COL_LEDGER_WORK_CLIENT] == "Concierge Club"
 
 
+def test_finalization_invariant_rejects_any_bill_to_accounting_divergence():
+    snapshot = json.dumps({"clientId": "LEVI", "clientName": "Leviathan Private Network"})
+    receivable = {sc.COL_RECV_CLIENT: "Leviathan Private Network"}
+    invoice = {sc.COL_INV_BILL_TO_CLIENT: "Leviathan Private Network"}
+    ledger = {sc.COL_LEDGER_CLIENT_VENDOR: "Leviathan Private Network"}
+
+    InvoiceDraftService._assert_finalized_billing_identity(
+        "26-0095", snapshot, receivable, invoice, ledger
+    )
+    receivable[sc.COL_RECV_CLIENT] = "Concierge Club"
+    with pytest.raises(RuntimeError, match="billing identity validation failed before write"):
+        InvoiceDraftService._assert_finalized_billing_identity(
+            "26-0095", snapshot, receivable, invoice, ledger
+        )
+
+
 def test_unpaid_invoice_correction_updates_all_billing_records_atomically():
     repo = _BillingCorrectionRepo()
     repo.tables[sc.TBL_TRANSACTIONS_MASTER].append({

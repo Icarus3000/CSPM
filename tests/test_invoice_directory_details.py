@@ -11,6 +11,7 @@ if str(SOURCE_ROOT) not in sys.path:
 
 from domain import schema_constants as sc
 from repositories.excel_repo import (
+    BillingClientMismatchError,
     ExcelRepo,
     TBL_DISBURSEMENTS,
     TBL_INVOICE_LOG,
@@ -431,6 +432,46 @@ def test_billing_client_receipt_rejects_unbalanced_or_cross_client_allocations_b
         assert False, "Expected a cross-client allocation to be rejected."
     except ValueError as exc:
         assert "belongs to billing client" in str(exc)
+
+    assert repo.saved_transaction_payloads == []
+    assert repo.tables[TBL_LEDGER.table] == []
+
+
+def test_billing_client_receipt_reports_every_owner_conflict_before_writing():
+    repo = _BillingClientReceiptRepo()
+    repo.tables[TBL_RECEIVABLES.table][0][sc.COL_RECV_CLIENT] = "Wrong Owner A"
+    repo.tables[TBL_RECEIVABLES.table][1][sc.COL_RECV_CLIENT] = "Wrong Owner B"
+
+    try:
+        repo.post_billing_client_receipt(
+            {
+                "billingClient": "Billing Parent Inc.",
+                "date": "2026-06-20",
+                "totalAmount": 250.0,
+                "method": "EFT",
+                "depositAccount": "CIBC_GENERAL",
+                "allocations": [
+                    {"invoice": "26-0201", "amount": 100.0},
+                    {"invoice": "26-0202", "amount": 150.0},
+                ],
+            }
+        )
+        assert False, "Expected billing-owner conflicts to abort the receipt."
+    except BillingClientMismatchError as exc:
+        assert exc.error_code == "billing_client_mismatch"
+        assert exc.expected_billing_client == "Billing Parent Inc."
+        assert exc.conflicts == [
+            {
+                "invoice": "26-0201",
+                "currentBillingClient": "Wrong Owner A",
+                "expectedBillingClient": "Billing Parent Inc.",
+            },
+            {
+                "invoice": "26-0202",
+                "currentBillingClient": "Wrong Owner B",
+                "expectedBillingClient": "Billing Parent Inc.",
+            },
+        ]
 
     assert repo.saved_transaction_payloads == []
     assert repo.tables[TBL_LEDGER.table] == []

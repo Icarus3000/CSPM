@@ -14,6 +14,7 @@ Popup {
     property var t
     property var metrics
     property var appRef
+    property var billingBackend
     property var sfxBus
     property string appStyle: (host && host.appStyle) ? String(host.appStyle) : "Professional"
     property bool isProMode: appStyle === "Professional"
@@ -30,6 +31,12 @@ Popup {
     property var methodOptions: ["e-Transfer", "EFT", "Cheque", "Credit Card", "Cash", "Wire", "Other"]
     property var depositAccountOptions: host ? host.depositAccountOptions : []
     property string selectedBillingClient: ""
+    property var billingClientConflicts: []
+    property int correctionQueueIndex: -1
+    property string correctionInvoice: ""
+    property var correctionContext: null
+    property bool correctionLoading: false
+    property bool correctionSaving: false
 
     signal postRequested(var payload)
 
@@ -163,6 +170,10 @@ Popup {
         postInProgress = false
         resultOk = true
         resultMessage = ""
+        billingClientConflicts = []
+        correctionQueueIndex = -1
+        correctionInvoice = ""
+        correctionContext = null
         dateInput.text = host ? host._todayIso() : Qt.formatDate(new Date(), "yyyy-MM-dd")
         amountInput.text = ""
         methodCombo.editText = "EFT"
@@ -368,6 +379,7 @@ Popup {
     function beginPost() {
         resultOk = true
         resultMessage = ""
+        billingClientConflicts = []
         postInProgress = true
     }
 
@@ -375,13 +387,132 @@ Popup {
         postInProgress = false
         resultOk = !!ok
         resultMessage = _clean(message) || (resultOk ? "Receipt posted." : "Receipt posting failed.")
-        if (!resultOk) return
+        if (!resultOk) {
+            var failure = result || ({})
+            var conflicts = failure.errorCode === "billing_client_mismatch"
+                ? (failure.billingClientConflicts || [])
+                : []
+            billingClientConflicts = conflicts
+            return
+        }
+        billingClientConflicts = []
         amountInput.text = ""
         referenceInput.text = ""
         notesInput.text = ""
         loadBillingClient(selectedBillingClient)
         resultOk = true
         resultMessage = _clean(message)
+    }
+
+    function _billingClientLabel(option) {
+        if (!option) return ""
+        var name = _clean(option.clientName)
+        var clientId = _clean(option.clientId)
+        return clientId ? name + " [" + clientId + "]" : name
+    }
+
+    function _correctionClientLabels() {
+        var options = correctionContext ? correctionContext.options || [] : []
+        var labels = []
+        for (var i = 0; i < options.length; i++) labels.push(_billingClientLabel(options[i]))
+        return labels
+    }
+
+    function _correctionClientIdForLabel(label) {
+        var options = correctionContext ? correctionContext.options || [] : []
+        for (var i = 0; i < options.length; i++) {
+            if (_billingClientLabel(options[i]) === String(label || ""))
+                return _clean(options[i].clientId)
+        }
+        return ""
+    }
+
+    function _preferredCorrectionClientLabel() {
+        var options = correctionContext ? correctionContext.options || [] : []
+        var expected = _clean(selectedBillingClient).toLowerCase()
+        var recommendedId = _clean(correctionContext && correctionContext.recommendedClientId)
+        for (var i = 0; i < options.length; i++) {
+            if (_clean(options[i].clientName).toLowerCase() === expected)
+                return _billingClientLabel(options[i])
+        }
+        for (var j = 0; j < options.length; j++) {
+            if (_clean(options[j].clientId) === recommendedId)
+                return _billingClientLabel(options[j])
+        }
+        return ""
+    }
+
+    function beginBillingConflictCorrections() {
+        if (!billingBackend || billingClientConflicts.length <= 0) {
+            showValidationError("Billing-client correction is unavailable on this screen.")
+            return
+        }
+        correctionQueueIndex = 0
+        correctionOverlay.message = ""
+        correctionOverlay.visible = true
+        loadCurrentBillingConflict()
+    }
+
+    function loadCurrentBillingConflict() {
+        if (correctionQueueIndex < 0 || correctionQueueIndex >= billingClientConflicts.length) return
+        var conflict = billingClientConflicts[correctionQueueIndex] || ({})
+        correctionInvoice = _clean(conflict.invoice)
+        correctionContext = null
+        correctionLoading = true
+        correctionOverlay.message = ""
+        correctionReason.text = "Collection validation found incorrect billing ownership; correct this invoice to "
+            + selectedBillingClient + "."
+        billingBackend.loadInvoiceBillingCorrectionContext(correctionInvoice)
+    }
+
+    function applyCorrectionContext(payload) {
+        correctionContext = payload || ({})
+        correctionLoading = false
+        correctionBillingClientCombo.fullModel = _correctionClientLabels()
+        correctionBillingClientCombo.editText = _preferredCorrectionClientLabel()
+    }
+
+    function finishCurrentBillingCorrection(payload) {
+        correctionSaving = false
+        if (!payload || payload.ok !== true) {
+            correctionOverlay.message = _clean(payload && payload.message)
+                || "The billing client was not changed."
+            return
+        }
+        correctionQueueIndex += 1
+        if (correctionQueueIndex < billingClientConflicts.length) {
+            loadCurrentBillingConflict()
+            return
+        }
+        var correctedCount = billingClientConflicts.length
+        correctionOverlay.visible = false
+        billingClientConflicts = []
+        correctionQueueIndex = -1
+        correctionInvoice = ""
+        correctionContext = null
+        resultOk = true
+        resultMessage = "Corrected " + correctedCount + " invoice billing record"
+            + (correctedCount === 1 ? "" : "s")
+            + ". All receipt fields and allocations were preserved; review and click Post Received Payment again."
+    }
+
+    Connections {
+        target: dialog.billingBackend
+        ignoreUnknownSignals: true
+        function onInvoiceBillingCorrectionContextLoaded(payload) {
+            if (!payload || dialog._clean(payload.invoiceNum) !== dialog.correctionInvoice) return
+            dialog.applyCorrectionContext(payload)
+            if (payload.ok === false)
+                correctionOverlay.message = dialog._clean(payload.message) || "Could not inspect this invoice."
+        }
+        function onInvoiceBillingCorrectionProgress(payload) {
+            if (!payload || dialog._clean(payload.invoiceNum) !== dialog.correctionInvoice) return
+            dialog.correctionSaving = payload.active === true
+        }
+        function onInvoiceBillingCorrectionFinished(payload) {
+            if (!payload || dialog._clean(payload.invoiceNum) !== dialog.correctionInvoice) return
+            dialog.finishCurrentBillingCorrection(payload)
+        }
     }
 
     background: Rectangle {
@@ -793,7 +924,10 @@ Popup {
             Rectangle {
                 visible: dialog.resultMessage.length > 0
                 Layout.fillWidth: true
-                Layout.preferredHeight: resultText.implicitHeight + 16
+                Layout.preferredHeight: Math.max(
+                    resultText.implicitHeight,
+                    dialog.billingClientConflicts.length > 0 ? 32 : 0
+                ) + 16
                 color: SemanticTheme.alpha(
                     SemanticTheme.tone(dialog.t, dialog.resultOk ? "success" : "error", dialog.appStyle),
                     0.12
@@ -801,16 +935,34 @@ Popup {
                 border.width: 1
                 border.color: SemanticTheme.tone(dialog.t, dialog.resultOk ? "success" : "error", dialog.appStyle)
                 radius: 4
-                Text {
-                    id: resultText
+                RowLayout {
                     anchors.fill: parent
                     anchors.margins: 8
-                    text: dialog.resultMessage
-                    color: SemanticTheme.tone(dialog.t, dialog.resultOk ? "success" : "error", dialog.appStyle)
-                    font.family: "Segoe UI"
-                    font.pixelSize: 12
-                    font.weight: Font.DemiBold
-                    wrapMode: Text.WordWrap
+                    spacing: 10
+                    Text {
+                        id: resultText
+                        Layout.fillWidth: true
+                        text: dialog.resultMessage
+                        color: SemanticTheme.tone(dialog.t, dialog.resultOk ? "success" : "error", dialog.appStyle)
+                        font.family: "Segoe UI"
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.WordWrap
+                    }
+                    PillButton {
+                        visible: dialog.billingClientConflicts.length > 0
+                        text: dialog.billingClientConflicts.length === 1
+                            ? "Correct " + dialog._clean(dialog.billingClientConflicts[0].invoice)
+                            : "Correct " + dialog.billingClientConflicts.length + " invoices"
+                        t: dialog.t
+                        metrics: dialog.metrics
+                        appStyle: dialog.appStyle
+                        primary: true
+                        enabled: !dialog.postInProgress && !dialog.correctionSaving
+                        Layout.preferredWidth: dialog.billingClientConflicts.length === 1 ? 138 : 152
+                        Layout.preferredHeight: 32
+                        onClicked: dialog.beginBillingConflictCorrections()
+                    }
                 }
             }
         }
@@ -853,6 +1005,215 @@ Popup {
                     Layout.preferredWidth: 190
                     Layout.preferredHeight: 40
                     onClicked: dialog.requestPost()
+                }
+            }
+        }
+    }
+
+    Item {
+        id: correctionOverlay
+        anchors.fill: parent
+        z: 1200
+        visible: false
+        property string message: ""
+
+        MouseArea { anchors.fill: parent }
+
+        Rectangle {
+            anchors.fill: parent
+            color: SemanticTheme.inkPrimary(dialog.t, dialog.appStyle)
+            opacity: 0.40
+        }
+
+        Rectangle {
+            width: Math.min(620, Math.max(390, parent.width - 36))
+            height: Math.min(590, parent.height - 30)
+            anchors.centerIn: parent
+            color: dialog._raisedPanel
+            border.width: 1
+            border.color: dialog._border
+            radius: dialog.isProMode ? visualRules.radiusPopup : 9
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 11
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Correct Billing Client · " + dialog.correctionInvoice
+                        color: dialog._text
+                        font.pixelSize: 19
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        visible: dialog.billingClientConflicts.length > 1
+                        text: (dialog.correctionQueueIndex + 1) + " of " + dialog.billingClientConflicts.length
+                        color: dialog._mutedText
+                        font.pixelSize: 12
+                    }
+                    PillButton {
+                        text: "Close"
+                        t: dialog.t
+                        metrics: dialog.metrics
+                        appStyle: dialog.appStyle
+                        enabled: !dialog.correctionSaving
+                        Layout.preferredWidth: 74
+                        Layout.preferredHeight: 32
+                        onClicked: correctionOverlay.visible = false
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "This repairs billing ownership metadata only. It does not change the invoice amount, date, work client, matter, PDF, or any of the receipt fields and allocations behind this window."
+                    color: dialog._mutedText
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
+
+                BusyIndicator {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: dialog.correctionLoading
+                    running: visible
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                }
+
+                GridLayout {
+                    visible: !dialog.correctionLoading
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 14
+                    rowSpacing: 7
+
+                    Text { text: "Work client"; color: dialog._mutedText; font.pixelSize: 12 }
+                    Text { Layout.fillWidth: true; text: dialog._clean(dialog.correctionContext && dialog.correctionContext.workClient) || "Not identified"; color: dialog._text; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                    Text { text: "Recorded billing client"; color: dialog._mutedText; font.pixelSize: 12 }
+                    Text { Layout.fillWidth: true; text: dialog._clean(dialog.correctionContext && dialog.correctionContext.currentBillingClient) || "Not recorded"; color: dialog._text; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                    Text { text: "Matter indicates"; color: dialog._mutedText; font.pixelSize: 12 }
+                    Text { Layout.fillWidth: true; text: dialog._clean(dialog.correctionContext && dialog.correctionContext.recommendedClientName) || "No parent detected"; color: dialog._text; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                    Text { text: "Receipt is from"; color: dialog._mutedText; font.pixelSize: 12 }
+                    Text { Layout.fillWidth: true; text: dialog.selectedBillingClient; color: dialog._accent; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                }
+
+                ModernComboBox {
+                    id: correctionBillingClientCombo
+                    visible: !dialog.correctionLoading
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: dialog.fieldHeightPx
+                    t: dialog.t
+                    metrics: dialog.metrics
+                    appStyle: dialog.appStyle
+                    label: "Correct billing client *"
+                    fullModel: []
+                    preserveUnknownEditTextOnModelChanged: true
+                    enabled: !dialog.correctionSaving
+                }
+
+                ColumnLayout {
+                    visible: !dialog.correctionLoading
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: "Audit reason *"; color: dialog._mutedText; font.pixelSize: 12 }
+                    TextArea {
+                        id: correctionReason
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 72
+                        enabled: !dialog.correctionSaving
+                        color: dialog._text
+                        placeholderText: "Explain why the recorded billing owner is incorrect."
+                        placeholderTextColor: dialog._mutedText
+                        wrapMode: TextEdit.Wrap
+                        background: Rectangle {
+                            color: dialog._input
+                            border.width: correctionReason.activeFocus ? 2 : 1
+                            border.color: correctionReason.activeFocus ? dialog._accent : dialog._border
+                            radius: dialog.isProMode ? 4 : 8
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: correctionMessage.implicitHeight + 16
+                    visible: correctionOverlay.message.length > 0
+                        || (!dialog.correctionLoading && dialog.correctionContext
+                            && dialog._clean(dialog.correctionContext.message).length > 0)
+                    color: SemanticTheme.alpha(SemanticTheme.tone(dialog.t, "error", dialog.appStyle), 0.10)
+                    border.width: 1
+                    border.color: SemanticTheme.tone(dialog.t, "error", dialog.appStyle)
+                    radius: 4
+                    Text {
+                        id: correctionMessage
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        text: correctionOverlay.message.length > 0
+                            ? correctionOverlay.message
+                            : dialog._clean(dialog.correctionContext && dialog.correctionContext.message)
+                        color: SemanticTheme.tone(dialog.t, "error", dialog.appStyle)
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+                    BusyIndicator {
+                        visible: dialog.correctionSaving
+                        running: visible
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                    }
+                    Text {
+                        visible: dialog.correctionSaving
+                        text: "Saving audited correction…"
+                        color: dialog._mutedText
+                        font.pixelSize: 12
+                    }
+                    Item { Layout.fillWidth: true }
+                    PillButton {
+                        text: "Cancel"
+                        t: dialog.t
+                        metrics: dialog.metrics
+                        appStyle: dialog.appStyle
+                        enabled: !dialog.correctionSaving
+                        Layout.preferredWidth: 92
+                        Layout.preferredHeight: 36
+                        onClicked: correctionOverlay.visible = false
+                    }
+                    PillButton {
+                        readonly property bool canSubmit: dialog.correctionContext
+                            && dialog.correctionContext.eligible === true
+                            && dialog._correctionClientIdForLabel(correctionBillingClientCombo.editText).length > 0
+                            && correctionReason.text.trim().length >= 4
+                            && !dialog.correctionLoading
+                            && !dialog.correctionSaving
+                        text: dialog.correctionQueueIndex + 1 < dialog.billingClientConflicts.length
+                            ? "Apply & Continue"
+                            : "Apply Correction"
+                        t: dialog.t
+                        metrics: dialog.metrics
+                        appStyle: dialog.appStyle
+                        primary: true
+                        enabled: canSubmit
+                        Layout.preferredWidth: 158
+                        Layout.preferredHeight: 36
+                        onClicked: {
+                            correctionOverlay.message = ""
+                            dialog.billingBackend.correctInvoiceBillingClient(
+                                dialog.correctionInvoice,
+                                dialog._correctionClientIdForLabel(correctionBillingClientCombo.editText),
+                                correctionReason.text
+                            )
+                        }
+                    }
                 }
             }
         }

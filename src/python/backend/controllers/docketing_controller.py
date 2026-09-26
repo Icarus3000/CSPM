@@ -161,10 +161,20 @@ class DocketingController(QObject):
         try:
             _, value, _ = err_tuple
             self.error.emit(f"Could not post billing-client receipt: {value}")
-            self.billingClientReceiptSaveFinished.emit({
+            payload = {
                 "ok": False,
                 "message": str(value),
-            })
+            }
+            error_code = str(getattr(value, "error_code", "") or "").strip()
+            if error_code:
+                payload["errorCode"] = error_code
+            conflicts = getattr(value, "conflicts", None)
+            if isinstance(conflicts, list):
+                payload["billingClientConflicts"] = [dict(item or {}) for item in conflicts]
+            expected = str(getattr(value, "expected_billing_client", "") or "").strip()
+            if expected:
+                payload["expectedBillingClient"] = expected
+            self.billingClientReceiptSaveFinished.emit(payload)
         finally:
             self._release_worker(worker)
 

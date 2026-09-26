@@ -110,3 +110,24 @@ def test_collection_rows_toggle_full_balance_without_overwriting_received_amount
         "function _rowMatchesSelectedClient", 1
     )[0]
     assert "amountInput.text" not in toggle_block
+
+
+def test_collection_repairs_structured_billing_conflicts_without_resetting_allocations():
+    controller = (
+        ROOT / "src" / "python" / "backend" / "controllers" / "docketing_controller.py"
+    ).read_text(encoding="utf-8")
+    repository = (
+        ROOT / "src" / "python" / "repositories" / "excel_repo.py"
+    ).read_text(encoding="utf-8")
+    assert 'error_code = "billing_client_mismatch"' in repository
+    assert 'payload["billingClientConflicts"]' in controller
+    assert "property var billingClientConflicts: []" in COLLECTION_DIALOG
+    assert "function beginBillingConflictCorrections()" in COLLECTION_DIALOG
+    assert "function loadCurrentBillingConflict()" in COLLECTION_DIALOG
+    assert "correctInvoiceBillingClient(" in COLLECTION_DIALOG
+    assert "All receipt fields and allocations were preserved" in COLLECTION_DIALOG
+    correction_block = COLLECTION_DIALOG.split("function finishCurrentBillingCorrection(payload)", 1)[1].split(
+        "Connections {", 1
+    )[0]
+    assert "loadBillingClient(" not in correction_block
+    assert "allocationRows =" not in correction_block

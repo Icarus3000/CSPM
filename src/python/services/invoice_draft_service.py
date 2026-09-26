@@ -92,6 +92,44 @@ class InvoiceDraftService:
             "selectionSource": cls._text(selection_source) or "draft",
         }
 
+    @classmethod
+    def _assert_finalized_billing_identity(
+        cls,
+        invoice_num: str,
+        bill_to_snapshot: Any,
+        receivable_row: Dict[str, Any],
+        invoice_log_row: Dict[str, Any],
+        revenue_ledger_row: Dict[str, Any],
+    ) -> None:
+        """Refuse a finalization whose accounting owner diverges from bill-to.
+
+        The PDF renderer and all accounting records must consume the same
+        immutable draft snapshot.  This last pre-write invariant makes that
+        contract executable, so a later refactor cannot silently recreate the
+        historic parent-billing split.
+        """
+        expected = cls._bill_to_snapshot_client_name(bill_to_snapshot)
+        actual = {
+            "Receivables": cls._text(receivable_row.get(sc.COL_RECV_CLIENT)),
+            "Invoice Log": cls._text(invoice_log_row.get(sc.COL_INV_BILL_TO_CLIENT)),
+            "Revenue Ledger": cls._text(revenue_ledger_row.get(sc.COL_LEDGER_CLIENT_VENDOR)),
+        }
+        if not expected:
+            raise ValueError(
+                f"Invoice {cls._text(invoice_num)} has no frozen bill-to client. "
+                "Refresh the draft's billing recipient before finalizing."
+            )
+        mismatches = [
+            f"{label}={value or '(blank)'}"
+            for label, value in actual.items()
+            if value.casefold() != expected.casefold()
+        ]
+        if mismatches:
+            raise RuntimeError(
+                f"Invoice {cls._text(invoice_num)} billing identity validation failed before write: "
+                f"snapshot={expected}; " + "; ".join(mismatches)
+            )
+
     def _write_tables_once(self, table_rows: Dict[Any, List[Dict[str, Any]]]) -> None:
         """Commit one financial command as one workbook replacement.
 
@@ -2134,7 +2172,7 @@ class InvoiceDraftService:
 
         # 3. Create Receivables entry
         receivables = table_rows[sc.TBL_RECEIVABLES]
-        receivables.append({
+        finalized_receivable = {
             sc.COL_RECV_INVOICE_NUM: final_invoice_num,
             sc.COL_RECV_DATE: date_str,
             sc.COL_RECV_CLIENT: bill_to_client_name,
@@ -2144,10 +2182,11 @@ class InvoiceDraftService:
             sc.COL_RECV_BALANCE_DUE: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_RECV_STATUS: "Unpaid",
             sc.COL_RECV_WORK_CLIENT: work_client_name,
-        })
+        }
+        receivables.append(finalized_receivable)
         # 4. Create Invoice Log entry
         invoice_log = table_rows[sc.TBL_INVOICE_LOG]
-        invoice_log.append({
+        finalized_invoice_log = {
             sc.COL_INV_INVOICE_NUM: final_invoice_num,
             sc.COL_INV_CLIENT_NAME: work_client_name,
             sc.COL_INV_SUB_CLIENT: work_client_name if work_client_name.casefold() != bill_to_client_name.casefold() else "",
@@ -2158,10 +2197,11 @@ class InvoiceDraftService:
             sc.COL_INV_AGGREGATE_BILLED: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_INV_BILL_TO_CLIENT: bill_to_client_name,
             sc.COL_INV_BILL_TO_SNAPSHOT: bill_to_snapshot,
-        })
+        }
+        invoice_log.append(finalized_invoice_log)
         # 4b. Create Ledger Entry for Revenue
         ledger = table_rows[sc.TBL_LEDGER]
-        ledger.append({
+        finalized_revenue_ledger = {
             sc.COL_LEDGER_ID: self.repo._new_id("LED"),
             sc.COL_LEDGER_DATE: date_str,
             sc.COL_LEDGER_CLIENT_VENDOR: bill_to_client_name,
@@ -2173,7 +2213,15 @@ class InvoiceDraftService:
             sc.COL_LEDGER_RECEIVABLE: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_LEDGER_WORK_CLIENT: work_client_name,
             sc.COL_LEDGER_CREATED_AT: now_str
-        })
+        }
+        ledger.append(finalized_revenue_ledger)
+        self._assert_finalized_billing_identity(
+            final_invoice_num,
+            bill_to_snapshot,
+            finalized_receivable,
+            finalized_invoice_log,
+            finalized_revenue_ledger,
+        )
         # 5. Remove Draft
         drafts = [d for d in drafts if d.get(sc.COL_DRAFT_INVOICE_NUM) != draft_num]
         try:

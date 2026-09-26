@@ -821,6 +821,7 @@ Item {
         t: root.t
         metrics: root.metrics
         appRef: root.appRef
+        billingBackend: root.appRef && root.appRef.billing ? root.appRef.billing : null
         sfxBus: root.sfxBus
         onPostRequested: function(payload) {
             root.runBillingClientReceipt(payload)

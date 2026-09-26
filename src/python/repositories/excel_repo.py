@@ -132,6 +132,42 @@ class TableRef:
     table: str
 
 
+class BillingClientMismatchError(ValueError):
+    """Structured pre-write failure for a multi-invoice receipt.
+
+    The UI needs the affected invoice identities in order to offer the existing
+    audited correction workflow without discarding the prepared receipt.  Keep
+    this as an exception because the financial command must abort before its
+    first mutation, while exposing only serializable data to the controller.
+    """
+
+    error_code = "billing_client_mismatch"
+
+    def __init__(
+        self,
+        expected_billing_client: str,
+        conflicts: List[Dict[str, str]],
+    ) -> None:
+        self.expected_billing_client = _clean_text(expected_billing_client)
+        self.conflicts = [dict(item or {}) for item in (conflicts or [])]
+        if len(self.conflicts) == 1:
+            conflict = self.conflicts[0]
+            message = (
+                f"Invoice {conflict.get('invoice') or '(unknown)'} belongs to billing client "
+                f"{conflict.get('currentBillingClient') or '(blank)'}, not "
+                f"{self.expected_billing_client}."
+            )
+        else:
+            invoice_list = ", ".join(
+                str(item.get("invoice") or "(unknown)") for item in self.conflicts
+            )
+            message = (
+                f"{len(self.conflicts)} invoices belong to a different billing client than "
+                f"{self.expected_billing_client}: {invoice_list}."
+            )
+        super().__init__(message)
+
+
 TBL_PARENTS = TableRef(sc.SHEET_PARENTS, sc.TBL_PARENTS)
 TBL_CLIENTS = TableRef(sc.SHEET_CLIENTS, sc.TBL_CLIENTS)
 TBL_CLIENT_PROFILES = TableRef(sc.SHEET_CLIENT_PROFILES, sc.TBL_CLIENT_PROFILES)
@@ -3686,6 +3722,7 @@ class ExcelRepo:
             if _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
         }
         validated_allocations: List[Dict[str, Any]] = []
+        billing_conflicts: List[Dict[str, str]] = []
         for allocation in allocations:
             invoice = allocation["invoice"]
             match = receivable_by_invoice.get(invoice.casefold())
@@ -3696,9 +3733,12 @@ class ExcelRepo:
                 receivable.get(sc.COL_RECV_WORK_CLIENT)
             )
             if row_billing_client.casefold() != billing_client.casefold():
-                raise ValueError(
-                    f"Invoice {invoice} belongs to billing client {row_billing_client or '(blank)'}, "
-                    f"not {billing_client}."
+                billing_conflicts.append(
+                    {
+                        "invoice": invoice,
+                        "currentBillingClient": row_billing_client,
+                        "expectedBillingClient": billing_client,
+                    }
                 )
             status_key = _clean_text(receivable.get(sc.COL_RECV_STATUS)).casefold()
             if status_key in {"void", "cancelled", "canceled", "closed", "paid"}:
@@ -3720,6 +3760,13 @@ class ExcelRepo:
                     "beforeBalance": before_balance,
                 }
             )
+
+        if billing_conflicts:
+            # Validation is complete and no transaction, ledger, or A/R row
+            # has been written.  Return every ownership conflict together so
+            # the collection screen can repair them without rebuilding the
+            # receipt or discovering them one retry at a time.
+            raise BillingClientMismatchError(billing_client, billing_conflicts)
 
         receipt_id = self._new_id("TXN")
         allocation_evidence = [
