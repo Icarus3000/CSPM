@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import Qt.labs.platform 1.1
+import "../components"
 import "../standards"
 import "../standards/SemanticTheme.js" as SemanticTheme
 
@@ -34,6 +35,9 @@ Item {
     property var selectedInvoiceData: null
     property var selectedInvoiceSummary: null
     property var selectedPaymentHistory: []
+    property var billingCorrectionContext: null
+    property bool billingCorrectionLoading: false
+    property bool billingCorrectionSaving: false
     property bool invoiceListLoading: false
     property bool invoiceDetailsLoading: false
     property var _calInstance: null
@@ -121,12 +125,16 @@ Item {
             selectedInvoiceData = null
             selectedInvoiceSummary = null
             selectedPaymentHistory = []
+            billingCorrectionContext = null
+            billingCorrectionLoading = false
             invoiceDetailsLoading = false
             return
         }
         selectedInvoiceNum = invNum
         selectedInvoiceSummary = null
         selectedPaymentHistory = []
+        billingCorrectionContext = null
+        billingCorrectionLoading = true
         invoiceDetailsLoading = true
         for (var i = 0; i < invoicesModel.length; i++) {
             if (String(invoicesModel[i].InvoiceNum) === invNum) {
@@ -140,7 +148,64 @@ Item {
     function _refreshSelectedInvoiceDetails() {
         if (!root.selectedInvoiceNum) return
         root.invoiceDetailsLoading = true
-        if (root.billingBackend) root.billingBackend.loadInvoiceDirectoryDetails(root.selectedInvoiceNum)
+        root.billingCorrectionLoading = true
+        if (root.billingBackend) {
+            root.billingBackend.loadInvoiceDirectoryDetails(root.selectedInvoiceNum)
+            root.billingBackend.loadInvoiceBillingCorrectionContext(root.selectedInvoiceNum)
+        }
+    }
+
+    function _billingClientLabel(option) {
+        if (!option) return ""
+        var name = String(option.clientName || "")
+        var clientId = String(option.clientId || "")
+        return clientId ? name + " [" + clientId + "]" : name
+    }
+
+    function _billingClientLabels() {
+        var context = root.billingCorrectionContext || {}
+        var options = context.options || []
+        var labels = []
+        for (var i = 0; i < options.length; i++) labels.push(root._billingClientLabel(options[i]))
+        return labels
+    }
+
+    function _billingClientIdForLabel(label) {
+        var context = root.billingCorrectionContext || {}
+        var options = context.options || []
+        for (var i = 0; i < options.length; i++) {
+            if (root._billingClientLabel(options[i]) === String(label || "")) {
+                return String(options[i].clientId || "")
+            }
+        }
+        return ""
+    }
+
+    function _preferredBillingClientLabel() {
+        var context = root.billingCorrectionContext || {}
+        var preferredId = String(context.recommendedClientId || "")
+        var options = context.options || []
+        for (var i = 0; i < options.length; i++) {
+            if (String(options[i].clientId || "") === preferredId) return root._billingClientLabel(options[i])
+        }
+        return ""
+    }
+
+    function _openBillingClientCorrection() {
+        if (!root.selectedInvoiceNum || !root.billingBackend) return
+        billingCorrectionDialog.message = ""
+        billingCorrectionReason.text = ""
+        billingCorrectionDialog.visible = true
+        root.billingCorrectionLoading = true
+        root.billingBackend.loadInvoiceBillingCorrectionContext(root.selectedInvoiceNum)
+    }
+
+    function _applyBillingCorrectionContext(payload) {
+        root.billingCorrectionContext = payload || {}
+        root.billingCorrectionLoading = false
+        billingClientCombo.fullModel = root._billingClientLabels()
+        var preferred = root._preferredBillingClientLabel()
+        billingClientCombo.editText = preferred
     }
 
     onBillingBackendChanged: {
@@ -304,6 +369,26 @@ Item {
                 root.invoiceDetailsLoading = false
                 root.selectedInvoiceSummary = {}
                 root.selectedPaymentHistory = []
+            }
+        }
+        function onInvoiceBillingCorrectionContextLoaded(payload) {
+            if (!payload || String(payload.invoiceNum || "") !== root.selectedInvoiceNum) return
+            root._applyBillingCorrectionContext(payload)
+            if (payload.ok === false) billingCorrectionDialog.message = String(payload.message || "Could not inspect this invoice.")
+        }
+        function onInvoiceBillingCorrectionProgress(payload) {
+            if (!payload || String(payload.invoiceNum || "") !== root.selectedInvoiceNum) return
+            root.billingCorrectionSaving = payload.active === true
+        }
+        function onInvoiceBillingCorrectionFinished(payload) {
+            if (!payload || String(payload.invoiceNum || "") !== root.selectedInvoiceNum) return
+            root.billingCorrectionSaving = false
+            if (payload.ok === true) {
+                billingCorrectionDialog.visible = false
+                root._loadInvoices()
+                root._refreshSelectedInvoiceDetails()
+            } else {
+                billingCorrectionDialog.message = String(payload.message || "The billing client was not changed.")
             }
         }
         function onInvoiceReversalProgress(payload) {
@@ -972,6 +1057,33 @@ Item {
                     }
                 }
 
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: billingMismatchText.implicitHeight + 22
+                    visible: root.billingCorrectionContext
+                        && root.billingCorrectionContext.billingMismatch === true
+                    color: SemanticTheme.alpha(root._danger, 0.08)
+                    border.color: root._danger
+                    border.width: 1
+                    radius: visualRules.isPro ? visualRules.radiusControl : 4
+
+                    Text {
+                        id: billingMismatchText
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        text: "Billing-client mismatch: accounting currently uses "
+                            + String(root.billingCorrectionContext ? root.billingCorrectionContext.currentBillingClient || "(blank)" : "")
+                            + ", while the linked matter indicates "
+                            + String(root.billingCorrectionContext ? root.billingCorrectionContext.recommendedClientName || "(unknown)" : "")
+                            + "."
+                        color: root._danger
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        wrapMode: Text.WordWrap
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
                 // Keep actions directly below the details on short/high-DPI
                 // logical canvases instead of pushing them to the pane bottom.
                 RowLayout {
@@ -1005,6 +1117,29 @@ Item {
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: root.compactLayout ? 174 : 190
+                        Layout.preferredHeight: 44
+                        radius: visualRules.isPro ? visualRules.radiusControl : 4
+                        color: root.isProMode ? SemanticTheme.surfacePanel(root.t, root.appStyle) : SemanticTheme.surfacePanel(root.t, root.appStyle)
+                        border.color: root.billingCorrectionContext && root.billingCorrectionContext.billingMismatch === true
+                            ? root._danger : root._primary
+                        border.width: 1
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Correct Billing Client"
+                            color: root.billingCorrectionContext && root.billingCorrectionContext.billingMismatch === true
+                                ? root._danger : root._primary
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root._openBillingClientCorrection()
                         }
                     }
 
@@ -1557,6 +1692,253 @@ Item {
                                     reverseDialog.operationInProgress = true
                                     root.billingBackend.reverseInvoice(root.selectedInvoiceNum, reverseDialog.sourcePdfPath, reverseDialog.pdfAction, reverseDialog.targetDir)
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Item {
+        id: billingCorrectionDialog
+        anchors.fill: parent
+        z: 1100
+        visible: false
+        property string message: ""
+
+        MouseArea { anchors.fill: parent }
+
+        Rectangle {
+            anchors.fill: parent
+            color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+            opacity: 0.4
+        }
+
+        Rectangle {
+            width: Math.min(620, Math.max(360, parent.width - 32))
+            height: Math.min(570, parent.height - 24)
+            anchors.centerIn: parent
+            color: root.isProMode ? SemanticTheme.surfaceRaised(root.t, root.appStyle) : root._bg
+            radius: visualRules.isPro ? visualRules.radiusPopup : 8
+            border.color: root._border
+            border.width: 1
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 22
+                spacing: 12
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Correct Billing Client · " + (root.selectedInvoiceNum || "")
+                        color: root._text
+                        font.pixelSize: 20
+                        font.weight: Font.DemiBold
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                    }
+                    Rectangle {
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 32
+                        color: "transparent"
+                        border.color: root._border
+                        border.width: 1
+                        radius: visualRules.isPro ? visualRules.radiusControl : 4
+                        Text { anchors.centerIn: parent; text: "\u00d7"; color: root._text; font.pixelSize: 20 }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !root.billingCorrectionSaving
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: billingCorrectionDialog.visible = false
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "This changes billing ownership metadata only. It does not change the amount, date, work client, matter, or existing PDF. The correction is recorded in the invoice audit snapshot."
+                    color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                    font.pixelSize: 13
+                    wrapMode: Text.WordWrap
+                }
+
+                BusyIndicator {
+                    Layout.alignment: Qt.AlignHCenter
+                    visible: root.billingCorrectionLoading
+                    running: visible
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                }
+
+                GridLayout {
+                    visible: !root.billingCorrectionLoading
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 16
+                    rowSpacing: 8
+
+                    Text { text: "Work client"; color: SemanticTheme.inkMuted(root.t, root.appStyle); font.pixelSize: 13 }
+                    Text {
+                        Layout.fillWidth: true
+                        text: String(root.billingCorrectionContext ? root.billingCorrectionContext.workClient || "Not identified" : "")
+                        color: root._text
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+                    Text { text: "Current billing client"; color: SemanticTheme.inkMuted(root.t, root.appStyle); font.pixelSize: 13 }
+                    Text {
+                        Layout.fillWidth: true
+                        text: String(root.billingCorrectionContext ? root.billingCorrectionContext.currentBillingClient || "Not recorded" : "")
+                        color: root._text
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+                    Text { text: "Matter indicates"; color: SemanticTheme.inkMuted(root.t, root.appStyle); font.pixelSize: 13 }
+                    Text {
+                        Layout.fillWidth: true
+                        text: String(root.billingCorrectionContext ? root.billingCorrectionContext.recommendedClientName || "No parent detected" : "")
+                        color: root.billingCorrectionContext && root.billingCorrectionContext.billingMismatch === true
+                            ? root._danger : root._text
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+                    Text { text: "Invoice status"; color: SemanticTheme.inkMuted(root.t, root.appStyle); font.pixelSize: 13 }
+                    Text {
+                        Layout.fillWidth: true
+                        text: String(root.billingCorrectionContext ? root.billingCorrectionContext.status || "Unknown" : "")
+                            + " · balance $"
+                            + Number(root.billingCorrectionContext ? root.billingCorrectionContext.balanceDue || 0 : 0).toFixed(2)
+                        color: root._text
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+                }
+
+                ModernComboBox {
+                    id: billingClientCombo
+                    visible: !root.billingCorrectionLoading
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 58
+                    t: root.t
+                    appStyle: root.appStyle
+                    label: "Correct billing client *"
+                    fullModel: []
+                    preserveUnknownEditTextOnModelChanged: true
+                }
+
+                ColumnLayout {
+                    visible: !root.billingCorrectionLoading
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: "Reason for correction *"; color: SemanticTheme.inkMuted(root.t, root.appStyle); font.pixelSize: 12 }
+                    TextArea {
+                        id: billingCorrectionReason
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 72
+                        color: root._text
+                        placeholderText: "Example: Invoice PDF and matter parent identify Leviathan Private Network."
+                        placeholderTextColor: SemanticTheme.inkSubtle(root.t, root.appStyle)
+                        wrapMode: TextEdit.Wrap
+                        background: Rectangle {
+                            color: SemanticTheme.surfaceInput(root.t, root.appStyle)
+                            border.color: billingCorrectionReason.activeFocus ? root._primary : root._border
+                            border.width: billingCorrectionReason.activeFocus ? 2 : 1
+                            radius: visualRules.isPro ? visualRules.radiusControl : 4
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: correctionMessageText.implicitHeight + 18
+                    visible: {
+                        var contextMessage = root.billingCorrectionContext ? String(root.billingCorrectionContext.message || "") : ""
+                        return billingCorrectionDialog.message.length > 0 || contextMessage.length > 0
+                    }
+                    color: SemanticTheme.alpha(root._danger, 0.08)
+                    border.color: root._danger
+                    border.width: 1
+                    radius: visualRules.isPro ? visualRules.radiusControl : 4
+                    Text {
+                        id: correctionMessageText
+                        anchors.fill: parent
+                        anchors.margins: 9
+                        text: billingCorrectionDialog.message.length > 0
+                            ? billingCorrectionDialog.message
+                            : String(root.billingCorrectionContext ? root.billingCorrectionContext.message || "" : "")
+                        color: root._danger
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    BusyIndicator {
+                        visible: root.billingCorrectionSaving
+                        running: visible
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                    }
+                    Text {
+                        visible: root.billingCorrectionSaving
+                        text: "Saving one atomic correction…"
+                        color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                        font.pixelSize: 12
+                    }
+                    Item { Layout.fillWidth: true }
+                    Rectangle {
+                        Layout.preferredWidth: 96
+                        Layout.preferredHeight: 36
+                        color: "transparent"
+                        border.color: root._border
+                        border.width: 1
+                        radius: visualRules.isPro ? visualRules.radiusControl : 4
+                        Text { anchors.centerIn: parent; text: "Cancel"; color: root._text; font.pixelSize: 14 }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: !root.billingCorrectionSaving
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: billingCorrectionDialog.visible = false
+                        }
+                    }
+                    Rectangle {
+                        Layout.preferredWidth: 168
+                        Layout.preferredHeight: 36
+                        property bool canSubmit: root.billingCorrectionContext
+                            && root.billingCorrectionContext.eligible === true
+                            && root._billingClientIdForLabel(billingClientCombo.editText).length > 0
+                            && billingCorrectionReason.text.trim().length >= 4
+                            && !root.billingCorrectionLoading
+                            && !root.billingCorrectionSaving
+                        color: canSubmit ? root._primary : SemanticTheme.alpha(root._primary, 0.35)
+                        radius: visualRules.isPro ? visualRules.radiusControl : 4
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Apply Correction"
+                            color: root.isProMode ? SemanticTheme.readableInk(root._primary) : SemanticTheme.surfacePanel(root.t, root.appStyle)
+                            font.pixelSize: 14
+                            font.weight: Font.DemiBold
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: parent.canSubmit
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                billingCorrectionDialog.message = ""
+                                root.billingBackend.correctInvoiceBillingClient(
+                                    root.selectedInvoiceNum,
+                                    root._billingClientIdForLabel(billingClientCombo.editText),
+                                    billingCorrectionReason.text
+                                )
                             }
                         }
                     }

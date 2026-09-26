@@ -117,6 +117,12 @@ class BillingController(QObject):
 
     invoiceReversalProgress = Signal('QVariantMap')
 
+    invoiceBillingCorrectionContextLoaded = Signal('QVariantMap')
+
+    invoiceBillingCorrectionFinished = Signal('QVariantMap')
+
+    invoiceBillingCorrectionProgress = Signal('QVariantMap')
+
     invoiceHtmlReady = Signal(str)
 
     pdfExportFinished = Signal(str, bool)
@@ -169,8 +175,10 @@ class BillingController(QObject):
         self._wip_load_in_progress = False
         self._finalized_invoice_load_in_progress = False
         self._invoice_directory_detail_requests = set()
+        self._invoice_billing_context_requests = set()
         self._draft_workspace_requests = set()
         self._invoice_reversal_in_progress = False
+        self._invoice_billing_correction_in_progress = False
         self._custom_fee_requests_in_progress = set()
 
     # ── Worker helpers ───────────────────────────────────────────────────────
@@ -1671,6 +1679,104 @@ class BillingController(QObject):
             pdf_action,
             target_dir,
         )
+
+    @Slot(str)
+    def loadInvoiceBillingCorrectionContext(self, invoice_num):
+        """Load billing identity and eligible targets without blocking QML."""
+        invoice = str(invoice_num or "").strip()
+        if not invoice or invoice in self._invoice_billing_context_requests:
+            return
+        self._invoice_billing_context_requests.add(invoice)
+        worker = Worker(
+            self._draft_svc.invoice_billing_correction_context,
+            invoice,
+            name="loadInvoiceBillingCorrectionContext",
+        )
+        worker.signals.result.connect(
+            partial(self._on_invoice_billing_context_loaded, worker, invoice)
+        )
+        worker.signals.error.connect(
+            partial(self._on_invoice_billing_context_failed, worker, invoice)
+        )
+        self._start_worker(worker)
+
+    def _on_invoice_billing_context_loaded(self, worker, invoice_num, result):
+        try:
+            payload = dict(result or {})
+            payload["invoiceNum"] = invoice_num
+            self.invoiceBillingCorrectionContextLoaded.emit(payload)
+        finally:
+            self._invoice_billing_context_requests.discard(invoice_num)
+            self._release_worker(worker)
+
+    def _on_invoice_billing_context_failed(self, worker, invoice_num, err_tuple):
+        try:
+            _exception_type, value, _traceback = err_tuple
+            message = str(value or "Could not load billing-client correction details.")
+            self.error.emit(message)
+            self.invoiceBillingCorrectionContextLoaded.emit({
+                "ok": False,
+                "eligible": False,
+                "invoiceNum": invoice_num,
+                "message": message,
+            })
+        finally:
+            self._invoice_billing_context_requests.discard(invoice_num)
+            self._release_worker(worker)
+
+    @Slot(str, str, str)
+    def correctInvoiceBillingClient(self, invoice_num, target_client_key, reason):
+        """Apply one audited, atomic billing-client metadata correction."""
+        invoice = str(invoice_num or "").strip()
+        if not invoice:
+            self.error.emit("Select an invoice before correcting its billing client.")
+            return
+        if self._invoice_billing_correction_in_progress:
+            self.toast.emit("A billing-client correction is already in progress.")
+            return
+        self._invoice_billing_correction_in_progress = True
+        self.invoiceBillingCorrectionProgress.emit({"active": True, "invoiceNum": invoice})
+        worker = Worker(
+            self._draft_svc.correct_finalized_invoice_billing_client,
+            invoice,
+            str(target_client_key or ""),
+            str(reason or ""),
+            name="correctInvoiceBillingClient",
+        )
+        worker.signals.result.connect(
+            partial(self._on_invoice_billing_correction_finished, worker, invoice)
+        )
+        worker.signals.error.connect(
+            partial(self._on_invoice_billing_correction_failed, worker, invoice)
+        )
+        self._start_worker(worker)
+
+    def _on_invoice_billing_correction_finished(self, worker, invoice_num, result):
+        try:
+            payload = dict(result or {})
+            payload["invoiceNum"] = invoice_num
+            payload.setdefault("ok", True)
+            self.toast.emit(str(payload.get("message") or "Billing client corrected."))
+            self.invoiceBillingCorrectionFinished.emit(payload)
+        finally:
+            self._invoice_billing_correction_in_progress = False
+            self.invoiceBillingCorrectionProgress.emit({"active": False, "invoiceNum": invoice_num})
+            self._release_worker(worker)
+
+    def _on_invoice_billing_correction_failed(self, worker, invoice_num, err_tuple):
+        try:
+            _exception_type, value, _traceback = err_tuple
+            message = str(value or "The billing-client correction did not complete.")
+            self.error.emit(f"Could not correct invoice billing client: {message}")
+            self.invoiceBillingCorrectionFinished.emit({
+                "ok": False,
+                "invoiceNum": invoice_num,
+                "message": message,
+            })
+        finally:
+            self._invoice_billing_correction_in_progress = False
+            self.invoiceBillingCorrectionProgress.emit({"active": False, "invoiceNum": invoice_num})
+            self._release_worker(worker)
 
     def _start_invoice_reversal_worker(
         self,

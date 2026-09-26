@@ -1,4 +1,5 @@
 import uuid
+import json
 import logging
 import math
 import re
@@ -48,11 +49,48 @@ class InvoiceDraftService:
         if not text:
             return ""
         try:
-            import json
             snapshot = json.loads(text)
         except (TypeError, ValueError):
             return ""
         return cls._text(snapshot.get("clientName")) if isinstance(snapshot, dict) else ""
+
+    @classmethod
+    def _bill_to_snapshot_payload(cls, raw_snapshot: Any) -> Dict[str, Any]:
+        text = cls._text(raw_snapshot)
+        if not text:
+            return {}
+        try:
+            payload = json.loads(text)
+        except (TypeError, ValueError):
+            return {}
+        return dict(payload) if isinstance(payload, dict) else {}
+
+    @classmethod
+    def _profile_bill_to_snapshot(
+        cls,
+        profile: Dict[str, Any],
+        *,
+        fallback_client_id: str = "",
+        fallback_client_name: str = "",
+        selected_at: str = "",
+        selection_source: str = "draft",
+    ) -> Dict[str, Any]:
+        """Freeze one billing identity for both documents and accounting."""
+        data = dict(profile or {})
+        return {
+            "clientId": cls._text(data.get("clientId") or fallback_client_id),
+            "clientName": cls._text(
+                data.get("clientName")
+                or data.get("displayName")
+                or data.get("legalName")
+                or fallback_client_name
+            ),
+            "fullAddress": cls._text(data.get("fullAddress")),
+            "primaryEmail": cls._text(data.get("primaryEmail")),
+            "billingEmail": cls._text(data.get("billingEmail")),
+            "selectedAt": cls._text(selected_at) or datetime.now().astimezone().isoformat(),
+            "selectionSource": cls._text(selection_source) or "draft",
+        }
 
     def _write_tables_once(self, table_rows: Dict[Any, List[Dict[str, Any]]]) -> None:
         """Commit one financial command as one workbook replacement.
@@ -535,7 +573,6 @@ class InvoiceDraftService:
                 raise ValueError(
                     "Select a bill-to client for this joint matter before creating the invoice draft."
                 )
-            import json
             bill_to_snapshot = json.dumps(
                 {
                     "clientId": self._text(selected.get("clientId")),
@@ -716,6 +753,56 @@ class InvoiceDraftService:
                 agency_split_percent = "30.0"
         except Exception:
             pass
+
+        # Ordinary parent-billed matters historically rendered their PDF from
+        # the live parent profile while finalization posted A/R to the work
+        # client.  Freeze the same resolved recipient used by the renderer for
+        # every draft, not only joint retainers, so all downstream records have
+        # one durable source of truth.
+        if not bill_to_snapshot:
+            snapshot_profile = {}
+            snapshot_client_id = str(client_id or "").split(",")[0].strip()
+            snapshot_client_name = self._text(client_name)
+            try:
+                work_profile_result = self.repo.get_client_profile(snapshot_client_id)
+                work_profile = (
+                    dict(work_profile_result.get("client") or {})
+                    if work_profile_result.get("ok")
+                    else {}
+                )
+                parent_id = self._text(work_profile.get("parentClientId"))
+                parent_name = self._text(work_profile.get("parentClientName"))
+                if parent_id or parent_name:
+                    parent_result = self.repo.get_client_profile(parent_id or parent_name)
+                    if parent_result.get("ok"):
+                        snapshot_profile = dict(parent_result.get("client") or {})
+                    snapshot_client_id = parent_id or self._text(snapshot_profile.get("clientId"))
+                    snapshot_client_name = (
+                        self._text(snapshot_profile.get("clientName"))
+                        or self._text(snapshot_profile.get("displayName"))
+                        or parent_name
+                    )
+                else:
+                    snapshot_profile = work_profile
+                    snapshot_client_name = (
+                        self._text(work_profile.get("clientName"))
+                        or self._text(work_profile.get("displayName"))
+                        or snapshot_client_name
+                    )
+            except Exception:
+                # A minimal immutable identity remains safer than allowing the
+                # renderer and accounting writer to resolve independently.
+                snapshot_profile = {}
+            bill_to_snapshot = json.dumps(
+                self._profile_bill_to_snapshot(
+                    snapshot_profile,
+                    fallback_client_id=snapshot_client_id,
+                    fallback_client_name=snapshot_client_name,
+                    selected_at=now_str,
+                    selection_source="ordinary-matter-draft",
+                ),
+                separators=(",", ":"),
+            )
 
         # 3. Create Draft Record
         draft_record = {
@@ -1982,9 +2069,55 @@ class InvoiceDraftService:
                     item[sc.COL_DRAFT_REISSUE_INVOICE_NUM] = ""
         
         bill_to_snapshot = self._text(draft.get(sc.COL_DRAFT_BILL_TO_SNAPSHOT))
-        bill_to_client_name = self._bill_to_snapshot_client_name(bill_to_snapshot) or self._text(
-            draft.get(sc.COL_DRAFT_CLIENT_NAME)
-        )
+        bill_to_client_name = self._bill_to_snapshot_client_name(bill_to_snapshot)
+        if not bill_to_client_name:
+            # Drafts created before the universal snapshot rule still need the
+            # same safe resolution at finalization.  Persist the resolved
+            # identity into InvoiceLog so later profile edits cannot rewrite
+            # the historical recipient.
+            work_client_id = self._text(draft.get(sc.COL_DRAFT_CLIENT_ID)).split(",")[0].strip()
+            work_client_name_fallback = self._text(draft.get(sc.COL_DRAFT_CLIENT_NAME))
+            resolved_profile: Dict[str, Any] = {}
+            resolved_id = work_client_id
+            resolved_name = work_client_name_fallback
+            try:
+                work_result = self.repo.get_client_profile(work_client_id)
+                work_profile = dict(work_result.get("client") or {}) if work_result.get("ok") else {}
+                parent_id = self._text(work_profile.get("parentClientId"))
+                parent_name = self._text(work_profile.get("parentClientName"))
+                if parent_id or parent_name:
+                    parent_result = self.repo.get_client_profile(parent_id or parent_name)
+                    resolved_profile = (
+                        dict(parent_result.get("client") or {})
+                        if parent_result.get("ok")
+                        else {}
+                    )
+                    resolved_id = parent_id or self._text(resolved_profile.get("clientId"))
+                    resolved_name = (
+                        self._text(resolved_profile.get("clientName"))
+                        or self._text(resolved_profile.get("displayName"))
+                        or parent_name
+                        or work_client_name_fallback
+                    )
+                else:
+                    resolved_profile = work_profile
+                    resolved_name = (
+                        self._text(work_profile.get("clientName"))
+                        or self._text(work_profile.get("displayName"))
+                        or work_client_name_fallback
+                    )
+            except Exception:
+                resolved_profile = {}
+            resolved_snapshot = self._profile_bill_to_snapshot(
+                resolved_profile,
+                fallback_client_id=resolved_id,
+                fallback_client_name=resolved_name,
+                selected_at=now_str,
+                selection_source="legacy-draft-finalization",
+            )
+            bill_to_snapshot = json.dumps(resolved_snapshot, separators=(",", ":"))
+            bill_to_client_name = self._text(resolved_snapshot.get("clientName"))
+        work_client_name = self._text(draft.get(sc.COL_DRAFT_CLIENT_NAME))
         finalized_disbursement_total = sum(
             (
                 self._money(row.get(sc.COL_DISB_AMOUNT))
@@ -2009,13 +2142,15 @@ class InvoiceDraftService:
             sc.COL_RECV_AMOUNT_PAID: "0",
             sc.COL_RECV_CREDITS_ADJ: "0",
             sc.COL_RECV_BALANCE_DUE: draft.get(sc.COL_DRAFT_TOTAL_DUE),
-            sc.COL_RECV_STATUS: "Unpaid"
+            sc.COL_RECV_STATUS: "Unpaid",
+            sc.COL_RECV_WORK_CLIENT: work_client_name,
         })
         # 4. Create Invoice Log entry
         invoice_log = table_rows[sc.TBL_INVOICE_LOG]
         invoice_log.append({
             sc.COL_INV_INVOICE_NUM: final_invoice_num,
-            sc.COL_INV_CLIENT_NAME: bill_to_client_name,
+            sc.COL_INV_CLIENT_NAME: work_client_name,
+            sc.COL_INV_SUB_CLIENT: work_client_name if work_client_name.casefold() != bill_to_client_name.casefold() else "",
             sc.COL_INV_INVOICE_DATE: date_str,
             sc.COL_INV_TOTAL_FEES: str(finalized_professional_fees),
             sc.COL_INV_TOTAL_DISBURSEMENTS: str(finalized_disbursement_total),
@@ -2036,6 +2171,7 @@ class InvoiceDraftService:
             sc.COL_LEDGER_BILLINGS_EXCL_HST: draft.get(sc.COL_DRAFT_TOTAL_FEES),
             sc.COL_LEDGER_HST_COLLECTED: draft.get(sc.COL_DRAFT_TOTAL_TAX),
             sc.COL_LEDGER_RECEIVABLE: draft.get(sc.COL_DRAFT_TOTAL_DUE),
+            sc.COL_LEDGER_WORK_CLIENT: work_client_name,
             sc.COL_LEDGER_CREATED_AT: now_str
         })
         # 5. Remove Draft
@@ -2072,6 +2208,354 @@ class InvoiceDraftService:
         )
         
         return True
+
+    def invoice_billing_correction_context(self, invoice_num: str) -> Dict[str, Any]:
+        """Describe a safe, user-selectable billing-client metadata correction."""
+        invoice_num = self._text(invoice_num)
+        if not invoice_num:
+            return {"ok": False, "eligible": False, "message": "Select an invoice first."}
+
+        tables = self._read_tables_once([
+            sc.TBL_INVOICE_LOG,
+            sc.TBL_RECEIVABLES,
+            sc.TBL_TIME,
+            sc.TBL_DISBURSEMENTS,
+            sc.TBL_MATTERS,
+        ])
+        invoice_rows = [
+            row for row in tables[sc.TBL_INVOICE_LOG]
+            if self._text(row.get(sc.COL_INV_INVOICE_NUM)).casefold() == invoice_num.casefold()
+        ]
+        receivable_rows = [
+            row for row in tables[sc.TBL_RECEIVABLES]
+            if self._text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() == invoice_num.casefold()
+        ]
+        if len(invoice_rows) != 1 or len(receivable_rows) != 1:
+            return {
+                "ok": False,
+                "eligible": False,
+                "invoiceNum": invoice_num,
+                "message": (
+                    "A billing-client correction requires exactly one Invoice Log row and one "
+                    "Receivables row for the invoice."
+                ),
+            }
+
+        invoice = invoice_rows[0]
+        receivable = receivable_rows[0]
+        amount_paid = self._money(receivable.get(sc.COL_RECV_AMOUNT_PAID))
+        credits = self._money(receivable.get(sc.COL_RECV_CREDITS_ADJ))
+        balance = self._money(receivable.get(sc.COL_RECV_BALANCE_DUE))
+        status = self._text(receivable.get(sc.COL_RECV_STATUS))
+        closed_statuses = {"paid", "closed", "void", "voided", "cancelled", "canceled", "reversed"}
+        eligible = (
+            amount_paid == Decimal("0.00")
+            and credits == Decimal("0.00")
+            and balance > Decimal("0.00")
+            and status.casefold() not in closed_statuses
+        )
+
+        linked_time = [
+            row for row in tables[sc.TBL_TIME]
+            if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold() == invoice_num.casefold()
+        ]
+        linked_disbursements = [
+            row for row in tables[sc.TBL_DISBURSEMENTS]
+            if self._text(row.get(sc.COL_DISB_INVOICE_REF)).casefold() == invoice_num.casefold()
+        ]
+        linked_work = linked_time + linked_disbursements
+
+        def unique(values: List[Any]) -> List[str]:
+            result: List[str] = []
+            seen = set()
+            for value in values:
+                text = self._text(value)
+                key = text.casefold()
+                if text and key not in seen:
+                    seen.add(key)
+                    result.append(text)
+            return result
+
+        work_client_ids = unique([
+            row.get(sc.COL_TIME_CLIENT_ID) for row in linked_time
+        ] + [
+            row.get(sc.COL_DISB_CLIENT_ID) for row in linked_disbursements
+        ])
+        work_client_name = self._text(
+            receivable.get(sc.COL_RECV_WORK_CLIENT)
+            or invoice.get(sc.COL_INV_SUB_CLIENT)
+        )
+        work_profile: Dict[str, Any] = {}
+        if len(work_client_ids) == 1:
+            profile_result = self.repo.get_client_profile(work_client_ids[0])
+            if profile_result.get("ok"):
+                work_profile = dict(profile_result.get("client") or {})
+                work_client_name = (
+                    self._text(work_profile.get("clientName"))
+                    or self._text(work_profile.get("displayName"))
+                    or work_client_name
+                )
+        if not work_client_name:
+            work_client_name = self._text(invoice.get(sc.COL_INV_CLIENT_NAME))
+
+        parent_ids = unique([
+            row.get(sc.COL_TIME_PARENT_ID) for row in linked_time
+        ] + [
+            row.get(sc.COL_DISB_PARENT_ID) for row in linked_disbursements
+        ])
+        matter_ids = {
+            self._text(row.get(sc.COL_TIME_MATTER_ID)).casefold() for row in linked_time
+            if self._text(row.get(sc.COL_TIME_MATTER_ID))
+        }
+        matter_ids.update(
+            self._text(row.get(sc.COL_DISB_MATTER_ID)).casefold() for row in linked_disbursements
+            if self._text(row.get(sc.COL_DISB_MATTER_ID))
+        )
+        parent_ids = unique(parent_ids + [
+            row.get(sc.COL_MATTER_PARENT_ID)
+            for row in tables[sc.TBL_MATTERS]
+            if self._text(row.get(sc.COL_MATTER_ID)).casefold() in matter_ids
+        ])
+        if not parent_ids and work_profile:
+            parent_ids = unique([work_profile.get("parentClientId")])
+
+        recommended: Dict[str, Any] = {}
+        if len(parent_ids) == 1:
+            recommended_result = self.repo.get_client_profile(parent_ids[0])
+            if recommended_result.get("ok"):
+                recommended = dict(recommended_result.get("client") or {})
+        if not recommended and work_profile:
+            recommended = work_profile
+
+        options = []
+        list_directory = getattr(self.repo, "list_client_directory", None)
+        if callable(list_directory):
+            for row in list_directory() or []:
+                if int(row.get("active", 1) or 0) != 1:
+                    continue
+                client_id = self._text(row.get("clientId"))
+                client_name = self._text(
+                    row.get("displayName") or row.get("clientName") or row.get("legalName")
+                )
+                if client_id and client_name:
+                    options.append({"clientId": client_id, "clientName": client_name})
+
+        current_billing_client = self._text(
+            receivable.get(sc.COL_RECV_CLIENT)
+            or invoice.get(sc.COL_INV_BILL_TO_CLIENT)
+            or invoice.get(sc.COL_INV_CLIENT_NAME)
+        )
+        recommended_id = self._text(recommended.get("clientId"))
+        recommended_name = self._text(
+            recommended.get("clientName")
+            or recommended.get("displayName")
+            or recommended.get("legalName")
+        )
+        snapshot = self._bill_to_snapshot_payload(invoice.get(sc.COL_INV_BILL_TO_SNAPSHOT))
+        audit_history = snapshot.get("billingCorrections")
+        if not isinstance(audit_history, list):
+            audit_history = []
+
+        message = ""
+        if not eligible:
+            message = (
+                "Only an open, completely unpaid invoice with no credits can change billing client "
+                "through this metadata correction. Use a governed reversal/correction workflow otherwise."
+            )
+        return {
+            "ok": True,
+            "eligible": eligible,
+            "message": message,
+            "invoiceNum": invoice_num,
+            "currentBillingClient": current_billing_client,
+            "workClient": work_client_name,
+            "recommendedClientId": recommended_id,
+            "recommendedClientName": recommended_name,
+            "billingMismatch": bool(
+                recommended_name
+                and current_billing_client.casefold() != recommended_name.casefold()
+            ),
+            "amountPaid": float(amount_paid),
+            "credits": float(credits),
+            "balanceDue": float(balance),
+            "status": status,
+            "options": options,
+            "auditHistory": list(audit_history),
+        }
+
+    def correct_finalized_invoice_billing_client(
+        self,
+        invoice_num: str,
+        target_client_key: str,
+        reason: str,
+    ) -> Dict[str, Any]:
+        """Atomically correct billing metadata for one completely unpaid invoice."""
+        invoice_num = self._text(invoice_num)
+        target_client_key = self._text(target_client_key)
+        reason = " ".join(self._text(reason).split())
+        if not invoice_num:
+            raise ValueError("Select an invoice first.")
+        if not target_client_key:
+            raise ValueError("Select the correct billing client.")
+        if len(reason) < 4:
+            raise ValueError("Enter a short reason for the audit trail.")
+
+        with _DRAFT_LIFECYCLE_LOCK:
+            context = self.invoice_billing_correction_context(invoice_num)
+            if not context.get("ok") or not context.get("eligible"):
+                raise ValueError(
+                    self._text(context.get("message"))
+                    or "This invoice is not eligible for a billing-client correction."
+                )
+            target_result = self.repo.get_client_profile(target_client_key)
+            if not target_result.get("ok"):
+                raise ValueError(self._text(target_result.get("message")) or "Billing client not found.")
+            target_profile = dict(target_result.get("client") or {})
+            if int(target_profile.get("active", 1) or 0) != 1:
+                raise ValueError("The selected billing client is inactive.")
+            target_client_id = self._text(target_profile.get("clientId") or target_client_key)
+            target_client_name = self._text(
+                target_profile.get("clientName")
+                or target_profile.get("displayName")
+                or target_profile.get("legalName")
+            )
+            if not target_client_name:
+                raise ValueError("The selected billing client has no usable name.")
+
+            current_client = self._text(context.get("currentBillingClient"))
+            if current_client.casefold() == target_client_name.casefold():
+                return {
+                    "ok": True,
+                    "changed": False,
+                    "invoiceNum": invoice_num,
+                    "billingClient": target_client_name,
+                    "message": f"Invoice {invoice_num} already belongs to {target_client_name}.",
+                }
+
+            tables = self._read_tables_once([
+                sc.TBL_INVOICE_LOG,
+                sc.TBL_RECEIVABLES,
+                sc.TBL_LEDGER,
+                sc.TBL_TRANSACTIONS_MASTER,
+            ])
+            invoice_rows = [
+                row for row in tables[sc.TBL_INVOICE_LOG]
+                if self._text(row.get(sc.COL_INV_INVOICE_NUM)).casefold() == invoice_num.casefold()
+            ]
+            receivable_rows = [
+                row for row in tables[sc.TBL_RECEIVABLES]
+                if self._text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() == invoice_num.casefold()
+            ]
+            if len(invoice_rows) != 1 or len(receivable_rows) != 1:
+                raise ValueError("Invoice records changed while the correction was being prepared. Refresh and retry.")
+
+            invoice = invoice_rows[0]
+            receivable = receivable_rows[0]
+            # Repeat the financial gate against the exact rows which will be
+            # written; the earlier context was advisory and must not authorize
+            # a stale correction after a payment or credit appears.
+            if (
+                self._money(receivable.get(sc.COL_RECV_AMOUNT_PAID)) != Decimal("0.00")
+                or self._money(receivable.get(sc.COL_RECV_CREDITS_ADJ)) != Decimal("0.00")
+                or self._money(receivable.get(sc.COL_RECV_BALANCE_DUE)) <= Decimal("0.00")
+                or self._text(receivable.get(sc.COL_RECV_STATUS)).casefold()
+                in {"paid", "closed", "void", "voided", "cancelled", "canceled", "reversed"}
+            ):
+                raise ValueError("Invoice payment or status changed. Refresh before attempting a correction.")
+
+            now = datetime.now().astimezone().isoformat()
+            work_client = self._text(context.get("workClient")) or self._text(
+                receivable.get(sc.COL_RECV_WORK_CLIENT)
+                or invoice.get(sc.COL_INV_SUB_CLIENT)
+                or invoice.get(sc.COL_INV_CLIENT_NAME)
+            )
+            prior_snapshot = self._bill_to_snapshot_payload(invoice.get(sc.COL_INV_BILL_TO_SNAPSHOT))
+            history = prior_snapshot.get("billingCorrections")
+            history = list(history) if isinstance(history, list) else []
+            history.append({
+                "correctedAt": now,
+                "fromClient": current_client,
+                "toClientId": target_client_id,
+                "toClient": target_client_name,
+                "reason": reason,
+            })
+            snapshot = self._profile_bill_to_snapshot(
+                target_profile,
+                fallback_client_id=target_client_id,
+                fallback_client_name=target_client_name,
+                selected_at=now,
+                selection_source="invoice-billing-client-correction",
+            )
+            snapshot["billingCorrections"] = history
+            invoice[sc.COL_INV_BILL_TO_CLIENT] = target_client_name
+            invoice[sc.COL_INV_BILL_TO_SNAPSHOT] = json.dumps(snapshot, separators=(",", ":"))
+            if work_client:
+                invoice[sc.COL_INV_CLIENT_NAME] = work_client
+                invoice[sc.COL_INV_SUB_CLIENT] = (
+                    work_client if work_client.casefold() != target_client_name.casefold() else ""
+                )
+
+            receivable[sc.COL_RECV_CLIENT] = target_client_name
+            receivable[sc.COL_RECV_WORK_CLIENT] = work_client
+
+            ledger_touched = 0
+            for row in tables[sc.TBL_LEDGER]:
+                if self._text(row.get(sc.COL_LEDGER_REFERENCE)).casefold() != invoice_num.casefold():
+                    continue
+                category = self._text(row.get(sc.COL_LEDGER_CATEGORY)).casefold()
+                has_invoice_value = (
+                    self._money(row.get(sc.COL_LEDGER_BILLINGS_EXCL_HST)) > Decimal("0.00")
+                    or self._money(row.get(sc.COL_LEDGER_HST_COLLECTED)) > Decimal("0.00")
+                    or self._money(row.get(sc.COL_LEDGER_RECEIVABLE)) > Decimal("0.00")
+                )
+                if not has_invoice_value or category in {"payment", "receipt", "invoice reversal"}:
+                    continue
+                row[sc.COL_LEDGER_CLIENT_VENDOR] = target_client_name
+                row[sc.COL_LEDGER_WORK_CLIENT] = work_client
+                ledger_touched += 1
+
+            transactions_touched = 0
+            for row in tables[sc.TBL_TRANSACTIONS_MASTER]:
+                if self._text(row.get(sc.COL_TXN_INVOICE_REF)).casefold() != invoice_num.casefold():
+                    continue
+                txn_type = self._text(row.get(sc.COL_TXN_TYPE)).casefold()
+                category = self._text(row.get(sc.COL_TXN_CATEGORY_CODE)).casefold()
+                # A payment can also be an Income / legal-fees transaction.
+                # The financial gate above says none should exist, but never
+                # rewrite receipt evidence if historical rows disagree.
+                is_receipt = bool(
+                    self._text(row.get(sc.COL_TXN_FROM_ACCOUNT))
+                    or self._text(row.get(sc.COL_TXN_CLEARED_AT))
+                    or "payment" in self._text(row.get(sc.COL_TXN_NOTES)).casefold()
+                    or "receipt" in self._text(row.get(sc.COL_TXN_NOTES)).casefold()
+                )
+                if is_receipt:
+                    continue
+                if txn_type not in {"income", "invoice"} and category not in {"inc_legal_fees", "legal_revenue"}:
+                    continue
+                row[sc.COL_TXN_CLIENT] = target_client_name
+                transactions_touched += 1
+
+            self._write_tables_once({
+                sc.TBL_INVOICE_LOG: tables[sc.TBL_INVOICE_LOG],
+                sc.TBL_RECEIVABLES: tables[sc.TBL_RECEIVABLES],
+                sc.TBL_LEDGER: tables[sc.TBL_LEDGER],
+                sc.TBL_TRANSACTIONS_MASTER: tables[sc.TBL_TRANSACTIONS_MASTER],
+            })
+            return {
+                "ok": True,
+                "changed": True,
+                "invoiceNum": invoice_num,
+                "previousBillingClient": current_client,
+                "billingClientId": target_client_id,
+                "billingClient": target_client_name,
+                "workClient": work_client,
+                "ledgerRowsUpdated": ledger_touched,
+                "transactionRowsUpdated": transactions_touched,
+                "message": (
+                    f"Invoice {invoice_num} now belongs to billing client {target_client_name}."
+                ),
+            }
 
     def repair_finalized_invoice_amounts(self, invoice_num: str) -> Dict[str, Any]:
         """Rebuild one finalized invoice's monetary records from linked WIP.

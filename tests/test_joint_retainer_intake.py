@@ -136,7 +136,9 @@ def test_joint_retainer_keeps_client_identity_independent_and_requires_bill_to_c
     assert service.finalize_draft(draft_num, "26-0999", str(tmp_path)) is True
     invoice_log = repo._read_table_rows(sc.TBL_INVOICE_LOG)
     finalized = next(row for row in invoice_log if row[sc.COL_INV_INVOICE_NUM] == "26-0999")
-    assert finalized[sc.COL_INV_CLIENT_NAME] == "Blair Britton"
+    assert finalized[sc.COL_INV_CLIENT_NAME] == "Alex Britton"
+    assert finalized[sc.COL_INV_SUB_CLIENT] == "Alex Britton"
+    assert finalized[sc.COL_INV_BILL_TO_CLIENT] == "Blair Britton"
     assert json.loads(finalized[sc.COL_INV_BILL_TO_SNAPSHOT])["clientId"] == blair_id
 
 

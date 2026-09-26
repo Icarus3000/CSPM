@@ -1485,3 +1485,14 @@ dependencies merely because an individual report or screen already exists.
 - [x] Repair the affected live supplier bill through CSPM's exclusive checkout/publish workflow. Verification found exactly one new unbilled WIP disbursement and one ledger audit row, no new bill/payment/expense transaction, exact local/cloud workbook hashes, and no remaining checkout marker.
 - [x] Smoke-test the installed executable through input-ready and a normal animated close; the unchanged shutdown publish completed and released the cloud checkout.
 - [ ] Manual foreground verification: refresh WIP-to-Bill, search for a disbursement-only synthetic matter, create its draft, and confirm the Time Entry → Flat Fee handoff before using the repair with live data.
+
+## Invoice Billing-Client Integrity & In-App Correction (2026-09-26)
+
+- [x] Diagnose invoice `26-0095` from the live workbook and source legacy workbook without mutating either: the work client is Concierge Club, the billing parent and PDF recipient are Leviathan Private Network, but finalized A/R metadata was written as Concierge Club.
+- [x] Freeze a bill-to snapshot for every new invoice draft, including ordinary parent-billed matters, and resolve legacy drafts again at finalization when no valid snapshot exists.
+- [x] Finalize A/R, Invoice Log, and revenue Ledger records from that one snapshot while retaining the work client in its dedicated fields.
+- [x] Add Invoice Directory mismatch detection and a guarded **Correct Billing Client** workflow for open, completely unpaid, uncredited invoices.
+- [x] Apply one atomic audited correction across Receivables, Invoice Log, invoice-revenue Ledger rows, and eligible invoice-issuance transactions without altering the work client, amount, date, matter, or PDF.
+- [x] Add regression coverage for the exact Concierge/Leviathan parent-billing case, payment/credit/status guards, audit history, receipt-evidence protection, controller wiring, and UI contract.
+- [x] Rebase the feature onto the clean September 24 billing/release line, build the governed candidate-validation package, deploy the identical 4,275-file tree to `C:\Programs\CSPM`, and validate real Qt/WebEngine startup through input-ready and normal unchanged-data shutdown.
+- [ ] Manually open invoice `26-0095`, confirm the mismatch warning recommends Leviathan Private Network, apply the correction with a reason, then confirm Payment Entry accepts the invoice under Leviathan while the work client remains Concierge Club.
