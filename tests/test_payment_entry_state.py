@@ -81,6 +81,10 @@ def test_collection_filter_selects_exact_work_client_and_keeps_allocations_stabl
     assert 'readonly property string allWorkClientsLabel: "All clients"' in COLLECTION_DIALOG
     assert 'label: "Client"' in COLLECTION_DIALOG
     assert "fullModel: dialog.workClientOptions" in COLLECTION_DIALOG
+    assert COLLECTION_DIALOG.count("Layout.preferredHeight: dialog.fieldHeightPx") >= 7
+    work_client_block = COLLECTION_DIALOG.split("id: workClientCombo", 1)[1].split("PillButton", 1)[0]
+    assert "Layout.preferredHeight: dialog.fieldHeightPx" in work_client_block
+    assert "Layout.preferredHeight: 36" not in work_client_block
     assert "function refreshWorkClientOptions(rows)" in COLLECTION_DIALOG
     assert "function _clientFilteredAllocationRows()" in COLLECTION_DIALOG
     assert "function _rowMatchesSelectedClient(row)" in COLLECTION_DIALOG

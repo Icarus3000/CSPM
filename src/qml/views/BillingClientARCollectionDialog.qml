@@ -556,7 +556,11 @@ Popup {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 38
+                // ModernComboBox renders a floating label plus its value.  A
+                // hard 36 px filter control clipped "All clients" against the
+                // allocation table even though every form field above uses
+                // the application's standard labelled-field height.
+                Layout.preferredHeight: dialog.fieldHeightPx
                 spacing: 8
                 Text {
                     Layout.fillWidth: true
@@ -583,7 +587,7 @@ Popup {
                     sortSmartFilterResults: false
                     enabled: !dialog.postInProgress && dialog.allocationRows.length > 0
                     Layout.preferredWidth: 260
-                    Layout.preferredHeight: 36
+                    Layout.preferredHeight: dialog.fieldHeightPx
                     onActivated: dialog.selectWorkClient(editText)
                 }
                 PillButton {
