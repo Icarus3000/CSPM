@@ -3,11 +3,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import "../components"
 import "../standards"
 import "../standards/SemanticTheme.js" as SemanticTheme
 
-Popup {
+Window {
     id: dialog
 
     property var host
@@ -37,17 +38,31 @@ Popup {
     property var correctionContext: null
     property bool correctionLoading: false
     property bool correctionSaving: false
+    property bool geometryInitialized: false
 
     signal postRequested(var payload)
 
-    modal: true
-    focus: true
-    dim: true
-    closePolicy: postInProgress ? Popup.NoAutoClose : Popup.CloseOnEscape
-    anchors.centerIn: parent
-    padding: 0
-    width: Math.max(860, Math.min(1180, (parent ? parent.width : 1240) - 28))
-    height: Math.max(620, Math.min(860, (parent ? parent.height : 900) - 28))
+    title: "Billing Client A/R Collection"
+    visible: false
+    modality: Qt.ApplicationModal
+    flags: Qt.Window
+        | Qt.WindowTitleHint
+        | Qt.WindowSystemMenuHint
+        | Qt.WindowMinMaxButtonsHint
+        | Qt.WindowCloseButtonHint
+    width: 1180
+    height: 800
+    minimumWidth: 860
+    minimumHeight: 620
+    color: dialog._raisedPanel
+
+    onClosing: function(closeEvent) {
+        // Keep the persistent window object and its user-adjusted geometry.
+        // A financial write/correction cannot be hidden mid-command.
+        closeEvent.accepted = false
+        if (dialog.postInProgress || dialog.correctionSaving) return
+        dialog.hide()
+    }
 
     VisualRules {
         id: visualRules
@@ -184,12 +199,46 @@ Popup {
         selectedWorkClient = allWorkClientsLabel
         workClientCombo.editText = allWorkClientsLabel
         loadBillingClient(_clean(clientName))
-        open()
+        prepareWindowGeometry()
+        show()
+        raise()
+        requestActivate()
         Qt.callLater(function() {
             if (!dialog.visible) return
             if (dialog.selectedBillingClient.length > 0) amountInput.forceActiveFocus()
             else billingClientCombo.forceActiveFocus()
         })
+    }
+
+    function prepareWindowGeometry() {
+        var owner = host ? host.Window.window : null
+        if (owner) {
+            transientParent = owner
+            if (owner.screen) screen = owner.screen
+        }
+        if (geometryInitialized) return
+
+        var ownerWidth = owner ? Number(owner.width || 0) : 0
+        var ownerHeight = owner ? Number(owner.height || 0) : 0
+        var targetWidth = ownerWidth > 0 ? ownerWidth - 56 : 1180
+        var targetHeight = ownerHeight > 0 ? ownerHeight - 70 : 800
+        width = Math.max(minimumWidth, Math.min(1180, Math.round(targetWidth)))
+        height = Math.max(minimumHeight, Math.min(860, Math.round(targetHeight)))
+
+        if (owner) {
+            x = Math.round(owner.x + (owner.width - width) / 2)
+            y = Math.round(owner.y + (owner.height - height) / 2)
+        }
+        geometryInitialized = true
+    }
+
+    Shortcut {
+        sequence: StandardKey.Cancel
+        enabled: dialog.visible && !dialog.postInProgress && !dialog.correctionSaving
+        onActivated: {
+            if (correctionOverlay.visible) correctionOverlay.visible = false
+            else dialog.close()
+        }
     }
 
     function allocationAmount(index) {
@@ -515,14 +564,8 @@ Popup {
         }
     }
 
-    background: Rectangle {
-        color: dialog._raisedPanel
-        border.width: 1
-        border.color: dialog._border
-        radius: dialog.isProMode ? visualRules.radiusPopup : 12
-    }
-
-    contentItem: ColumnLayout {
+    ColumnLayout {
+        anchors.fill: parent
         spacing: 0
 
         Rectangle {

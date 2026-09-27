@@ -131,3 +131,15 @@ def test_collection_repairs_structured_billing_conflicts_without_resetting_alloc
     )[0]
     assert "loadBillingClient(" not in correction_block
     assert "allocationRows =" not in correction_block
+
+
+def test_collection_uses_a_native_movable_resizable_maximizable_window():
+    assert "\nWindow {\n    id: dialog" in COLLECTION_DIALOG
+    assert "modality: Qt.ApplicationModal" in COLLECTION_DIALOG
+    assert "flags: Qt.Window" in COLLECTION_DIALOG
+    assert "Qt.WindowMinMaxButtonsHint" in COLLECTION_DIALOG
+    assert "minimumWidth: 860" in COLLECTION_DIALOG
+    assert "minimumHeight: 620" in COLLECTION_DIALOG
+    assert "function prepareWindowGeometry()" in COLLECTION_DIALOG
+    assert "transientParent = owner" in COLLECTION_DIALOG
+    assert "show()\n        raise()\n        requestActivate()" in COLLECTION_DIALOG
