@@ -321,8 +321,8 @@ Item {
 
     function _aggregateRows() {
         return [
-            { "metric": "Total A/R (Gross)", "value": money(root.summaryValue("totalAr")) },
-            { "metric": "Total A/R (net of HST)", "value": money(root.summaryValue("totalArNet")) },
+            { "metric": "Outstanding A/R, including HST", "value": money(root.summaryValue("totalAr")) },
+            { "metric": "Outstanding A/R, excluding HST", "value": money(root.summaryValue("totalArNet")) },
             { "metric": "Open invoices", "value": String(root.summaryValue("invoiceCount")) },
             { "metric": root.groupByMode === "billingClient" ? "Open billing clients" : "Open clients", "value": String(root.summaryValue("clientCount")) },
             { "metric": "Dashboard A/R authority", "value": money(root.summaryValue("ledgerAr")) },

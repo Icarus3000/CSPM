@@ -13887,9 +13887,6 @@ class ExcelRepo:
             parsed = self._parse_date_value(value)
             return parsed.year if parsed else None
 
-        def net_of_hst(gross_value: Any) -> float:
-            return money_round(Decimal(str(gross_value or 0.0)) / Decimal("1.13"))
-
         def bucket_key(age_days: int) -> Tuple[str, str]:
             if age_days <= 30:
                 return "current", "0-30"
@@ -13905,6 +13902,16 @@ class ExcelRepo:
         parent_rows = self._read_table_rows(TBL_PARENTS)
         client_rows = self._read_table_rows(TBL_CLIENTS)
         profile_rows = self._read_table_rows(TBL_CLIENT_PROFILES)
+        invoice_rows = self._read_table_rows(TBL_INVOICE_LOG)
+        
+        invoice_log_map = {
+            _clean_text(row.get(sc.COL_INV_INVOICE_NUM)).upper(): {
+                "tax": amount(row.get(sc.COL_INV_TOTAL_TAX)),
+                "gross": amount(row.get(sc.COL_INV_AGGREGATE_BILLED))
+            }
+            for row in invoice_rows if _clean_text(row.get(sc.COL_INV_INVOICE_NUM))
+        }
+
         _parent_names, client_parent_lookup = self._client_parent_lookup(profile_rows, client_rows, parent_rows)
 
         def parent_info_for_client(*values: Any) -> Dict[str, str]:
@@ -13918,6 +13925,7 @@ class ExcelRepo:
         open_rows: List[Dict[str, Any]] = []
         open_by_invoice: Dict[str, Dict[str, Any]] = {}
         closed_void_rows: List[Dict[str, Any]] = []
+        issue_rows: List[Dict[str, Any]] = []
         summary_map: Dict[str, Dict[str, Any]] = {}
         bucket_map: Dict[str, Dict[str, Any]] = {
             "current": {"title": "0-30 days", "invoiceCount": 0, "amount": 0.0},
@@ -13983,6 +13991,30 @@ class ExcelRepo:
             invoice_total = round(amount(raw.get(sc.COL_RECV_TOTAL_INVOICED)), 2)
             paid = round(amount(raw.get(sc.COL_RECV_AMOUNT_PAID)) + amount(raw.get(sc.COL_RECV_CREDITS_ADJ)), 2)
 
+            log_entry = invoice_log_map.get(invoice.upper())
+            if log_entry and log_entry["gross"] > 0.01:
+                tax_ratio = log_entry["tax"] / log_entry["gross"]
+                tax_component = money_round(balance * tax_ratio)
+                net_balance = money_round(balance - tax_component)
+            elif log_entry and log_entry["gross"] <= 0.01 and log_entry["tax"] > 0:
+                tax_component = log_entry["tax"]
+                net_balance = money_round(balance - tax_component)
+            elif log_entry:
+                net_balance = balance
+            else:
+                net_balance = balance
+                issue_rows.append(
+                    {
+                        "type": "Missing invoice components",
+                        "reference": invoice,
+                        "client": display_client,
+                        "status": status,
+                        "amount": balance,
+                        "amountDisplay": money(balance),
+                        "note": "Cannot determine exact HST allocation for this legacy invoice. Assuming zero tax until manually reconciled.",
+                    }
+                )
+
             row = {
                 "invoice": invoice,
                 "date": invoice_date.isoformat() if invoice_date else self._date_iso(raw.get(sc.COL_RECV_DATE)),
@@ -14005,8 +14037,8 @@ class ExcelRepo:
                 "credits": round(amount(raw.get(sc.COL_RECV_CREDITS_ADJ)), 2),
                 "balance": balance,
                 "balanceDisplay": money(balance),
-                "balanceNet": net_of_hst(balance),
-                "balanceNetDisplay": money(net_of_hst(balance)),
+                "balanceNet": net_balance,
+                "balanceNetDisplay": money(net_balance),
             }
             open_rows.append(row)
             open_by_invoice[invoice] = row
@@ -14077,7 +14109,7 @@ class ExcelRepo:
             bucket_rows.append(bucket)
 
         total_ar = round(sum(float(row.get("balance") or 0.0) for row in open_rows), 2)
-        total_net = net_of_hst(total_ar) if total_ar else 0.0
+        total_net = round(sum(float(row.get("balanceNet") or 0.0) for row in open_rows), 2)
         hst_component = money_round(total_ar - total_net)
         closed_void_rows.sort(key=lambda row: (-float(row.get("balance") or 0.0), _clean_text(row.get("client")).lower(), row.get("invoice")))
 
@@ -14122,7 +14154,6 @@ class ExcelRepo:
             total = money_round(sum(float(row.get("amount") or 0.0) for row in by_ref.values()))
             return by_ref, total
 
-        issue_rows: List[Dict[str, Any]] = []
         legacy_reconciliation_rows: List[Dict[str, Any]] = []
         legacy_ledger_by_ref, legacy_ledger_ar = dashboard_ledger_positive_by_ref(as_of.year)
         non_invoice_ledger_ar = 0.0
@@ -14215,8 +14246,8 @@ class ExcelRepo:
             "legacyReconciliationCount": len(legacy_reconciliation_rows),
         }
         cards = [
-            {"label": "Total Gross A/R", "value": total_ar, "displayValue": money(total_ar), "tone": "primary"},
-            {"label": "Total Net A/R", "value": total_net, "displayValue": money(total_net), "tone": "success"},
+            {"label": "Gross A/R, including HST", "value": total_ar, "displayValue": money(total_ar), "tone": "primary"},
+            {"label": "A/R excluding HST", "value": total_net, "displayValue": money(total_net), "tone": "success"},
             {"label": "Open Invoices", "value": len(open_rows), "displayValue": str(len(open_rows)), "tone": "info"},
             {
                 "label": "Open Billing Clients" if group_by == "billingClient" else "Open Clients",

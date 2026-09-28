@@ -165,8 +165,11 @@ def _hours(value):
         return "0.00"
 
 
-def _paragraph(value, style):
-    return Paragraph(_escaped(value), style)
+def _paragraph(value, style, noWrap=False):
+    escaped = _escaped(value)
+    if noWrap and escaped:
+        return Paragraph(f"<nobr>{escaped}</nobr>", style)
+    return Paragraph(escaped, style)
 
 
 def _table_style(header=True, span_empty=False):
@@ -545,9 +548,10 @@ def _generic_align_is_right(column):
 
 
 def _generic_section_title(section):
-    title = _safe_text(section.get("title") or section.get("label")).strip()
-    if title:
-        return title
+    if "title" in section:
+        return _safe_text(section["title"]).strip()
+    if "label" in section:
+        return _safe_text(section["label"]).strip()
     section_id = _safe_text(section.get("sectionId") or section.get("id")).strip()
     return section_id.replace("_", " ").title() if section_id else "Report Section"
 
@@ -579,6 +583,13 @@ def _generic_column_widths(columns, available_width):
     return [available_width * (value / total) for value in raw]
 
 
+def _generic_column_nowrap(column):
+    if "noWrap" in column or "nowrap" in column:
+        return bool(column.get("noWrap") or column.get("nowrap"))
+    key = _generic_column_key(column).lower()
+    wrap_keys = {"client", "billingclient", "sourcebillingclient", "matter", "mattername", "description", "note", "reason"}
+    return key not in wrap_keys
+
 def _build_generic_story(payload, styles, available_width):
     story = []
     config = dict(payload.get("config", {}) or {})
@@ -600,11 +611,14 @@ def _build_generic_story(payload, styles, available_width):
         if not columns:
             continue
 
-        story.append(_section_title(_generic_section_title(section), styles))
+        section_title = _generic_section_title(section)
+        if section_title:
+            story.append(_section_title(section_title, styles))
         headers = []
         for column in columns:
             style_key = "tableHeaderRight" if _generic_align_is_right(column) else "tableHeader"
-            headers.append(_paragraph(_generic_column_label(column), styles[style_key]))
+            no_wrap = _generic_column_nowrap(column)
+            headers.append(_paragraph(_generic_column_label(column), styles[style_key], noWrap=no_wrap))
 
         data = [headers]
         if rows:
@@ -615,7 +629,8 @@ def _build_generic_story(payload, styles, available_width):
                 for column in columns:
                     key = _generic_column_key(column)
                     style_key = "cellRight" if _generic_align_is_right(column) else "cell"
-                    values.append(_paragraph(row.get(key, ""), styles[style_key]))
+                    no_wrap = _generic_column_nowrap(column)
+                    values.append(_paragraph(row.get(key, ""), styles[style_key], noWrap=no_wrap))
                 data.append(values)
             span_empty = False
         else:
