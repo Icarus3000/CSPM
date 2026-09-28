@@ -2271,3 +2271,11 @@ Full requirement: `docs/FUTURE_DATA_ARCHITECTURE.md`.
 - Sandbox-safe validation completed: Python compilation passed; the focused billing/invoice/payment/report suite passed (**57 tests**); direct QML component compilation reported both changed components **Ready**; governed QML lint exited 0 with existing warning-level diagnostics only; `git diff --check` passed.
 - Release packaging: the production builder correctly refused the still-unapproved `CANDIDATE_AWAITING_CORY_APPROVAL` workbook template. The supported candidate-validation build completed and promoted a full runnable package at `dist/CSPM/CSPM.exe` (SHA-256 `E441F56426D8A25FA6CC4CA35D9DD0B439E05A469D4E6B1BD332ABA9F68668A1`). Both changed QML resources match source byte-for-byte, Recovery and data directories are present, and the EXE has no `Zone.Identifier`. The prior release is recoverable at `to_delete/dist__replaced_release_20260910_092951/`.
 - Real Qt/WebEngine startup and the end-to-end financial posting interaction remain to be validated outside the sandbox. The Professional maximize/restore manual acceptance gate remains open and unchanged; this feature adds no window-state animation.
+
+### A/R Report Defect Repair (2026-09-28)
+- **Net A/R Calculation Fixed**: Modified xcel_repo.py to extract TotalTax and AggregateBilled from 	blInvoiceLog. Replaced 
+et_of_hst (division by 1.13) with proportional tax extraction per invoice. Partially paid invoices correctly compute outstanding HST portion. Legacy invoices without components are safely flagged in issueRows.
+- **"Header" Bug Fixed**: Modified eport_pdf_exporter.py's _generic_section_title fallback. If a section explicitly supplies 	itle: "", it is correctly honored and skipped in the PDF layout, removing the stray "Header".
+- **Table Wrapping Fixed**: Added a _generic_column_nowrap heuristic in eport_pdf_exporter.py that defaults financial and identifier columns to non-wrapping, preventing currency values and headers like "Bucket" from splitting.
+- **Labels Updated**: Updated QML and python backend summary labels to explicit "Outstanding A/R, including HST" and "Outstanding A/R, excluding HST".
+- **Tests**: Created comprehensive tests in 	est_ar_report.py.

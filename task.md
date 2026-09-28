@@ -1432,3 +1432,12 @@ dependencies merely because an individual report or screen already exists.
 - [x] Add regression coverage for exact party filtering, combined search/filter behavior, dialog fields, routed posting, and saved filter state.
 - [x] Build and promote the non-production validation package at `dist/CSPM/CSPM.exe` (SHA-256 `E441F56426D8A25FA6CC4CA35D9DD0B439E05A469D4E6B1BD332ABA9F68668A1`); production packaging remains correctly blocked until the candidate workbook template receives Cory's approval.
 - [ ] Manually verify in the real app: filter once by Client and once by Billing client, open **Add Payment**, confirm the exact full balance is prefilled, post a test partial payment, and confirm the dialog closes while the same filter remains and the row balance decreases. Then settle the test invoice and confirm the row disappears.
+
+## A/R Report Defect Repair (2026-09-28)
+- [x] Defect 1: Replace aggregate Gross A/R division by 1.13 with invoice-level HST component calculations using tblInvoiceLog.
+- [x] Defect 1: Apply proportional payment allocation for partially paid invoices and flag missing components for reconciliation.
+- [x] Defect 2: Fix literal "Header" label appearing in PDF exporter by checking for explicitly empty section titles.
+- [x] Defect 3: Fix wrapping in QML and PDF for financial values and column headings by implementing noWrap for identifiers and monetary cells.
+- [x] Create test cases covering Net A/R tax allocation for partial payments, legacy components, and 1.13 division removal.
+- [x] Update labels to "Outstanding A/R, including HST" and "Outstanding A/R, excluding HST".
+- [ ] Build, install, and deploy the application.
