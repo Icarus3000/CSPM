@@ -14040,8 +14040,31 @@ class ExcelRepo:
             parsed = self._parse_date_value(value)
             return parsed.year if parsed else None
 
-        def net_of_hst(gross_value: Any) -> float:
-            return money_round(Decimal(str(gross_value or 0.0)) / Decimal("1.13"))
+        # Build invoice HST ratios from the ledger
+        invoice_ratios = {}
+        for l_row in ledger_rows:
+            ref = _clean_text(l_row.get(sc.COL_LEDGER_REFERENCE))
+            if not ref or not actual_invoice_pattern.match(ref):
+                continue
+            billings = amount(l_row.get(sc.COL_LEDGER_BILLINGS_EXCL_HST))
+            hst = amount(l_row.get(sc.COL_LEDGER_HST_COLLECTED))
+            expenses = amount(l_row.get(sc.COL_LEDGER_EXPENSES_EXCL_HST))
+            if billings > 0 or hst > 0 or expenses > 0:
+                if ref not in invoice_ratios:
+                    invoice_ratios[ref] = {"gross": 0.0, "hst": 0.0}
+                invoice_ratios[ref]["gross"] += billings + hst + expenses
+                invoice_ratios[ref]["hst"] += hst
+
+        def get_hst_ratio(invoice_ref: str) -> float:
+            ratio_info = invoice_ratios.get(invoice_ref)
+            if ratio_info and ratio_info["gross"] > 0.001:
+                return ratio_info["hst"] / ratio_info["gross"]
+            return 0.13 / 1.13  # fallback if ledger row is missing
+
+        def net_of_hst(gross_value: Any, invoice_ref: str = "") -> float:
+            gross = float(Decimal(str(gross_value or 0.0)))
+            ratio = get_hst_ratio(invoice_ref)
+            return money_round(gross * (1.0 - ratio))
 
         def bucket_key(age_days: int) -> Tuple[str, str]:
             if age_days <= 30:
@@ -14158,8 +14181,8 @@ class ExcelRepo:
                 "credits": round(amount(raw.get(sc.COL_RECV_CREDITS_ADJ)), 2),
                 "balance": balance,
                 "balanceDisplay": money(balance),
-                "balanceNet": net_of_hst(balance),
-                "balanceNetDisplay": money(net_of_hst(balance)),
+                "balanceNet": net_of_hst(balance, invoice),
+                "balanceNetDisplay": money(net_of_hst(balance, invoice)),
             }
             open_rows.append(row)
             open_by_invoice[invoice] = row
@@ -14230,7 +14253,7 @@ class ExcelRepo:
             bucket_rows.append(bucket)
 
         total_ar = round(sum(float(row.get("balance") or 0.0) for row in open_rows), 2)
-        total_net = net_of_hst(total_ar) if total_ar else 0.0
+        total_net = round(sum(float(row.get("balanceNet") or 0.0) for row in open_rows), 2)
         hst_component = money_round(total_ar - total_net)
         closed_void_rows.sort(key=lambda row: (-float(row.get("balance") or 0.0), _clean_text(row.get("client")).lower(), row.get("invoice")))
 
@@ -14402,7 +14425,7 @@ class ExcelRepo:
             "legacyReconciliationRows": legacy_reconciliation_rows,
             "notes": [
                 "A/R detail is generated from open actual invoice rows in tblReceivables.",
-                "Total Net A/R removes estimated 13% HST from the open gross Receivables balance.",
+                "Total Net A/R removes actual proportional HST from the open gross Receivables balance.",
                 "Provider/vendor disbursement references, discounts, corrections, and closed/void balances are retained for audit but excluded from headline collectible A/R unless Receivables shows an open client invoice balance.",
             ],
             "message": "",
