@@ -7180,22 +7180,37 @@ class ExcelRepo:
     def unlink_billed_docket(self, entry_id: str) -> Dict[str, Any]:
         """Unlinks a docket from its associated invoice, making it editable again."""
         self.ensure_schema()
-        row = self._find_time_entry(entry_id)
-        if not row:
-            return {"ok": False, "message": f"Time entry {entry_id} not found."}
-            
-        row[sc.COL_TIME_STATUS] = "Draft"
-        row[sc.COL_TIME_INVOICE_REF] = ""
-        row[sc.COL_TIME_INVOICE_STATUS] = ""
-        row[sc.COL_TIME_PAYMENT_STATUS] = ""
-        row[sc.COL_TIME_INVOICE_TOTAL] = ""
-        row[sc.COL_TIME_INVOICE_AMOUNT_PAID] = ""
-        row[sc.COL_TIME_INVOICE_BALANCE_DUE] = ""
-        row[sc.COL_TIME_INVOICE_DATE] = ""
-        row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
         
-        self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, row)
-        return {"ok": True, "message": "Invoice unlinked successfully."}
+        # Check TBL_TIME first
+        row = self._find_time_entry(entry_id)
+        if row:
+            row[sc.COL_TIME_STATUS] = "Draft"
+            row[sc.COL_TIME_INVOICE_REF] = ""
+            row[sc.COL_TIME_INVOICE_STATUS] = ""
+            row[sc.COL_TIME_PAYMENT_STATUS] = ""
+            row[sc.COL_TIME_INVOICE_TOTAL] = ""
+            row[sc.COL_TIME_INVOICE_AMOUNT_PAID] = ""
+            row[sc.COL_TIME_INVOICE_BALANCE_DUE] = ""
+            row[sc.COL_TIME_INVOICE_DATE] = ""
+            row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
+            self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, row)
+            return {"ok": True, "message": "Invoice unlinked successfully."}
+            
+        # Check TBL_DISBURSEMENTS if not found in TBL_TIME
+        disb_row = self._find_row_by_key(TBL_DISBURSEMENTS, sc.COL_DISB_ENTRY_ID, entry_id)
+        if disb_row:
+            disb_row[sc.COL_DISB_STATUS] = "Draft"
+            disb_row[sc.COL_DISB_INVOICE_REF] = ""
+            disb_row[sc.COL_DISB_INVOICE_STATUS] = ""
+            disb_row[sc.COL_DISB_PAYMENT_STATUS] = ""
+            disb_row[sc.COL_DISB_INVOICE_TOTAL] = ""
+            disb_row[sc.COL_DISB_INVOICE_AMOUNT_PAID] = ""
+            disb_row[sc.COL_DISB_INVOICE_BALANCE_DUE] = ""
+            disb_row[sc.COL_DISB_INVOICE_DATE] = ""
+            self._upsert_row_by_key(TBL_DISBURSEMENTS, sc.COL_DISB_ENTRY_ID, entry_id, disb_row)
+            return {"ok": True, "message": "Disbursement unlinked successfully."}
+
+        return {"ok": False, "message": f"Time or disbursement entry {entry_id} not found."}
 
     def _cipo_trademark_application_url(self, application_no: Any, registration_no: Any, trademark_text: Any = "") -> str:
         app_no = re.sub(r"\D+", "", _clean_text(application_no))

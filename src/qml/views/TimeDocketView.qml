@@ -4005,6 +4005,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                 root.timerLockNotice = ""
                 root.showSaveFeedback("Unlinked successfully. Docket is now Draft.", false)
                 if (!root._hydrating) root.dirty = false
+            } else {
+                root.showSaveFeedback(result && result.message ? result.message : "Failed to unlink invoice.", true)
             }
         }
     }
