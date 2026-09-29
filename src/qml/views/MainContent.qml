@@ -2195,7 +2195,27 @@ Item {
                         if (root.option3ShellEnabled) {
                             var focusNode = String(routeState.focusNodeId || "").trim()
                             var searchParams = root.shallowCloneObject(routeState)
-                            option3OpenWorkspaceForTile(idx, focusNode, searchParams)
+                            var targetModule = null
+                            var targetItem = null
+                            var opt3Modules = root.option3NavigationModules || []
+                            for (var mi = 0; mi < opt3Modules.length; mi++) {
+                                var mod = opt3Modules[mi]
+                                if (mod.navItems) {
+                                    for (var ni = 0; ni < mod.navItems.length; ni++) {
+                                        if (String(mod.navItems[ni].nodeId || mod.navItems[ni].id || "") === focusNode) {
+                                            targetModule = mod
+                                            targetItem = mod.navItems[ni]
+                                            break
+                                        }
+                                    }
+                                }
+                                if (targetModule) break
+                            }
+                            if (targetModule && targetItem) {
+                                option3OpenWorkspace(targetModule, targetItem, searchParams)
+                            } else {
+                                option3OpenWorkspaceForTile(idx, focusNode, searchParams)
+                            }
                             return true
                         }
                     }
