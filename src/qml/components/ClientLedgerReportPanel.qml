@@ -1479,15 +1479,7 @@ Item {
                             var invRef = rowDelegate.modelData.invoiceRef
                             var eId = rowDelegate.modelData.entryId
                             
-                            if (invRef && (et === "Invoice" || et === "Fee" || et === "Disbursement" || et === "Time")) {
-                                root.workspaceOpenRequested(2, "C04", {
-                                    "selectedInvoiceNum": invRef
-                                })
-                            } else if (et === "Payment" || et === "Credit/Adj") {
-                                root.workspaceOpenRequested(2, "C07", {
-                                    "entityId": invRef
-                                })
-                            } else if (eId && et === "Time") {
+                            if (eId && et === "Time") {
                                 root.workspaceOpenRequested(1, "B01", {
                                     "lastSavedEntryId": eId,
                                     "editRowData": rowDelegate.modelData,
@@ -1500,6 +1492,14 @@ Item {
                                     "editRowData": rowDelegate.modelData,
                                     "returnToTileIndex": 2,
                                     "returnToNodeId": "C01"
+                                })
+                            } else if (invRef && (et === "Invoice" || et === "Fee" || et === "Disbursement" || et === "Time")) {
+                                root.workspaceOpenRequested(2, "C04", {
+                                    "selectedInvoiceNum": invRef
+                                })
+                            } else if (et === "Payment" || et === "Credit/Adj") {
+                                root.workspaceOpenRequested(2, "C07", {
+                                    "entityId": invRef
                                 })
                             }
                         }
@@ -1511,15 +1511,7 @@ Item {
                             var invRef = rowDelegate.modelData.invoiceRef
                             var eId = rowDelegate.modelData.entryId
                             
-                            if (invRef && (et === "Invoice" || et === "Fee" || et === "Disbursement" || et === "Time")) {
-                                root.workspaceOpenRequested(2, "C04", {
-                                    "selectedInvoiceNum": invRef
-                                })
-                            } else if (et === "Payment" || et === "Credit/Adj") {
-                                root.workspaceOpenRequested(2, "C07", {
-                                    "entityId": invRef
-                                })
-                            } else if (eId && et === "Time") {
+                            if (eId && et === "Time") {
                                 root.workspaceOpenRequested(1, "B01", {
                                     "lastSavedEntryId": eId,
                                     "editRowData": rowDelegate.modelData,
@@ -1532,6 +1524,14 @@ Item {
                                     "editRowData": rowDelegate.modelData,
                                     "returnToTileIndex": 2,
                                     "returnToNodeId": "C01"
+                                })
+                            } else if (invRef && (et === "Invoice" || et === "Fee" || et === "Disbursement" || et === "Time")) {
+                                root.workspaceOpenRequested(2, "C04", {
+                                    "selectedInvoiceNum": invRef
+                                })
+                            } else if (et === "Payment" || et === "Credit/Adj") {
+                                root.workspaceOpenRequested(2, "C07", {
+                                    "entityId": invRef
                                 })
                             }
                         }

@@ -7175,6 +7175,28 @@ class ExcelRepo:
             return {"ok": True, "message": f"Time entry {entry_id} deleted."}
         return {"ok": False, "message": f"Time entry {entry_id} not found."}
 
+    @with_db_lock
+    @with_financial_write_batch
+    def unlink_billed_docket(self, entry_id: str) -> Dict[str, Any]:
+        """Unlinks a docket from its associated invoice, making it editable again."""
+        self.ensure_schema()
+        row = self._find_time_entry(entry_id)
+        if not row:
+            return {"ok": False, "message": f"Time entry {entry_id} not found."}
+            
+        row[sc.COL_TIME_STATUS] = "Draft"
+        row[sc.COL_TIME_INVOICE_REF] = ""
+        row[sc.COL_TIME_INVOICE_STATUS] = ""
+        row[sc.COL_TIME_PAYMENT_STATUS] = ""
+        row[sc.COL_TIME_INVOICE_TOTAL] = ""
+        row[sc.COL_TIME_INVOICE_AMOUNT_PAID] = ""
+        row[sc.COL_TIME_INVOICE_BALANCE_DUE] = ""
+        row[sc.COL_TIME_INVOICE_DATE] = ""
+        row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
+        
+        self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, row)
+        return {"ok": True, "message": "Invoice unlinked successfully."}
+
     def _cipo_trademark_application_url(self, application_no: Any, registration_no: Any, trademark_text: Any = "") -> str:
         app_no = re.sub(r"\D+", "", _clean_text(application_no))
         reg_no = re.sub(r"\D+", "", _clean_text(registration_no))

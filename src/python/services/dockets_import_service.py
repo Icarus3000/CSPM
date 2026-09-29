@@ -1536,6 +1536,10 @@ class DocketsImportService:
                     self._time_core_duplicate_counts[core_key] -= 1
                 action = "skip" if (existing or core_match) else "add"
                 
+                invoice_ref_legacy = self._clean(row.get("Invoice"))
+                invoice_bucket_legacy = self._invoice_marker_bucket(invoice_ref_legacy)
+                is_billed_or_phantom = invoice_bucket_legacy in {"invoice", "legacy_billed", "no_bill"}
+                
                 rows.append({
                     "sheet": "Dockets",
                     "row": i + 2,
@@ -1547,7 +1551,8 @@ class DocketsImportService:
                     "matter": matter_name,
                     # The QML safe-selection action may select only rows that
                     # have passed this occurrence-aware core reconciliation.
-                    "safeDocketCandidate": not core_match and not existing,
+                    # We also explicitly exclude anything already billed to prevent phantom invoice linking.
+                    "safeDocketCandidate": not core_match and not existing and not is_billed_or_phantom,
                     "safeDocketHours": hours,
                     "safeDocketAmount": self._safe_float(row.get("Amount to CS")),
                 })
