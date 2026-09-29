@@ -88,6 +88,8 @@ Window {
         manualOverrideBox.checked = settings.manualOverrideEnabled !== false
         manualBasisField.text = String(settings.manualBasisDays || settings.effectiveBasisDays || 336)
         savedBasisDays = Number(settings.effectiveBasisDays || 336)
+        trendMonthsField.text = String(settings.trendMonths || 4)
+        trendDaysField.text = String(settings.trendDays || 7)
         if (!statusText.length) {
             statusText = manualOverrideBox.checked
                 ? "Your existing manual basis is retained until you choose the calculated schedule."
@@ -118,13 +120,19 @@ Window {
             statusText = "Manual forecast basis must be between 1 and 366 days."
             return false
         }
+        if (!validWholeNumber(trendMonthsField.text, 1, 12) || !validWholeNumber(trendDaysField.text, 1, 14)) {
+            statusText = "Trend charts must show 1-12 months and 1-14 days."
+            return false
+        }
         var result = root.appRef.setProductivityForecastSettings({
             "workDaysPerWeek": fieldNumber(workDaysField.text, 0),
             "vacationDays": fieldNumber(vacationField.text, 0),
             "holidayDays": fieldNumber(holidayField.text, 0),
             "otherUnavailableDays": fieldNumber(unavailableField.text, 0),
             "manualOverrideEnabled": manualOverrideBox.checked,
-            "manualBasisDays": fieldNumber(manualBasisField.text, 0)
+            "manualBasisDays": fieldNumber(manualBasisField.text, 0),
+            "trendMonths": fieldNumber(trendMonthsField.text, 4),
+            "trendDays": fieldNumber(trendDaysField.text, 7)
         })
         if (result && result.ok) {
             savedBasisDays = Number(result.effectiveBasisDays || result.basisDays || effectiveBasisDays)
@@ -318,6 +326,47 @@ Window {
                 color: SemanticTheme.alpha(root.menuInk, 0.70)
                 font.pixelSize: 10
                 wrapMode: Text.Wrap
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: SemanticTheme.alpha(root.menuInk, 0.14)
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Trend chart settings"
+                color: root.menuInk
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 12
+                rowSpacing: 8
+
+                Text { text: "Monthly production trend (1-12 months)"; color: root.menuInk; font.pixelSize: 12; Layout.fillWidth: true }
+                TextField {
+                    id: trendMonthsField
+                    Layout.preferredWidth: 160
+                    Layout.preferredHeight: 34
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    selectByMouse: true
+                    validator: IntValidator { bottom: 1; top: 12 }
+                }
+
+                Text { text: "Daily production trend (1-14 days)"; color: root.menuInk; font.pixelSize: 12; Layout.fillWidth: true }
+                TextField {
+                    id: trendDaysField
+                    Layout.preferredWidth: 160
+                    Layout.preferredHeight: 34
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    selectByMouse: true
+                    validator: IntValidator { bottom: 1; top: 14 }
+                }
             }
 
             Item { Layout.fillHeight: true }

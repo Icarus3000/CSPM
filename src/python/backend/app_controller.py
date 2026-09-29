@@ -60,7 +60,11 @@ PRODUCTIVITY_FORECAST_HOLIDAY_DAYS_KEY = "productivityForecastHolidayDays"
 PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS_KEY = "productivityForecastOtherUnavailableDays"
 PRODUCTIVITY_FORECAST_MANUAL_OVERRIDE_KEY = "productivityForecastManualOverrideEnabled"
 PRODUCTIVITY_FORECAST_MANUAL_BASIS_KEY = "productivityForecastManualBasisDays"
+PRODUCTIVITY_FORECAST_TREND_MONTHS_KEY = "productivityForecastTrendMonths"
+PRODUCTIVITY_FORECAST_TREND_DAYS_KEY = "productivityForecastTrendDays"
 DEFAULT_PRODUCTIVITY_FORECAST_BASIS_DAYS = 336
+DEFAULT_PRODUCTIVITY_FORECAST_TREND_MONTHS = 4
+DEFAULT_PRODUCTIVITY_FORECAST_TREND_DAYS = 7
 MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS = 1
 MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS = 366
 PRODUCTIVITY_FORECAST_WEEKS_PER_YEAR = 52
@@ -2563,6 +2567,14 @@ class AppController(QObject):
             MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS,
             MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
         )
+        trend_months = self._bounded_productivity_setting(
+            self._settings_data.get(PRODUCTIVITY_FORECAST_TREND_MONTHS_KEY, DEFAULT_PRODUCTIVITY_FORECAST_TREND_MONTHS),
+            DEFAULT_PRODUCTIVITY_FORECAST_TREND_MONTHS, 1, 12
+        )
+        trend_days = self._bounded_productivity_setting(
+            self._settings_data.get(PRODUCTIVITY_FORECAST_TREND_DAYS_KEY, DEFAULT_PRODUCTIVITY_FORECAST_TREND_DAYS),
+            DEFAULT_PRODUCTIVITY_FORECAST_TREND_DAYS, 1, 14
+        )
         # Existing installations keep their established 336-day basis until a
         # user expressly elects to use the schedule calculation.
         manual_override_enabled = self._productivity_bool_setting(
@@ -2586,6 +2598,8 @@ class AppController(QObject):
             "manualBasisDays": manual_basis_days,
             "calculatedBasisDays": calculated_basis_days,
             "effectiveBasisDays": effective_basis_days,
+            "trendMonths": trend_months,
+            "trendDays": trend_days,
         }
 
     @Property(int, notify=settingsChanged)
@@ -2643,6 +2657,8 @@ class AppController(QObject):
                 MIN_PRODUCTIVITY_FORECAST_BASIS_DAYS,
                 MAX_PRODUCTIVITY_FORECAST_BASIS_DAYS,
             )
+            trend_months = requested_int("trendMonths", current.get("trendMonths", DEFAULT_PRODUCTIVITY_FORECAST_TREND_MONTHS), 1, 12)
+            trend_days = requested_int("trendDays", current.get("trendDays", DEFAULT_PRODUCTIVITY_FORECAST_TREND_DAYS), 1, 14)
         except ValueError as exc:
             return {"ok": False, "message": str(exc)}
 
@@ -2673,6 +2689,8 @@ class AppController(QObject):
             PRODUCTIVITY_FORECAST_OTHER_UNAVAILABLE_DAYS_KEY: other_unavailable_days,
             PRODUCTIVITY_FORECAST_MANUAL_OVERRIDE_KEY: manual_override_enabled,
             PRODUCTIVITY_FORECAST_MANUAL_BASIS_KEY: manual_basis_days,
+            PRODUCTIVITY_FORECAST_TREND_MONTHS_KEY: trend_months,
+            PRODUCTIVITY_FORECAST_TREND_DAYS_KEY: trend_days,
             # Retain the historic field as the current effective value for all
             # older callers while preserving the manual value independently.
             PRODUCTIVITY_FORECAST_BASIS_KEY: effective_basis_days,

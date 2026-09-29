@@ -5706,9 +5706,16 @@ class ExcelRepo:
                 month += 12
             return date(year, month, 1)
 
-        month_starts = [_prior_month(_month_start(end_date), offset) for offset in range(3, -1, -1)]
+        trend_months = int(raw_filters.get("trendMonths", 4) or 4)
+        trend_days = int(raw_filters.get("trendDays", 7) or 7)
+        if not (1 <= trend_months <= 12):
+            trend_months = 4
+        if not (1 <= trend_days <= 14):
+            trend_days = 7
+
+        month_starts = [_prior_month(_month_start(end_date), offset) for offset in range(trend_months - 1, -1, -1)]
         monthly_values: Dict[date, float] = {month: 0.0 for month in month_starts}
-        daily_starts = [end_date - timedelta(days=offset) for offset in range(6, -1, -1)]
+        daily_starts = [end_date - timedelta(days=offset) for offset in range(trend_days - 1, -1, -1)]
         daily_values: Dict[date, float] = {day: 0.0 for day in daily_starts}
 
         total_production = 0.0
@@ -5781,6 +5788,8 @@ class ExcelRepo:
                 {"date": day.isoformat(), "label": day.strftime("%d-%b"), "amount": round(daily_values[day], 2)}
                 for day in daily_starts
             ],
+            "trendMonths": trend_months,
+            "trendDays": trend_days,
         }
 
 

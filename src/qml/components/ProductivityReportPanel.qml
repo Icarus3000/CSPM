@@ -22,6 +22,8 @@ Item {
     property bool autoGenerate: true
     property var zenPanel: null
     property string statusText: "Choose a period, then generate an executive productivity report."
+    property int trendMonths: 4
+    property int trendDays: 7
 
     readonly property string appStyle: (root.appRef && root.appRef.appStyle)
         ? String(root.appRef.appStyle) : "Professional"
@@ -126,7 +128,9 @@ Item {
         var result = root.appRef.getProductivityReport({
             "startDate": String(startField.text || "").trim(),
             "endDate": String(endField.text || "").trim(),
-            "annualTarget": String(targetField.text || "").trim()
+            "annualTarget": String(targetField.text || "").trim(),
+            "trendMonths": root.trendMonths,
+            "trendDays": root.trendDays
         })
         root.isLoading = false
         if (result && result.ok) {
@@ -205,6 +209,13 @@ Item {
         startField.text = isoDate(daysFromToday(-30))
         endField.text = isoDate(daysFromToday(0))
         targetField.text = "350000"
+        if (root.appRef && root.appRef.getProductivityForecastSettings) {
+            var settings = root.appRef.getProductivityForecastSettings()
+            if (settings && settings.ok) {
+                root.trendMonths = settings.trendMonths || 4
+                root.trendDays = settings.trendDays || 7
+            }
+        }
         requestInitialReport()
     }
 
@@ -663,10 +674,23 @@ Item {
                             anchors.margins: root.shortCanvas ? 11 : 14
                             spacing: 4
                             Text { text: "MONTHLY PRODUCTION TREND"; color: root.ink; font.pixelSize: 10; font.weight: Font.Bold }
-                            Text { text: "Last 4 months, ending " + String(root.reportData.endDate || ""); color: root.mutedInk; font.pixelSize: 9 }
+                            Text { text: "Last " + (root.reportData.trendMonths || 4) + " months, ending " + String(root.reportData.endDate || ""); color: root.mutedInk; font.pixelSize: 9 }
                             Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onWheel: function(wheel) {
+                                        if (wheel.angleDelta.y > 0) {
+                                            root.trendMonths = Math.min(12, root.trendMonths + 1)
+                                            root.generateReport()
+                                        } else if (wheel.angleDelta.y < 0) {
+                                            root.trendMonths = Math.max(1, root.trendMonths - 1)
+                                            root.generateReport()
+                                        }
+                                    }
+                                }
                                 Row {
                                     id: monthlyChartRow
                                     anchors.fill: parent
@@ -690,7 +714,7 @@ Item {
                                                     anchors.horizontalCenter: parent.horizontalCenter
                                                     anchors.bottom: parent.bottom
                                                     width: Math.min(44, parent.width * 0.52)
-                                                    height: Math.max(3, parent.height * (Number(monthlyDelegate.modelData.amount || 0) / Math.max(1, root.maximum(root.monthlyRows()))))
+                                                    height: Math.max(3, parent.height * (Number(monthlyDelegate.modelData.amount || 0) / Math.max(1, root.maximum(root.monthlyRows()) * 1.35)))
                                                     radius: 3
                                                     color: root.chartNavy
                                                 }
@@ -732,10 +756,23 @@ Item {
                             anchors.margins: root.shortCanvas ? 11 : 14
                             spacing: 4
                             Text { text: "DAILY PRODUCTION"; color: root.ink; font.pixelSize: 10; font.weight: Font.Bold }
-                            Text { text: "Last 7 days, ending " + String(root.reportData.endDate || ""); color: root.mutedInk; font.pixelSize: 9 }
+                            Text { text: "Last " + (root.reportData.trendDays || 7) + " days, ending " + String(root.reportData.endDate || ""); color: root.mutedInk; font.pixelSize: 9 }
                             Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onWheel: function(wheel) {
+                                        if (wheel.angleDelta.y > 0) {
+                                            root.trendDays = Math.min(14, root.trendDays + 1)
+                                            root.generateReport()
+                                        } else if (wheel.angleDelta.y < 0) {
+                                            root.trendDays = Math.max(1, root.trendDays - 1)
+                                            root.generateReport()
+                                        }
+                                    }
+                                }
                                 Row {
                                     id: dailyChartRow
                                     anchors.fill: parent
@@ -759,7 +796,7 @@ Item {
                                                     anchors.horizontalCenter: parent.horizontalCenter
                                                     anchors.bottom: parent.bottom
                                                     width: Math.min(31, parent.width * 0.56)
-                                                    height: Math.max(3, parent.height * (Number(dailyDelegate.modelData.amount || 0) / Math.max(1, root.maximum(root.dailyRows()))))
+                                                    height: Math.max(3, parent.height * (Number(dailyDelegate.modelData.amount || 0) / Math.max(1, root.maximum(root.dailyRows()) * 1.35)))
                                                     radius: 3
                                                     color: root.accent
                                                 }
