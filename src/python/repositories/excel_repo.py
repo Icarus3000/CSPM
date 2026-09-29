@@ -5728,8 +5728,8 @@ class ExcelRepo:
             if not entry_date or entry_date > end_date:
                 continue
             invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
-            gross = float(self._parse_float(row.get(sc.COL_TIME_GROSS)) or 0.0)
-            realized_amount = gross * realization_factor.get(invoice_ref, 1.0)
+            net = float(self._parse_float(row.get(sc.COL_TIME_NET)) or 0.0)
+            realized_amount = net * realization_factor.get(invoice_ref, 1.0)
 
             # Trend windows are independently anchored to the chosen end date,
             # exactly as the legacy worksheet's last-four-month and last-seven-
@@ -14026,6 +14026,7 @@ class ExcelRepo:
             else "client"
         )
         actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        ledger_rows = self._read_table_rows(TBL_LEDGER)
 
         excluded_invoices: set[str] = set()
         for item in payload.get("excludedInvoices", []) or []:
