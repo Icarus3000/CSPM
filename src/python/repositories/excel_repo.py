@@ -7202,6 +7202,15 @@ class ExcelRepo:
             row[sc.COL_TIME_INVOICE_BALANCE_DUE] = ""
             row[sc.COL_TIME_INVOICE_DATE] = ""
             row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
+
+            audit = str(row.get(sc.COL_TIME_LOCK_AUDIT) or "")
+            if audit:
+                import re
+                audit = re.sub(r'FinalInvoice:[^\s|]+', '', audit)
+                audit = re.sub(r'CustomFeeState:Finalized', 'CustomFeeState:Draft', audit, flags=re.IGNORECASE)
+                audit = re.sub(r'\s*\|\|\s*\|\|', ' || ', audit).strip(' |')
+                row[sc.COL_TIME_LOCK_AUDIT] = audit
+
             self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, row)
             return {"ok": True, "message": "Invoice unlinked successfully."}
             

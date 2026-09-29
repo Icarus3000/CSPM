@@ -374,10 +374,14 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function currentNode() {
+        var wanted = String(root.activeNodeId || "")
+        if (wanted === "X01") {
+            return { "id": "X01", "title": "Global Search Results" }
+        }
         var list = searchNavItemsList()
         for (var i = 0; i < list.length; i++) {
             var row = list[i]
-            if (String(row.id || "") === String(root.activeNodeId || "")) {
+            if (String(row.id || "") === wanted) {
                 return row
             }
         }

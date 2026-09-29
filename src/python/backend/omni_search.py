@@ -157,17 +157,39 @@ def _route(
 
 
 def _route_from_top_result(raw_query: str, result_row: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        tile_index = int(result_row.get("routeTileIndex", 3))
-    except Exception:
+    # Derive tile index and subwindow from the entity type when the result
+    # row doesn't carry explicit routing metadata.
+    _ENTITY_ROUTING: Dict[str, tuple] = {
+        "client":        (0, "A03", "Client Profile 360"),
+        "matter":        (0, "A11", "Matter Profile 360"),
+        "parent":        (0, "A05", "Parent-Child Link Manager"),
+        "docket":        (1, "B04", "Docket Activity Report"),
+        "trademark":     (1, "B17", "Trademark Directory"),
+        "invoice":       (2, "C04", "Invoice Directory"),
+        "transaction":   (2, "C11", "Expenses & Banking"),
+        "account":       (2, "C11", "Expenses & Banking"),
+        "category":      (2, "C12", "Vendor & Expense Category Manager"),
+        "business_unit": (2, "C11", "Expenses & Banking"),
+        "payee":         (2, "C12", "Vendor & Expense Category Manager"),
+    }
+
+    entity_type = str(result_row.get("entityType") or "").strip().lower()
+
+    if "routeTileIndex" in result_row:
+        try:
+            tile_index = int(result_row["routeTileIndex"])
+        except Exception:
+            tile_index = 3
+    elif entity_type in _ENTITY_ROUTING:
+        tile_index = _ENTITY_ROUTING[entity_type][0]
+    else:
         tile_index = 3
     if tile_index < 0 or tile_index > 3:
         tile_index = 3
 
-    subwindow_id = str(result_row.get("routeNodeId") or "X01").strip() or "X01"
-    subwindow_title = str(result_row.get("routeNodeTitle") or "Global Search Results").strip()
-    if not subwindow_title:
-        subwindow_title = "Global Search Results"
+    entity_defaults = _ENTITY_ROUTING.get(entity_type, (3, "X01", "Global Search Results"))
+    subwindow_id = str(result_row.get("routeNodeId") or "").strip() or entity_defaults[1]
+    subwindow_title = str(result_row.get("routeNodeTitle") or "").strip() or entity_defaults[2]
 
     routed = _route(
         raw_query,
