@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 import "../standards/SemanticTheme.js" as SemanticTheme
 
 Window {
@@ -961,12 +962,19 @@ Window {
                                     height: (firmContact.text && firmContact.text.trim().length > 0) ? (firmContact.y + firmContact.height) : (firmName.y + firmName.height)
                                     width: Math.round(height * 1.583)
                                     source: root._logoSource()
-                                    visible: root._logoSource().length > 0
+                                    visible: false
                                     fillMode: Image.PreserveAspectFit
                                     verticalAlignment: Image.AlignBottom
                                     horizontalAlignment: Image.AlignLeft
                                     smooth: true
                                     mipmap: true
+                                }
+                                
+                                ColorOverlay {
+                                    anchors.fill: reportLogo
+                                    source: reportLogo
+                                    color: (SemanticTheme.isDarkMode(root.t) && String(root._logoSource()).indexOf("CS.svg") !== -1) ? "#FFFFFF" : "transparent"
+                                    visible: root._logoSource().length > 0
                                 }
 
                                 Text {

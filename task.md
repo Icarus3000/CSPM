@@ -1505,3 +1505,10 @@ dependencies merely because an individual report or screen already exists.
 - [x] Build, deploy, and real-WebEngine smoke-test the native collection-window release. Dist and installed trees match at 4,275 files / 674,291,008 bytes / manifest SHA-256 `26CB2EE6F7172445501A0396912CF36FB9125ECEE86A26C31B9B85E84D030909`; the installed executable reached input-ready and closed normally.
 - [ ] Manual foreground acceptance: open Billing Client A/R Collection and confirm title-bar drag, edge/corner resize, native maximize/restore, minimum-size readability, and the in-window correction overlay.
 - [ ] Manually open invoice `26-0095`, confirm the mismatch warning recommends Leviathan Private Network, apply the correction with a reason, then confirm Payment Entry accepts the invoice under Leviathan while the work client remains Concierge Club.
+
+## Productivity Overstatement Fix (2026-09-30)
+
+- [x] Diagnosed inflated YTD productivity totals (approx. 485 hours / $219K).
+- [x] Identified that duplicate time entries were imported from legacy Dockets.xlsm due to mismatched unresolved client/matter IDs (e.g., legacy POUL vs CSPM standard C_...).
+- [x] Wrote and executed an exact-match deduplication script, removing 28 duplicated time entries from TBL_TIME.
+- [x] Verified that YTD Hours dropped to 442.15 and Net to $189K, correctly matching the legacy Excel baseline without double-counting.

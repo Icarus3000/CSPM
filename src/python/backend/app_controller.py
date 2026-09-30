@@ -3583,9 +3583,9 @@ class AppController(QObject):
     def _report_branding_logo_cache_dir(self) -> Path:
         return self._paths.runtime_dir() / "report_branding" / "logo_cache"
 
-    def _rasterize_svg_logo_for_pdf(self, profile_id: str, svg_path: Path) -> str:
+    def _rasterize_svg_logo_for_pdf(self, profile_id: str, svg_path: Path, color: str = None) -> str:
         try:
-            from PySide6.QtGui import QImage, QPainter
+            from PySide6.QtGui import QImage, QPainter, QColor
             from PySide6.QtSvg import QSvgRenderer
 
             if not svg_path.exists():
@@ -3602,7 +3602,8 @@ class AppController(QObject):
             cache_dir = self._report_branding_logo_cache_dir()
             cache_dir.mkdir(parents=True, exist_ok=True)
             stamp = str(svg_path.stat().st_mtime_ns)
-            cache_path = cache_dir / f"{self._safe_profile_id(profile_id)}_{stamp}_trimmed.png"
+            color_suffix = f"_{color.replace('#', '')}" if color else ""
+            cache_path = cache_dir / f"{self._safe_profile_id(profile_id)}_{stamp}{color_suffix}_trimmed.png"
             if cache_path.exists():
                 return str(cache_path)
             image_format = getattr(QImage, "Format_ARGB32_Premultiplied", QImage.Format.Format_ARGB32_Premultiplied)
@@ -3611,6 +3612,9 @@ class AppController(QObject):
             painter = QPainter(image)
             try:
                 renderer.render(painter)
+                if color:
+                    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+                    painter.fillRect(image.rect(), QColor(color))
             finally:
                 painter.end()
             left, top = width, height
@@ -3630,7 +3634,7 @@ class AppController(QObject):
             logging.getLogger("cspm.pdf").warning("Could not rasterize SVG logo for PDF: %s", exc)
         return ""
 
-    def _logo_path_for_pdf(self, profile: Dict[str, Any]) -> str:
+    def _logo_path_for_pdf(self, profile: Dict[str, Any], color: str = None) -> str:
         """Resolve a printable report mark, always retaining the CSPM default.
 
         A branding profile may predate the report-logo setting or point to a
@@ -3670,7 +3674,7 @@ class AppController(QObject):
             if ext in {".png", ".jpg", ".jpeg"}:
                 return str(candidate)
             if ext == ".svg":
-                rendered = self._rasterize_svg_logo_for_pdf(profile_id, candidate)
+                rendered = self._rasterize_svg_logo_for_pdf(profile_id, candidate, color=color)
                 if rendered:
                     return rendered
         return ""
@@ -5967,7 +5971,7 @@ class AppController(QObject):
                 if not isinstance(export_payload, dict):
                     export_payload = payload_dict
                 export_payload, branding_profile = self._apply_report_branding_to_payload(export_payload)
-                logo_path = self._logo_path_for_pdf(branding_profile)
+                logo_path = self._logo_path_for_pdf(branding_profile, color="#FFFFFF")
                 candidate_dirs = [
                     self._paths.exports_dir(),
                     self._paths.data_dir() / "exports",
