@@ -373,7 +373,7 @@ class APWorkbookRepository:
             target = next((row for row in bills if clean_text(row.get("APBillID")).casefold() == bill_id.casefold()), None)
             if target is None:
                 raise APValidationError(f"Unknown AP bill ID: {bill_id}")
-            related = [row for row in payments if clean_text(row.get("APBillID")).casefold() == bill_id.casefold()]
+            related = [row for row in payments if clean_text(row.get("APBillID")).casefold() == bill_id.casefold() and clean_text(row.get("Status")).casefold() != "reversal"]
             lifecycle_payments = [{"payment_id": row.get("APPaymentID"), "amount": row.get("Amount"), "reversed": clean_text(row.get("Status")).casefold() == "reversed"} for row in related]
             lifecycle_payments.append({"payment_id": payment_id, "amount": amount_value})
             snapshot = build_bill_snapshot(
