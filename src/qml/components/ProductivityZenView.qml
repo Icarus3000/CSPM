@@ -6,6 +6,9 @@ import "../standards/SemanticTheme.js" as SemanticTheme
 Item {
     id: root
 
+    signal adjustTrendMonths(int delta)
+    signal adjustTrendDays(int delta)
+
     property var t
     property var reportData: ({})
     property string startDate: ""
@@ -204,8 +207,8 @@ Item {
             spacing: 12
             Repeater {
                 model: [
-                    { "title": "MONTHLY PRODUCTION", "subtitle": "Last 4 months", "rows": root.monthly, "color": root.chartNavy },
-                    { "title": "DAILY PRODUCTION", "subtitle": "Last 7 days", "rows": root.daily, "color": root.accent }
+                    { "title": "MONTHLY PRODUCTION", "subtitle": "Last " + (root.reportData.trendMonths || 4) + " months", "rows": root.monthly, "color": root.chartNavy, "type": "monthly" },
+                    { "title": "DAILY PRODUCTION", "subtitle": "Last " + (root.reportData.trendDays || 7) + " days", "rows": root.daily, "color": root.accent, "type": "daily" }
                 ]
                 delegate: Rectangle {
                     id: chartCard
@@ -221,6 +224,17 @@ Item {
                     border.width: 1
                     border.color: root.borderColor
                     radius: 7
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onWheel: function(wheel) {
+                            if (chartCard.modelData.type === "monthly") {
+                                root.adjustTrendMonths(wheel.angleDelta.y)
+                            } else if (chartCard.modelData.type === "daily") {
+                                root.adjustTrendDays(wheel.angleDelta.y)
+                            }
+                        }
+                    }
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 14

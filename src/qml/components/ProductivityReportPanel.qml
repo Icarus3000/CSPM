@@ -254,6 +254,22 @@ Item {
         ProductivityZenView {
             anchors.fill: parent
             t: root.t
+            onAdjustTrendMonths: function(delta) {
+                if (delta > 0) {
+                    root.trendMonths = Math.min(12, root.trendMonths + 1)
+                } else if (delta < 0) {
+                    root.trendMonths = Math.max(1, root.trendMonths - 1)
+                }
+                root.generateReport()
+            }
+            onAdjustTrendDays: function(delta) {
+                if (delta > 0) {
+                    root.trendDays = Math.min(14, root.trendDays + 1)
+                } else if (delta < 0) {
+                    root.trendDays = Math.max(1, root.trendDays - 1)
+                }
+                root.generateReport()
+            }
         }
     }
 
