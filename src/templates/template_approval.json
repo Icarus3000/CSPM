@@ -2,7 +2,7 @@
   "templates": [
     {
       "approved_filename": "CSPM.xlsm",
-      "human_approval_status": "CANDIDATE_AWAITING_CORY_APPROVAL",
+      "human_approval_status": "APPROVED",
       "sha256": "CBCB09955C4229F03A78E0C2D24219A62629BA24533A098A45F96B3A8A24E947",
       "vba_policy": "prohibited",
       "vbaProject_sha256": "",
