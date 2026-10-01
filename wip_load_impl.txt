@@ -1,0 +1,247 @@
+def _load_unbilled_wip_impl(self, workbook_signature=""):
+
+        started = time.perf_counter()
+
+        from repositories.excel_repo import TBL_TIME, TBL_CLIENTS, TBL_MATTERS
+
+
+        # A cold WIP load used to parse the macro workbook once per table.
+        # Read the related tables from one immutable workbook snapshot instead.
+        table_rows = self._excel_repo._read_table_rows_bulk([
+            TBL_CLIENTS,
+            sc.TBL_CLIENT_PROFILES,
+            sc.TBL_PARENTS,
+            TBL_MATTERS,
+            TBL_TIME,
+        ])
+        clients = table_rows.get(TBL_CLIENTS.table, [])
+        profiles = table_rows.get(sc.TBL_CLIENT_PROFILES, [])
+
+        client_map = {}
+
+        client_parent_map = {}
+
+        for c in clients:
+
+            c_id = str(c.get(sc.COL_CLIENT_ID) or c.get("Client ID") or "").strip()
+            c_name = str(c.get(sc.COL_CLIENT_NAME) or c.get("Client Name") or "").strip()
+
+            if c_id:
+
+                client_map[c_id] = c_name or c_id
+
+        for p in profiles:
+
+            c_id = str(p.get(sc.COL_PROFILE_CLIENT_ID) or "").strip()
+
+            p_id = str(p.get(sc.COL_PROFILE_PARENT_ID) or "").strip()
+
+            if c_id and p_id:
+
+                client_parent_map[c_id] = p_id
+
+        parents = table_rows.get(sc.TBL_PARENTS, [])
+
+        parent_map = {}
+
+        for p in parents:
+
+            p_id = str(p.get(sc.COL_PARENT_ID) or p.get("Parent ID") or "").strip()
+            p_name = str(p.get(sc.COL_PARENT_NAME) or p.get("Parent Name") or "").strip()
+
+            if p_id:
+
+                parent_map[p_id] = p_name or p_id
+
+        matters = table_rows.get(TBL_MATTERS.table, [])
+
+        matter_map = {}
+        non_operational_matter_ids = set()
+
+        for m in matters:
+
+            m_id = str(m.get(sc.COL_MATTER_ID) or "").strip()
+
+            m_name = str(m.get(sc.COL_MATTER_NAME) or "").strip()
+
+            m_desc = str(m.get(sc.COL_MATTER_DESCRIPTION) or "").strip()
+
+            m_type = str(m.get(sc.COL_MATTER_TYPE) or "").strip()
+
+            m_name = str(m.get(sc.COL_MATTER_NAME) or "").strip()
+
+            m_number = str(m.get(sc.COL_MATTER_NUMBER) or "").strip()
+
+            display = m_desc if m_desc else (m_type if m_type else m_name)
+
+            if not display:
+
+                display = str(m.get(sc.COL_MATTER_DISPLAY_NAME) or "").strip()
+
+            
+
+            if display.startswith("Legacy Matter "):
+
+                display = display.replace("Legacy Matter ", "").strip()
+
+            import re
+
+            m_match = re.search(r'(\d{2}-\d{4})$', m_number)
+
+            short_num = m_match.group(1) if m_match else m_number
+
+            if short_num:
+
+                if display and not display.endswith(short_num):
+
+                    display = f"{display} - {short_num}"
+
+                elif not display:
+
+                    display = short_num
+
+            if m_id:
+
+                matter_map[m_id] = display or m_id
+                matter_status = str(m.get(sc.COL_MATTER_STATUS) or "").strip().lower()
+                if matter_status in ("inactive", "closed", "archived"):
+                    non_operational_matter_ids.add(m_id.casefold())
+
+        rows = table_rows.get(TBL_TIME.table, [])
+
+        wip_rows = []
+
+        for row in rows:
+
+            invoice_ref = str(row.get(sc.COL_TIME_INVOICE_REF) or "").strip()
+
+            status = str(row.get(sc.COL_TIME_STATUS) or "").strip().lower()
+
+            invoice_status = str(row.get(sc.COL_TIME_INVOICE_STATUS) or "").strip().lower()
+
+            # WIP = not already billed
+
+            # Note: We now INCLUDE items that have an invoice_ref (i.e. in Draft)
+
+            # but we still exclude them if they are actually finalized/billed.
+
+            if invoice_status in ("billed", "finalized", "reconciled"):
+
+                continue
+
+            if status in ("billed", "reconciled", "merged"):
+
+                continue
+
+            try:
+
+                net = float(row.get(sc.COL_TIME_NET) or 0)
+
+            except (ValueError, TypeError):
+
+                net = 0.0
+
+            try:
+
+                hours = float(row.get(sc.COL_TIME_HOURS) or 0)
+
+            except (ValueError, TypeError):
+
+                hours = 0.0
+
+            try:
+
+                hst = float(row.get(sc.COL_TIME_HST) or 0)
+
+            except (ValueError, TypeError):
+
+                hst = 0.0
+
+            client_id_raw = str(row.get(sc.COL_TIME_CLIENT_ID) or "")
+
+            client_id = client_id_raw.split(',')[0].strip() if ',' in client_id_raw else client_id_raw.strip()
+
+            matter_id_raw = str(row.get(sc.COL_TIME_MATTER_ID) or "")
+
+            matter_id = matter_id_raw.split(',')[0].strip() if ',' in matter_id_raw else matter_id_raw.strip()
+
+            # Archived / closed matters are historical files.  They must not
+            # be offered for billing even if a legacy row retained Draft.
+            if matter_id.casefold() in non_operational_matter_ids:
+                continue
+
+            time_parent_id_raw = str(row.get(sc.COL_TIME_PARENT_ID) or "").strip()
+
+            time_parent_id = time_parent_id_raw.split(',')[0].strip() if ',' in time_parent_id_raw else time_parent_id_raw.strip()
+
+            # The Client Profile's ParentClientID is the source of truth for the billing client.
+
+            # If not set in the profile, fall back to the time entry's ParentID, or the client_id itself.
+
+            profile_parent = client_parent_map.get(client_id)
+
+            parent_id = profile_parent if profile_parent else (time_parent_id if time_parent_id else client_id)
+
+            
+
+            if parent_id in parent_map:
+
+                parent_name = parent_map[parent_id]
+
+            else:
+
+                parent_name = client_map.get(parent_id, parent_id)
+
+            wip_rows.append({
+
+                "entryId": str(row.get(sc.COL_TIME_ENTRY_ID) or ""),
+
+                "date": str(row.get(sc.COL_TIME_DATE) or ""),
+
+                "clientId": client_id,
+
+                "clientName": client_map.get(client_id, client_id),
+
+                "matterId": matter_id,
+
+                "matterName": matter_map.get(matter_id, matter_id),
+
+                "parentId": parent_id,
+
+                "parentName": parent_name,
+
+                "description": clean_desc(str(row.get(sc.COL_TIME_DESC) or "")),
+
+                "hours": round(hours, 2),
+
+                "rate": float(row.get(sc.COL_TIME_RATE) or 0),
+
+                "net": round(net, 2),
+
+                "hst": round(hst, 2),
+
+                "invoiceRef": invoice_ref,
+
+                "invoiceStatus": str(row.get(sc.COL_TIME_INVOICE_STATUS) or ""),
+                
+                "status": status.title() if status else "Draft",
+                
+                "sharePct": float(self._excel_repo._parse_float(row.get(sc.COL_TIME_SHARE_PCT)) or 100.0) if self._excel_repo._parse_float(row.get(sc.COL_TIME_SHARE_PCT)) is not None else 100.0,
+                
+                "grossToClient": float(self._excel_repo._parse_float(row.get(sc.COL_TIME_GROSS)) or 0.0),
+                
+                "rawSeconds": int(self._excel_repo._parse_float(row.get(sc.COL_TIME_SECONDS)) or 0),
+
+            })
+
+        # Sort by client, then date
+
+        wip_rows.sort(key=lambda r: (r["clientName"], r["date"]))
+
+        return {
+            "rows": wip_rows,
+            "signature": str(workbook_signature or ""),
+            "elapsedSeconds": round(time.perf_counter() - started, 3),
+        }
+
+    

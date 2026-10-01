@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Effects
 import "../components"
@@ -73,6 +74,9 @@ Item {
     property var matterParties: []
     property bool matterJointNoConfidentialityConfirmed: false
     property bool matterJointInstructionsRequireAll: true
+    property string matterEngagementDocumentSourcePath: ""
+    property string matterEngagementDocumentStoredPath: ""
+    property string matterEngagementDocumentDisplayName: ""
     property bool clientCreateForMatterParty: false
     property var matterPartyRoleOptions: ["Joint client", "Client", "Represented corporation", "Authorized instructing representative"]
     property string newClientOptionLabel: "new client"
@@ -203,6 +207,37 @@ Item {
     signal moduleJumpRequested(int tileIndex, var state)
     signal workspaceOpenRequested(int tileIndex, string nodeId, var state)
     signal reportWindowRequested(var reportDocument)
+
+    FileDialog {
+        id: matterEngagementDocumentDialog
+        title: "Attach retainer or engagement agreement"
+        nameFilters: [
+            "Agreement documents (*.pdf *.PDF *.doc *.docx *.rtf *.txt *.jpg *.jpeg *.png *.tif *.tiff)",
+            "All files (*)"
+        ]
+        onAccepted: {
+            if (!root.activeIsNewMatterWizard()) return
+            var selected = String(selectedFile || "")
+            root.matterEngagementDocumentSourcePath = selected
+            root.matterEngagementDocumentStoredPath = ""
+            root.matterEngagementDocumentDisplayName = root.filenameFromPath(selected)
+            root._setTextFieldSilently(
+                matterJointEngagementDocumentInput,
+                root.matterEngagementDocumentDisplayName
+            )
+            root.dirty = true
+        }
+    }
+
+    function filenameFromPath(value) {
+        var raw = String(value || "").replace(/\\/g, "/")
+        try {
+            raw = decodeURIComponent(raw)
+        } catch (e) {
+        }
+        var parts = raw.split("/")
+        return parts.length > 0 ? String(parts[parts.length - 1] || "") : raw
+    }
 
     function contentW() {
         if (metrics && typeof metrics.contentW === "number") return Math.max(1, metrics.contentW)
@@ -1585,6 +1620,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         matterJointRetainerCheck.checked = false
         jointNoConfidentialityCheck.checked = false
         jointInstructionsCheck.checked = true
+        root.matterEngagementDocumentSourcePath = ""
+        root.matterEngagementDocumentStoredPath = ""
+        root.matterEngagementDocumentDisplayName = ""
         _setTextFieldSilently(matterJointEngagementDocumentInput, "")
         _setComboBoxSilently(matterStatusCombo, "Open")
         _setComboBoxSilently(matterPracticeAreaCombo, "General")
@@ -2050,7 +2088,15 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         matterJointRetainerCheck.checked = root.matterJointRetainer
         jointNoConfidentialityCheck.checked = root.matterJointNoConfidentialityConfirmed
         jointInstructionsCheck.checked = root.matterJointInstructionsRequireAll
-        _setTextFieldSilently(matterJointEngagementDocumentInput, String(profile.jointEngagementDocument || ""))
+        root.matterEngagementDocumentSourcePath = ""
+        root.matterEngagementDocumentStoredPath = String(profile.jointEngagementDocument || "")
+        root.matterEngagementDocumentDisplayName = root.filenameFromPath(
+            root.matterEngagementDocumentStoredPath
+        )
+        _setTextFieldSilently(
+            matterJointEngagementDocumentInput,
+            root.matterEngagementDocumentDisplayName
+        )
         _setComboBoxSilently(matterStatusCombo, String(profile.status || "Open"))
         matterPersistedStatus = String(profile.status || "Open").trim()
         _setComboBoxSilently(matterPracticeAreaCombo, String(profile.practiceArea || "General"))
@@ -2164,6 +2210,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             { "label": "Display Name", "value": _matterProfileDisplayText("displayName", "") , "multiline": true, "wrap": true },
             { "label": joint ? "File Anchor" : "Client", "value": _matterProfileDisplayText("clientName", "") },
             { "label": "Representation", "value": _matterProfileDisplayText("representationMode", "Single Client") },
+            { "label": "Retainer / Engagement Agreement", "value": _matterProfileDisplayText("jointEngagementDocument", "") },
             { "label": "Matter Parties", "value": partySummary.length > 0 ? partySummary : "[blank]", "multiline": true, "wrap": true },
             { "label": "Billing Client", "value": _matterProfileDisplayText("parentName", "") },
             { "label": "Matter Type", "value": _matterProfileDisplayText("matterType", "") },
@@ -2246,7 +2293,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             "representationMode": root.matterJointRetainer ? "Joint Retainer" : "Single Client",
             "jointNoConfidentialityConfirmed": root.matterJointNoConfidentialityConfirmed,
             "jointInstructionsRequireAll": root.matterJointInstructionsRequireAll,
-            "jointEngagementDocument": matterJointEngagementDocumentInput.text,
+            "jointEngagementDocument": root.matterEngagementDocumentStoredPath,
+            "engagementDocumentSourcePath": root.matterEngagementDocumentSourcePath,
             "parties": root.matterJointRetainer ? root.matterParties : []
         }
     }
@@ -2276,6 +2324,19 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         lastSavedMatterId = (result && result.matterId !== undefined && result.matterId !== null)
             ? String(result.matterId)
             : ""
+        if (lastSaveOk && result && result.engagementDocument !== undefined) {
+            root.matterEngagementDocumentStoredPath = String(result.engagementDocument || "")
+            root.matterEngagementDocumentSourcePath = ""
+            root.matterEngagementDocumentDisplayName = String(
+                result.engagementDocumentName
+                    || root.filenameFromPath(root.matterEngagementDocumentStoredPath)
+                    || ""
+            )
+            root._setTextFieldSilently(
+                matterJointEngagementDocumentInput,
+                root.matterEngagementDocumentDisplayName
+            )
+        }
 
         // A successful editor save must be reflected by a fresh workbook read
         // before we leave the edit screen.  This prevents a stale profile from
@@ -2306,6 +2367,17 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             }
 
             selectedMatterProfile = verifiedMatter
+            root.matterEngagementDocumentStoredPath = String(
+                verifiedMatter.jointEngagementDocument || ""
+            )
+            root.matterEngagementDocumentSourcePath = ""
+            root.matterEngagementDocumentDisplayName = root.filenameFromPath(
+                root.matterEngagementDocumentStoredPath
+            )
+            root._setTextFieldSilently(
+                matterJointEngagementDocumentInput,
+                root.matterEngagementDocumentDisplayName
+            )
             refreshMatterProfileRows()
             selectedMatterId = String(verifiedMatter.matterId || lastSavedMatterId || selectedMatterId || "")
             selectedMatterName = root.matterDirectoryOptionLabel(verifiedMatter)
@@ -5478,6 +5550,7 @@ Behavior on border.color {
                             delegate: Rectangle {
                                 id: matterPartyRow
                                 required property var modelData
+                                required property int index
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: partyRowLayout.implicitHeight + root.ratioPxH(0.010, 8)
                                 radius: root.sectionRadiusPx
@@ -5555,15 +5628,90 @@ Behavior on border.color {
                             }
                         }
 
-                        ModernTextField {
-                            id: matterJointEngagementDocumentInput
-                            t: root.t
-                            metrics: root.responsiveMetrics
-                            label: "Joint engagement document"
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.columnSpan: matterWizardGrid.columns
+                        spacing: root.ratioPxH(0.004, 4)
+
+                        RowLayout {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: root.fieldHeightPx
-                            text: ""
-                            onTextChanged: if (!root._hydrating) root.dirty = true
+                            spacing: root.ratioPxW(0.006, 6)
+
+                            ModernTextField {
+                                id: matterJointEngagementDocumentInput
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                label: "Retainer / engagement agreement"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: root.fieldHeightPx
+                                readOnly: true
+                                text: ""
+                            }
+
+                            PillButton {
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                sfxBus: root.sfxBus
+                                text: "Attach"
+                                primary: false
+                                Layout.preferredWidth: root.ratioPxW(0.088, 84)
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: matterEngagementDocumentDialog.open()
+                            }
+
+                            PillButton {
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                sfxBus: root.sfxBus
+                                text: "Open"
+                                primary: false
+                                enabled: root.matterEngagementDocumentSourcePath.length > 0
+                                    || root.matterEngagementDocumentStoredPath.length > 0
+                                Layout.preferredWidth: root.ratioPxW(0.078, 72)
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: {
+                                    var target = root.matterEngagementDocumentSourcePath.length > 0
+                                        ? root.matterEngagementDocumentSourcePath
+                                        : root.matterEngagementDocumentStoredPath
+                                    if (root.appRef && root.appRef.openMatterDocument) {
+                                        root.appRef.openMatterDocument(target)
+                                    }
+                                }
+                            }
+
+                            PillButton {
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                sfxBus: root.sfxBus
+                                text: "Clear"
+                                primary: false
+                                enabled: root.matterEngagementDocumentSourcePath.length > 0
+                                    || root.matterEngagementDocumentStoredPath.length > 0
+                                Layout.preferredWidth: root.ratioPxW(0.078, 72)
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: {
+                                    root.matterEngagementDocumentSourcePath = ""
+                                    root.matterEngagementDocumentStoredPath = ""
+                                    root.matterEngagementDocumentDisplayName = ""
+                                    root._setTextFieldSilently(matterJointEngagementDocumentInput, "")
+                                    root.dirty = true
+                                }
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.matterEngagementDocumentSourcePath.length > 0
+                                ? "Selected agreement will be attached when you save this matter."
+                                : "Attach the signed retainer or engagement agreement for this matter."
+                            color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
+                            font.pixelSize: root.ratioPx(
+                                root.scaleRatios.descFontPct * 0.90,
+                                root.metricFloor("fontFloorLabelPx", 8)
+                            )
+                            wrapMode: Text.Wrap
                         }
                     }
 

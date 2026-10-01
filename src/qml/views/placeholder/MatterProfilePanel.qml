@@ -243,6 +243,42 @@ Rectangle {
     }
 }
 
+        RowLayout {
+            id: savedAgreementRow
+            property string documentPath: String(
+                root.selectedMatterProfile
+                    ? root.selectedMatterProfile.jointEngagementDocument || "" : ""
+            )
+            visible: documentPath.length > 0
+            Layout.fillWidth: true
+            spacing: 8
+
+            Text {
+                Layout.fillWidth: true
+                text: "Retainer / engagement agreement: "
+                    + root.filenameFromPath(savedAgreementRow.documentPath)
+                color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct,
+                    root.metricFloor("fontFloorBodyPx", 10))
+                elide: Text.ElideMiddle
+            }
+
+            PillButton {
+                t: root.t
+                metrics: root.responsiveMetrics
+                sfxBus: root.sfxBus
+                text: "Open Agreement"
+                primary: false
+                Layout.preferredWidth: root.ratioPxW(0.128, 132)
+                Layout.preferredHeight: 40
+                onClicked: {
+                    if (root.appRef && root.appRef.openMatterDocument) {
+                        root.appRef.openMatterDocument(savedAgreementRow.documentPath)
+                    }
+                }
+            }
+        }
+
         Rectangle {
             id: matterFinancialProfileCard
             visible: root.selectedMatterId.length > 0

@@ -140,6 +140,30 @@ Item {
             root.reportData = ({})
             root.statusText = (result && result.message) ? String(result.message) : "CSPM could not generate this report."
         }
+        root.syncZenPanel()
+    }
+
+    // Inline and Zen charts share one wheel policy and one report owner.
+    function adjustTrendMonths(delta) {
+        if (delta > 0) {
+            root.trendMonths = Math.min(12, root.trendMonths + 1)
+        } else if (delta < 0) {
+            root.trendMonths = Math.max(1, root.trendMonths - 1)
+        } else {
+            return
+        }
+        root.generateReport()
+    }
+
+    function adjustTrendDays(delta) {
+        if (delta > 0) {
+            root.trendDays = Math.min(14, root.trendDays + 1)
+        } else if (delta < 0) {
+            root.trendDays = Math.max(1, root.trendDays - 1)
+        } else {
+            return
+        }
+        root.generateReport()
     }
 
     function exportPdf() {
@@ -255,20 +279,10 @@ Item {
             anchors.fill: parent
             t: root.t
             onAdjustTrendMonths: function(delta) {
-                if (delta > 0) {
-                    root.trendMonths = Math.min(12, root.trendMonths + 1)
-                } else if (delta < 0) {
-                    root.trendMonths = Math.max(1, root.trendMonths - 1)
-                }
-                root.generateReport()
+                root.adjustTrendMonths(delta)
             }
             onAdjustTrendDays: function(delta) {
-                if (delta > 0) {
-                    root.trendDays = Math.min(14, root.trendDays + 1)
-                } else if (delta < 0) {
-                    root.trendDays = Math.max(1, root.trendDays - 1)
-                }
-                root.generateReport()
+                root.adjustTrendDays(delta)
             }
         }
     }
@@ -698,13 +712,7 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     onWheel: function(wheel) {
-                                        if (wheel.angleDelta.y > 0) {
-                                            root.trendMonths = Math.min(12, root.trendMonths + 1)
-                                            root.generateReport()
-                                        } else if (wheel.angleDelta.y < 0) {
-                                            root.trendMonths = Math.max(1, root.trendMonths - 1)
-                                            root.generateReport()
-                                        }
+                                        root.adjustTrendMonths(wheel.angleDelta.y)
                                     }
                                 }
                                 Row {
@@ -780,13 +788,7 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     onWheel: function(wheel) {
-                                        if (wheel.angleDelta.y > 0) {
-                                            root.trendDays = Math.min(14, root.trendDays + 1)
-                                            root.generateReport()
-                                        } else if (wheel.angleDelta.y < 0) {
-                                            root.trendDays = Math.max(1, root.trendDays - 1)
-                                            root.generateReport()
-                                        }
+                                        root.adjustTrendDays(wheel.angleDelta.y)
                                     }
                                 }
                                 Row {

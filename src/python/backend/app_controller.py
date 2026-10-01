@@ -451,6 +451,7 @@ class AppController(QObject):
         self._snapshot_service = ProjectSnapshotService(self._paths)
         self._sync_service = SyncService(self._paths)
         self._shutdown_sync_complete = False
+
         
         self._app_version = self._load_app_version()
         
@@ -4754,7 +4755,32 @@ class AppController(QObject):
     @Slot("QVariantMap", result=dict)
     def saveMatterProfile(self, payload):
         try:
-            result = dict(self._excel_repo.save_matter_profile(dict(payload or {})) or {})
+            matter_payload = dict(payload or {})
+            source_path = str(
+                matter_payload.pop("engagementDocumentSourcePath", "") or ""
+            ).strip()
+            attachment = None
+            if source_path:
+                # A document copy is a governed shared-data write just like the
+                # workbook row that links to it. Refuse both when this launch
+                # does not hold the exclusive checkout.
+                self._sync_service.assert_write_lease()
+                attachment = self._matter_document_service().attach_agreement(
+                    source_path,
+                    matter_number=matter_payload.get("matterNumber", ""),
+                    matter_name=matter_payload.get("matterName", ""),
+                )
+                matter_payload["jointEngagementDocument"] = attachment["DocumentPath"]
+
+            result = dict(self._excel_repo.save_matter_profile(matter_payload) or {})
+            if result.get("ok"):
+                result["engagementDocument"] = str(
+                    matter_payload.get("jointEngagementDocument", "") or ""
+                )
+                if attachment:
+                    result["engagementDocumentName"] = attachment["DocumentOriginalName"]
+                    result["engagementDocumentHash"] = attachment["DocumentHash"]
+                    result["message"] = "Matter saved with retainer / engagement agreement."
             if result.get("ok"):
                 self.toast.emit(f"Matter saved: {result.get('matterId', '')}")
                 self.clientDataChanged.emit()
@@ -4766,6 +4792,33 @@ class AppController(QObject):
         except Exception as exc:
             self._report_failure("Could not save matter profile", context="repo.matter.save_profile", exc=exc)
             return {"ok": False, "matterId": "", "message": str(exc)}
+
+    def _matter_document_service(self):
+        from services.matter_document_service import MatterDocumentService
+
+        # Folder settings may change after startup. Resolve against the same
+        # current paths used by the workbook repository.
+        return MatterDocumentService(
+            self._paths.master_data_dir(), self._paths.data_dir()
+        )
+
+    @Slot(str, result=bool)
+    def openMatterDocument(self, saved_path):
+        try:
+            document_path = self._matter_document_service().resolve(saved_path)
+            if not document_path.is_file():
+                raise FileNotFoundError(f"Matter document was not found: {document_path}")
+            opened = bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(document_path))))
+            if not opened:
+                raise OSError(f"Windows could not open the matter document: {document_path}")
+            return True
+        except Exception as exc:
+            self._report_failure(
+                "Could not open matter document",
+                context="matter.document.open",
+                exc=exc,
+            )
+            return False
 
     @Slot("QVariantMap", result=dict)
     def runConflictCheck(self, payload):

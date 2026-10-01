@@ -1,5 +1,26 @@
 # CSPM Task And Validation Ledger
 
+## Productivity Report Zen Mouse-Wheel Timeframes (2026-10-01)
+
+- [x] Reproduce the old package's failure with real QML wheel delivery: Zen emits the adjustment and recalculates the report, but continues displaying its opening snapshot.
+- [x] Share the inline/Zen chart adjustment functions: wheel up expands by one month/day, wheel down contracts by one; preserve 1–12 months / 1–14 days. Synchronize the Zen snapshot after each completed report calculation, including errors.
+- [x] Sandbox-safe checks: both new wheel tests passed; the combined report/wheel suite returned 11 passed and 2 existing calculation-fixture failures. Those unchanged fixtures omit `COL_TIME_NET` and assert the former gross/invoice-realization calculation; leave financial calculation code unchanged. Governed QML lint and `git diff --check` passed.
+- [x] Deploy only the tested external `ProductivityReportPanel.qml` to dist and `C:\Programs\CSPM`, with verified rollback copies at `backups/release_patches/productivity_zen_wheel_20261001_090148`. Source/dist/installed component hashes match; executable and practice data remain unchanged. This is an external-QML patch, not a new EXE build.
+- [x] Outside-sandbox installed-component Qt wheel probe passed all 19 synthetic report requests, both chart directions, clamps, failure/recovery, regular-to-Zen refresh, and close/reopen. Installed Qt/WebEngine startup also reached input-ready and exited 0 using isolated disposable data.
+- [ ] Manual acceptance: restart the installed app; in Productivity Report → Zen View, wheel over monthly and daily charts in both directions and confirm regular-view-equivalent timeframe/label changes.
+- [ ] Separate maintenance: reconcile the two stale productivity calculation fixtures with the approved current net-production contract; do not change report math as part of the wheel fix.
+
+## Retainer Agreement Attachments (2026-10-01)
+
+- [x] Diagnose the engagement field: it stored a path string only, had no attachment command, and appeared only on joint matters.
+- [x] Add Attach, Open, and Clear controls to New/Edit Matter for both ordinary and joint retainers, plus Open Agreement in Matter Profile 360.
+- [x] Copy the selected original into `Matter_Documents` beneath the current shared-data folder (local data folder when unconfigured); verify SHA-256 before linking a portable path through the existing matter-save workflow. Require the normal shared checkout before copying.
+- [x] Preserve existing absolute document references, keep distinct revisions, and retain the selected source after a failed workbook save for retry. Declare the bound party delegate's index so joint-party actions resolve it correctly.
+- [x] Sandbox-safe checks: 23 focused attachment/controller/joint-retainer/archive tests passed; Python compilation passed; governed QML lint exited 0 with existing warnings; `git diff --check` passed.
+- [x] Outside-sandbox candidate and installed Qt/WebEngine startup reached input-ready with disposable templates and isolated settings/logs; normal window close completed, then the tray-resident Qt event loop exited with code 0. No live/shared practice workbook was opened for these checks.
+- [x] Build the governed package and deploy to `C:\Programs\CSPM\CSPM.exe`; EXE SHA-256 `16DC1A55AE786DEF7F63C5C26888CE7477C121992CFEC190072E64A177249219`. Candidate and installed runtime manifests match exactly (4,359 files / 678,853,362 bytes, excluding preserved data/logs/backups), and changed QML matches source. Retain the preceding dist release at `to_delete/dist__manual_replaced_release_20261001_083346`.
+- [ ] Manual acceptance: attach and save an ordinary retainer and a joint retainer; reload each Matter Profile, use Open Agreement, then restart CSPM and repeat. Clear removes only the matter link; preserved copies are retained.
+
 ## Invoice 26-0109 Posting Recovery And Finalization Guard (2026-09-24)
 
 - [x] Diagnose the apparent finalization: CSPM wrote the final-looking PDF first, then rejected the accounting commit because additive flat-fee line `CF_be74fe7637655147b867` still carried owner draft `00F2` after its visible `InvoiceRef` moved to replacement draft `CCE7`.
