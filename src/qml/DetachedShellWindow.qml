@@ -3741,6 +3741,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     function captureProfessionalTransitionSurface(sequence, kind, sourceRect,
             targetRect, targetScreenOverride) {
         professionalSurfaceWatchdog.restart();
+        var sourceHeaderMetrics = mainContent.professionalTransitionHeaderMetrics();
         var accepted = contentLayer.grabToImage(function(result) {
             if (sequence !== mainWin.maximizeOverlayHandoffSeq
                     || !mainWin.professionalWindowTransitionActive) return;
@@ -3752,6 +3753,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             var surface = professionalSurfaceComponent.createObject(null, {
                 "mainWindow": mainWin,
                 "sourceGrab": result,
+                "headerMetrics": sourceHeaderMetrics,
                 "sourceBounds": Qt.rect(sourceRect.x - envelope.x,
                     sourceRect.y - envelope.y, sourceRect.w, sourceRect.h),
                 "targetBounds": Qt.rect(targetRect.x - envelope.x,
@@ -3767,24 +3769,30 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 // The replacement has submitted the exact source pixels at
                 // their original desktop position before the host can change.
                 mainWin.opacity = 0.0;
-                surface.startMotion();
+                // The source has actually been presented. Prepare the target
+                // in this transaction; deferred UI work must not run first.
+                mainWin.commitProfessionalWindowTransitionTarget(kind,
+                    targetRect, targetScreenOverride);
+                surface.expectLiveTarget();
             });
-            surface.motionStarted.connect(function() {
-                Qt.callLater(function() {
-                    if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
-                    // UniformAnimator runs in the surface's render thread;
-                    // this layout transaction cannot expose or move its HWND.
-                    mainWin.commitProfessionalWindowTransitionTarget(kind,
-                        targetRect, targetScreenOverride);
-                    Qt.callLater(function() {
-                        if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
-                        surface.expectLiveTarget();
-                    });
+            surface.targetCaptureRequested.connect(function() {
+                if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                var targetHeaderMetrics = mainContent.professionalTransitionHeaderMetrics();
+                var targetAccepted = contentLayer.grabToImage(function(targetResult) {
+                    if (sequence !== mainWin.maximizeOverlayHandoffSeq
+                            || !mainWin.professionalWindowTransitionActive) return;
+                    if (!targetResult || !targetResult.url) {
+                        mainWin.stopMaximizeFxAnimations();
+                        return;
+                    }
+                    surface.setTargetGrab(targetResult, targetHeaderMetrics.y);
                 });
+                if (!targetAccepted) mainWin.stopMaximizeFxAnimations();
             });
             surface.targetPresented.connect(function() {
                 if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
                 mainWin.opacity = 1.0;
+                surface.expectLiveHandoff();
             });
             surface.transitionFinished.connect(function() {
                 mainWin.finishProfessionalWindowTransition(sequence, "presented-target");

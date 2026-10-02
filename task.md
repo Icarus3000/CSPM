@@ -1,5 +1,35 @@
 # CSPM Task And Validation Ledger
 
+## Title-Bar Fix Full Executable Rebuild And Publication (2026-10-02)
+
+- [x] User explicitly requests commit/push plus a full EXE rebuild after the local asset patch. Rebuild main and recovery executables with `scripts/build_release.py --validate --no-deploy`; approved-template and confidentiality gates pass.
+- [x] Outside-sandbox candidate packaged startup passes in 44.22 seconds on disposable data. First cold attempt exceeded the original 60-second fixture deadline, with input-ready logged at 60.421 seconds; retain that failed result. Add an explicit `--startup-timeout` diagnostic option and retry with a 120-second allowance; no application watchdog or runtime behavior changes.
+- [x] Back up installed runtime to `to_delete/installed__before_titlebar_release_20261002`, deploy the full package through the builder helper to `C:/Programs/CSPM`, and retain prior dist at `to_delete/dist__replaced_release_20261002_121021`.
+- [x] Outside-sandbox installed startup passes in 51.85 seconds; actual installed WebEngine HTML/PDF rendering passes (41,201 bytes). Startup harness closes the main window and stops only its remaining tray fixture.
+- [x] Verify 4,370 runtime files / 678,954,950 bytes match dist/installed; all 168 QML-tree files match source. Workbook/settings hashes remain unchanged. Main EXE SHA-256: `D27374DDAA0B815ED53077096CDFDA1ED0A29BE08AC8CEB545BB2B5B0D8FA0B6`. Recovery: `BC7B68F5C451D253421272262CF9B6BE3014D85FCF387D6D953EC8C37A9923C3`.
+- [x] Carry forward the unchanged application's passing 38 sandbox-safe tests, governed QML lint and outside-sandbox GPU/full-source lifecycle results; new diagnostic CLI compiles and staged whitespace check passes.
+- [ ] P0 manual visual acceptance remains open. This full rebuild does not establish title/glyph perception, responsiveness, caption stress or physical mixed-DPI movement acceptance. Publication target: `origin/fix/invoice-billing-client-correction-20260926`.
+
+## Title-Bar And Final-Layout Settlement Candidate (2026-10-02)
+
+- [x] Investigate the user's smoother-but-jarring maximize/restore report after reading the fresh installed runtime log. Fixed-size title text/glyphs were being stretched in the transition image, then replaced by the live layout; input locking also dimmed four header controls.
+- [x] Capture both endpoint layouts from the same existing workspace. Preserve header pixel size and right anchoring; complete the layout blend during movement and reveal the matching live target through submitted-frame gates. Keep transition controls visually enabled while input remains locked.
+- [x] Sandbox-safe checks: 38 focused tests pass, governed QML lint returns 0 with existing warnings, Qt 6 shader baking and diagnostic compilation pass, and `git diff --check` passes.
+- [x] Outside-sandbox GPU regression passes eight samples in both directions: header markers retain 12x13 dimensions and endpoint images match exactly (maximum channel difference 0). Outside-sandbox full-source fixture passes ten toggles, restored movement, both taskbar-return states and maximized close; no handoff timeout. These checks do not establish subjective smoothness or physical mixed-DPI acceptance.
+- [x] Patch the nine external QML/shader assets in dist and `C:/Programs/CSPM`, retaining rollback assets at `to_delete/titlebar_settlement_before_20261002`. All 168 QML-tree files match source; executable, workbooks and authoritative settings hashes are unchanged. This is an asset patch to the executable rebuilt earlier today, not another binary compilation.
+- [x] Outside-sandbox packaged startup passes against patched dist/installed copies (25.77 / 57.16 seconds to input-ready), using disposable profiles; real installed WebEngine HTML/PDF rendering passes (41,201 bytes). These startup times are not motion measurements.
+- [ ] P0 user acceptance remains open: fully exit/reopen the installed app, inspect title lettering/glyphs and final settlement in both directions, and assess responsiveness. Full-source command-to-completion was 1.129–1.489 seconds after a 2.125-second first cycle; movement remains 220 ms. Physical mixed-DPI/all-monitor movement remains manual. Do not move to another visual state machine until confirmed. See `docs/MAXIMIZE_RESTORE_SETTLEMENT_FIX_2026-10-02.md`.
+
+## Git Cloud Pull And Local Executable Rebuild (2026-10-02)
+
+- [x] Fast-forward the clean current branch `fix/invoice-billing-client-correction-20260926` from `41b6869` to cloud commit `3d055d5`. No application-source changes or live-data repair commands were added during this rebuild.
+- [x] Sandbox-safe checks: all 21 changed Python files compiled, 68 focused window/reversal/directory/schema/calendar/deployment tests passed, governed QML lint returned 0 with existing warnings, and the pulled diff passed `git diff --check`.
+- [x] Rebuild main and recovery executables with `scripts/build_release.py --validate --no-deploy`; approved-template and confidentiality checks passed. Deploy the complete tested package through the normal builder helper to `C:/Programs/CSPM`.
+- [x] Outside-sandbox candidate and installed startup reached input-ready in 31.39 s and 30.40 s, respectively, using disposable copies of data/settings. Both main windows closed normally; the startup harness stopped the remaining tray-resident fixture process. Real WebEngine HTML/PDF rendering passed against both packages (41,201-byte PDF).
+- [x] Verify 4,369 runtime files / 678,941,397 bytes match between dist and installed packages, excluding preserved data/logs/backups. All 168 bundled QML-tree files match source. Main EXE SHA-256: `DDFE5CD1194697E438421F4E793AC8658398424BD24C8554208BE8F60EEAF50C`. Protected local/shared/repository/installed workbook and authoritative settings hashes remained unchanged.
+- [x] Retain the prior dist package at `to_delete/dist__replaced_release_20261002_104852` and prior installed runtime at `to_delete/installed__before_cloud_rebuild_20261002_105100`. Validation evidence is under `logs/rebuild_20261002_*`.
+- [ ] Next remains the P0 user visual acceptance of the installed **BUILD 2026-10-02 WINDOW HANDOFF CANDIDATE**: repeat maximize/restore with a populated workspace, check speed/jumps/corners/caption, and physically move across all monitors/DPI settings. Startup and PDF checks do not establish motion acceptance; do not advance to another visual state machine before user confirmation.
+
 ## 2026-10-02: Frame-Gated Surface Candidate for User Review
 
 - [x] Replace the enabled Professional in-window path with one captured-image surface, fixed HWND envelope, render-thread shader motion, and submitted-frame source/target handoff gates. Preserve custom chrome, existing workspace and monitor movement code.

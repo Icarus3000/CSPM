@@ -133,7 +133,9 @@ def test_professional_maximize_restore_keeps_frameless_host_and_frozen_surface_h
     )
     assert "contentLayer.grabToImage(function(result)" in capture
     assert capture.index("surface.sourcePresented.connect") < capture.index("mainWin.opacity = 0.0;")
-    assert capture.index("surface.motionStarted.connect") < capture.index("mainWin.commitProfessionalWindowTransitionTarget")
+    assert capture.index("mainWin.opacity = 0.0;") < capture.index("mainWin.commitProfessionalWindowTransitionTarget")
+    assert "surface.targetCaptureRequested.connect" in capture
+    assert "surface.setTargetGrab(targetResult, targetHeaderMetrics.y);" in capture
     assert capture.index("surface.targetPresented.connect") < capture.index("mainWin.opacity = 1.0;")
     assert "surface.expectLiveTarget();" in capture
     assert "professionalSurfaceWatchdog" in capture

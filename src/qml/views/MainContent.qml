@@ -48,6 +48,11 @@ Item {
     property var tileTitles: ModulePathways.laneTitles()
     property var laneConfigs: ModulePathways.laneConfigs()
     property bool option3ShellEnabled: root.isProMode && !root.detachedWindow
+    function professionalTransitionHeaderMetrics() {
+        var header = proAppShell.transitionHeaderItem
+        if (!root.isProMode || !header || !header.visible) return Qt.rect(0, 0, 0, 0)
+        return Qt.rect(header.height, header.transitionRightWidthPx, 0, 0)
+    }
     property var option3NavigationModules: ModulePathways.navigationModules()
     property string option3FlyoutModuleId: ""
     property var option3OpenTabs: []

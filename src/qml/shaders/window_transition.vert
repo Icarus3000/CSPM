@@ -8,6 +8,7 @@ layout(std140, binding = 0) uniform buf {
     float progress;
     vec4 sourceRect;
     vec4 targetRect;
+    vec4 headerMetrics;
 };
 void main() {
     qt_TexCoord0 = qt_MultiTexCoord0;

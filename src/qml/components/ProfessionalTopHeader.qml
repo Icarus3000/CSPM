@@ -7,6 +7,7 @@ import "../standards/SemanticTheme.js" as SemanticTheme
 
 Rectangle {
     id: topHeaderRoot
+    objectName: "CSPMProfessionalTopHeader"
 
     required property var appRoot
     property Item backdropSource: null
@@ -16,6 +17,11 @@ Rectangle {
     signal homeRequested()
     signal returnToDockRequested()
     readonly property var app: topHeaderRoot.appRoot
+    // Transition input is locked without changing the pixels we capture.
+    readonly property bool controlsVisuallyEnabled: !!topHeaderRoot.app
+        && (topHeaderRoot.app.isInteractive || (!!topHeaderRoot.app.windowRef
+            && topHeaderRoot.app.windowRef.professionalWindowTransitionActive))
+    readonly property real transitionRightWidthPx: Math.max(0, width - headerSearch.x + 12)
     readonly property bool headerLight: !topHeaderRoot.app || typeof topHeaderRoot.app.lightTheme !== "boolean" ? true : topHeaderRoot.app.lightTheme
     readonly property int compactHeightPx: 72
     readonly property int horizontalInsetPx: 16
@@ -246,6 +252,7 @@ Rectangle {
         }
 
         Rectangle {
+            id: headerSearch
             Layout.preferredWidth: 320
             Layout.preferredHeight: topHeaderRoot.controlButtonSizePx + 2
             Layout.alignment: Qt.AlignVCenter
@@ -389,7 +396,7 @@ Rectangle {
                         topHeaderRoot.returnToDockRequested()
                     }
                 }
-                opacity: topHeaderRoot.app.isInteractive ? 1.0 : 0.70
+                opacity: topHeaderRoot.controlsVisuallyEnabled ? 1.0 : 0.70
             }
 
             Button {
@@ -426,7 +433,7 @@ Rectangle {
                         }
                     }
                 }
-                opacity: topHeaderRoot.app.isInteractive ? 1.0 : 0.70
+                opacity: topHeaderRoot.controlsVisuallyEnabled ? 1.0 : 0.70
             }
             Rectangle {
                 id: minimizeButton
@@ -478,7 +485,7 @@ Rectangle {
                         }
                     }
                 }
-                opacity: (topHeaderRoot.app && topHeaderRoot.app.isInteractive) ? 1.0 : 0.70
+                opacity: topHeaderRoot.controlsVisuallyEnabled ? 1.0 : 0.70
             }
             Button {
                 id: maximizeButton
@@ -513,7 +520,7 @@ Rectangle {
                         }
                     }
                 }
-                opacity: topHeaderRoot.app.isInteractive ? 1.0 : 0.70
+                opacity: topHeaderRoot.controlsVisuallyEnabled ? 1.0 : 0.70
             }
             Button {
                 id: closeButton

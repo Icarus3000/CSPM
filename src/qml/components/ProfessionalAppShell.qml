@@ -9,6 +9,7 @@ Item {
 
     default property alias workspaceContent: workspaceHost.data
     readonly property alias workspaceHostItem: workspaceHost
+    readonly property alias transitionHeaderItem: proTopHeader
 
     property var t
     property var metrics

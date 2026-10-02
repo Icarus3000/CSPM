@@ -15,6 +15,8 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--exe', type=Path, default=ROOT/'dist/CSPM/CSPM.exe')
+parser.add_argument('--startup-timeout', type=float, default=60,
+                    help='Seconds allowed for cold packaged startup (default: 60)')
 parser.add_argument('--transitions', action='store_true',
                     help='Also click controls; requires permission to move the actual desktop cursor')
 args = parser.parse_args()
@@ -108,7 +110,7 @@ def click_maximize(hwnd):
     user.mouse_event(0x4,0,0,0,0)
 
 try:
-    wait_for(lambda: 'startup-input-ready' in logs() and main_handle())
+    wait_for(lambda: 'startup-input-ready' in logs() and main_handle(), timeout=args.startup_timeout)
     hwnd = main_handle()
     assert user.IsWindowVisible(hwnd)
     initial = rectangle(hwnd)
