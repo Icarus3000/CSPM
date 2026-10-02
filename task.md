@@ -7,7 +7,8 @@
 - [x] 44 focused sandbox-safe checks passed, governed QML lint passed with warnings, shader baking and diagnostic Python compilation passed.
 - [x] Commit portable diagnostics and full attempt/failure/measurement handoff for another computer: docs/MAXIMIZE_RESTORE_HANDOFF_2026-10-02.md.
 - [x] Rebuild main/recovery EXEs with approved templates, verify outside-sandbox packaged startup (9.18 seconds), deploy candidate to C:/Programs/CSPM, and verify EXE/QML/QSB hashes. Actual WebEngine PDF rendering passed. Packaged button-input attempts did not reach the handler because desktop cursor positioning was denied; do not count them as motion passes.
-- [x] Stop temporary keep-awake helper, restore original screensaver setting, release system/display wake requests.
+- [x] Stop temporary keep-awake helper and release system/display wake requests; no persistent power-plan changes.
+- [ ] Restore originally enabled screensaver: direct query remains disabled; SPI restoration returns Windows device-operation error 329 even after three input-desktop retries. Helper's `restored` timestamp is not proof of restoration. Recheck from an interactive session when the device operation clears.
 - [x] Commit and push the candidate with portable handoff/evidence as explicitly requested: `90a7725` pushed to origin/fix/invoice-billing-client-correction-20260926. This follow-up ledger records the successful publication; user acceptance remains pending.
 - [ ] User visual acceptance: speed/smoothness, no initial jump or final clipping, repeated caption stress, all-monitor physical mixed-DPI movement, and protected approved transitions. Current full handoff remains approximately 0.9–1.0 seconds. Do not move to another visual state machine until accepted.
 
