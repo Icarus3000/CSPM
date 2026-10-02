@@ -3358,12 +3358,14 @@ class BillingController(QObject):
             TBL_DISBURSEMENTS,
             TBL_INVOICE_LOG,
             TBL_MATTERS,
+            TBL_RECEIVABLES,
             TBL_TIME,
             TBL_TRANSACTIONS_MASTER,
         )
 
         tables = [
             TBL_INVOICE_LOG,
+            TBL_RECEIVABLES,
             TBL_TIME,
             TBL_DISBURSEMENTS,
             TBL_TRANSACTIONS_MASTER,
@@ -3378,6 +3380,20 @@ class BillingController(QObject):
                 for table in tables
             }
         rows = table_rows.get(TBL_INVOICE_LOG.table, [])
+        # The Invoice Log retains audit evidence. The active directory must
+        # follow Receivables' lifecycle state rather than listing every log row.
+        inactive_statuses = {"void", "voided", "reversed", "cancelled", "canceled", "superseded"}
+        statuses = {}
+        for receivable in table_rows.get(TBL_RECEIVABLES.table, []):
+            number = str(receivable.get(sc.COL_RECV_INVOICE_NUM) or "").strip().casefold()
+            statuses.setdefault(number, []).append(
+                str(receivable.get(sc.COL_RECV_STATUS) or "").strip().casefold())
+        rows = [row for row in rows if
+                not str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().upper().endswith(("-V", "-SUPERSEDED"))
+                and "-V-ADJ-" not in str(row.get(sc.COL_INV_INVOICE_NUM) or "").upper()
+                and not (statuses.get(str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().casefold())
+                         and all(status in inactive_statuses for status in statuses[
+                             str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().casefold()]))]
         matter_descriptions = self._finalized_invoice_matter_descriptions(rows, table_rows)
         result = []
         for row in rows:

@@ -15,6 +15,7 @@ from typing import Any
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QObject, QTimer
 from PySide6.QtGui import QGuiApplication
+from platform.native_window_state import native_maximize_owns_monitor_move
 
 from platform.win_constants import (
     _KBDLLHOOKSTRUCT,
@@ -281,6 +282,9 @@ class _WinShiftArrowOverrideFilter(QAbstractNativeEventFilter):
         if self._is_vk_down(VK_CONTROL) or self._is_vk_down(VK_MENU):
             return False, 0
 
+        if native_maximize_owns_monitor_move(self._resolve_target_window()):
+            return False, 0
+
         # Consume repeats to prevent rapid-fire monitor hops when key is held.
         lparam = int(msg.lParam) if msg.lParam is not None else 0
         if (lparam & KEY_REPEAT_FLAG) != 0:
@@ -501,6 +505,8 @@ class _WinShiftArrowLowLevelHook(QObject):
         }
 
     def _should_intercept_combo(self) -> bool:
+        if native_maximize_owns_monitor_move(self._resolve_target_window(self._armed_target_window)):
+            return False
         if not self._is_vk_down(VK_SHIFT):
             return False
         if not (self._is_vk_down(VK_LWIN) or self._is_vk_down(VK_RWIN)):

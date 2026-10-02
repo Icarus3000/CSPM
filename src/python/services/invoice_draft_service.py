@@ -2828,218 +2828,13 @@ class InvoiceDraftService:
             return deleted_any
 
     def reverse_invoice(
-        self,
-        invoice_num: str,
-        source_pdf_path: str = "",
-        pdf_action: str = "keep",
-        target_dir: str = "",
+        self, invoice_num: str, source_pdf_path: str = "",
+        pdf_action: str = "keep", target_dir: str = "",
     ) -> bool:
-        """Reverse one unpaid finalized invoice without losing its audit trail.
-
-        A reversal returns only the invoice's linked WIP to the unbilled state;
-        it does not alter another docket on the same client or matter.  The
-        original invoice evidence remains in the workbook, paired with a
-        ``-V`` audit row, while all operational views treat the invoice as
-        void.  This signature deliberately matches the Invoice Reversal UI.
-        """
-        from pathlib import Path
-        import shutil
-
-        invoice_num = str(invoice_num or "").strip()
-        if not invoice_num:
-            raise ValueError("An invoice number is required for reversal.")
-        invoice_key = invoice_num.casefold()
-        reversal_num = f"{invoice_num}-V"
-
-        receivables = self.repo._read_table_rows(sc.TBL_RECEIVABLES)
-        matched_receivables = [
-            row
-            for row in receivables
-            if str(row.get(sc.COL_RECV_INVOICE_NUM) or "").strip().casefold() == invoice_key
-        ]
-        if not matched_receivables:
-            raise ValueError(f"Invoice {invoice_num} was not found in Receivables.")
-
-        invoice_log = self.repo._read_table_rows(sc.TBL_INVOICE_LOG)
-        original_inv = next(
-            (
-                row
-                for row in invoice_log
-                if str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().casefold() == invoice_key
-            ),
-            None,
-        )
-        if original_inv is None:
-            raise ValueError(f"Invoice Log entry {invoice_num} was not found.")
-        reversal_exists = any(
-            str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().casefold() == reversal_num.casefold()
-            for row in invoice_log
-        )
-        already_void = reversal_exists and all(
-            str(row.get(sc.COL_RECV_STATUS) or "").strip().casefold()
-            in {"void", "voided", "reversed", "cancelled", "canceled"}
-            for row in matched_receivables
-        )
-
-        for row in matched_receivables:
-            paid = self._money(row.get(sc.COL_RECV_AMOUNT_PAID))
-            credits = self._money(row.get(sc.COL_RECV_CREDITS_ADJ))
-            if paid != Decimal("0.00") or credits != Decimal("0.00"):
-                raise ValueError(
-                    f"Invoice {invoice_num} has recorded payments or credits and cannot be reversed here. "
-                    "Reverse those allocations first."
-                )
-
-        # Validate an explicitly requested PDF action *before* changing any
-        # financial records.  Keeping the PDF is the normal/default path and
-        # deliberately needs no file selection.
-        pdf_action_key = str(pdf_action or "keep").strip().casefold()
-        pdf_path = None
-        archive_dir = None
-        archived_pdf = None
-        if pdf_action_key in {"move", "delete"}:
-            pdf_path = Path(str(source_pdf_path or "").strip())
-            if not pdf_path.is_file():
-                raise ValueError(
-                    "Select the existing invoice PDF before asking CSPM to move or delete it."
-                )
-            if pdf_action_key == "move":
-                archive_dir = (
-                    Path(str(target_dir or "").strip())
-                    if str(target_dir or "").strip()
-                    else pdf_path.parent / "REVERSED"
-                )
-                archived_pdf = archive_dir / pdf_path.name
-                if archived_pdf.exists():
-                    raise FileExistsError(
-                        f"Refusing to overwrite an existing archived PDF: {archived_pdf}"
-                    )
-
-        # 1. Return only the linked time entries to unbilled WIP.
-        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
-        for row in time_entries:
-            if str(row.get(sc.COL_TIME_INVOICE_REF) or "").strip().casefold() != invoice_key:
-                continue
-            row[sc.COL_TIME_INVOICE_REF] = ""
-            row[sc.COL_TIME_INVOICE_STATUS] = "Unbilled"
-            # ``Draft`` is the canonical stored state for unbilled WIP.  The
-            # client-ledger view presents it as a WIP/time entry, rather than
-            # as an invoice.
-            row[sc.COL_TIME_STATUS] = "Draft"
-            row[sc.COL_TIME_INVOICE_DATE] = ""
-            row[sc.COL_TIME_INVOICE_TOTAL] = "0.00"
-            row[sc.COL_TIME_INVOICE_AMOUNT_PAID] = "0.00"
-            row[sc.COL_TIME_INVOICE_BALANCE_DUE] = "0.00"
-            row[sc.COL_TIME_PAYMENT_STATUS] = ""
-        self.repo._write_table_rows(sc.TBL_TIME, time_entries)
-
-        # 2. Unlink only the invoice's linked disbursements.
-        disb_entries = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
-        for row in disb_entries:
-            if str(row.get(sc.COL_DISB_INVOICE_REF) or "").strip().casefold() == invoice_key:
-                row[sc.COL_DISB_INVOICE_REF] = ""
-        self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
-
-        # 3. Preserve the receivable as an auditable void, with nothing due.
-        for row in matched_receivables:
-            row[sc.COL_RECV_BALANCE_DUE] = "0.00"
-            row[sc.COL_RECV_STATUS] = "Void"
-        self.repo._write_table_rows(sc.TBL_RECEIVABLES, receivables)
-
-        # 4. Add exactly one negative invoice-log audit row.  The dashboard,
-        # statements, and client ledger all exclude voided invoices.
-        if not reversal_exists:
-            void_inv = dict(original_inv)
-            void_inv[sc.COL_INV_INVOICE_NUM] = reversal_num
-            for amount_col in (
-                sc.COL_INV_TOTAL_FEES,
-                sc.COL_INV_TOTAL_DISBURSEMENTS,
-                sc.COL_INV_TOTAL_TAX,
-                sc.COL_INV_AGGREGATE_BILLED,
-            ):
-                void_inv[amount_col] = str(-self._money(void_inv.get(amount_col)))
-            invoice_log.append(void_inv)
-            self.repo._write_table_rows(sc.TBL_INVOICE_LOG, invoice_log)
-
-        # 5. Post matching contra rows to the canonical ledger / transaction
-        # tables.  We never erase the original invoice evidence; paired rows
-        # keep the accounting trail intact while returning the net effect to
-        # zero.  This is skipped for an already-complete reversal so repeated
-        # clicks are harmless.
-        if not already_void:
-            now_str = datetime.now().astimezone().isoformat()
-            reversal_fees = self._money(original_inv.get(sc.COL_INV_TOTAL_FEES))
-            reversal_disb = self._money(original_inv.get(sc.COL_INV_TOTAL_DISBURSEMENTS))
-            reversal_tax = self._money(original_inv.get(sc.COL_INV_TOTAL_TAX))
-            reversal_total = self._money(original_inv.get(sc.COL_INV_AGGREGATE_BILLED))
-            if reversal_total == Decimal("0.00"):
-                reversal_total = reversal_fees + reversal_disb + reversal_tax
-
-            ledger = self.repo._read_table_rows(sc.TBL_LEDGER)
-            has_ledger_reversal = any(
-                str(row.get(sc.COL_LEDGER_REFERENCE) or "").strip().casefold() == reversal_num.casefold()
-                for row in ledger
-            )
-            if not has_ledger_reversal:
-                ledger.append({
-                    sc.COL_LEDGER_ID: self.repo._new_id("LED"),
-                    sc.COL_LEDGER_DATE: now_str[:10],
-                    sc.COL_LEDGER_CLIENT_VENDOR: (
-                        original_inv.get(sc.COL_INV_BILL_TO_CLIENT)
-                        or original_inv.get(sc.COL_INV_CLIENT_NAME)
-                        or ""
-                    ),
-                    sc.COL_LEDGER_DESCRIPTION: f"Reversal of invoice {invoice_num}",
-                    sc.COL_LEDGER_CATEGORY: "Invoice Reversal",
-                    sc.COL_LEDGER_REFERENCE: reversal_num,
-                    sc.COL_LEDGER_BILLINGS_EXCL_HST: str(-(reversal_fees + reversal_disb)),
-                    sc.COL_LEDGER_HST_COLLECTED: str(-reversal_tax),
-                    sc.COL_LEDGER_RECEIVABLE: str(-reversal_total),
-                    sc.COL_LEDGER_CREATED_AT: now_str,
-                })
-                self.repo._write_table_rows(sc.TBL_LEDGER, ledger)
-
-            transactions = self.repo._read_table_rows(sc.TBL_TRANSACTIONS_MASTER)
-            has_transaction_reversal = any(
-                str(row.get(sc.COL_TXN_INVOICE_REF) or "").strip().casefold() == reversal_num.casefold()
-                for row in transactions
-            )
-            if not has_transaction_reversal:
-                transactions.append({
-                    sc.COL_TXN_ID: self.repo._new_id("TXN"),
-                    sc.COL_TXN_DATE: now_str[:10],
-                    sc.COL_TXN_CLASS: "Business",
-                    sc.COL_TXN_TYPE: "Income",
-                    sc.COL_TXN_CLIENT: (
-                        original_inv.get(sc.COL_INV_BILL_TO_CLIENT)
-                        or original_inv.get(sc.COL_INV_CLIENT_NAME)
-                        or ""
-                    ),
-                    sc.COL_TXN_CATEGORY_CODE: "INC_LEGAL_FEES",
-                    sc.COL_TXN_CATEGORY_NAME: "Invoice Reversal",
-                    sc.COL_TXN_AMOUNT: str(-reversal_fees - reversal_disb),
-                    sc.COL_TXN_TAX_AMOUNT: str(-reversal_tax),
-                    sc.COL_TXN_INVOICE_REF: reversal_num,
-                    sc.COL_TXN_NOTES: f"Reversal of invoice {invoice_num}",
-                    sc.COL_TXN_STATUS: "Cleared",
-                    sc.COL_TXN_CURRENCY: "CAD",
-                    sc.COL_TXN_CREATED_AT: now_str,
-                    sc.COL_TXN_UPDATED_AT: now_str,
-                })
-                self.repo._write_table_rows(sc.TBL_TRANSACTIONS_MASTER, transactions)
-
-        # An external PDF is optional.  When the user explicitly selects a
-        # disposition, however, require an existing file and never overwrite
-        # an archive item with the same name.
-        if pdf_action_key == "delete" and pdf_path is not None:
-            pdf_path.unlink()
-        elif pdf_action_key == "move" and pdf_path is not None:
-            assert archive_dir is not None
-            assert archived_pdf is not None
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(pdf_path), str(archived_pdf))
-
-        return True
+        """Reverse unpaid WIP and verify balanced, preserved audit evidence."""
+        from services.invoice_reversal_service import reverse_invoice
+        with _DRAFT_LIFECYCLE_LOCK:
+            return reverse_invoice(self, invoice_num, source_pdf_path, pdf_action, target_dir)
 
     def _archive_voided_invoice_number_for_reissue(self, invoice_num: str) -> None:
         """Free a voided number while retaining an internal audit trail.
@@ -3059,9 +2854,7 @@ class InvoiceDraftService:
             == superseded_num.casefold()
             for row in invoice_log
         ):
-            raise ValueError(
-                f"Invoice {invoice_num} is already reserved for a correction draft."
-            )
+            superseded_num += "-" + uuid.uuid4().hex[:12]
         if not any(
             self._text(row.get(sc.COL_INV_INVOICE_NUM)).casefold() == invoice_key
             for row in invoice_log
@@ -3085,9 +2878,17 @@ class InvoiceDraftService:
                 f"Invoice {invoice_num} must be voided before it can be reissued."
             )
 
+        def archive_reference(value):
+            text = self._text(value)
+            lowered = text.casefold()
+            if lowered == invoice_key:
+                return superseded_num
+            if lowered == invoice_key + "-v" or lowered.startswith(invoice_key + "-v-adj-"):
+                return superseded_num + text[len(invoice_num):]
+            return value
+
         for row in invoice_log:
-            if self._text(row.get(sc.COL_INV_INVOICE_NUM)).casefold() == invoice_key:
-                row[sc.COL_INV_INVOICE_NUM] = superseded_num
+            row[sc.COL_INV_INVOICE_NUM] = archive_reference(row.get(sc.COL_INV_INVOICE_NUM))
         for row in receivables:
             if self._text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() == invoice_key:
                 row[sc.COL_RECV_INVOICE_NUM] = superseded_num
@@ -3095,23 +2896,25 @@ class InvoiceDraftService:
 
         ledger = self.repo._read_table_rows(sc.TBL_LEDGER)
         for row in ledger:
+            archived_reference = archive_reference(row.get(sc.COL_LEDGER_REFERENCE))
             if self._text(row.get(sc.COL_LEDGER_REFERENCE)).casefold() == invoice_key:
-                row[sc.COL_LEDGER_REFERENCE] = superseded_num
                 description = self._text(row.get(sc.COL_LEDGER_DESCRIPTION))
                 if "superseded" not in description.casefold():
                     row[sc.COL_LEDGER_DESCRIPTION] = (
                         f"{description} (superseded before reissue)".strip()
                     )
+            row[sc.COL_LEDGER_REFERENCE] = archived_reference
 
         transactions = self.repo._read_table_rows(sc.TBL_TRANSACTIONS_MASTER)
         for row in transactions:
+            archived_reference = archive_reference(row.get(sc.COL_TXN_INVOICE_REF))
             if self._text(row.get(sc.COL_TXN_INVOICE_REF)).casefold() == invoice_key:
-                row[sc.COL_TXN_INVOICE_REF] = superseded_num
                 notes = self._text(row.get(sc.COL_TXN_NOTES))
                 if "superseded" not in notes.casefold():
                     row[sc.COL_TXN_NOTES] = (
                         f"{notes} Superseded before reissue.".strip()
                     )
+            row[sc.COL_TXN_INVOICE_REF] = archived_reference
 
         self._write_tables_once({
             sc.TBL_INVOICE_LOG: invoice_log,

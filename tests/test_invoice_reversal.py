@@ -39,6 +39,8 @@ class _InvoiceReversalRepo:
         self._next_id = 0
         self.bulk_writes = []
         self.tables = {
+            sc.TBL_TRANSACTION_ACCOUNTS: [{sc.COL_TXN_ACCOUNT_CODE: "LEGAL_REVENUE", sc.COL_TXN_ACCOUNT_ACTIVE: 1}],
+            sc.TBL_TRANSACTION_BUSINESS_UNITS: [{sc.COL_TXN_BUSINESS_UNIT_NAME: "Legal Practice", sc.COL_TXN_BUSINESS_UNIT_ACTIVE: 1}],
             TBL_PARENTS.table: [{sc.COL_PARENT_ID: "LEVI", sc.COL_PARENT_NAME: "Leviathan Private Network"}],
             TBL_CLIENTS.table: [{sc.COL_CLIENT_ID: "ALXX", sc.COL_CLIENT_NAME: "AL ADVISOR"}],
             TBL_CLIENT_PROFILES.table: [{
@@ -174,6 +176,90 @@ def test_reversal_returns_only_the_linked_wip_and_hides_void_invoice_ledger_rows
     assert report["entries"][0]["status"] == "WIP"
 
 
+def test_reversal_reconciles_older_evidence_without_erasing_it_and_is_idempotent():
+    from decimal import Decimal
+    from services.invoice_reversal_service import TABLES, verify_reversal
+
+    repo = _InvoiceReversalRepo()
+    service = InvoiceDraftService(repo)
+    service.reverse_invoice("26-0057")
+    old_log = repo.tables[TBL_INVOICE_LOG.table][-1]
+    old_log.update({sc.COL_INV_TOTAL_FEES: "-200.00", sc.COL_INV_TOTAL_TAX: "-26.00",
+                    sc.COL_INV_AGGREGATE_BILLED: "-226.00"})
+    repo.tables[TBL_LEDGER.table][-1].update({sc.COL_LEDGER_BILLINGS_EXCL_HST: "-200.00",
+        sc.COL_LEDGER_HST_COLLECTED: "-26.00", sc.COL_LEDGER_RECEIVABLE: "-226.00"})
+    repo.tables[TBL_TRANSACTIONS_MASTER.table][-1].update({sc.COL_TXN_AMOUNT: "-200.00",
+                                                        sc.COL_TXN_TAX_AMOUNT: "-26.00"})
+    preserved = copy.deepcopy(old_log)
+    repo.bulk_writes.clear()
+
+    assert service.reverse_invoice("26-0057") is True
+    assert len(repo.bulk_writes) == 1
+    assert repo.tables[TBL_INVOICE_LOG.table][1] == preserved
+    adjustment = repo.tables[TBL_INVOICE_LOG.table][-1]
+    assert adjustment[sc.COL_INV_INVOICE_NUM].startswith("26-0057-V-ADJ-")
+    assert Decimal(adjustment[sc.COL_INV_AGGREGATE_BILLED]) == Decimal("64.97")
+    assert verify_reversal(service._read_tables_once(list(TABLES)), "26-0057")["ok"]
+    evidence = copy.deepcopy(repo.tables)
+    assert service.reverse_invoice("26-0057") is True
+    assert repo.tables == evidence
+    assert len(repo.bulk_writes) == 1
+
+
+def test_reversal_repairs_missing_contra_layers_even_when_invoice_is_already_void():
+    from services.invoice_reversal_service import TABLES, verify_reversal
+
+    repo = _InvoiceReversalRepo()
+    service = InvoiceDraftService(repo)
+    service.reverse_invoice("26-0057")
+    repo.tables[TBL_LEDGER.table].pop()
+    repo.tables[TBL_TRANSACTIONS_MASTER.table].pop()
+    service.reverse_invoice("26-0057")
+    assert verify_reversal(service._read_tables_once(list(TABLES)), "26-0057")["ok"]
+    assert len(repo.tables[TBL_INVOICE_LOG.table]) == 2
+
+
+@pytest.mark.parametrize("column,value", [
+    (sc.COL_RECV_AMOUNT_PAID, "1.00"), (sc.COL_RECV_CREDITS_ADJ, "1.00"),
+    (sc.COL_RECV_TOTAL_INVOICED, "999.00"),
+])
+def test_reversal_rejects_financial_inconsistencies_before_any_write(column, value):
+    repo = _InvoiceReversalRepo()
+    repo.tables[TBL_RECEIVABLES.table][0][column] = value
+    before = copy.deepcopy(repo.tables)
+    with pytest.raises(ValueError):
+        InvoiceDraftService(repo).reverse_invoice("26-0057")
+    assert repo.tables == before
+    assert repo.bulk_writes == []
+
+
+def test_reversal_commits_all_affected_tables_once_and_does_not_touch_unrelated_wip():
+    repo = _InvoiceReversalRepo()
+    unrelated = dict(repo.tables[TBL_TIME.table][0], EntryID="OTHER", InvoiceRef="26-0088")
+    repo.tables[TBL_TIME.table].append(unrelated)
+    InvoiceDraftService(repo).reverse_invoice("26-0057")
+    assert len(repo.bulk_writes) == 1
+    assert set(repo.bulk_writes[0]) == {TBL_TIME.table, TBL_RECEIVABLES.table,
+        TBL_INVOICE_LOG.table, TBL_LEDGER.table, TBL_TRANSACTIONS_MASTER.table}
+    assert repo.tables[TBL_TIME.table][-1] == unrelated
+
+
+def test_reissued_number_has_separate_reversal_evidence_for_each_generation():
+    from services.invoice_reversal_service import TABLES, verify_reversal
+
+    repo = _InvoiceReversalRepo()
+    service = InvoiceDraftService(repo)
+    for _ in range(2):
+        service.reverse_invoice("26-0057")
+        assert verify_reversal(service._read_tables_once(list(TABLES)), "26-0057")["ok"]
+        draft_num = service.create_draft("ALXX", "AL ADVISOR", ["TIME-1"])
+        service.finalize_draft(draft_num, "26-0057", "")
+        assert not any(row[sc.COL_INV_INVOICE_NUM] == "26-0057-V"
+                       for row in repo.tables[TBL_INVOICE_LOG.table])
+    service.reverse_invoice("26-0057")
+    assert verify_reversal(service._read_tables_once(list(TABLES)), "26-0057")["ok"]
+
+
 def test_correct_and_reissue_suggests_the_original_number_without_locking_the_replacement():
     repo = _InvoiceReversalRepo()
     service = InvoiceDraftService(repo)
@@ -191,7 +277,7 @@ def test_correct_and_reissue_suggests_the_original_number_without_locking_the_re
     # exact number is free for the corrected replacement.
     assert [row[sc.COL_INV_INVOICE_NUM] for row in repo.tables[TBL_INVOICE_LOG.table]] == [
         "26-0057-SUPERSEDED",
-        "26-0057-V",
+        "26-0057-SUPERSEDED-V",
     ]
     assert repo.tables[TBL_RECEIVABLES.table][0][sc.COL_RECV_INVOICE_NUM] == "26-0057-SUPERSEDED"
     assert repo.tables[TBL_RECEIVABLES.table][0][sc.COL_RECV_STATUS] == "Superseded"
@@ -248,7 +334,7 @@ def test_finalize_can_reclaim_a_previously_voided_unpaid_invoice_number():
 
     assert [row[sc.COL_INV_INVOICE_NUM] for row in repo.tables[TBL_INVOICE_LOG.table]] == [
         "26-0057-SUPERSEDED",
-        "26-0057-V",
+        "26-0057-SUPERSEDED-V",
         "26-0057",
     ]
     assert repo.tables[TBL_RECEIVABLES.table][0][sc.COL_RECV_INVOICE_NUM] == "26-0057-SUPERSEDED"

@@ -52,6 +52,12 @@ class _OrangeInputMaskSync(QObject):
             "monitorFrameThicknessChanged",
             "visibleChanged",
             "launchConfiguredChanged",
+            "professionalNativeWindowStateChanged",
+            "professionalNativeGeometrySyncInProgressChanged",
+            "uiMaximizedChanged",
+            "maximizeAnimInProgressChanged",
+            "shellMaskSettleDelayReadyChanged",
+            "shellMaskLayerActiveChanged",
             "isClosingChanged",
             "animationPhaseChanged",
             "startupPhaseChanged",
@@ -392,6 +398,15 @@ class _OrangeInputMaskSync(QObject):
         if win is None:
             return
 
+        # A settled native window has no monitor-sized transparent envelope.
+        # Clearing the region lets DWM transform its whole backing surface;
+        # setMask would otherwise crop the compositor's intermediate frames.
+        if bool(win.property("professionalNativeWindowState")):
+            if self._last_mask_key != ("native-state",):
+                self._last_mask_key = ("native-state",)
+                win.setMask(QRegion())
+            return
+
         win_w = max(1, self._as_int(win.width(), 1))
         win_h = max(1, self._as_int(win.height(), 1))
         corner_radius = self._window_corner_radius_px()
@@ -548,7 +563,7 @@ class _OrangeInputMaskSync(QObject):
             recovery_band_enabled,
         )
 
-        if key == self._last_mask_key:
+        if not force and key == self._last_mask_key:
             return
         self._last_mask_key = key
 

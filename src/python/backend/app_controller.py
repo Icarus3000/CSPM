@@ -2421,6 +2421,25 @@ class AppController(QObject):
     def forceWindowForeground(self, target):
         return self._force_window_foreground(target, "forceWindowForeground")
 
+    @Slot(QObject, bool, "QVariantMap", result=bool)
+    def requestProfessionalNativeWindowState(self, target, maximized, restored_rect):
+        from platform.native_window_state import request_native_window_state
+        return request_native_window_state(target, maximized, restored_rect)
+
+    @Slot(QObject, result=bool)
+    def professionalNativeWindowIsMaximized(self, target):
+        from platform.native_window_state import native_window_is_maximized
+        return native_window_is_maximized(target)
+
+    @Slot(QObject)
+    def releaseProfessionalNativeWindowState(self, target):
+        app = QGuiApplication.instance()
+        event_filter = getattr(app, "_professional_native_frame_filter", None)
+        if event_filter is not None and target is not None:
+            session = event_filter.sessions.get(int(target.winId()))
+            if session is not None:
+                session.release_for_custom_transition(force=True)
+
     @Slot(result=bool)
     def forceMainWindowForeground(self):
         target = self._find_main_shell_window()

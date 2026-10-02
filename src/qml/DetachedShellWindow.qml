@@ -96,6 +96,94 @@ Window {
     property bool isMinimizing: false
     property bool isRestoringFromMinimize: false
     property bool maximizeAnimInProgress: false
+    // True only while Windows owns the settled maximize/restore contract.
+    // Custom launch/close/taskbar sequences release it before moving the host.
+    property bool professionalNativeWindowState: false
+    property int professionalNativeRestorePadding: 0
+    property bool professionalNativeGeometrySyncInProgress: false
+
+    function releaseNativeStateForRestoredInteraction() {
+        if (!professionalNativeWindowState || uiMaximized) return;
+        if (appRef && appRef.releaseProfessionalNativeWindowState) {
+            appRef.releaseProfessionalNativeWindowState(mainWin);
+        }
+    }
+
+    Timer {
+        id: nativeWindowGeometrySync
+        interval: 0
+        repeat: false
+        onTriggered: mainWin.syncProfessionalNativeWindowGeometry()
+    }
+
+    Timer {
+        id: nativeWindowLayoutSave
+        interval: 350
+        repeat: false
+        onTriggered: {
+            if (mainWin.professionalNativeWindowState && !mainWin.isClosing
+                    && !mainWin.isMinimizing && !mainWin.isRestoringFromMinimize
+                    && !mainWin.detachedMode) mainWin.persistMainWindowLayout();
+        }
+    }
+
+    function syncProfessionalNativeWindowGeometry() {
+        if (professionalNativeGeometrySyncInProgress
+                || !professionalNativeWindowState || animationPhase !== "settled"
+                || isClosing || isMinimizing || isRestoringFromMinimize
+                || visibility === Window.Minimized) return;
+        var gx = Math.round(x), gy = Math.round(y);
+        var gw = Math.max(1, Math.round(width)), gh = Math.max(1, Math.round(height));
+        // WM_SIZE can arrive inside the native state command before Qt emits
+        // visibilityChanged. Follow the HWND now, before its next paint;
+        // deferring the layout to a timer leaves the old surface under DWM.
+        var maximized = appRef.professionalNativeWindowIsMaximized(mainWin);
+        var pad = maximized ? 0 : professionalNativeRestorePadding;
+        if (uiMaximized === maximized && hostX === gx && hostY === gy
+                && hostW === gw && hostH === gh && canvasW === gw && canvasH === gh
+                && canvasX === gx && canvasY === gy
+                && finalX === gx + pad && finalY === gy + pad
+                && finalW === gw - 2 * pad && finalH === gh - 2 * pad) return;
+        professionalNativeGeometrySyncInProgress = true;
+        geometryTransitionSuppressed = true;
+        try {
+        uiMaximized = maximized;
+        hostX = gx; hostY = gy; hostW = gw; hostH = gh;
+        finalX = gx + pad; finalY = gy + pad;
+        finalW = Math.max(1, gw - 2 * pad); finalH = Math.max(1, gh - 2 * pad);
+        updateTargetScreenFromFinalCenter();
+        refreshActiveVisibleRect();
+        canvasX = gx; canvasY = gy; canvasW = gw; canvasH = gh;
+        canvasLocalX = 0; canvasLocalY = 0;
+        contentLocalX = pad; contentLocalY = pad;
+        maximizedOwnerScreen = maximized ? targetScreen : null;
+        } finally {
+            geometryTransitionSuppressed = false;
+            professionalNativeGeometrySyncInProgress = false;
+        }
+        if (!maximized) rememberRestoreGeometry();
+        if (!detachedMode) nativeWindowLayoutSave.restart();
+    }
+
+    function requestProfessionalNativeState(maximized, restoredRect) {
+        if (!appRef || !appRef.requestProfessionalNativeWindowState) return false;
+        if (maximized) {
+            professionalNativeRestorePadding = Math.max(0, Math.round(finalX - hostX));
+        } else if (!professionalNativeWindowState && restoredRect) {
+            var maxPadX = Math.max(0, Math.floor((usableW - restoredRect.w) / 2));
+            var maxPadY = Math.max(0, Math.floor((usableH - restoredRect.h) / 2));
+            professionalNativeRestorePadding = Math.max(0, Math.min(
+                settledPaddingPx(restoredRect.w, restoredRect.h), maxPadX, maxPadY));
+        }
+        var pad = professionalNativeRestorePadding;
+        var normalRect = restoredRect ? {
+            "x": restoredRect.x - pad, "y": restoredRect.y - pad,
+            "w": restoredRect.w + 2 * pad, "h": restoredRect.h + 2 * pad
+        } : ({});
+        var accepted = appRef.requestProfessionalNativeWindowState(mainWin, maximized, normalRect);
+        if (accepted) nativeWindowGeometrySync.restart();
+        return accepted;
+    }
     property bool wasWindowMinimized: false
     property bool isMinimizingToTray: false
     property bool isExitingFromTray: false
@@ -574,12 +662,15 @@ Window {
     // During a normal settled state, the native window is only as large as the
     // visible canvas.  A monitor-sized transparent host blocks every other
     // application on that monitor even when CSPM itself looks small.
-    // The real shell never moves continuously during Professional
-    // maximize/restore. The fixed overlay owns the visible interpolation.
-    width: hostW
-    height: hostH
-    x: hostX
-    y: hostY
+    // Windows Professional gives this host's state transition to DWM;
+    // the compatibility path uses a fixed overlay for interpolation.
+    // Suspend geometry writes completely while DWM owns the window. Updating
+    // hostX before hostW through ordinary bindings otherwise moves a still-
+    // small HWND to the maximized origin and cancels native maximized state.
+    Binding { target: mainWin; property: "width"; value: mainWin.hostW; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
+    Binding { target: mainWin; property: "height"; value: mainWin.hostH; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
+    Binding { target: mainWin; property: "x"; value: mainWin.hostX; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
+    Binding { target: mainWin; property: "y"; value: mainWin.hostY; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
     onHostXChanged: {
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
@@ -605,6 +696,7 @@ Window {
         }
     }
     onXChanged: {
+        if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
             mainWin.logInteractionTrace("WIN-X", "x=" + Math.round(x), false);
@@ -619,6 +711,7 @@ Window {
         }
     }
     onYChanged: {
+        if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
             mainWin.logInteractionTrace("WIN-Y", "y=" + Math.round(y), false);
@@ -633,12 +726,14 @@ Window {
         }
     }
     onWidthChanged: {
+        if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
             mainWin.logInteractionTrace("WIN-W", "width=" + Math.round(width), false);
         }
     }
     onHeightChanged: {
+        if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
             mainWin.logInteractionTrace("WIN-H", "height=" + Math.round(height), false);
@@ -3028,6 +3123,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             return false;
         }
         abortActiveInteractionsForRecovery();
+        releaseNativeStateForRestoredInteraction();
         observeContentGlobalPosition();
         classicMoveStartX = Math.round(finalX);
         classicMoveStartY = Math.round(finalY);
@@ -3339,6 +3435,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         professionalWindowTransitionScreen = null;
         maximizeAnimInProgress = false;
         geometryTransitionSuppressed = false;
+        applyHostEnvelopeForTarget();
+        updateCanvasGeometry();
         destroyMaximizeOverlay();
         phaseLog(tag, "Frozen overlay transition settled reason=" + reason
             + " elapsed=" + Math.max(0, Math.round(Date.now()
@@ -5475,6 +5573,13 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var maxSettledPadY = Math.max(0, Math.floor((monitorH - safeFinalH) * 0.5));
         var settledPad = Math.max(0, Math.min(desiredSettledPad, Math.min(maxSettledPadX, maxSettledPadY)));
 
+        // Professional restore corners use final geometry only. A maximized
+        // canvas can briefly remain larger than the restored content; that
+        // difference is an animation envelope, never a corner radius.
+        if (mainWin.appRef && mainWin.appRef.appStyle === "Professional") {
+            return mainWin.uiMaximized ? 0 : Math.max(0, base + settledPad);
+        }
+
         // Keep corner radius stable during opening->settled handoff so shell geometry
         // cannot overshoot to very large radii while glow/canvas padding collapses.
         var lockToSettledPad = !mainWin.shellMaskSettleDelayReady
@@ -5504,6 +5609,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function shellRoundedMaskActive() {
         return mainWin.outerRoundedShellMaskEnabled
+            && !mainWin.professionalNativeGeometrySyncInProgress
             && (mainWin.animationPhase === "settled" || mainWin.animationPhase === "closing")
             && !canvasTransition.running
             && canvasGeometryAdjust.transitionProgress >= 0.995
@@ -6123,6 +6229,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function enforceWindowScreen(screenObj, reasonTag) {
+        if (professionalNativeWindowState) return false;
         if (!screenObj) return false;
         try {
             var before = mainWin.screen;
@@ -6265,6 +6372,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function reassertHostWindowGeometry(reasonTag) {
+        if (professionalNativeWindowState) return false;
         if (animationPhase !== "settled" || isClosing || isMinimizing
                 || isRestoringFromMinimize || maximizeAnimInProgress) return false;
         if (userMoveInProgress || userResizeInProgress || systemMoveInProgress || dragFinalizePending || dragStrategy !== "none") return false;
@@ -6289,12 +6397,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         hostW = oldHostW;
         hostH = oldHostH;
 
-        // Re-install explicit bindings in case platform-side geometry writes detached
-        // x/y/width/height from their host model expressions.
-        mainWin.x = Qt.binding(function() { return mainWin.hostX; });
-        mainWin.y = Qt.binding(function() { return mainWin.hostY; });
-        mainWin.width = Qt.binding(function() { return mainWin.hostW; });
-        mainWin.height = Qt.binding(function() { return mainWin.hostH; });
+        // The conditional Binding objects above own all host geometry writes.
 
         geometryTransitionSuppressed = prevGeomSuppressed;
         var driftAfter = hostWindowGeometryDrift();
@@ -6324,6 +6427,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (adjacentMoveInProgress) {
             return false;
         }
+        releaseNativeStateForRestoredInteraction();
         adjacentMoveInProgress = true;
         var done = function(result) {
             adjacentMoveInProgress = false;
@@ -7027,6 +7131,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function applyHostEnvelopeForTarget() {
+        if (professionalNativeWindowState) return;
         var rect = activeVisibleRect;
         if (usableW > 0 && usableH > 0) {
             rect = {
@@ -7245,6 +7350,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function maximizeWindowToVisibleRect(screenOverride) {
         if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize || maximizeAnimInProgress) return false;
+        if (appStyle === "Professional" && Qt.platform.os === "windows") {
+            return requestProfessionalNativeState(true, null);
+        }
         logGreenFrameGeometry("MAXIMIZE", "Pre-maximize snapshot");
         var sourceX = Math.round(finalX);
         var sourceY = Math.round(finalY);
@@ -7463,6 +7571,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function restoreFromMaximized(cursorPos, cursorAnchored) {
         if (!uiMaximized || maximizeAnimInProgress) return false;
+        if (appStyle === "Professional" && Qt.platform.os === "windows" && !cursorAnchored) {
+            return requestProfessionalNativeState(false,
+                resolveRestoreRectFromMaximized(null, false));
+        }
         var sourceX = Math.round(finalX);
         var sourceY = Math.round(finalY);
         var sourceW = Math.max(1, Math.round(finalW));
@@ -7567,6 +7679,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     function restoreFromMaximizedForDrag(cursorPos) {
         if (!uiMaximized || maximizeAnimInProgress) return false;
         var targetRect = resolveRestoreRectFromMaximized(cursorPos, true);
+        if (professionalNativeWindowState && appRef && appRef.releaseProfessionalNativeWindowState) {
+            appRef.releaseProfessionalNativeWindowState(mainWin);
+        }
         phaseLog("RESTORE-MAX", "Drag restore from maximized to "
             + fmtRect(targetRect.x, targetRect.y, targetRect.w, targetRect.h));
         if (sfxBus && sfxBus.playWindowDeform) {
@@ -7665,6 +7780,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // docs/DECISIONS/DRAG_PIPELINE_OPTION3.md
         if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize || maximizeAnimInProgress) return false;
         if (userResizeInProgress) return false;
+        releaseNativeStateForRestoredInteraction();
         beginInteractionTrace("drag", "beginUserDrag");
         logInteractionTrace("BEGIN-DRAG", "entry", true);
 
@@ -7800,6 +7916,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (uiMaximized) return false;
         if (userMoveInProgress || systemMoveInProgress) return false;
         if (!isResizeHandleValid(handle)) return false;
+        releaseNativeStateForRestoredInteraction();
         beginInteractionTrace("resize:" + handle, "beginUserResize");
         logInteractionTrace("BEGIN-RESIZE", "handle=" + handle, true);
 
@@ -8498,6 +8615,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     // Animating contentLocal* causes visible side-shifts during opening->settled handoff.
     
     function updateCanvasGeometry() {
+        if (professionalNativeWindowState) {
+            nativeWindowGeometrySync.restart();
+            return;
+        }
         if (animationPhase === "settled" && userMoveInProgress && dragStrategy === "native") {
             // Keep canvas fixed during native drag; host window movement carries content smoothly.
             canvasLocalX = canvasX - hostX;
@@ -9558,8 +9679,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // CONTENT LAYER - Position within canvas keeps window pixels fixed
         Item {
             id: contentLayer
-            // Professional maximize/restore is rendered in a separate frozen
-            // overlay. These legacy in-window transforms remain Console-only.
+            // Windows Professional maximize/restore is owned by DWM. The
+            // compatibility overlay and Console transforms stay separate.
             x: (mainWin.maximizeAnimInProgress && !mainWin.professionalWindowTransitionActive
                 ? Math.round(mainWin.maximizeRenderX - mainWin.hostX)
                 : mainWin.contentLocalX)
@@ -11835,6 +11956,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     Connections {
         target: mainWin
         function onScreenChanged() {
+            if (mainWin.professionalNativeWindowState) {
+                nativeWindowGeometrySync.restart();
+                return;
+            }
             try {
                 var newScreen = mainWin.screen;
                 if (!newScreen) {
@@ -11884,6 +12009,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
 
         function onVisibilityChanged() {
+            if (mainWin.professionalNativeWindowState) {
+                mainWin.syncProfessionalNativeWindowGeometry();
+                nativeWindowGeometrySync.restart();
+            }
             if (mainWin.visibility === Window.Minimized) {
                 mainWin.phaseLog("MINIMIZE", "Host visibility -> Minimized");
                 mainWin.wasWindowMinimized = true;

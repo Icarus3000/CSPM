@@ -223,6 +223,10 @@ Item {
     function _displayInvoiceStatus(summary) {
         if (!summary) return "Unavailable"
         var raw = String(summary.Status || "").trim().toLowerCase()
+        if (raw === "void" || raw === "voided" || raw === "reversed"
+                || raw === "cancelled" || raw === "canceled") return "Reversed"
+        if (raw === "superseded") return "Superseded"
+        if (raw === "closed") return "Closed"
         var hasBalance = Object.prototype.hasOwnProperty.call(summary, "BalanceDue")
         var balance = Number(summary.BalanceDue)
         var paid = Number(summary.AmountPaid || 0)

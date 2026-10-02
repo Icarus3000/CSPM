@@ -562,7 +562,7 @@ class _InvoiceDirectoryRepo:
         }
 
     def _read_table_rows(self, table):
-        return [dict(row) for row in self.tables[table.table]]
+        return [dict(row) for row in self.tables.get(table.table, [])]
 
 
 def test_finalized_invoice_list_includes_plain_english_matter_description():
@@ -574,6 +574,18 @@ def test_finalized_invoice_list_includes_plain_english_matter_description():
     # Historic records without linked time/disbursement data use the same
     # cautious single-matter fallback as the invoice detail card.
     assert rows[1]["MatterDescription"] == "Trademark renewal"
+
+
+def test_active_invoice_directory_excludes_voids_and_all_reversal_audit_rows():
+    repo = _InvoiceDirectoryRepo()
+    repo.tables[TBL_RECEIVABLES.table] = [{sc.COL_RECV_INVOICE_NUM: "26-0201", sc.COL_RECV_STATUS: "Void"}]
+    repo.tables[TBL_INVOICE_LOG.table].extend([
+        {sc.COL_INV_INVOICE_NUM: "26-0201-V"},
+        {sc.COL_INV_INVOICE_NUM: "26-0201-V-ADJ-123-V"},
+        {sc.COL_INV_INVOICE_NUM: "26-0201-SUPERSEDED"},
+    ])
+    rows = BillingController(repo, None, None).listFinalizedInvoices()
+    assert [row[sc.COL_INV_INVOICE_NUM] for row in rows] == ["26-0202"]
 
 
 def test_invoice_directory_has_matter_detail_payment_tabs_and_taller_cards():

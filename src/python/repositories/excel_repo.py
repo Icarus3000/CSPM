@@ -1288,6 +1288,7 @@ class ExcelRepo:
             "seedChanges": [],
         }
 
+    @with_db_lock
     def schema_requires_migration(self) -> bool:
         import time
         _lazy_load_heavy_libs()

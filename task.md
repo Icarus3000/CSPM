@@ -1,5 +1,49 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-01: Authorized Window Geometry and Invoice Reversal Release
+
+- [x] Bound Professional restored corner geometry to final settled padding rather than transient canvas/monitor excess; suppress the rounded mask during native geometry synchronization and refresh mask state explicitly.
+- [x] Make native frame preparation idempotent and discard copied client pixels on frame refresh. Keep the custom title bar, existing other-transition handlers, and restored multi-monitor/DPI pipeline.
+- [x] Reverse unpaid invoices through one locked, atomic workbook save; verify lifecycle, released WIP, and saved Invoice Log / Ledger / Transactions reversal totals before success.
+- [x] Preserve mismatched prior reversal rows and append amount-specific reconciliation evidence; archive reversal evidence with its original generation before reusing a number.
+- [x] Exclude void/superseded/audit invoices from the active directory; honor lifecycle status before zero-balance payment inference.
+- [x] Reconciled live invoice 26-0092 under a shared checkout, protected backup, isolated candidate, and integrity comparison. Current total and combined reversal: $6,977.74 / -$6,977.74. Local and shared hashes match. The 96 pre-existing workbook integrity errors are unchanged; no new errors were introduced.
+- [x] 81 focused sandbox-safe tests (including startup schema GC guard), Python compilation, and governed QML lint (exit 0 with existing warnings). Outside-sandbox full-app run: 20 toggles, same workspace and exact restored rectangle, small corner radius, normal/maximized taskbar return and custom close. Real WebEngine PDF rendering passed.
+- [x] Corrected executable build, packaged startup smoke, and deployment to C:/Programs/CSPM completed; installed EXE/QML hashes match.
+- [ ] Commit and push the authorized release changes to the current Git cloud branch.
+- [ ] User acceptance: actual maximize/restore speed and smoothness, no clipped corners before dragging, and restored movement across all monitors/DPI settings. Functional geometry checks do not establish visual acceptance.
+
+
+## Professional Maximize / Restore Correction (2026-10-01)
+
+- [ ] Proposed next implementation: correct the complete native custom-frame protocol using QWindowKit as a reference (0x37 frame-refresh copy-bits handling, NC painting/activation, Qt margins, stable flags). Stable flags alone already failed. Preserve existing custom transition handlers and all-monitor movement; establish actual improvement from user feedback/event timing before package promotion. Proposal only; no runtime validation this turn.
+
+- [x] Code-first installed-path diagnosis: overlay readiness is a 16 ms timer rather than a confirmed displayed frame; readiness hides/moves/resizes the main window and the overlay constructs a new `MainContent`. Existing native-prototype presentation timing remains unresolved. User reports suffice for the visible failure; stop screenshot collection.
+
+- [ ] Complete the unlocked full-source motion gate. Initially opaque full-app rendering, native frame/redraw/paint-dispatch variants, OpenGL, and Direct3D 12 have not passed. Keep the rejected presentation/container experiments out of production. Alpha alone is not an established cause. The Windows system-command route, deferred command, single-threaded render loop, isolated Qt 6.11.2, and forced native size-event presentation also failed. Live DWM-thumbnail presentation clips; the independent GDI-host proof has delay/handoff artifacts and is not an approved solution.
+- [x] Preserve the user's existing restored-window multi-monitor movement code. Restrict native Win+Shift+Arrow passthrough to maximized state; release native geometry/frame ownership before restored drag, resize, classic keyboard movement, and adjacent-monitor movement. Existing monitor selection/remapping algorithms remain unchanged. Twenty focused safe tests and scoped governed QML lint pass. Physical mixed-DPI movement acceptance remains pending.
+- [ ] Required acceptance constraint: restored windows must remain freely movable across ALL monitors on the computer, with differing DPI, resolutions, and desktop origins. The one-monitor restriction applies only to diagnostic window placement, never to the application.
+- [ ] Full-app rendering-surface experiments still fail the upper-left jump requirement. Pointer-guard and snapshot-preparation corrections did not establish smooth motion. Do not integrate the ignored swapchain/cover experiments or promote a package as a fix.
+
+- [x] Inspect the running path and preserve the failing visual evidence; the executable/startup checks did not establish animation quality.
+- [x] Replace Windows Professional's recreated-content overlay with a native state bridge while preserving the custom title bar and glyphs. Suspend QML native-host geometry bindings while Windows owns the state; follow native client geometry and defer layout persistence.
+- [x] Address competing geometry/native-style behavior after the reported upper-left jump in the first source attempt: use compatible Qt/native frame flags, remove settled layered-window styling, and constrain the maximized client surface to the monitor work area. Return original flags, opacity/mask handling, and geometry ownership before existing close/minimize/taskbar/drag-restore sequences. Visual proof that the jump is gone remains pending.
+- [x] Sandbox-safe validation: 17 focused native-state/choreography/layout/feedback tests passed; changed Python compiled; governed QML lint exited 0 with existing warnings; `git diff --check` passed.
+- [x] Outside-sandbox functional validation with disposable data/settings: ten maximize/restore cycles retained the Productivity report and exact normal bounds, used true native maximized state, and created no overlay. Normal/maximized minimize/taskbar-return and maximized close completed without contract failures. Separate real WebEngine rendering produced a 38,902-byte PDF. These establish functional behavior, not visual smoothness.
+- [x] Record the revised native source path on the unlocked desktop: the upper-left pre-jump remains despite correct final geometry. Reproduce it in a minimal transparent Qt Quick window; an initially opaque rendering surface avoids it. Functional tests alone did not establish motion quality.
+- [ ] The scoped rendering-surface prototype failed subsequent unlocked full-app recordings. Earlier minimal-window positives and locked-session recordings are superseded. Keep swapchain/cover, image-readback, and native-container experiments diagnostic only. No corrected executable is ready.
+- [ ] Cory's real-app acceptance: no upper-left pre-jump, reflow, flash, corner pop, or duplicate motion; custom controls intact; repeat ten times and check maximize → Win+Shift+Arrow → restore. Visually compare the approved open/close/taskbar animations.
+- [ ] Build/promote the corrected executable only after the P0 source-motion gate is accepted. Installed/dist packages still contain the preceding implementation.
+
+## Git Pull And Executable Rebuild (2026-10-01)
+
+- [x] Fast-forward the clean current branch `fix/invoice-billing-client-correction-20260926` from `f61ce4d` to remote commit `41b6869`.
+- [x] Run sandbox-safe Python compilation, governed QML lint (warnings only), and focused tests: 18 matter-document/productivity/deployment tests plus 9 adjacent A/P tests passed. Three existing `test_ap_validation_repair.py` tests fail because they call the removed `FinanceRepo.save_txn`; those tests and FinanceRepo are unchanged by this pull.
+- [x] Build the standard approved-template release with `scripts/build_release.py --validate`, including CSPM and Recovery; deploy to `C:\Programs\CSPM\CSPM.exe`. Dist and installed manifests match exactly: 4,275 files / 674,318,064 bytes / SHA-256 `6E060D4FF7CC466D66F72B66ED4C44A91C36DFA7210AD5B9690D06911DC5C8EE`. EXE SHA-256: `6BD6582CA3BD63A0113136A29CFE554EB43FBB19096B60E63EB41BF9A4B62BBE`.
+- [x] Validate outside sandbox: installed native splash/main window reached input-ready in 16.443 seconds and closed normally with exit code 0. A separate real Qt WebEngine check using the installed helper/resources successfully rendered a 38,364-byte PDF.
+- [x] Verify cloud/repository workbook hashes were unchanged. Normal startup safely refreshed the older local CSPM replica to the existing cloud hash; shutdown released the shared checkout. The preceding release is retained at `to_delete/dist__replaced_release_20261001_094016`.
+
+
 ## Productivity Report Zen Mouse-Wheel Timeframes (2026-10-01)
 
 - [x] Reproduce the old package's failure with real QML wheel delivery: Zen emits the adjustment and recalculates the report, but continues displaying its opening snapshot.

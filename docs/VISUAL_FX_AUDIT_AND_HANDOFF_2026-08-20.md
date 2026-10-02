@@ -24,22 +24,30 @@ Maximizing a smaller Professional window looked as though it jumped around the s
 
 ### Current implementation
 
-As of 2026-08-31, Professional maximize/restore follows Source's native-window
-ownership model:
+As of the 2026-10-01 source correction, Windows Professional maximize/restore
+uses native ownership. The rebuilt 2026-10-01 release now deploys this path.
+The preceding installed package used an overlay; the earlier 2026-08-31 source
+description was not present in the pulled implementation.
 
-1. `src/python/platform/native_window_style.py` keeps Qt's client-drawn
-   frameless chrome but restores the HWND caption/thick-frame/system/min/max
-   style contract that Windows uses for its DWM state animation.
+1. `src/python/platform/native_window_state.py` establishes compatible Qt/native
+   frame flags, suppresses native non-client painting, and confines the
+   maximized client to the monitor work area. CSPM still draws its own title
+   bar and glyphs. Settled native ownership clears layered styling and the
+   custom window mask.
 2. The title-bar command calls one native `SW_MAXIMIZE` or `SW_RESTORE`
    operation through `AppController.requestProfessionalNativeWindowState()`.
 3. `DetachedShellWindow.qml` does not set `maximizeAnimInProgress`, stage a
    monitor-sized host, enable the maximize texture layer, or run a per-frame
    QML geometry/texture timeline on the ordinary Professional path.
-4. `Window.Maximized` / `Window.Windowed` is authoritative. QML follows that
-   event to synchronize the glyph, final/canvas model, normal bounds, monitor,
-   and persistence.
-5. `Win+Shift+Arrow` passes through to Windows for this ready native path, so
-   the maximized HWND and Windows-owned normal placement transfer together.
+4. Conditional QML host bindings are suspended while Windows owns geometry.
+   Native visibility/client geometry synchronizes the glyph, final/canvas
+   model, normal bounds, and monitor. Persistence is deferred beyond motion.
+5. `Win+Shift+Arrow` passes through to Windows only while natively maximized,
+   so the maximized HWND and Windows-owned normal placement transfer together.
+   Restored windows keep CSPM's original monitor/DPI movement pipeline.
+6. Before existing close/minimize/taskbar and cursor-anchored drag-restore
+   sequences, the bridge returns the original flags/styles, mask handling,
+   and QML geometry ownership without animating its internal state adoption.
 
 The prior 240 ms one-owner texture implementation remains only as a
 bridge-unavailable compatibility fallback. It is not the accepted Windows
@@ -47,20 +55,84 @@ Professional path.
 
 ### Current validation state
 
-- Sandbox-safe: changed Python modules compile; focused maximize/native-style/
-  layout suites report **9 passed**; governed QML lint exits 0 with no syntax
+Latest 2026-10-01 user report: the separate upper-left appearance is resolved in their run, but transitions feel slow and the restored shell has huge clipped corners until moved. The user authorized the scoped geometry correction and executable release, alongside an urgent invoice reversal repair. Restored Professional corners now use final settled padding instead of a transient monitor-sized canvas; native geometry synchronization gates the rounded mask and mask changes explicitly invalidate it. Native frame preparation is idempotent and frame refresh discards copied client pixels. The approved custom title bar and other transition handlers remain.
+
+69 focused safe tests, compilation, and governed QML lint pass (existing lint warnings remain). Outside-sandbox full-source functional regression completed 20 toggles with one workspace, exact restored bounds, a 12-pixel restored radius, taskbar return in both states, and custom close. Actual WebEngine PDF rendering passed. These are functional checks, not a claim of silky motion or physical mixed-DPI acceptance. Earlier rejected presentation experiments below are historical evidence, not production code. Final executable build/deployment results are recorded in implementation.md.
+
+Restored-window movement across every connected monitor, including differing
+DPI/resolution and negative desktop origins, is a required regression constraint.
+Diagnostic single-monitor placement must never constrain the application. The
+native bridge now releases ownership before restored drag/resize/classic and
+adjacent-monitor movement; restored Win+Shift+Arrow retains the original CSPM
+pipeline. Twenty focused safe tests and scoped governed lint pass. The full-app
+surface experiments still show the upper-left jump and remain diagnostic only;
+do not promote them or claim animation acceptance.
+
+- Sandbox-safe: changed Python modules compile; focused native-state/
+  choreography/layout/feedback suites report **17 passed**; governed QML lint exits 0 with no syntax
   error and existing warning-level diagnostics only; scoped `git diff --check`
   exits 0.
-- Outside-sandbox source runtime: `launch.ps1` reached a responsive real
-  Qt/WebEngine shell. The custom chrome remained intact; the live HWND carried
-  style `0x16CF0000` / exstyle `0x00080100`; CSPM's own maximize glyph entered
-  true `IsZoomed` / `0x17CF0000` state; restore returned to the exact prior
-  normal HWND rectangle and style.
-- The source app is left open in normal state. Automated checks establish the
-  native ownership/state contract, not subjective frame pacing. Cory's manual
-  visual acceptance remains pending and blocking. No package was built.
+- Outside-sandbox source runtime with disposable workbook/settings copies:
+  ten cycles used true `IsZoomed`, preserved the same Productivity report,
+  created no overlay, and restored exact normal bounds. A native contract
+  probe verified client/work-area alignment and restored flags. Normal and
+  maximized taskbar cycles plus maximized close completed without functional
+  failures. Separate real WebEngine rendering produced a 38,902-byte PDF.
+- The user rejected the first native attempt because maximize still jumped
+  toward the upper left. Unlocked-desktop recordings confirm the revised
+  native geometry contract still fails visually: the old-size transparent
+  Qt Quick surface moves first, then the full-size surface arrives. Minimal
+  probes suggested the premultiplied-alpha swapchain, but a full-source run
+  with an initially opaque surface also reproduces the jump. Alpha alone is
+  therefore not an established cause. Native style/geometry checks do not
+  prove this rendering boundary is clean.
+- An ignored per-window swapchain prototype uses an opaque surface only for
+  the native state operation and restores alpha afterward. Minimal-window
+  evidence did not establish full-app quality: subsequent full CSPM captures
+  using the exact QML toggle still show the old-size surface at the upper left
+  before the full-size surface arrives. The prototype failed and remains
+  diagnostic only. Earlier locked/occluded captures are invalid evidence.
+  Restore temporary desktop settings at test completion. User visual
+  acceptance remains blocking; no corrected package was built.
 
-### 2026-08-31 P0 native-window correction in progress
+### Proposed next correction — not implemented or accepted
+
+The user requested a concrete solution without further screenshots. Use one stable
+native custom-frame controller on the existing QQuickWindow and retain the existing
+MainContent. Compare the complete native event contract against QWindowKit's Win32
+implementation before changing code. Stable/idempotent flags alone already failed;
+this proposal adds specific native-protocol corrections, not a repetition of that
+experiment:
+
+- Current bridge refreshes the frame with SetWindowPos flags 0x37. QWindowKit's
+  WM_WINDOWPOSCHANGING handler documents a client-content shift for exactly this
+  combination and adds SWP_NOCOPYBITS. Treat this as a relevant, testable defect,
+  not proof of the complete maximize failure's cause.
+- Current bridge unconditionally swallows WM_NCPAINT and returns a constant for
+  WM_NCACTIVATE. Reference handling permits compositor NC painting and forwards
+  activation to DefWindowProc with lParam=-1 to suppress border repaint while
+  preserving activation state. Suppress visible native caption through client-area
+  calculation, not indiscriminate suppression of compositor messages.
+- Initialize Qt/custom client margins and the native frame coherently; avoid
+  repeated Qt flag/style changes inside each maximize/restore command. Correct
+  geometry ownership and retain original normal-window monitor/DPI algorithms.
+- Preserve existing opening/closing/minimize/taskbar choreography. A stable-frame
+  implementation must explicitly suppress Windows state animations during those
+  custom transactions and verify their existing geometry/mask/opacity behavior.
+  This is a regression obligation, not an established no-impact guarantee.
+
+Reference: https://github.com/stdware/qwindowkit/blob/main/src/core/contexts/win32windowcontext.cpp
+Framework setup/lifecycle notes: https://github.com/stdware/qwindowkit/blob/main/README.md
+Microsoft SWP_NOCOPYBITS contract: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
+
+No library dependency, native plugin, source fix, or package change was made for
+this proposal. A compiled Qt-matched adapter may be appropriate if adopting the
+framework's full Qt/native integration. User observations, event ordering, real
+startup/WebEngine validation and protected-animation/mixed-DPI regression checks
+must establish whether this approach actually succeeds; no more screenshot
+collection is required.
+
+### Historical 2026-08-31 P0 notes — superseded by the source status above
 
 The earlier telemetry conclusion is superseded. `phaseLog()` is disabled
 unless verbose logging is enabled, and Qt debug/info messages are normally
@@ -101,7 +173,7 @@ If a defect remains, preserve logs/cspm.log from the failing run and inspect MAX
 | --- | --- | --- | --- |
 | Native splash and QML reveal | src/python/main.py; DetachedShellWindow.qml | Native splash hands into QML opening/bloom | Keep native splash authoritative until QML has a real ready frame; test on a real GPU after handoff changes |
 | Startup background work | DetachedShellWindow.qml; backend controllers | Deferred queue and quiet-time guard | Keep data/theme/dashboard work outside reveal and first-input budget; use timing evidence |
-| Maximize / restore | native_window_style.py; AppController; DetachedShellWindow.qml | Native HWND state; QML follows Windows events | Finish manual acceptance gate before altering another motion path |
+| Maximize / restore | native_window_state.py; AppController; DetachedShellWindow.qml | Native HWND state; QML follows Windows events | Finish manual acceptance gate before altering another motion path |
 | Restore by title-bar drag | DetachedShellWindow.qml | Separate cursor-anchored geometry path | Test separately; preserve pointer anchoring and do not add cinematic delay |
 | Dragging | DetachedShellWindow.qml | Native drag when available; 8 ms fallback cursor polling | Measure QML geometry cost; prefer native/event-driven motion over more polling |
 | Resizing | DetachedShellWindow.qml | Live resize with a 4 ms timer and effect reduction | Profile a dense view; coalesce to display cadence and avoid FBO/mask reallocation per tick |
@@ -181,6 +253,14 @@ For every state machine, document source state, visual owner, native geometry ch
 
 ## Change Log
 
+- 2026-10-01: Diagnosed the installed overlay path and added the scoped native
+  source bridge. After the user rejected an upper-left pre-jump, revised host
+  binding ownership, Qt/native frame agreement, and work-area client sizing.
+  Seventeen safe tests and outside-sandbox functional checks pass, but the
+  revised source recording still fails motion quality. Isolated probes identify
+  the transparent swapchain boundary; a scoped surface-preparation prototype
+  awaits full CSPM validation and manual acceptance.
+  Installed/dist packages remain unchanged by this source correction.
 - 2026-09-24: Scoped Invoice Builder responsiveness repair at the user's direction. Fixed-width settings/action rows now wrap within the available monitor width, and Zen Preview reuses a focus-mode preview/settings workspace without the left draft pane. This does not alter the Professional maximize/restore state machine or close its still-pending manual acceptance gate; the Invoice Builder layout has its own foreground monitor check pending.
 - 2026-09-10: Added a focused in-app quick-payment modal to Payment Entry at
   the user's direction. It uses the existing shared Popup/control styling and

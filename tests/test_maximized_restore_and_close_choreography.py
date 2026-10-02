@@ -54,7 +54,7 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     assert "var commandScreen = screenOverride ? screenOverride : monitorOwningWindowControl();" in maximize
     assert "maximizedOwnerScreen = commandScreen;" in maximize
     assert 'beginProfessionalWindowTransition("maximize"' in maximize
-    assert "requestProfessionalNativeWindowState" not in maximize
+    assert "requestProfessionalNativeState(true, null)" in maximize
 
     toggle = _function_body(
         shell,
@@ -101,10 +101,10 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     assert "var restoreScreen = restoreDestination ? restoreDestination.screen : null;" in restore
     assert "adoptTargetScreen(restoreScreen, true);" in restore
     assert 'beginProfessionalWindowTransition("restore"' in restore
-    assert "requestProfessionalNativeWindowState" not in restore
+    assert "requestProfessionalNativeState(false," in restore
 
 
-def test_professional_maximize_restore_uses_frozen_overlay_and_one_geometry_commit() -> None:
+def test_professional_maximize_restore_uses_native_state_with_non_windows_overlay_fallback() -> None:
     shell = (PROJECT_ROOT / "src" / "qml" / "DetachedShellWindow.qml").read_text(
         encoding="utf-8"
     )
@@ -156,8 +156,8 @@ def test_professional_maximize_restore_uses_frozen_overlay_and_one_geometry_comm
     )
     assert 'color: "transparent"' in window_setup
     assert "Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint" in window_setup
-    assert "width: hostW" in window_setup
-    assert "height: hostH" in window_setup
+    assert 'property: "width"; value: mainWin.hostW; when: !mainWin.professionalNativeWindowState' in window_setup
+    assert 'property: "height"; value: mainWin.hostH; when: !mainWin.professionalNativeWindowState' in window_setup
     assert "professionalWindowMotion" not in window_setup
 
     startup_show = _function_body(
@@ -169,9 +169,9 @@ def test_professional_maximize_restore_uses_frozen_overlay_and_one_geometry_comm
     assert "showMaximized" not in startup_show
 
     assert "ensure_professional_native_window_style" not in main_py
-    assert "requestProfessionalNativeWindowState" not in app_controller
-    assert "_uses_native_professional_window_state" not in win_shift
-    assert "professionalNativeWindow" not in shell
+    assert "def requestProfessionalNativeWindowState" in app_controller
+    assert "native_maximize_owns_monitor_move" in win_shift
+    assert "property bool professionalNativeWindowState: false" in shell
     assert "professionalWindowMotion" not in shell
     assert "roundedSurfaceMaskEnabled: unifiedChrome.cornerRadius > 0" in shell
     assert "farGlowEnabled: !(mainWin.lowPerformanceMode" in shell
