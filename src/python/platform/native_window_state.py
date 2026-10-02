@@ -24,6 +24,9 @@ WM_NCCALCSIZE = 0x0083
 WM_NCPAINT = 0x0085
 WM_NCACTIVATE = 0x0086
 WM_GETMINMAXINFO = 0x0024
+WM_WINDOWPOSCHANGING = 0x0046
+WM_NCUAHDRAWCAPTION = 0x00AE
+WM_NCUAHDRAWFRAME = 0x00AF
 DWMWA_TRANSITIONS_FORCEDISABLED = 3
 
 
@@ -42,6 +45,12 @@ class MINMAXINFO(ctypes.Structure):
     _fields_ = [("ptReserved", wintypes.POINT), ("ptMaxSize", wintypes.POINT),
                 ("ptMaxPosition", wintypes.POINT), ("ptMinTrackSize", wintypes.POINT),
                 ("ptMaxTrackSize", wintypes.POINT)]
+
+
+class WINDOWPOS(ctypes.Structure):
+    _fields_ = [("hwnd", wintypes.HWND), ("hwndInsertAfter", wintypes.HWND),
+                ("x", ctypes.c_int), ("y", ctypes.c_int),
+                ("cx", ctypes.c_int), ("cy", ctypes.c_int), ("flags", wintypes.UINT)]
 
 
 def uses_native_window_state(window):
@@ -86,10 +95,18 @@ class _NativeFrameFilter(QAbstractNativeEventFilter):
                     rect.right = min(rect.right, info.rcWork.right)
                     rect.bottom = min(rect.bottom, info.rcWork.bottom)
             return True, 0
-        if msg.message == WM_NCPAINT:
+        if msg.message in (WM_NCUAHDRAWCAPTION, WM_NCUAHDRAWFRAME):
             return True, 0
         if msg.message == WM_NCACTIVATE:
-            return True, 1
+            # Preserve Windows' activation bookkeeping without painting a
+            # system caption. Returning a constant skips that bookkeeping.
+            return True, session.user32.DefWindowProcW(msg.hWnd, msg.message, msg.wParam, -1)
+        if msg.message == WM_WINDOWPOSCHANGING and msg.lParam:
+            position = ctypes.cast(msg.lParam, ctypes.POINTER(WINDOWPOS)).contents
+            # Qt and Windows also issue frame refreshes; protect those, not
+            # just our own SetWindowPos call, from copying stale client pixels.
+            if position.flags & 0x0037 == 0x0037:
+                position.flags |= 0x0100  # SWP_NOCOPYBITS
         if msg.message == WM_GETMINMAXINFO:
             monitor = session.user32.MonitorFromWindow(session.hwnd, 2)
             info = MONITORINFO(); info.cbSize = ctypes.sizeof(info)
@@ -100,8 +117,9 @@ class _NativeFrameFilter(QAbstractNativeEventFilter):
                 mm.ptMaxSize.x = info.rcWork.right - info.rcWork.left
                 mm.ptMaxSize.y = info.rcWork.bottom - info.rcWork.top
                 mm.ptMaxTrackSize = mm.ptMaxSize
-                mm.ptMinTrackSize.x = max(1, session.window.minimumWidth())
-                mm.ptMinTrackSize.y = max(1, session.window.minimumHeight())
+                dpr = float(session.window.devicePixelRatio())
+                mm.ptMinTrackSize.x = max(1, round(session.window.minimumWidth() * dpr))
+                mm.ptMinTrackSize.y = max(1, round(session.window.minimumHeight() * dpr))
                 return True, 0
         return False, 0
 
@@ -110,6 +128,7 @@ class _NativeWindowSession(QObject):
     def __init__(self, window, event_filter):
         super().__init__(window)
         self.window = window
+        self.event_filter = event_filter
         self.hwnd = int(window.winId())
         self.frame_enabled = False
         self.original_flags = window.flags()
@@ -128,9 +147,12 @@ class _NativeWindowSession(QObject):
         u.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
         u.MonitorFromWindow.restype = wintypes.HANDLE
         u.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MONITORINFO)]
+        u.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        u.DefWindowProcW.restype = ctypes.c_ssize_t
         self.original_frame_bits = int(u.GetWindowLongPtrW(self.hwnd, -16)) & FRAME_STYLE
         self.original_extended_bits = int(u.GetWindowLongPtrW(self.hwnd, -20)) & 0x00080100
         event_filter.sessions[self.hwnd] = self
+        window._professional_native_window_session = self
         self.destroyed.connect(lambda: event_filter.sessions.pop(self.hwnd, None))
         for name in ("isClosingChanged", "isMinimizingChanged",
                      "isRestoringFromMinimizeChanged", "animationPhaseChanged"):
@@ -153,6 +175,11 @@ class _NativeWindowSession(QObject):
             self.window.setFlags(flags)
         else:
             self.window.setFlags(self.original_flags)
+        current_hwnd = int(self.window.winId())
+        if current_hwnd != self.hwnd:
+            self.event_filter.sessions.pop(self.hwnd, None)
+            self.hwnd = current_hwnd
+            self.event_filter.sessions[self.hwnd] = self
         style = int(self.user32.GetWindowLongPtrW(self.hwnd, -16))
         bits = FRAME_STYLE if enabled else self.original_frame_bits
         self.user32.SetWindowLongPtrW(self.hwnd, -16, (style & ~FRAME_STYLE) | bits)
@@ -179,17 +206,21 @@ class _NativeWindowSession(QObject):
                          ("isClosing", "isMinimizing", "isRestoringFromMinimize")))
         if not (custom or force) or not self.frame_enabled:
             return
-        w.setProperty("professionalNativeWindowState", False)
         # Retain the visible rectangle and QML's UI state while surrendering
         # native maximized state to the existing custom animation controller.
         geometry = QRect(w.geometry())
+        w.setProperty("professionalNativeGeometrySyncInProgress", True)
         self.disable_dwm_transition(True)
         try:
             if w.windowState() == Qt.WindowMaximized:
                 w.setWindowState(Qt.WindowNoState)
-                w.setGeometry(geometry)
             self.set_frame_enabled(False)
+            # Flag changes can change Qt's client rectangle too. Restore it
+            # after the frame change, before re-enabling QML's host bindings.
+            w.setGeometry(geometry)
+            w.setProperty("professionalNativeWindowState", False)
         finally:
+            w.setProperty("professionalNativeGeometrySyncInProgress", False)
             self.disable_dwm_transition(False)
 
     def request(self, maximized, restored_rect):
@@ -206,6 +237,9 @@ class _NativeWindowSession(QObject):
                 self.user32.ShowWindow(self.hwnd, 3)
             finally:
                 self.disable_dwm_transition(False)
+        if not maximized:
+            # The QML restore rectangle is authoritative after custom movement
+            # and DPI remapping; native placement may retain an older frame.
             self.seed_normal_placement(restored_rect)
         if maximized:
             w.showMaximized()
@@ -255,7 +289,9 @@ def request_native_window_state(window, maximized, restored_rect):
         event_filter = _NativeFrameFilter()
         app.installNativeEventFilter(event_filter)
         app._professional_native_frame_filter = event_filter
-    session = event_filter.sessions.get(int(window.winId()))
+    session = getattr(window, "_professional_native_window_session", None)
+    if session is None:
+        session = event_filter.sessions.get(int(window.winId()))
     if session is None:
         session = _NativeWindowSession(window, event_filter)
     return session.request(bool(maximized), restored_rect)

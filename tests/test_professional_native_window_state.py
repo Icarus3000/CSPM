@@ -57,7 +57,9 @@ def test_restored_interaction_returns_geometry_ownership_without_a_window_state_
     session.set_frame_enabled = lambda enabled: operations.append(("frame", enabled))
     session.release_for_custom_transition(force=True)
     assert properties["professionalNativeWindowState"] is False
-    assert operations == [("dwm-disabled", True), ("frame", False), ("dwm-disabled", False)]
+    assert operations == [("dwm-disabled", True), ("frame", False),
+                          ("geometry", QRect(-1500, 80, 900, 650)), ("dwm-disabled", False)]
+    assert properties["professionalNativeGeometrySyncInProgress"] is False
 
 
 @pytest.mark.parametrize("flag", ["isClosing", "isMinimizing", "isRestoringFromMinimize"])
@@ -79,7 +81,56 @@ def test_custom_transition_releases_native_state_without_moving_the_visible_wind
     session.release_for_custom_transition()
     assert properties["professionalNativeWindowState"] is False
     assert operations == [("dwm-disabled", True), ("state", Qt.WindowNoState),
-                          ("geometry", geometry), ("frame", False), ("dwm-disabled", False)]
+                          ("frame", False), ("geometry", geometry), ("dwm-disabled", False)]
+
+
+def test_geometry_bindings_are_suspended_until_custom_frame_and_bounds_are_restored():
+    properties = {"animationPhase": "settled", "professionalNativeWindowState": True}
+    bounds = [QRect(400, 200, 1100, 760)]
+    window = SimpleNamespace(property=lambda key: properties.get(key),
+                             setProperty=lambda key, value: properties.update({key: value}),
+                             geometry=lambda: bounds[0], windowState=lambda: Qt.WindowNoState,
+                             setGeometry=lambda rect: bounds.__setitem__(0, rect))
+    session = session_for(window)
+    session.disable_dwm_transition = lambda _: None
+
+    def frame_change(_):
+        assert properties["professionalNativeWindowState"] is True
+        assert properties["professionalNativeGeometrySyncInProgress"] is True
+        bounds[0] = QRect(392, 169, 1116, 799)  # Native frame margin change.
+
+    session.set_frame_enabled = frame_change
+    session.release_for_custom_transition(force=True)
+    assert bounds[0] == QRect(400, 200, 1100, 760)
+    assert properties["professionalNativeWindowState"] is False
+
+
+@pytest.mark.parametrize("message", [native.WM_NCUAHDRAWCAPTION, native.WM_NCUAHDRAWFRAME])
+def test_native_themed_caption_paint_cannot_leak_over_custom_header(message):
+    event_filter = native._NativeFrameFilter()
+    event_filter.sessions[123] = SimpleNamespace(frame_enabled=True)
+    msg = native.wintypes.MSG(hWnd=123, message=message)
+    assert event_filter.nativeEventFilter(b"windows_generic_MSG", ctypes.addressof(msg)) == (True, 0)
+
+
+def test_windows_initiated_frame_refresh_discards_stale_copied_pixels():
+    event_filter = native._NativeFrameFilter()
+    event_filter.sessions[123] = SimpleNamespace(frame_enabled=True)
+    position = native.WINDOWPOS(flags=0x37)
+    msg = native.wintypes.MSG(hWnd=123, message=native.WM_WINDOWPOSCHANGING,
+                             lParam=ctypes.addressof(position))
+    assert event_filter.nativeEventFilter(b"windows_generic_MSG", ctypes.addressof(msg)) == (False, 0)
+    assert position.flags == 0x137
+
+
+def test_activation_updates_windows_state_without_repainting_native_caption():
+    calls = []
+    event_filter = native._NativeFrameFilter()
+    event_filter.sessions[123] = SimpleNamespace(frame_enabled=True,
+        user32=SimpleNamespace(DefWindowProcW=lambda *args: calls.append(args) or 1))
+    msg = native.wintypes.MSG(hWnd=123, message=native.WM_NCACTIVATE, wParam=1)
+    assert event_filter.nativeEventFilter(b"windows_generic_MSG", ctypes.addressof(msg)) == (True, 1)
+    assert calls == [(123, native.WM_NCACTIVATE, 1, -1)]
 
 
 def test_mixed_dpi_normal_placement_uses_monitor_relative_coordinates_and_workspace_offset():

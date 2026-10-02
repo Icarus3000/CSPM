@@ -99,6 +99,13 @@ Window {
     // True only while Windows owns the settled maximize/restore contract.
     // Custom launch/close/taskbar sequences release it before moving the host.
     property bool professionalNativeWindowState: false
+    property bool professionalNativeWindowStateEnabled: false
+    property bool professionalInWindowTransitionEnabled: true
+    property int professionalWindowTransitionTargetX: 0
+    property int professionalWindowTransitionTargetY: 0
+    property int professionalWindowTransitionTargetW: 0
+    property int professionalWindowTransitionTargetH: 0
+    property alias contentLayerRef: contentLayer
     property int professionalNativeRestorePadding: 0
     property bool professionalNativeGeometrySyncInProgress: false
 
@@ -3345,12 +3352,16 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (maximizeRestoreFxAnimation.running) {
             maximizeRestoreFxAnimation.stop();
         }
+        if (professionalInWindowTransitionAnimation.running) {
+            professionalInWindowTransitionAnimation.stop();
+        }
         resetMaximizeFxState();
     }
 
     function maximizeFxSequenceRunning() {
         return maximizeFxAnimation.running
-            || maximizeRestoreFxAnimation.running;
+            || maximizeRestoreFxAnimation.running
+            || professionalInWindowTransitionAnimation.running;
     }
 
     function finishMaximizeFxSequence(kind) {
@@ -3513,6 +3524,185 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         return true;
     }
 
+    ParallelAnimation {
+        id: professionalInWindowTransitionAnimation
+        running: false
+
+        property real fromX: 0
+        property real toX: 0
+        property real fromY: 0
+        property real toY: 0
+        property real fromW: 1
+        property real toW: 1
+        property real fromH: 1
+        property real toH: 1
+
+        NumberAnimation {
+            target: mainWin
+            property: "maximizeRenderX"
+            from: professionalInWindowTransitionAnimation.fromX
+            to: professionalInWindowTransitionAnimation.toX
+            duration: mainWin.lowPerformanceMode ? 140 : 220
+            easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+            target: mainWin
+            property: "maximizeRenderY"
+            from: professionalInWindowTransitionAnimation.fromY
+            to: professionalInWindowTransitionAnimation.toY
+            duration: mainWin.lowPerformanceMode ? 140 : 220
+            easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+            target: mainWin
+            property: "maximizeRenderW"
+            from: professionalInWindowTransitionAnimation.fromW
+            to: professionalInWindowTransitionAnimation.toW
+            duration: mainWin.lowPerformanceMode ? 140 : 220
+            easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+            target: mainWin
+            property: "maximizeRenderH"
+            from: professionalInWindowTransitionAnimation.fromH
+            to: professionalInWindowTransitionAnimation.toH
+            duration: mainWin.lowPerformanceMode ? 140 : 220
+            easing.type: Easing.OutCubic
+        }
+
+        onFinished: {
+            mainWin.finishProfessionalInWindowTransition();
+        }
+    }
+
+    function startProfessionalInWindowTransition(sequence, kind, sourceRect, targetRect, targetScreenOverride) {
+        if (maximizeFxAnimation.running) maximizeFxAnimation.stop();
+        if (maximizeRestoreFxAnimation.running) maximizeRestoreFxAnimation.stop();
+        professionalInWindowTransitionAnimation.stop();
+
+        var restoring = (kind === "restore");
+        var sourceX = Math.round(sourceRect.x);
+        var sourceY = Math.round(sourceRect.y);
+        var sourceW = Math.max(1, Math.round(sourceRect.w));
+        var sourceH = Math.max(1, Math.round(sourceRect.h));
+
+        var targetX = Math.round(targetRect.x);
+        var targetY = Math.round(targetRect.y);
+        var targetW = Math.max(1, Math.round(targetRect.w));
+        var targetH = Math.max(1, Math.round(targetRect.h));
+
+        professionalWindowTransitionTargetX = targetX;
+        professionalWindowTransitionTargetY = targetY;
+        professionalWindowTransitionTargetW = targetW;
+        professionalWindowTransitionTargetH = targetH;
+
+        maximizeStartFinalX = sourceX;
+        maximizeStartFinalY = sourceY;
+        maximizeStartFinalW = sourceW;
+        maximizeStartFinalH = sourceH;
+
+        maximizeTargetFinalX = targetX;
+        maximizeTargetFinalY = targetY;
+        maximizeTargetFinalW = targetW;
+        maximizeTargetFinalH = targetH;
+
+        maximizeRenderX = sourceX;
+        maximizeRenderY = sourceY;
+        maximizeRenderW = sourceW;
+        maximizeRenderH = sourceH;
+
+        restoreTargetFinalX = targetX;
+        restoreTargetFinalY = targetY;
+        restoreTargetFinalW = targetW;
+        restoreTargetFinalH = targetH;
+
+        maximizeAnimInProgress = true;
+        geometryTransitionSuppressed = true;
+
+        if (targetScreenOverride) {
+            adoptTargetScreen(targetScreenOverride, true);
+        } else {
+            updateTargetScreenFromFinalCenter();
+        }
+        refreshActiveVisibleRect();
+
+        if (!restoring) {
+            uiMaximized = true;
+            hostW = targetW;
+            hostH = targetH;
+            hostX = targetX;
+            hostY = targetY;
+            canvasW = targetW;
+            canvasH = targetH;
+            canvasX = targetX;
+            canvasY = targetY;
+        } else {
+            uiMaximized = false;
+            hostW = sourceW;
+            hostH = sourceH;
+            hostX = sourceX;
+            hostY = sourceY;
+            canvasW = sourceW;
+            canvasH = sourceH;
+            canvasX = sourceX;
+            canvasY = sourceY;
+        }
+
+        canvasLocalX = 0;
+        canvasLocalY = 0;
+        contentLocalX = 0;
+        contentLocalY = 0;
+
+        professionalInWindowTransitionAnimation.fromX = sourceX;
+        professionalInWindowTransitionAnimation.toX = targetX;
+        professionalInWindowTransitionAnimation.fromY = sourceY;
+        professionalInWindowTransitionAnimation.toY = targetY;
+        professionalInWindowTransitionAnimation.fromW = sourceW;
+        professionalInWindowTransitionAnimation.toW = targetW;
+        professionalInWindowTransitionAnimation.fromH = sourceH;
+        professionalInWindowTransitionAnimation.toH = targetH;
+        professionalInWindowTransitionAnimation.restart();
+    }
+
+    function finishProfessionalInWindowTransition() {
+        var kind = professionalWindowTransitionKind;
+        var restoring = (kind === "restore");
+
+        finalX = mainWin.professionalWindowTransitionTargetX;
+        finalY = mainWin.professionalWindowTransitionTargetY;
+        finalW = Math.max(1, mainWin.professionalWindowTransitionTargetW);
+        finalH = Math.max(1, mainWin.professionalWindowTransitionTargetH);
+        uiMaximized = !restoring;
+
+        maximizeAnimInProgress = false;
+        professionalWindowTransitionActive = false;
+        professionalWindowTransitionKind = "";
+        professionalWindowTransitionTarget = null;
+        professionalWindowTransitionScreen = null;
+        geometryTransitionSuppressed = false;
+
+        applyHostEnvelopeForTarget();
+        updateCanvasGeometry();
+
+        if (restoring) {
+            maximizedOwnerScreen = null;
+            rememberRestoreGeometry();
+        }
+
+        var tag = restoring ? "RESTORE-MAX" : "MAXIMIZE";
+        phaseLog(tag, "In-window GPU transition settled elapsed="
+            + Math.max(0, Math.round(Date.now() - professionalWindowTransitionStartedMs)) + " ms");
+        logGreenFrameGeometry(tag, "In-window GPU transition settled");
+
+        if (!mainWin.detachedMode) {
+            persistMainWindowLayout();
+        }
+        if (sfxBusRef && sfxBusRef.playWindowSettle) {
+            sfxBusRef.playWindowSettle(restoring ? "restore" : "maximize",
+                restoring ? 0.66 : 0.70);
+        }
+    }
+
     function beginProfessionalWindowTransition(kind, sourceRect, targetRect,
             targetScreenOverride) {
         if (professionalWindowTransitionActive || !sourceRect || !targetRect) return false;
@@ -3525,10 +3715,15 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         professionalWindowTransitionScreen = targetScreenOverride;
         professionalWindowTransitionStartedMs = Date.now();
         var tag = kind === "restore" ? "RESTORE-MAX" : "MAXIMIZE";
-        phaseLog(tag, "Frozen overlay capture requested "
+        phaseLog(tag, "In-window GPU transition requested "
             + fmtRect(sourceRect.x, sourceRect.y, sourceRect.w, sourceRect.h)
             + " -> " + fmtRect(targetRect.x, targetRect.y,
                 targetRect.w, targetRect.h));
+
+        if (mainWin.professionalInWindowTransitionEnabled) {
+            startProfessionalInWindowTransition(sequence, kind, sourceRect, targetRect, targetScreenOverride);
+            return true;
+        }
 
         // Match MinimizeOverlay's proven live-content fallback. The replica is
         // laid out once at the source size and transformed as one texture; it
@@ -7351,7 +7546,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     function maximizeWindowToVisibleRect(screenOverride) {
         if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize || maximizeAnimInProgress) return false;
         if (appStyle === "Professional" && Qt.platform.os === "windows") {
-            return requestProfessionalNativeState(true, null);
+            if (professionalNativeWindowStateEnabled && requestProfessionalNativeState(true, null)) {
+                return true;
+            }
         }
         logGreenFrameGeometry("MAXIMIZE", "Pre-maximize snapshot");
         var sourceX = Math.round(finalX);
@@ -7572,8 +7769,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     function restoreFromMaximized(cursorPos, cursorAnchored) {
         if (!uiMaximized || maximizeAnimInProgress) return false;
         if (appStyle === "Professional" && Qt.platform.os === "windows" && !cursorAnchored) {
-            return requestProfessionalNativeState(false,
-                resolveRestoreRectFromMaximized(null, false));
+            if (professionalNativeWindowStateEnabled && requestProfessionalNativeState(false,
+                    resolveRestoreRectFromMaximized(null, false))) {
+                return true;
+            }
         }
         var sourceX = Math.round(finalX);
         var sourceY = Math.round(finalY);
@@ -9679,24 +9878,23 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // CONTENT LAYER - Position within canvas keeps window pixels fixed
         Item {
             id: contentLayer
-            // Windows Professional maximize/restore is owned by DWM. The
-            // compatibility overlay and Console transforms stay separate.
-            x: (mainWin.maximizeAnimInProgress && !mainWin.professionalWindowTransitionActive
+            // Windows Professional maximize/restore uses GPU transform on contentLayer.
+            x: mainWin.maximizeAnimInProgress
                 ? Math.round(mainWin.maximizeRenderX - mainWin.hostX)
-                : mainWin.contentLocalX)
-            y: (mainWin.maximizeAnimInProgress && !mainWin.professionalWindowTransitionActive
+                : mainWin.contentLocalX
+            y: mainWin.maximizeAnimInProgress
                 ? Math.round(mainWin.maximizeRenderY - mainWin.hostY)
-                : mainWin.contentLocalY)
-            width: (mainWin.maximizeAnimInProgress && !mainWin.professionalWindowTransitionActive
+                : mainWin.contentLocalY
+            width: mainWin.maximizeAnimInProgress
                 ? Math.max(1, Math.round(mainWin.maximizeStartFinalW))
                 : (mainWin.userResizeInProgress
                     ? Math.max(1, Math.round(mainWin.resizeStartFinalW))
-                    : mainWin.finalW))
-            height: (mainWin.maximizeAnimInProgress && !mainWin.professionalWindowTransitionActive
+                    : mainWin.finalW)
+            height: mainWin.maximizeAnimInProgress
                 ? Math.max(1, Math.round(mainWin.maximizeStartFinalH))
                 : (mainWin.userResizeInProgress
                     ? Math.max(1, Math.round(mainWin.resizeStartFinalH))
-                    : mainWin.finalH))
+                    : mainWin.finalH)
             clip: !(mainWin.animationPhase === "opening"
                 || mainWin.startupPhase === "falling-window"
                 || mainWin.startupCinematicBloomActive)
@@ -9719,9 +9917,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         ? mainWin.startupCinematicBloomScale
                         : (mainWin.animationPhase === "opening"
                         ? animationCanvasLayer.openingRenderScaleX
-                        : ((mainWin.maximizeAnimInProgress
-                                && !mainWin.professionalWindowTransitionActive
-                                && contentLayer.width > 0)
+                        : ((mainWin.maximizeAnimInProgress && contentLayer.width > 0)
                             ? (mainWin.maximizeRenderW / contentLayer.width)
                             : ((mainWin.userResizeInProgress && contentLayer.width > 0)
                                 ? (mainWin.finalW / contentLayer.width)
@@ -9730,9 +9926,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         ? mainWin.startupCinematicBloomScale
                         : (mainWin.animationPhase === "opening"
                         ? animationCanvasLayer.openingRenderScaleY
-                        : ((mainWin.maximizeAnimInProgress
-                                && !mainWin.professionalWindowTransitionActive
-                                && contentLayer.height > 0)
+                        : ((mainWin.maximizeAnimInProgress && contentLayer.height > 0)
                             ? (mainWin.maximizeRenderH / contentLayer.height)
                             : ((mainWin.userResizeInProgress && contentLayer.height > 0)
                                 ? (mainWin.finalH / contentLayer.height)

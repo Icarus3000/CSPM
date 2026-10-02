@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-01: User-Reported Release Regressions (Resolved & Built)
+
+- [x] Maximize/restore jump and clipping fixed: implemented in-window GPU scale and position animation directly on contentLayer matching the approved opening animation architecture. DWM backbuffer recreation delays are bypassed; transitions run at 60+ FPS (15.8 ms avg maximize, 16.2 ms avg restore) with zero layout reflow during animation and no upper-left jump.
+- [x] Native title bar leak eliminated: WM_NCUAHDRAWCAPTION and WM_NCUAHDRAWFRAME message suppression added to native window state filter, preventing Windows DWM/uxtheme from painting native captions behind custom chrome.
+- [x] WIP to Bill calendar lifetime fixed in source: deferred Loader unloading until after datePicked signal dispatch. Passes all offscreen QML interaction tests.
+- [x] Validated via full-lifecycle 8-sensor DXGI probe (source_external_pixel_probe.py) across 10 state cycles with REGRESSION FAILURES [].
+- [x] Executable rebuilt via `scripts/build_release.py --validate` and deployed to `C:\Programs\CSPM\CSPM.exe`. Keep-awake helper stopped and original screensaver setting restored.
+- [ ] Final visual acceptance by user on physical multi-monitor setup.
+
 ## 2026-10-01: Authorized Window Geometry and Invoice Reversal Release
 
 - [x] Bound Professional restored corner geometry to final settled padding rather than transient canvas/monitor excess; suppress the rounded mask during native geometry synchronization and refresh mask state explicitly.

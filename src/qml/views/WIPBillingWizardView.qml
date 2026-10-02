@@ -794,11 +794,22 @@ Item {
         })
     }
 
+    function releaseHiddenCalendar(calendar) {
+        // JellyCalendar hides before emitting datePicked. Wait until that
+        // signal has reached the workbench before destroying its Loader item.
+        Qt.callLater(function() {
+            if (wipCalendarLoader.item === calendar && !calendar.visible) {
+                wipCalendarLoader.active = false
+            }
+        })
+    }
+
     Loader {
         id: wipCalendarLoader
         active: false
         sourceComponent: Component {
             JellyCalendar {
+                id: wipCalendar
                 visible: false
                 t: root.t
                 metrics: null
@@ -811,15 +822,14 @@ Item {
                         root.toDateFilter = iso
                     }
                     root._syncDatePreset()
-                    wipCalendarLoader.active = false
                 }
                 onVisibleChanged: {
                     if (!visible) {
-                        wipCalendarLoader.active = false
+                        root.releaseHiddenCalendar(wipCalendar)
                     }
                 }
                 onClosing: function(close_event) {
-                    wipCalendarLoader.active = false
+                    root.releaseHiddenCalendar(wipCalendar)
                 }
             }
         }
@@ -1926,6 +1936,7 @@ Item {
 
                             TextField {
                                 id: fromDateInput
+                                objectName: "WIPFromDateInput"
                                 text: root.fromDateFilter
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
@@ -2029,6 +2040,7 @@ Item {
 
                             TextField {
                                 id: toDateInput
+                                objectName: "WIPToDateInput"
                                 text: root.toDateFilter
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true

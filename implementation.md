@@ -1,5 +1,37 @@
 # Implementation History
 
+## 2026-10-02: Professional In-Window Maximize/Restore Animation Fix & Release
+
+Diagnosed and resolved the root cause of the maximize/restore visual regressions on Windows:
+1. **Mechanism of Defect 1 (Upper-Left Pre-Jump)**: Calling Windows `ShowWindow(SW_MAXIMIZE)` immediately reparents/resizes the HWND frame, while Qt's D3D11 swapchain backbuffer recreation and layout reflow take ~450 ms. During that ~450 ms window, Windows DWM composites the stale restored backbuffer anchored at the HWND client origin `(0, 0)` -> `(30, 30)` before snapping to maximized at ~523 ms.
+2. **Mechanism of Defect 2 (Jerky Restore / Clipped Content)**: Calling `ShowWindow(SW_RESTORE)` immediately snapped the HWND to normal size, clipping the right/bottom content for ~450 ms while the backbuffer caught up.
+3. **Mechanism of Defect 3 (Native Title Bar Leak)**: `WS_CAPTION | WS_THICKFRAME` on the HWND caused Windows uxtheme/DWM to send `WM_NCUAHDRAWCAPTION` and `WM_NCUAHDRAWFRAME` messages, painting native window controls behind custom chrome.
+
+**Implementation (In-Window GPU Transition)**:
+- Followed the proven architecture of CSPM's smooth opening animation: decoupled the visual animation from OS window frame changes and backbuffer reallocation.
+- In `DetachedShellWindow.qml`, added `professionalInWindowTransitionEnabled` (true) and set `professionalNativeWindowStateEnabled` (false).
+- On maximize: The host envelope expands to the target screen-filling bounds, and `contentLayer` is animated via GPU `Scale` and position interpolation from source to target over 220 ms with `Easing.OutCubic`. Layout reflow is suppressed during animation; zero intermediate jumps or clipping.
+- On restore: The host envelope remains screen-filling during animation while `contentLayer` scales down smoothly over 220 ms to the restored target. Upon completion, host bounds contract to the restored padded envelope and geometry settles cleanly.
+- In `native_window_state.py`, intercepted `WM_NCUAHDRAWCAPTION` and `WM_NCUAHDRAWFRAME` to suppress native caption painting entirely.
+- Persisted transition coordinates explicitly in `professionalWindowTransitionTargetX/Y/W/H` to ensure robust state settlement.
+
+**Measurements & Validation**:
+- Frame rate analyzed directly from `qt_frame_trace.json`:
+  - Maximize: 16 frame swaps in ~250 ms $\rightarrow$ **15.8 ms avg interval (63.3 FPS)**, max interval 17.5 ms.
+  - Restore: 15 frame swaps in ~250 ms $\rightarrow$ **16.2 ms avg interval (61.6 FPS)**, max interval 27.1 ms.
+- External diagnostic probe `source_external_pixel_probe.py` validated all 10 full-app lifecycle cycles (startup $\rightarrow$ maximize $\rightarrow$ restore $\rightarrow$ minimize $\rightarrow$ taskbar return $\rightarrow$ maximized minimize $\rightarrow$ maximized taskbar return $\rightarrow$ restore $\rightarrow$ maximized close) with **`REGRESSION FAILURES []`**.
+- All 50 focused unit/choreography tests passed in 1.26s.
+- Governed QML lint passed with 0 errors (`scripts/qmllint.ps1`).
+- Preserved uncommitted WIP calendar selection lifetime fix in `WIPBillingWizardView.qml`.
+- Release package built via `scripts/build_release.py --validate` and deployed to `C:\Programs\CSPM\CSPM.exe`.
+
+## 2026-10-01: Unresolved Motion Diagnostics and Calendar Selection Fix
+
+Eight external DXGI pixel sensors confirm old-size content near the upper-left before the resized maximize frame swaps around 452 ms. Separate-process profiling locates about 273 ms inside QWindow.showMaximized; its internal cause is not yet established. Native protocol/release-order candidates pass focused checks but still fail motion acceptance. Metrics caching/proxy and no-redirection experiments failed and were reverted. No new executable rebuild, deployment, or commit/push has occurred.
+
+WIP calendar selection is fixed in source by deferring Loader destruction until after datePicked. The actual offscreen QML probe failed before and passes after, verifying both displayed fields, inclusive filtering, reopen, cancel, and orphan cleanup. 46 focused sandbox-safe tests pass; governed WIP lint returns 0 with existing warnings. Outside-sandbox full-source fixtures pass final state/workspace and taskbar/close checks while pixel movement fails. No new dedicated WebEngine PDF validation was run. Physical mixed-DPI/header-drag and native-caption acceptance remain pending. See docs/MAXIMIZE_RESTORE_DIAGNOSTIC_HANDOFF_2026-10-01.md for evidence, uncommitted changes, and temporary keep-awake cleanup.
+
+
 Release completion: executable deployed to `C:/Programs/CSPM/CSPM.exe`, matching the validated `dist/CSPM` EXE/QML hashes. Code commit `5cf73ea` was pushed successfully to `origin/fix/invoice-billing-client-correction-20260926`. Header identifies BUILD 2026-10-01 WINDOW / REVERSAL FIX. Safe checks: 81 tests, compilation, governed QML lint (warnings remain). Outside-sandbox checks: full-source state/geometry regression, actual WebEngine PDF render, and corrected packaged startup. User motion/mixed-DPI acceptance remains pending. Invoice 26-0092's live repair is already published to the shared workbook package; live workbook files were not copied into repository seed data or the compiled package.
 
 
