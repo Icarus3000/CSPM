@@ -104,7 +104,7 @@ def test_maximize_and_restore_follow_the_current_native_window_monitor() -> None
     assert "requestProfessionalNativeState(false," in restore
 
 
-def test_professional_maximize_restore_uses_native_state_with_non_windows_overlay_fallback() -> None:
+def test_professional_maximize_restore_keeps_frameless_host_and_frozen_surface_handoff() -> None:
     shell = (PROJECT_ROOT / "src" / "qml" / "DetachedShellWindow.qml").read_text(
         encoding="utf-8"
     )
@@ -119,11 +119,24 @@ def test_professional_maximize_restore_uses_native_state_with_non_windows_overla
     begin = _function_body(
         shell,
         "    function beginProfessionalWindowTransition(kind, sourceRect, targetRect,",
-        "    function resetDragFxState() {",
+        "    function captureProfessionalTransitionSurface(sequence, kind, sourceRect,",
     )
     assert "contentLayer.grabToImage(function(result)" not in begin
+    assert "return captureProfessionalTransitionSurface(sequence, kind," in begin
     assert "createProfessionalWindowTransitionOverlay(sequence," in begin
     assert "completeProfessionalWindowTransitionDirect(sequence," in begin
+
+    capture = _function_body(
+        shell,
+        "    function captureProfessionalTransitionSurface(sequence, kind, sourceRect,",
+        "    function resetDragFxState() {",
+    )
+    assert "contentLayer.grabToImage(function(result)" in capture
+    assert capture.index("surface.sourcePresented.connect") < capture.index("mainWin.opacity = 0.0;")
+    assert capture.index("surface.motionStarted.connect") < capture.index("mainWin.commitProfessionalWindowTransitionTarget")
+    assert capture.index("surface.targetPresented.connect") < capture.index("mainWin.opacity = 1.0;")
+    assert "surface.expectLiveTarget();" in capture
+    assert "professionalSurfaceWatchdog" in capture
 
     create_overlay = _function_body(
         shell,

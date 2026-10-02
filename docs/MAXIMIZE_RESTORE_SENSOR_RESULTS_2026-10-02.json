@@ -1,0 +1,219 @@
+{
+  "baseline_commit": "3ea0d7d",
+  "fixture": "1920x1040 work area; restored 1100x760; synthetic restored movements after cycles 3 and 7",
+  "pixel_sample_count": 1208,
+  "functional_failures": [],
+  "visual_acceptance": "pending",
+  "transitions": [
+    {
+      "index": 0,
+      "kind": "maximize",
+      "samples": 43,
+      "top_left_detected": 42,
+      "top_left_x_range": [
+        18,
+        338
+      ],
+      "top_left_y_range": [
+        18,
+        158
+      ],
+      "surface_frame_count": 30,
+      "surface_frame_gap_median_ms": 16.8,
+      "surface_frame_gap_max_ms": 365.5,
+      "handoff_ms": {
+        "sourcePresented": 120,
+        "targetPresented": 762
+      }
+    },
+    {
+      "index": 1,
+      "kind": "restore",
+      "samples": 41,
+      "top_left_detected": 38,
+      "top_left_x_range": [
+        18,
+        338
+      ],
+      "top_left_y_range": [
+        18,
+        158
+      ],
+      "surface_frame_count": 29,
+      "surface_frame_gap_median_ms": 17.3,
+      "surface_frame_gap_max_ms": 362.7,
+      "handoff_ms": {
+        "sourcePresented": 168,
+        "targetPresented": 810
+      }
+    },
+    {
+      "index": 2,
+      "kind": "maximize",
+      "samples": 47,
+      "top_left_detected": 46,
+      "top_left_x_range": [
+        18,
+        338
+      ],
+      "top_left_y_range": [
+        18,
+        158
+      ],
+      "surface_frame_count": 30,
+      "surface_frame_gap_median_ms": 16.8,
+      "surface_frame_gap_max_ms": 323.0,
+      "handoff_ms": {
+        "sourcePresented": 131,
+        "targetPresented": 736
+      }
+    },
+    {
+      "index": 3,
+      "kind": "restore",
+      "samples": 44,
+      "top_left_detected": 41,
+      "top_left_x_range": [
+        18,
+        338
+      ],
+      "top_left_y_range": [
+        18,
+        158
+      ],
+      "surface_frame_count": 30,
+      "surface_frame_gap_median_ms": 16.7,
+      "surface_frame_gap_max_ms": 340.1,
+      "handoff_ms": {
+        "sourcePresented": 154,
+        "targetPresented": 787
+      }
+    },
+    {
+      "index": 4,
+      "kind": "maximize",
+      "samples": 43,
+      "top_left_detected": 42,
+      "top_left_x_range": [
+        18,
+        384
+      ],
+      "top_left_y_range": [
+        18,
+        178
+      ],
+      "surface_frame_count": 29,
+      "surface_frame_gap_median_ms": 16.6,
+      "surface_frame_gap_max_ms": 293.0,
+      "handoff_ms": {
+        "sourcePresented": 100,
+        "targetPresented": 665
+      }
+    },
+    {
+      "index": 5,
+      "kind": "restore",
+      "samples": 49,
+      "top_left_detected": 46,
+      "top_left_x_range": [
+        18,
+        384
+      ],
+      "top_left_y_range": [
+        18,
+        178
+      ],
+      "surface_frame_count": 30,
+      "surface_frame_gap_median_ms": 17.0,
+      "surface_frame_gap_max_ms": 358.2,
+      "handoff_ms": {
+        "sourcePresented": 152,
+        "targetPresented": 823
+      }
+    },
+    {
+      "index": 6,
+      "kind": "maximize",
+      "samples": 45,
+      "top_left_detected": 44,
+      "top_left_x_range": [
+        18,
+        384
+      ],
+      "top_left_y_range": [
+        18,
+        178
+      ],
+      "surface_frame_count": 29,
+      "surface_frame_gap_median_ms": 16.7,
+      "surface_frame_gap_max_ms": 314.9,
+      "handoff_ms": {
+        "sourcePresented": 109,
+        "targetPresented": 711
+      }
+    },
+    {
+      "index": 7,
+      "kind": "restore",
+      "samples": 43,
+      "top_left_detected": 41,
+      "top_left_x_range": [
+        18,
+        384
+      ],
+      "top_left_y_range": [
+        18,
+        178
+      ],
+      "surface_frame_count": 30,
+      "surface_frame_gap_median_ms": 16.8,
+      "surface_frame_gap_max_ms": 327.6,
+      "handoff_ms": {
+        "sourcePresented": 134,
+        "targetPresented": 739
+      }
+    },
+    {
+      "index": 8,
+      "kind": "maximize",
+      "samples": 48,
+      "top_left_detected": 47,
+      "top_left_x_range": [
+        18,
+        428
+      ],
+      "top_left_y_range": [
+        18,
+        198
+      ],
+      "surface_frame_count": 29,
+      "surface_frame_gap_median_ms": 17.6,
+      "surface_frame_gap_max_ms": 332.8,
+      "handoff_ms": {
+        "sourcePresented": 134,
+        "targetPresented": 763
+      }
+    },
+    {
+      "index": 9,
+      "kind": "restore",
+      "samples": 45,
+      "top_left_detected": 41,
+      "top_left_x_range": [
+        18,
+        428
+      ],
+      "top_left_y_range": [
+        18,
+        198
+      ],
+      "surface_frame_count": 30,
+      "surface_frame_gap_median_ms": 16.6,
+      "surface_frame_gap_max_ms": 336.0,
+      "handoff_ms": {
+        "sourcePresented": 138,
+        "targetPresented": 753
+      }
+    }
+  ]
+}

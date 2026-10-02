@@ -2,6 +2,10 @@
 
 Status: Active user-directed priority as of 2026-08-20.
 
+## Latest continuation point — 2026-10-02
+
+The older native-path implementation description below is historical. Gemini's subsequent in-window release was also rejected; its header-only pixel capture did not validate motion. The latest candidate uses one captured image of the existing shell in a fixed frameless surface, with render-thread shader motion and submitted-frame handoff gates. Ten real desktop toggles pass functional checks; eight pixel sensors no longer reproduce the previous large jumps. Full handoff still takes approximately 0.9–1.0 seconds, and user speed/smoothness, caption stress and physical mixed-DPI acceptance remain pending. The user explicitly requested rebuilding and committing/pushing at the manual-review boundary. Read `docs/MAXIMIZE_RESTORE_HANDOFF_2026-10-02.md` for complete implementation, rejected attempts, measurements, reproduction and release continuation; older success claims are not manual acceptance.
+
 This is the durable continuation point for all visual, motion, and animation work. It does not replace docs/ANIMATION_SPECS.md; that older Project Jelly document is a read-only historical reference and contains superseded direction.
 
 ## Product Standard

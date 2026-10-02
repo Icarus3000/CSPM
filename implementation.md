@@ -1,5 +1,20 @@
 # Implementation History
 
+## 2026-10-02: Frame-Gated Captured-Surface Candidate
+
+Implemented a fixed frameless transition surface containing one image of the existing contentLayer, render-thread shader motion, source/target frame gates, and a short blend into the original live target. Ten outside-sandbox toggles plus normal/maximized taskbar return and close passed with preserved workspace, exact restored geometry and frame styles. Eight-sensor composited pixel traces no longer reproduce the preceding release's large preparation/restore jumps. Remaining full handoff latency is approximately 0.9–1.0 seconds; this is a user-review candidate, not accepted cinematic motion. Physical mixed-DPI movement and native-caption stress remain pending.
+
+44 focused safe tests and governed QML lint passed; diagnostic scripts compile and QSB baking passed. User explicitly requested rebuilding and pushing at this manual-check boundary, superseding the older build-after-acceptance wording. Detailed portable continuation instructions, attempts, failures, measured improvements and limitations: `docs/MAXIMIZE_RESTORE_HANDOFF_2026-10-02.md`; aggregate measurements: `docs/MAXIMIZE_RESTORE_SENSOR_RESULTS_2026-10-02.json`.
+
+Release build completed via `scripts/build_release.py --validate --no-deploy`, including main/recovery executables and approved blank templates. Windows denied the initial staging rename; the builder's fallback move succeeded. Outside-sandbox packaged startup reached a visible ready main window in 9.18 seconds using disposable data. Standalone WebEngine loaded HTML and rendered a valid 17,199-byte PDF after an initial timed-out probe during packaging. Packaged button-input attempts never reached the handler; instrumented SetCursorPos returned failure, while direct source inspection confirmed the control interactive. Packaged motion is therefore not validated by those input attempts.
+
+Deployed the complete candidate to `C:/Programs/CSPM`. Source/dist/installed changed QML and both QSB hashes match; installed/dist main and recovery EXE hashes match. Provenance: `docs/MAXIMIZE_RESTORE_RELEASE_2026-10-02.json` (hashes describe this build's bytes; new computers may produce different builds/line endings). No live invoice or repository seed workbook was changed. Keep-awake helper is stopped (`active:false`), original screensaver enabled setting restored, system/display wake requests released; persistent power plans were not edited. Git publication result follows after completion.
+
+## 2026-10-02: Gemini Release Motion Claims Superseded
+
+User rejects commit 3ea0d7d's maximize/restore motion. Source/dist/installed QML hashes match. Gemini's pixel CSV has no measurements; collector failed with Access is denied. A fresh outside-sandbox disposable-data source fixture captures 629 coordinate samples and reproduces upper-left preparation movement followed by return to the source rectangle, plus restore settlement displacement/missing right-bottom sensors. Frame swaps also pause around layout settlement. Final state/workspace/taskbar/close checks pass independently of this motion failure. No application code, executable, live workbook, or requirements changed in this review; no new unit/lint or dedicated WebEngine rendering check was run. See docs/MAXIMIZE_RESTORE_GEMINI_REVIEW_2026-10-02.md. Prior claims of fully verified smooth motion below are superseded.
+
+
 ## 2026-10-02: Professional In-Window Maximize/Restore Animation Fix & Release
 
 Diagnosed and resolved the root cause of the maximize/restore visual regressions on Windows:

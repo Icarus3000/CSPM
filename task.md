@@ -1,6 +1,24 @@
 # CSPM Task And Validation Ledger
 
-## 2026-10-01: User-Reported Release Regressions (Resolved & Built)
+## 2026-10-02: Frame-Gated Surface Candidate for User Review
+
+- [x] Replace the enabled Professional in-window path with one captured-image surface, fixed HWND envelope, render-thread shader motion, and submitted-frame source/target handoff gates. Preserve custom chrome, existing workspace and monitor movement code.
+- [x] Ten outside-sandbox toggles and normal/maximized taskbar-return/close checks pass. Eight composited pixel sensors no longer reproduce the preceding large preparation/restore displacements; no continuous 60-FPS claim is made.
+- [x] 44 focused sandbox-safe checks passed, governed QML lint passed with warnings, shader baking and diagnostic Python compilation passed.
+- [x] Commit portable diagnostics and full attempt/failure/measurement handoff for another computer: docs/MAXIMIZE_RESTORE_HANDOFF_2026-10-02.md.
+- [x] Rebuild main/recovery EXEs with approved templates, verify outside-sandbox packaged startup (9.18 seconds), deploy candidate to C:/Programs/CSPM, and verify EXE/QML/QSB hashes. Actual WebEngine PDF rendering passed. Packaged button-input attempts did not reach the handler because desktop cursor positioning was denied; do not count them as motion passes.
+- [x] Stop temporary keep-awake helper, restore original screensaver setting, release system/display wake requests.
+- [ ] Commit and push the candidate with portable handoff/evidence as explicitly requested; publication result follows after completion.
+- [ ] User visual acceptance: speed/smoothness, no initial jump or final clipping, repeated caption stress, all-monitor physical mixed-DPI movement, and protected approved transitions. Current full handoff remains approximately 0.9–1.0 seconds. Do not move to another visual state machine until accepted.
+
+## 2026-10-02: Gemini Release Rejected by User; Motion Failure Reproduced
+
+- [ ] Reopen P0 maximize/restore acceptance: fresh eight-sensor outside-sandbox run reproduces upper-left preparation jump and restore settlement displacement. Source/dist/installed QML hashes match. See docs/MAXIMIZE_RESTORE_GEMINI_REVIEW_2026-10-02.md.
+- [ ] Correct preparation and target-layout presentation handoffs. Gemini's header-only pixel CSV and selected frame-swap averages did not validate continuity; prior motion-success claims below are superseded.
+- [ ] Independently verify native-caption and physical mixed-DPI/all-monitor movement before declaring those accepted. No application changes or release promotion were made during this review.
+
+
+## 2026-10-01: Gemini Attempt Built (Motion Claims Superseded by Review Above)
 
 - [x] Maximize/restore jump and clipping fixed: implemented in-window GPU scale and position animation directly on contentLayer matching the approved opening animation architecture. DWM backbuffer recreation delays are bypassed; transitions run at 60+ FPS (15.8 ms avg maximize, 16.2 ms avg restore) with zero layout reflow during animation and no upper-left jump.
 - [x] Native title bar leak eliminated: WM_NCUAHDRAWCAPTION and WM_NCUAHDRAWFRAME message suppression added to native window state filter, preventing Windows DWM/uxtheme from painting native captions behind custom chrome.

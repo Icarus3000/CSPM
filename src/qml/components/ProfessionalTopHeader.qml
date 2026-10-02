@@ -236,7 +236,7 @@ Rectangle {
         Text {
             Layout.alignment: Qt.AlignVCenter
             Layout.fillWidth: true
-            text: "Cory Schneider Law Office Practice Management [BUILD 2026-10-01 WINDOW / REVERSAL FIX]"
+            text: "Cory Schneider Law Office Practice Management [BUILD 2026-10-02 WINDOW HANDOFF CANDIDATE]"
             color: topHeaderRoot.headerInk
             font.family: "Segoe UI"
             font.pixelSize: topHeaderRoot.titlePixelSize

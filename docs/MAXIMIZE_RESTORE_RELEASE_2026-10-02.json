@@ -1,0 +1,16 @@
+{
+  "installed": "C:\\Programs\\CSPM",
+  "candidate": "BUILD 2026-10-02 WINDOW HANDOFF CANDIDATE",
+  "packaged_ready_seconds": 9.18,
+  "packaged_motion": "not validated: desktop cursor positioning denied",
+  "visual_acceptance": "pending",
+  "files": {
+    "CSPM.exe": "41CEB4CF9D233163752EADA64D1E61273EF6BC2E15E81315CCB2853EFA2D0982",
+    "CSPM_Recovery/CSPM_Recovery.exe": "911E3CCE1B27678494EA7106BD7CC7D334F6A40C8847035C95440AFBEC555D0D",
+    "_internal/src/qml/DetachedShellWindow.qml": "6C7FF33D3F0D6DCAC1C21D554DA12384B50F354890BA713FC1FE4755F8BDABC4",
+    "_internal/src/qml/WindowTransitionSurface.qml": "8ED87B6C745F437CCA7AAE73078A76E9103E8F469C6863A59D84C8EB9227AF42",
+    "_internal/src/qml/components/ProfessionalTopHeader.qml": "838908BA81B0E612BE4738CD89CCEA0A81843D6D986D0C8C8F19773614322F59",
+    "_internal/src/qml/shaders/window_transition.vert.qsb": "114979D5F1EEE0789192806F296EE5C5DA27ABFD8398179BF0977A7A8AFC9E06",
+    "_internal/src/qml/shaders/window_transition.frag.qsb": "7266152DBD8D6A67E920C707E66E496D29115CCF71A81D8255B7CC6BF026210B"
+  }
+}

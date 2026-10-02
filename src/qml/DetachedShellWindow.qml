@@ -3338,6 +3338,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function stopMaximizeFxAnimations() {
+        professionalSurfaceWatchdog.stop();
         maximizeAnimInProgress = false;
         professionalWindowTransitionActive = false;
         professionalWindowTransitionKind = "";
@@ -3436,6 +3437,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function finishProfessionalWindowTransition(sequence, reason) {
         if (sequence !== maximizeOverlayHandoffSeq) return;
+        professionalSurfaceWatchdog.stop();
         var kind = professionalWindowTransitionKind;
         var restoring = kind === "restore";
         var tag = restoring ? "RESTORE-MAX" : "MAXIMIZE";
@@ -3721,8 +3723,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 targetRect.w, targetRect.h));
 
         if (mainWin.professionalInWindowTransitionEnabled) {
-            startProfessionalInWindowTransition(sequence, kind, sourceRect, targetRect, targetScreenOverride);
-            return true;
+            return captureProfessionalTransitionSurface(sequence, kind,
+                sourceRect, targetRect, targetScreenOverride);
         }
 
         // Match MinimizeOverlay's proven live-content fallback. The replica is
@@ -3734,6 +3736,74 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 "overlay-create-fallback");
         }
         return true;
+    }
+
+    function captureProfessionalTransitionSurface(sequence, kind, sourceRect,
+            targetRect, targetScreenOverride) {
+        professionalSurfaceWatchdog.restart();
+        var accepted = contentLayer.grabToImage(function(result) {
+            if (sequence !== mainWin.maximizeOverlayHandoffSeq
+                    || !mainWin.professionalWindowTransitionActive) return;
+            if (!result || !result.url) {
+                mainWin.stopMaximizeFxAnimations();
+                return;
+            }
+            var envelope = mainWin.maximizeOverlayMotionRect(sourceRect, targetRect);
+            var surface = professionalSurfaceComponent.createObject(null, {
+                "mainWindow": mainWin,
+                "sourceGrab": result,
+                "sourceBounds": Qt.rect(sourceRect.x - envelope.x,
+                    sourceRect.y - envelope.y, sourceRect.w, sourceRect.h),
+                "targetBounds": Qt.rect(targetRect.x - envelope.x,
+                    targetRect.y - envelope.y, targetRect.w, targetRect.h),
+                "overlayX": envelope.x, "overlayY": envelope.y,
+                "overlayWidth": envelope.w, "overlayHeight": envelope.h,
+                "screen": targetScreenOverride || mainWin.screen
+            });
+            if (!surface) { mainWin.stopMaximizeFxAnimations(); return; }
+            mainWin.maximizeOverlayRef = surface;
+            surface.sourcePresented.connect(function() {
+                if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                // The replacement has submitted the exact source pixels at
+                // their original desktop position before the host can change.
+                mainWin.opacity = 0.0;
+                surface.startMotion();
+            });
+            surface.motionStarted.connect(function() {
+                Qt.callLater(function() {
+                    if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                    // UniformAnimator runs in the surface's render thread;
+                    // this layout transaction cannot expose or move its HWND.
+                    mainWin.commitProfessionalWindowTransitionTarget(kind,
+                        targetRect, targetScreenOverride);
+                    Qt.callLater(function() {
+                        if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                        surface.expectLiveTarget();
+                    });
+                });
+            });
+            surface.targetPresented.connect(function() {
+                if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                mainWin.opacity = 1.0;
+            });
+            surface.transitionFinished.connect(function() {
+                mainWin.finishProfessionalWindowTransition(sequence, "presented-target");
+            });
+            surface.visible = true;
+        });
+        if (!accepted) stopMaximizeFxAnimations();
+        return accepted;
+    }
+
+    Timer {
+        id: professionalSurfaceWatchdog
+        interval: 3500
+        onTriggered: {
+            if (mainWin.professionalWindowTransitionActive) {
+                console.warn("Professional window surface handoff timed out");
+                mainWin.stopMaximizeFxAnimations();
+            }
+        }
     }
 
     function resetDragFxState() {
@@ -9995,7 +10065,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         initialTileIndex: mainWin.detachedMode ? mainWin.detachedInitialTileIndex : -1
                         initialPanelState: mainWin.detachedMode ? mainWin.detachedInitialPanelState : null
                         detachedWindow: mainWin.detachedMode
-                        isInteractive: mainWin.isSettled
+                        isInteractive: mainWin.isSettled && !mainWin.professionalWindowTransitionActive
                             && !mainWin.isClosing
                             && !mainWin.isMinimizing
                             && !mainWin.isRestoringFromMinimize
@@ -12339,6 +12409,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     Component {
         id: maximizeOverlayComponent
         MaximizeOverlay {}
+    }
+
+    Component {
+        id: professionalSurfaceComponent
+        WindowTransitionSurface {}
     }
 
     SfxBus {
