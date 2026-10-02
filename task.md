@@ -10,7 +10,7 @@
 - [x] Reconciled live invoice 26-0092 under a shared checkout, protected backup, isolated candidate, and integrity comparison. Current total and combined reversal: $6,977.74 / -$6,977.74. Local and shared hashes match. The 96 pre-existing workbook integrity errors are unchanged; no new errors were introduced.
 - [x] 81 focused sandbox-safe tests (including startup schema GC guard), Python compilation, and governed QML lint (exit 0 with existing warnings). Outside-sandbox full-app run: 20 toggles, same workspace and exact restored rectangle, small corner radius, normal/maximized taskbar return and custom close. Real WebEngine PDF rendering passed.
 - [x] Corrected executable build, packaged startup smoke, and deployment to C:/Programs/CSPM completed; installed EXE/QML hashes match.
-- [ ] Commit and push the authorized release changes to the current Git cloud branch.
+- [x] Release code committed as 5cf73ea and pushed to origin/fix/invoice-billing-client-correction-20260926; final release ledger follows in a documentation-only commit.
 - [ ] User acceptance: actual maximize/restore speed and smoothness, no clipped corners before dragging, and restored movement across all monitors/DPI settings. Functional geometry checks do not establish visual acceptance.
 
 

@@ -1,5 +1,8 @@
 # Implementation History
 
+Release completion: executable deployed to `C:/Programs/CSPM/CSPM.exe`, matching the validated `dist/CSPM` EXE/QML hashes. Code commit `5cf73ea` was pushed successfully to `origin/fix/invoice-billing-client-correction-20260926`. Header identifies BUILD 2026-10-01 WINDOW / REVERSAL FIX. Safe checks: 81 tests, compilation, governed QML lint (warnings remain). Outside-sandbox checks: full-source state/geometry regression, actual WebEngine PDF render, and corrected packaged startup. User motion/mixed-DPI acceptance remains pending. Invoice 26-0092's live repair is already published to the shared workbook package; live workbook files were not copied into repository seed data or the compiled package.
+
+
 ## 2026-10-01: Release Validation Result
 
 Corrected main and recovery executables rebuilt successfully with the governed release builder. The complete corrected package is deployed to C:/Programs/CSPM; installed executable and changed QML SHA-256 hashes match the verified dist package. The corrected packaged executable completed outside-sandbox startup to a visible ready main window in 20.6 seconds, using disposable copies of the repaired workbook and settings; no current-session fault was captured. Changed QML SHA-256 hashes match source. The first failed package was quarantined and never deployed. The corrected source remains subject to the user maximize/restore visual and all-monitor acceptance gate; no functional smoke test is claimed as proof of silky motion.
