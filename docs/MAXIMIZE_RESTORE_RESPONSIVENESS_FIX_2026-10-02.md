@@ -53,7 +53,7 @@ Installed outside-sandbox startup passes at 55.09 seconds on disposable data. Th
 
 Full manifest verification matches 4,372 runtime files / 678,992,015 bytes between dist and installed runtime, excluding preserved data/logs/backups. All 168 QML-tree files match source. Protected workbook and authoritative settings hashes remain unchanged. Main EXE SHA-256: `0E08CA4446F196875128EAB6E3329A06C7E1B43B6496B5572C55CB47097D96A9`. Recovery SHA-256: `8D92D2A46429143E3305031749EB2E532DAA580D8E25D9AC0F25D95C0EE5252B`.
 
-Local release evidence: `logs/responsiveness_release_20261002_build.log`, candidate/installed smoke logs and result JSON, backup/deployment logs, WebEngine result/PDF and `responsiveness_release_20261002_verification.json`. These remain separate from the source timing runs. Git publication targets `origin/fix/invoice-billing-client-correction-20260926`; the actual pushed commit will be recorded after remote verification.
+Local release evidence: `logs/responsiveness_release_20261002_build.log`, candidate/installed smoke logs and result JSON, backup/deployment logs, WebEngine result/PDF and `responsiveness_release_20261002_verification.json`. These remain separate from the source timing runs. Fix/release commit `39c873d` is pushed to `origin/fix/invoice-billing-client-correction-20260926`; independent remote verification returns `39c873d60eb456acc4a231cd12ec63e326c228e1`. This documentation follow-up records the completed publication. User manual acceptance remains pending.
 
 ## Next manual gate
 

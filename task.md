@@ -8,7 +8,7 @@
 - [x] Outside-sandbox final comparison passes 20 toggles plus lifecycle checks, without watchdog timeout. At 100% DPI, old/new median start notifications are 636/160 ms (maximize) and 666/163 ms (restore). Full completion remains about a second. Separate candidate ten-toggle run also passes. Earlier comparison/pixel stress runs each hit two timeouts and remain failures; cause unestablished.
 - [x] Save portable disposable-source timing fixture and nonsensitive comparison evidence; document the implemented ordering in `docs/MAXIMIZE_RESTORE_RESPONSIVENESS_FIX_2026-10-02.md`.
 - [x] Rebuild main/recovery executables with approved-template/confidentiality gates; outside-sandbox candidate startup passes in 31.82 seconds. Back up the installed runtime, deploy the full package to `C:/Programs/CSPM`, and pass installed startup in 55.09 seconds plus actual installed WebEngine HTML/PDF rendering (41,201 bytes). Full 4,372-file / 678,992,015-byte manifest and 168 QML-tree files match; workbook/settings hashes are unchanged. Release provenance is in the fix document.
-- [ ] Commit and push to `origin/fix/invoice-billing-client-correction-20260926`; independently verify the remote SHA.
+- [x] Commit and push fix/release `39c873d` to `origin/fix/invoice-billing-client-correction-20260926`; independently verify remote SHA `39c873d60eb456acc4a231cd12ec63e326c228e1`. This documentation follow-up records the completed publication.
 - [ ] P0 manual gate: real installed responsiveness and retained title/settlement appearance; caption stress and physical mixed-DPI/all-monitor movement. Do not advance to another visual state machine.
 
 ## Maximize/Restore Responsiveness Analysis And Partial User Acceptance (2026-10-02)
