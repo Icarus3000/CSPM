@@ -10,7 +10,7 @@
 - [x] Rebuild main/recovery executables with approved-template/confidentiality gates and preserve installed/dist rollback packages. Deploy the full package to `C:/Programs/CSPM`.
 - [x] Outside-sandbox candidate/installed startup passes in 17.93/27.92 seconds; each passes four accessibility-invoked title-bar toggles with observed transition HWND lifecycle and exact restore rectangles. Actual packaged WebEngine HTML/PDF rendering passes for both packages (41,201 bytes each).
 - [x] Verify all 4,377 runtime files / 679,044,943 bytes match installed/candidate, all 168 source/bundled QML files match, and protected workbook/settings hashes are unchanged. Save release evidence in the fix document/aggregate JSON.
-- [ ] Commit/push the fix and completed release ledger; independently verify the remote branch SHA.
+- [x] Commit/push fix and installed release `6c72200` to `origin/fix/invoice-billing-client-correction-20260926`; independently verify remote SHA `6c72200a814b4e630deb061bbdf16fd982c119e0`. This documentation follow-up records completed publication.
 - [ ] User acceptance in the rebuilt installed app: repeat restore at several placements on both screen scales; confirm no nudge, title/font change or responsiveness regression. P0 stays on this same defect until accepted.
 
 ## Intermittent Restore Shift Investigation (2026-10-02)

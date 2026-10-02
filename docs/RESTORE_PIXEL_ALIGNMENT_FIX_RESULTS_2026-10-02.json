@@ -375,6 +375,8 @@
     "protected_workbook_settings_hashes_unchanged": true,
     "rollback_package": "to_delete/installed__before_pixel_alignment_release_20261002",
     "manual_user_acceptance_pending": true,
-    "git_publication_pending": true
+    "git_publication_pending": false,
+    "fix_commit": "6c72200a814b4e630deb061bbdf16fd982c119e0",
+    "remote_fix_sha_verified": true
   }
 }
