@@ -1,5 +1,25 @@
 # CSPM Task And Validation Ledger
 
+## Earlier Maximize/Restore Movement And Publication (2026-10-02)
+
+- [x] User authorizes completing the work, full EXE recompilation and Git publication. Preserve accepted title/glyph rendering and final settlement.
+- [x] Start source-image render-thread movement before expensive target geometry/layout/render preparation; finish with the accurate target capture. Retain fixed header pixels, exact endpoints, the existing workspace and all readiness gates. Keep the watchdog at 3500 ms.
+- [x] Sandbox-safe validation: 38 focused tests, governed QML lint, shader baking and diagnostic compilation pass. Outside-sandbox GPU regression passes all 18 states with fixed 12x13 title markers and exact endpoint pixels.
+- [x] Outside-sandbox final comparison passes 20 toggles plus lifecycle checks, without watchdog timeout. At 100% DPI, old/new median start notifications are 636/160 ms (maximize) and 666/163 ms (restore). Full completion remains about a second. Separate candidate ten-toggle run also passes. Earlier comparison/pixel stress runs each hit two timeouts and remain failures; cause unestablished.
+- [x] Save portable disposable-source timing fixture and nonsensitive comparison evidence; document the implemented ordering in `docs/MAXIMIZE_RESTORE_RESPONSIVENESS_FIX_2026-10-02.md`.
+- [x] Rebuild main/recovery executables with approved-template/confidentiality gates; outside-sandbox candidate startup passes in 31.82 seconds. Back up the installed runtime, deploy the full package to `C:/Programs/CSPM`, and pass installed startup in 55.09 seconds plus actual installed WebEngine HTML/PDF rendering (41,201 bytes). Full 4,372-file / 678,992,015-byte manifest and 168 QML-tree files match; workbook/settings hashes are unchanged. Release provenance is in the fix document.
+- [ ] Commit and push to `origin/fix/invoice-billing-client-correction-20260926`; independently verify the remote SHA.
+- [ ] P0 manual gate: real installed responsiveness and retained title/settlement appearance; caption stress and physical mixed-DPI/all-monitor movement. Do not advance to another visual state machine.
+
+## Maximize/Restore Responsiveness Analysis And Partial User Acceptance (2026-10-02)
+
+- [x] User confirms smooth movement, stable title/glyph rendering and final settlement: the jarring jerkiness is gone. Preserve that accepted behavior; P0 remains open for responsiveness and the other outstanding manual checks.
+- [x] Read runtime logs first and trace click, source capture/presentation, hidden geometry/layout commit, target rendering/capture, texture readiness, motion and handoff. Complete two outside-sandbox disposable full-source runs with 20 primary toggles; functional assertions pass and no handoff timeout appears.
+- [x] Establish approximately 1.1–1.3 seconds from button handler to the first submitted moving frame at 225% DPI. Width assignment costs 52/70 ms and height assignment 295/255 ms in the finer trace; awaiting target frames costs 353/441 ms. These locate expensive boundaries, not individual component costs or physical scanout.
+- [x] Save the dependency analysis, timing aggregates and staged proposal in `docs/MAXIMIZE_RESTORE_RESPONSIVENESS_ANALYSIS_2026-10-02.md` and `docs/MAXIMIZE_RESTORE_RESPONSIVENESS_TIMINGS_2026-10-02.json`. Application source and installed runtime remain unchanged; this request is analysis/proposal only.
+- [x] Subsequent implementation starts movement before target preparation; see the newer release checklist above. Remaining optimization candidates are individual resized layout/render costs and a proven GPU texture path. Prior reverted metrics-cache experiments are not an established fix.
+- [ ] P0 manual gate: user accepts improved click-to-motion responsiveness in the real installed app; caption stress and physical mixed-DPI/all-monitor checks still remain. Do not advance to another visual state machine.
+
 ## Title-Bar Fix Full Executable Rebuild And Publication (2026-10-02)
 
 - [x] User explicitly requests commit/push plus a full EXE rebuild after the local asset patch. Rebuild main and recovery executables with `scripts/build_release.py --validate --no-deploy`; approved-template and confidentiality gates pass.
@@ -9,7 +29,7 @@
 - [x] Verify 4,370 runtime files / 678,954,950 bytes match dist/installed; all 168 QML-tree files match source. Workbook/settings hashes remain unchanged. Main EXE SHA-256: `D27374DDAA0B815ED53077096CDFDA1ED0A29BE08AC8CEB545BB2B5B0D8FA0B6`. Recovery: `BC7B68F5C451D253421272262CF9B6BE3014D85FCF387D6D953EC8C37A9923C3`.
 - [x] Carry forward the unchanged application's passing 38 sandbox-safe tests, governed QML lint and outside-sandbox GPU/full-source lifecycle results; new diagnostic CLI compiles and staged whitespace check passes.
 - [x] Commit the fix, GPU regression, diagnostic timeout option and release handoff as `c0d16ec`; push successfully to `origin/fix/invoice-billing-client-correction-20260926`. Remote branch SHA verified as `c0d16ecd93652ca8127ddc97833c96c5de6b29b5`. This follow-up documentation records the completed publication.
-- [ ] P0 manual visual acceptance remains open. This full rebuild does not establish title/glyph perception, responsiveness, caption stress or physical mixed-DPI movement acceptance. Publication target: `origin/fix/invoice-billing-client-correction-20260926`.
+- [ ] P0 remains open. Later user feedback accepts title/glyph perception and smooth settlement; responsiveness, caption stress and physical mixed-DPI movement remain outstanding. Publication target: `origin/fix/invoice-billing-client-correction-20260926`.
 
 ## Title-Bar And Final-Layout Settlement Candidate (2026-10-02)
 
@@ -19,7 +39,7 @@
 - [x] Outside-sandbox GPU regression passes eight samples in both directions: header markers retain 12x13 dimensions and endpoint images match exactly (maximum channel difference 0). Outside-sandbox full-source fixture passes ten toggles, restored movement, both taskbar-return states and maximized close; no handoff timeout. These checks do not establish subjective smoothness or physical mixed-DPI acceptance.
 - [x] Patch the nine external QML/shader assets in dist and `C:/Programs/CSPM`, retaining rollback assets at `to_delete/titlebar_settlement_before_20261002`. All 168 QML-tree files match source; executable, workbooks and authoritative settings hashes are unchanged. This is an asset patch to the executable rebuilt earlier today, not another binary compilation.
 - [x] Outside-sandbox packaged startup passes against patched dist/installed copies (25.77 / 57.16 seconds to input-ready), using disposable profiles; real installed WebEngine HTML/PDF rendering passes (41,201 bytes). These startup times are not motion measurements.
-- [ ] P0 user acceptance remains open: fully exit/reopen the installed app, inspect title lettering/glyphs and final settlement in both directions, and assess responsiveness. Full-source command-to-completion was 1.129–1.489 seconds after a 2.125-second first cycle; movement remains 220 ms. Physical mixed-DPI/all-monitor movement remains manual. Do not move to another visual state machine until confirmed. See `docs/MAXIMIZE_RESTORE_SETTLEMENT_FIX_2026-10-02.md`.
+- [ ] P0 remains open for responsiveness: the user's subsequent feedback accepts title lettering/glyphs and smooth final settlement. Earlier full-source command-to-completion was 1.129–1.489 seconds after a 2.125-second first cycle; movement remains 220 ms. Physical mixed-DPI/all-monitor movement remains manual. Do not move to another visual state machine until confirmed. See the latest responsiveness analysis and `docs/MAXIMIZE_RESTORE_SETTLEMENT_FIX_2026-10-02.md`.
 
 ## Git Cloud Pull And Local Executable Rebuild (2026-10-02)
 

@@ -1,0 +1,182 @@
+{
+  "dpr": 1.0,
+  "timed_runs": 23,
+  "primary_runs": [
+    {
+      "optimized": false,
+      "kind": "maximize",
+      "n": 5,
+      "motion_ms": 636,
+      "complete_ms": 1035,
+      "commit_ms": 252
+    },
+    {
+      "optimized": false,
+      "kind": "restore",
+      "n": 5,
+      "motion_ms": 666,
+      "complete_ms": 1046,
+      "commit_ms": 173
+    },
+    {
+      "optimized": true,
+      "kind": "maximize",
+      "n": 5,
+      "motion_ms": 160,
+      "complete_ms": 1150,
+      "commit_ms": 255
+    },
+    {
+      "optimized": true,
+      "kind": "restore",
+      "n": 5,
+      "motion_ms": 163,
+      "complete_ms": 1021,
+      "commit_ms": 145
+    }
+  ],
+  "watchdog_timeouts": 0,
+  "measurement": "Actual QML clicked-handler entry through GUI handling of submitted-frame and completion events; not physical input or scanout.",
+  "primary_samples": [
+    {
+      "kind": "maximize",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 814,
+      "completed_handoff_ms": 1179,
+      "geometry_commit_ms": 257
+    },
+    {
+      "kind": "restore",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 594,
+      "completed_handoff_ms": 953,
+      "geometry_commit_ms": 159
+    },
+    {
+      "kind": "maximize",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 120,
+      "completed_handoff_ms": 1048,
+      "geometry_commit_ms": 206
+    },
+    {
+      "kind": "restore",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 182,
+      "completed_handoff_ms": 1016,
+      "geometry_commit_ms": 145
+    },
+    {
+      "kind": "maximize",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 518,
+      "completed_handoff_ms": 921,
+      "geometry_commit_ms": 160
+    },
+    {
+      "kind": "restore",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 648,
+      "completed_handoff_ms": 1024,
+      "geometry_commit_ms": 192
+    },
+    {
+      "kind": "maximize",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 123,
+      "completed_handoff_ms": 1006,
+      "geometry_commit_ms": 202
+    },
+    {
+      "kind": "restore",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 148,
+      "completed_handoff_ms": 1004,
+      "geometry_commit_ms": 143
+    },
+    {
+      "kind": "maximize",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 608,
+      "completed_handoff_ms": 1003,
+      "geometry_commit_ms": 252
+    },
+    {
+      "kind": "restore",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 742,
+      "completed_handoff_ms": 1146,
+      "geometry_commit_ms": 179
+    },
+    {
+      "kind": "maximize",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 160,
+      "completed_handoff_ms": 1150,
+      "geometry_commit_ms": 255
+    },
+    {
+      "kind": "restore",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 232,
+      "completed_handoff_ms": 1208,
+      "geometry_commit_ms": 227
+    },
+    {
+      "kind": "maximize",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 636,
+      "completed_handoff_ms": 1035,
+      "geometry_commit_ms": 173
+    },
+    {
+      "kind": "restore",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 666,
+      "completed_handoff_ms": 1046,
+      "geometry_commit_ms": 152
+    },
+    {
+      "kind": "maximize",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 203,
+      "completed_handoff_ms": 1227,
+      "geometry_commit_ms": 345
+    },
+    {
+      "kind": "restore",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 151,
+      "completed_handoff_ms": 1107,
+      "geometry_commit_ms": 235
+    },
+    {
+      "kind": "maximize",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 866,
+      "completed_handoff_ms": 1265,
+      "geometry_commit_ms": 345
+    },
+    {
+      "kind": "restore",
+      "early_motion": false,
+      "first_submitted_moving_frame_ms": 772,
+      "completed_handoff_ms": 1173,
+      "geometry_commit_ms": 173
+    },
+    {
+      "kind": "maximize",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 176,
+      "completed_handoff_ms": 1183,
+      "geometry_commit_ms": 337
+    },
+    {
+      "kind": "restore",
+      "early_motion": true,
+      "first_submitted_moving_frame_ms": 163,
+      "completed_handoff_ms": 1021,
+      "geometry_commit_ms": 145
+    }
+  ]
+}

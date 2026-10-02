@@ -101,6 +101,7 @@ Window {
     property bool professionalNativeWindowState: false
     property bool professionalNativeWindowStateEnabled: false
     property bool professionalInWindowTransitionEnabled: true
+    property bool professionalEarlyWindowMotionEnabled: true
     property int professionalWindowTransitionTargetX: 0
     property int professionalWindowTransitionTargetY: 0
     property int professionalWindowTransitionTargetW: 0
@@ -3751,6 +3752,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             }
             var envelope = mainWin.maximizeOverlayMotionRect(sourceRect, targetRect);
             var surface = professionalSurfaceComponent.createObject(null, {
+                "earlyMotionEnabled": mainWin.professionalEarlyWindowMotionEnabled,
                 "mainWindow": mainWin,
                 "sourceGrab": result,
                 "headerMetrics": sourceHeaderMetrics,
@@ -3769,11 +3771,13 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 // The replacement has submitted the exact source pixels at
                 // their original desktop position before the host can change.
                 mainWin.opacity = 0.0;
-                // The source has actually been presented. Prepare the target
-                // in this transaction; deferred UI work must not run first.
-                mainWin.commitProfessionalWindowTransitionTarget(kind,
-                    targetRect, targetScreenOverride);
-                surface.expectLiveTarget();
+                // Start render-thread movement before the expensive target
+                // layout. Its first submitted frame gates that preparation.
+                if (!surface.earlyMotionEnabled) {
+                    mainWin.commitProfessionalWindowTransitionTarget(kind,
+                        targetRect, targetScreenOverride);
+                    surface.expectLiveTarget();
+                }
             });
             surface.targetCaptureRequested.connect(function() {
                 if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
@@ -3793,6 +3797,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
                 mainWin.opacity = 1.0;
                 surface.expectLiveHandoff();
+            });
+            surface.motionStarted.connect(function() {
+                if (!surface.earlyMotionEnabled
+                        || sequence !== mainWin.maximizeOverlayHandoffSeq
+                        || !mainWin.professionalWindowTransitionActive) return;
+                mainWin.commitProfessionalWindowTransitionTarget(kind,
+                    targetRect, targetScreenOverride);
+                surface.expectLiveTarget();
             });
             surface.transitionFinished.connect(function() {
                 mainWin.finishProfessionalWindowTransition(sequence, "presented-target");

@@ -5,6 +5,9 @@ layout(std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
     float progress;
+    float preparationProgress;
+    float settlementProgress;
+    float earlyMotion;
     vec4 sourceRect;
     vec4 targetRect;
     vec4 headerMetrics;
@@ -29,12 +32,18 @@ vec2 endpointUv(vec2 point, vec2 currentSize, vec2 endpointSize, float rightWidt
             / endpointSize.y);
 }
 void main() {
-    float p = clamp(progress, 0.0, 1.0);
+    float p = clamp(earlyMotion > 0.5
+        ? mix(preparationProgress, 1.0, settlementProgress) : progress, 0.0, 1.0);
     vec2 size = mix(sourceRect.zw, targetRect.zw, p);
     vec2 point = qt_TexCoord0 * size;
     vec4 oldPixels = texture(source, endpointUv(point, size, sourceRect.zw, headerMetrics.y));
+    float blend = smoothstep(0.0, 0.85, earlyMotion > 0.5 ? settlementProgress : p);
+    if (blend <= 0.0) {
+        fragColor = oldPixels * qt_Opacity;
+        return;
+    }
     vec4 finalPixels = texture(targetSource, endpointUv(point, size, targetRect.zw, headerMetrics.z));
     // Complete the layout change before reaching the endpoint. At p=1 this
     // is the final scene at 1:1 scale, so revealing it cannot resize text.
-    fragColor = mix(oldPixels, finalPixels, smoothstep(0.0, 0.85, p)) * qt_Opacity;
+    fragColor = mix(oldPixels, finalPixels, blend) * qt_Opacity;
 }

@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 from PySide6.QtCore import QObject, QTimer, QUrl
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickItem, QQuickWindow
 
@@ -40,6 +40,13 @@ failures = []
 results = []
 source_sizes = [(640, 400), (960, 650)]
 pair = 0
+sample_states = [(False, p, 0.0, 0.0) for p in (0.0, 0.5, 0.85, 1.0)] + [
+    (True, 0.0, 0.0, 0.0),
+    (True, 0.0, 0.5, 0.0),
+    (True, 0.0, 0.5, 0.5),
+    (True, 0.0, 0.0, 0.85),
+    (True, 0.0, 0.85, 1.0),
+]
 
 def guard(fn):
     def call(*args):
@@ -90,14 +97,20 @@ def target_ready(result):
     sample()
 
 def sample():
-    p = (0.0, 0.5, 0.85, 1.0)[sample_index]
-    renderer.setProperty('progress', p)
+    early, legacy, preparation, settlement = sample_states[sample_index]
+    surface.setProperty('earlyMotionEnabled', early)
+    renderer.setProperty('progress', legacy)
+    renderer.setProperty('preparationProgress', preparation)
+    renderer.setProperty('settlementProgress', settlement)
+    # Before capture readiness the target texture is the source fallback.
+    surface.setProperty('targetGrab', None if early and settlement == 0.0 else {'url':target_grab.url()})
     surface.update()
     QTimer.singleShot(100, guard(lambda: grab(surface.contentItem(), sampled)))
 
 def sampled(result):
     global sample_index, pair
-    p = (0.0, 0.5, 0.85, 1.0)[sample_index]
+    early, legacy, preparation, settlement = sample_states[sample_index]
+    p = preparation + (1.0-preparation)*settlement if early else legacy
     sw, sh = source_sizes[pair]
     tw, th = source_sizes[1-pair]
     w, h = round(sw+(tw-sw)*p), round(sh+(th-sh)*p)
@@ -118,16 +131,17 @@ def sampled(result):
     endpoint_error = None
     if p in (0.0, 1.0):
         expected = source_grab.image() if p == 0 else target_grab.image()
-        endpoint_error = 0
-        for y in range(h):
-            for x in range(w):
-                a, b = image.pixelColor(x,y), expected.pixelColor(x,y)
-                endpoint_error = max(endpoint_error, *(abs(a.getRgb()[i]-b.getRgb()[i]) for i in range(4)))
+        # Compare every channel in RAM without millions of QColor allocations.
+        actual_rgba = image.copy(0, 0, w, h).convertToFormat(QImage.Format_RGBA8888)
+        expected_rgba = expected.convertToFormat(QImage.Format_RGBA8888)
+        assert actual_rgba.size() == expected_rgba.size()
+        endpoint_error = max(abs(a-b) for a,b in zip(actual_rgba.constBits(), expected_rgba.constBits()))
         assert endpoint_error <= 1, (pair, p, endpoint_error)
     results.append(dict(direction='maximize' if pair == 0 else 'restore', progress=p,
+                        early_motion=early, preparation=preparation, settlement=settlement,
                         marker_count=len(xs), marker_height=13, endpoint_max_channel_error=endpoint_error))
     sample_index += 1
-    if sample_index < 4:
+    if sample_index < len(sample_states):
         QTimer.singleShot(0, guard(sample))
     else:
         surface.close()

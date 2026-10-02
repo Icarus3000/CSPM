@@ -7,6 +7,7 @@ Window {
     id: surface
     objectName: "CSPMWindowTransitionSurface"
     title: "CSPM window transition"
+    property bool earlyMotionEnabled: false
     property var mainWindow
     property var sourceGrab
     property var targetGrab
@@ -64,6 +65,9 @@ Window {
         property var source: frozenSource
         property var targetSource: frozenTarget
         property real progress: 0
+        property real preparationProgress: 0
+        property real settlementProgress: 0
+        property real earlyMotion: surface.earlyMotionEnabled ? 1.0 : 0.0
         property rect sourceRect: surface.sourceBounds
         property rect targetRect: surface.targetBounds
         property rect headerMetrics: surface.headerMetrics
@@ -83,7 +87,44 @@ Window {
             surface.tryRevealTarget()
         }
     }
+    // Begin with exact source pixels. The final-layout capture can be prepared
+    // after movement is visible, without changing header pixel dimensions.
+    UniformAnimator {
+        id: preparationMotion
+        target: movingSource
+        uniform: "preparationProgress"
+        from: 0
+        to: 0.85
+        duration: 800
+        easing.type: Easing.OutCubic
+    }
+    UniformAnimator {
+        id: settlementMotion
+        target: movingSource
+        uniform: "settlementProgress"
+        from: 0
+        to: 1
+        duration: 220
+        easing.type: Easing.InOutCubic
+        onFinished: {
+            preparationMotion.stop()
+            surface.motionComplete = true
+            surface.tryRevealTarget()
+        }
+    }
+    function startPreparationMotion() {
+        stage = "motion-start"
+        presentedFrames = 0
+        preparationMotion.start()
+        requestNextFrame()
+    }
     function startMotion() {
+        if (closingSurface) return
+        if (earlyMotionEnabled) {
+            stage = "moving"
+            settlementMotion.start()
+            return
+        }
         stage = "motion-start"
         presentedFrames = 0
         motion.start()
@@ -125,6 +166,8 @@ Window {
         if (closingSurface) return
         closingSurface = true
         motion.stop()
+        preparationMotion.stop()
+        settlementMotion.stop()
         visible = false
         Qt.callLater(function() { surface.destroy() })
     }
@@ -136,6 +179,7 @@ Window {
             if (++presentedFrames >= 3) {
                 stage = "source-presented"
                 sourcePresented()
+                if (earlyMotionEnabled && !closingSurface) startPreparationMotion()
             } else requestNextFrame()
         } else if (stage === "motion-start") {
             stage = "moving"

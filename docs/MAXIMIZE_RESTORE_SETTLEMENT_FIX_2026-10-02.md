@@ -1,5 +1,7 @@
 # Title-bar and final-layout settlement candidate — 2026-10-02
 
+**Subsequent user feedback:** smooth movement, title/glyph rendering and final settlement are accepted; the jarring jerkiness is gone. Responsiveness remains open. The next analysis/proposal is in [MAXIMIZE_RESTORE_RESPONSIVENESS_ANALYSIS_2026-10-02.md](MAXIMIZE_RESTORE_RESPONSIVENESS_ANALYSIS_2026-10-02.md). Preserve the accepted visuals while reducing preparation latency. The acceptance-pending wording below records the earlier delivery state.
+
 This continuation supersedes the single-capture/terminal-fade mechanism in `MAXIMIZE_RESTORE_HANDOFF_2026-10-02.md`. The user reports smoother movement but a font-like change in custom title text/glyphs and a jarring endpoint in both directions. Keep the Professional maximize/restore P0 gate open until the user accepts the actual app. Preserve the canonical Option 3 direction and approved other transitions.
 
 ## Later full rebuild requested by user
