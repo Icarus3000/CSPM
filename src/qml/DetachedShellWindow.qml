@@ -102,6 +102,7 @@ Window {
     property bool professionalNativeWindowStateEnabled: false
     property bool professionalInWindowTransitionEnabled: true
     property bool professionalEarlyWindowMotionEnabled: true
+    property bool professionalPixelAlignedWindowCaptureEnabled: true
     property int professionalWindowTransitionTargetX: 0
     property int professionalWindowTransitionTargetY: 0
     property int professionalWindowTransitionTargetW: 0
@@ -3739,18 +3740,39 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         return true;
     }
 
+    function grabProfessionalWindowFrame(callback) {
+        if (!professionalPixelAlignedWindowCaptureEnabled)
+            return contentLayer.grabToImage(callback);
+        // Read the actual live framebuffer, preserving its physical pixel grid.
+        var result = windowFrameCapture.capture(mainWin);
+        if (!result || !result.url) return false;
+        var origin = contentLayer.mapToItem(mainWin.contentItem, 0, 0);
+        result.contentUv = Qt.rect(origin.x / mainWin.width, origin.y / mainWin.height,
+            contentLayer.width / mainWin.width, contentLayer.height / mainWin.height);
+        Qt.callLater(function() { callback(result); });
+        return true;
+    }
+
     function captureProfessionalTransitionSurface(sequence, kind, sourceRect,
             targetRect, targetScreenOverride) {
         professionalSurfaceWatchdog.restart();
         var sourceHeaderMetrics = mainContent.professionalTransitionHeaderMetrics();
-        var accepted = contentLayer.grabToImage(function(result) {
+        var accepted = grabProfessionalWindowFrame(function(result) {
             if (sequence !== mainWin.maximizeOverlayHandoffSeq
-                    || !mainWin.professionalWindowTransitionActive) return;
+                    || !mainWin.professionalWindowTransitionActive) {
+                if (result && result.url) windowFrameCapture.release(result.url);
+                return;
+            }
             if (!result || !result.url) {
                 mainWin.stopMaximizeFxAnimations();
                 return;
             }
             var envelope = mainWin.maximizeOverlayMotionRect(sourceRect, targetRect);
+            // Include the live hosts' transparent padding and shadow pixels.
+            var framePad = Math.max(32, (mainWin.width - contentLayer.width) / 2,
+                (mainWin.height - contentLayer.height) / 2);
+            envelope.x -= framePad; envelope.y -= framePad;
+            envelope.w += framePad * 2; envelope.h += framePad * 2;
             var surface = professionalSurfaceComponent.createObject(null, {
                 "earlyMotionEnabled": mainWin.professionalEarlyWindowMotionEnabled,
                 "mainWindow": mainWin,
@@ -3764,7 +3786,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 "overlayWidth": envelope.w, "overlayHeight": envelope.h,
                 "screen": targetScreenOverride || mainWin.screen
             });
-            if (!surface) { mainWin.stopMaximizeFxAnimations(); return; }
+            if (!surface) {
+                windowFrameCapture.release(result.url);
+                mainWin.stopMaximizeFxAnimations(); return;
+            }
+            if (result.nativeFrame && !surface.prepareNativeGeometry()) {
+                surface.closeOverlay("native-geometry-unavailable");
+                mainWin.stopMaximizeFxAnimations(); return;
+            }
             mainWin.maximizeOverlayRef = surface;
             surface.sourcePresented.connect(function() {
                 if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
@@ -3782,9 +3811,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             surface.targetCaptureRequested.connect(function() {
                 if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
                 var targetHeaderMetrics = mainContent.professionalTransitionHeaderMetrics();
-                var targetAccepted = contentLayer.grabToImage(function(targetResult) {
+                var targetAccepted = mainWin.grabProfessionalWindowFrame(function(targetResult) {
                     if (sequence !== mainWin.maximizeOverlayHandoffSeq
-                            || !mainWin.professionalWindowTransitionActive) return;
+                            || !mainWin.professionalWindowTransitionActive) {
+                        if (targetResult && targetResult.url) windowFrameCapture.release(targetResult.url);
+                        return;
+                    }
                     if (!targetResult || !targetResult.url) {
                         mainWin.stopMaximizeFxAnimations();
                         return;

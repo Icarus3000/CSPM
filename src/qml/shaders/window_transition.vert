@@ -12,6 +12,8 @@ layout(std140, binding = 0) uniform buf {
     vec4 sourceRect;
     vec4 targetRect;
     vec4 headerMetrics;
+    vec4 sourceCaptureUv;
+    vec4 targetCaptureUv;
 };
 void main() {
     qt_TexCoord0 = qt_MultiTexCoord0;
@@ -20,5 +22,8 @@ void main() {
     float p = earlyMotion > 0.5
         ? mix(preparationProgress, 1.0, settlementProgress) : progress;
     vec4 bounds = mix(sourceRect, targetRect, clamp(p, 0.0, 1.0));
-    gl_Position = qt_Matrix * vec4(bounds.xy + qt_MultiTexCoord0 * bounds.zw, 0.0, 1.0);
+    vec4 captureUv = mix(sourceCaptureUv, targetCaptureUv, clamp(p, 0.0, 1.0));
+    vec2 frameSize = bounds.zw / captureUv.zw;
+    gl_Position = qt_Matrix * vec4(bounds.xy
+        + (qt_MultiTexCoord0 - captureUv.xy) * frameSize, 0.0, 1.0);
 }

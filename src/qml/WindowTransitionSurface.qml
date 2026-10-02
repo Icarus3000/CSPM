@@ -14,6 +14,11 @@ Window {
     property rect headerMetrics
     property rect sourceBounds
     property rect targetBounds
+    property var nativeGeometry: null
+    readonly property rect sourceCaptureUv: sourceGrab && sourceGrab.contentUv
+        ? sourceGrab.contentUv : Qt.rect(0, 0, 1, 1)
+    readonly property rect targetCaptureUv: targetGrab && targetGrab.contentUv
+        ? targetGrab.contentUv : Qt.rect(0, 0, 1, 1)
     property int overlayX
     property int overlayY
     property int overlayWidth
@@ -47,6 +52,7 @@ Window {
         id: frozenSource
         source: surface.sourceGrab ? surface.sourceGrab.url : ""
         visible: false
+        cache: false
         smooth: true
         mipmap: true
     }
@@ -55,6 +61,7 @@ Window {
         source: surface.targetGrab ? surface.targetGrab.url
             : (surface.sourceGrab ? surface.sourceGrab.url : "")
         visible: false
+        cache: false
         smooth: true
         mipmap: true
     }
@@ -68,9 +75,13 @@ Window {
         property real preparationProgress: 0
         property real settlementProgress: 0
         property real earlyMotion: surface.earlyMotionEnabled ? 1.0 : 0.0
-        property rect sourceRect: surface.sourceBounds
-        property rect targetRect: surface.targetBounds
+        property rect sourceRect: surface.sourceGrab && surface.sourceGrab.contentUv
+            ? surface.capturedContentBounds(surface.sourceGrab) : surface.sourceBounds
+        property rect targetRect: surface.targetGrab && surface.targetGrab.contentUv
+            ? surface.capturedContentBounds(surface.targetGrab) : surface.targetBounds
         property rect headerMetrics: surface.headerMetrics
+        property rect sourceCaptureUv: surface.sourceCaptureUv
+        property rect targetCaptureUv: surface.targetCaptureUv
         vertexShader: "shaders/window_transition.vert.qsb"
         fragmentShader: "shaders/window_transition.frag.qsb"
     }
@@ -144,6 +155,24 @@ Window {
         presentedFrames = 0
         requestNextFrame()
     }
+    function prepareNativeGeometry() {
+        nativeGeometry = windowFrameCapture.geometry(surface)
+        return nativeGeometry && nativeGeometry.size
+    }
+    function capturedContentBounds(grab) {
+        if (!nativeGeometry || !nativeGeometry.size) return Qt.rect(0, 0, 0, 0)
+        // Use the actual native client pixels, including placement rounding at
+        // monitor boundaries. The host stays fixed for the whole transaction.
+        var sx = nativeGeometry.size.width / surface.width
+        var sy = nativeGeometry.size.height / surface.height
+        var frameX = (grab.nativeOrigin.x - nativeGeometry.origin.x) / sx
+        var frameY = (grab.nativeOrigin.y - nativeGeometry.origin.y) / sy
+        var frameW = grab.physicalSize.width / sx
+        var frameH = grab.physicalSize.height / sy
+        var uv = grab.contentUv
+        return Qt.rect(frameX + uv.x * frameW, frameY + uv.y * frameH,
+            uv.width * frameW, uv.height * frameH)
+    }
     function expectLiveHandoff() {
         if (closingSurface) return
         awaitingLiveHandoff = true
@@ -169,6 +198,10 @@ Window {
         preparationMotion.stop()
         settlementMotion.stop()
         visible = false
+        if (typeof windowFrameCapture !== "undefined") {
+            if (sourceGrab && sourceGrab.nativeFrame) windowFrameCapture.release(sourceGrab.url)
+            if (targetGrab && targetGrab.nativeFrame) windowFrameCapture.release(targetGrab.url)
+        }
         Qt.callLater(function() { surface.destroy() })
     }
 

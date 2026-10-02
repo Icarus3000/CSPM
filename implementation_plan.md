@@ -260,14 +260,17 @@ Professional:
 
 Components should ask the rules layer instead of checking `appStyle` everywhere.
 
-Professional top-level maximize/restore is an operating-system window-state
-transition, not an application-authored visual effect. Keep the client-drawn
-title bar, but preserve the Windows caption/thick-frame style contract beneath
-it and issue the real native maximize/restore command. QML follows the native
-state event to update its glyph and layout model. Do not reintroduce a manual
-monitor-envelope resize, QML geometry tween, snapshot, or temporary texture
-animation on this path. Console may retain its explicitly expressive visual
-sequences where they do not compete with native window state.
+Professional maximize/restore currently follows the user's accepted 2026-10-02
+fixed-surface shader transition. The preceding native Windows state path failed
+the user's visual gate and is historical. Preserve the existing workspace,
+fixed-size title/glyph mapping, early render-thread movement and submitted-frame
+handoff gates. Endpoint images must preserve the actual live framebuffer and
+its physical desktop pixel alignment at fractional DPI; content-only rerendering
+can introduce a final one-pixel nudge. Do not animate the temporary native host's
+geometry or construct another workspace. The current P0 remains this same
+maximize/restore path until real-app user acceptance. Console retains its
+separate expressive sequences. See the latest visual handoff and task ledger
+for validation and release status.
 
 ## 8. Migration Boundary
 

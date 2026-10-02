@@ -1,5 +1,26 @@
 # CSPM Task And Validation Ledger
 
+## Pixel-Aligned Restore Fix And Release (2026-10-02)
+
+- [x] User authorizes the scoped fix; honor the existing commit/push/recompile request. Preserve accepted title/glyph rendering, early motion and the existing workspace.
+- [x] Replace content-only rerendering with native framebuffer capture through a transient in-memory image provider. Align using actual Windows client origins/sizes obtained before showing the fixed surface; direct-copy both shader endpoints. Keep animation durations, frame gates and watchdog unchanged.
+- [x] Reject whole-root rerendering and predictive rounding attempts. Both outside-sandbox GPU tests now pass: 18 intermediate/endpoint samples plus 18 exact two-window comparisons on all three attached screens, including monitor boundaries; provider entries clear after release. Forty focused safe tests, compilation, governed QML lint and whitespace checks pass.
+- [x] Earlier 225% held-endpoint full-app pixel comparison and matched 20-toggle capture timing pass. Six toggles/lifecycle show three identical restore marker bounds; matched start medians content/native are 286/219 ms maximize and 296/301 ms restore. Retain earlier failed DXGI stress runs as failures. The 250 ms endpoint hold is diagnostic only and excluded from performance claims.
+- [x] Final native-geometry full-app pixel runs pass on both DPIs: each six toggles/lifecycle, no watchdog timeout; all six primary restored marker bounds match with repeated stable before/after samples. Save nonsensitive aggregate evidence in `RESTORE_PIXEL_ALIGNMENT_FIX_RESULTS_2026-10-02.json`.
+- [x] Rebuild main/recovery executables with approved-template/confidentiality gates and preserve installed/dist rollback packages. Deploy the full package to `C:/Programs/CSPM`.
+- [x] Outside-sandbox candidate/installed startup passes in 17.93/27.92 seconds; each passes four accessibility-invoked title-bar toggles with observed transition HWND lifecycle and exact restore rectangles. Actual packaged WebEngine HTML/PDF rendering passes for both packages (41,201 bytes each).
+- [x] Verify all 4,377 runtime files / 679,044,943 bytes match installed/candidate, all 168 source/bundled QML files match, and protected workbook/settings hashes are unchanged. Save release evidence in the fix document/aggregate JSON.
+- [ ] Commit/push the fix and completed release ledger; independently verify the remote branch SHA.
+- [ ] User acceptance in the rebuilt installed app: repeat restore at several placements on both screen scales; confirm no nudge, title/font change or responsiveness regression. P0 stays on this same defect until accepted.
+
+## Intermittent Restore Shift Investigation (2026-10-02)
+
+- [x] Review runtime logs and verify installed/source transition assets match. Reproduce a matching one-pixel marker-edge change at the image/live handoff on the 225% display, with the native window rectangle unchanged. Five primary restores in the completed 100% pixel run show no edge change.
+- [x] Add optional geometry tracing, cycle/screen selection, unoccluded diagnostic placement and cropped single-pixel desktop collection. Source geometry runs pass 24 toggles at 100% and 10 at 225%, plus lifecycle checks. The 100% cropped-pixel run passes ten toggles/lifecycle without watchdog timeout.
+- [x] Retain high-DPI pixel run as an overall failure (four watchdog timeouts); three normally completed restores nevertheless show repeated stable one-pixel before/after differences. Reject a disposable target-position-only correction: horizontal alignment improves but the vertical difference remains, and its overall fixture also times out twice. No production change is retained.
+- [x] Save diagnosis/aggregate coordinates in `docs/RESTORE_INTERMITTENT_SHIFT_INVESTIGATION_2026-10-02.md` and `docs/RESTORE_INTERMITTENT_SHIFT_RESULTS_2026-10-02.json`. Diagnostic compilation/whitespace checks pass; real desktop checks run outside sandbox. No new dedicated WebEngine test or rebuild; installed application and workbook/settings hashes are unchanged.
+- [x] Subsequent authorized correction proves matching physical endpoint pixels at both DPIs and several placements, preserving accepted title/glyph rendering and early movement; see the latest release above. Position rounding alone was insufficient. P0 remains open for real-user acceptance of this same defect.
+
 ## Earlier Maximize/Restore Movement And Publication (2026-10-02)
 
 - [x] User authorizes completing the work, full EXE recompilation and Git publication. Preserve accepted title/glyph rendering and final settlement.

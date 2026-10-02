@@ -19,6 +19,8 @@ parser.add_argument('--startup-timeout', type=float, default=60,
                     help='Seconds allowed for cold packaged startup (default: 60)')
 parser.add_argument('--transitions', action='store_true',
                     help='Also click controls; requires permission to move the actual desktop cursor')
+parser.add_argument('--uia-controls', action='store_true',
+                    help='Invoke title-bar controls through Windows accessibility without moving the desktop cursor')
 args = parser.parse_args()
 audit = ROOT/'logs/packaged_window_candidate'
 audit.mkdir(parents=True, exist_ok=True)
@@ -54,13 +56,14 @@ enum_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 user.EnumWindows.argtypes = [enum_type, wintypes.LPARAM]
 cursor = wintypes.POINT()
 user.GetCursorPos(ctypes.byref(cursor))
-user.SetCursorPos(960, 520)  # This 1920x1040 fixture stays on the primary monitor.
+if args.transitions and not args.uia_controls:
+    user.SetCursorPos(960, 520)
 process = subprocess.Popen([str(args.exe.resolve())], env=env,
                            creationflags=subprocess.CREATE_NO_WINDOW)
 started = time.monotonic()
 report = {'exe':str(args.exe.resolve()), 'ok':False, 'checks':[], 'runtime':str(runtime)}
 
-def main_handle():
+def main_handle(expected_title='CSPM - Main Menu'):
     found = []
     @enum_type
     def visit(hwnd, _):
@@ -68,7 +71,7 @@ def main_handle():
         user.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         title = ctypes.create_unicode_buffer(256)
         user.GetWindowTextW(hwnd, title, 256)
-        if pid.value == process.pid and title.value == 'CSPM - Main Menu':
+        if pid.value == process.pid and title.value == expected_title:
             found.append(hwnd)
         return True
     user.EnumWindows(visit, 0)
@@ -96,6 +99,20 @@ def click_maximize(hwnd):
     # 32 px controls + 16 px inset; restored canvas has 11 px exterior pad.
     rect = rectangle(hwnd)
     pad = 11 if rect[2] < 1500 else 0
+    if args.uia_controls:
+        script = '''
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]HWND_VALUE)
+$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+$buttons = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition) | Where-Object { $_.Current.Name -eq [string][char]0xE922 -or $_.Current.Name -eq [string][char]0xE923 })
+if ($buttons.Count -ne 1) { throw 'Expected exactly one maximize/restore control' }
+$pattern = $buttons[0].GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+$pattern.Invoke()
+'''.replace('HWND_VALUE', str(hwnd))
+        return subprocess.Popen(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                creationflags=subprocess.CREATE_NO_WINDOW)
     user.SetForegroundWindow(hwnd)
     positioned = user.SetCursorPos(rect[0]+rect[2]-pad-66, rect[1]+36+pad)
     actual = wintypes.POINT()
@@ -110,22 +127,42 @@ def click_maximize(hwnd):
     user.mouse_event(0x4,0,0,0,0)
 
 try:
-    wait_for(lambda: 'startup-input-ready' in logs() and main_handle(), timeout=args.startup_timeout)
+    wait_for(lambda: ('startup-input-ready' in logs()
+                     or '[STARTUP-FIRST-INPUT-READY]' in logs()) and main_handle(),
+             timeout=args.startup_timeout)
     hwnd = main_handle()
     assert user.IsWindowVisible(hwnd)
     initial = rectangle(hwnd)
     report['ready_seconds'] = round(time.monotonic()-started,2)
     report['checks'].append({'label':'ready', 'rect':initial})
     time.sleep(2)  # Allow the opening surface/input shield to retire.
-    for cycle in range(4 if args.transitions else 0):
-        before = logs().count('reason=presented-target')
-        click_maximize(hwnd)
-        wait_for(lambda: logs().count('reason=presented-target') > before, timeout=10)
+    for cycle in range(4 if args.transitions or args.uia_controls else 0):
+        observed = {'surface':False}
+        invoked = click_maximize(hwnd)
+        def settled():
+            surface = main_handle('CSPM window transition')
+            visible = bool(surface and user.IsWindowVisible(surface))
+            observed['surface'] |= visible
+            rect = rectangle(hwnd)
+            expected = (rect == initial if cycle % 2 else
+                        rect[2] > initial[2] and rect[3] > initial[3])
+            return observed['surface'] and not visible and expected
+        # Normal packaged builds do not persist QML debug completion messages.
+        # Observe the real transition HWND appearing and retiring instead.
+        wait_for(settled, timeout=15)
+        if invoked:
+            _, stderr = invoked.communicate(timeout=15)
+            if invoked.returncode:
+                raise RuntimeError('Accessibility control invocation failed: '+stderr)
         rect = rectangle(hwnd)
         style = user.GetWindowLongPtrW(hwnd,-16)
         assert style & 0x00C00000 == 0, 'Native caption style appeared'
-        assert rect == ([0,0,1920,1040] if cycle%2 == 0 else initial), rect
-        report['checks'].append({'label':f'toggle {cycle}', 'rect':rect, 'style':hex(style)})
+        if cycle % 2:
+            assert rect == initial, rect
+        else:
+            assert rect[2] > initial[2] and rect[3] > initial[3], rect
+        report['checks'].append({'label':f'toggle {cycle}', 'rect':rect, 'style':hex(style),
+                                'observed_transition_surface':observed['surface']})
     report['ok'] = True
 except Exception as exc:
     report['error'] = repr(exc)
@@ -136,7 +173,8 @@ finally:
     except subprocess.TimeoutExpired:
         process.terminate()  # Only the disposable candidate process started here.
         process.wait(timeout=10)
-    user.SetCursorPos(cursor.x,cursor.y)
+    if args.transitions and not args.uia_controls:
+        user.SetCursorPos(cursor.x,cursor.y)
     (audit/'result.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(report),flush=True)
 raise SystemExit(0 if report['ok'] else 1)

@@ -131,7 +131,7 @@ def test_professional_maximize_restore_keeps_frameless_host_and_frozen_surface_h
         "    function captureProfessionalTransitionSurface(sequence, kind, sourceRect,",
         "    function resetDragFxState() {",
     )
-    assert "contentLayer.grabToImage(function(result)" in capture
+    assert "grabProfessionalWindowFrame(function(result)" in capture
     assert capture.index("surface.sourcePresented.connect") < capture.index("mainWin.opacity = 0.0;")
     assert capture.index("mainWin.opacity = 0.0;") < capture.index("mainWin.commitProfessionalWindowTransitionTarget")
     assert "surface.targetCaptureRequested.connect" in capture

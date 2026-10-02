@@ -1,0 +1,380 @@
+{
+  "gpu": {
+    "endpoint_comparisons": 18,
+    "intermediate_endpoint_samples": 18,
+    "screen_dpis": [
+      1.0,
+      2.25,
+      1.0
+    ],
+    "endpoint_max_channel_error": 0,
+    "released_frame_pool_empty": true,
+    "monitor_boundary_cases": true
+  },
+  "timing": {
+    "local_run": "restore_fix_capture_timing_20261002",
+    "total_transitions": 23,
+    "watchdog_timeouts": 0,
+    "diagnostic_endpoint_hold_ms": 0,
+    "primary_toggle_timings": [
+      {
+        "kind": "maximize",
+        "native_frames": false,
+        "start_ms": 150,
+        "complete_ms": 1468
+      },
+      {
+        "kind": "restore",
+        "native_frames": false,
+        "start_ms": 262,
+        "complete_ms": 1773
+      },
+      {
+        "kind": "maximize",
+        "native_frames": true,
+        "start_ms": 219,
+        "complete_ms": 1710
+      },
+      {
+        "kind": "restore",
+        "native_frames": true,
+        "start_ms": 321,
+        "complete_ms": 2053
+      },
+      {
+        "kind": "maximize",
+        "native_frames": false,
+        "start_ms": 425,
+        "complete_ms": 2045
+      },
+      {
+        "kind": "restore",
+        "native_frames": false,
+        "start_ms": 296,
+        "complete_ms": 1691
+      },
+      {
+        "kind": "maximize",
+        "native_frames": true,
+        "start_ms": 206,
+        "complete_ms": 1565
+      },
+      {
+        "kind": "restore",
+        "native_frames": true,
+        "start_ms": 301,
+        "complete_ms": 1691
+      },
+      {
+        "kind": "maximize",
+        "native_frames": false,
+        "start_ms": 287,
+        "complete_ms": 1675
+      },
+      {
+        "kind": "restore",
+        "native_frames": false,
+        "start_ms": 283,
+        "complete_ms": 1712
+      },
+      {
+        "kind": "maximize",
+        "native_frames": true,
+        "start_ms": 184,
+        "complete_ms": 1191
+      },
+      {
+        "kind": "restore",
+        "native_frames": true,
+        "start_ms": 246,
+        "complete_ms": 1507
+      },
+      {
+        "kind": "maximize",
+        "native_frames": false,
+        "start_ms": 198,
+        "complete_ms": 1584
+      },
+      {
+        "kind": "restore",
+        "native_frames": false,
+        "start_ms": 305,
+        "complete_ms": 1727
+      },
+      {
+        "kind": "maximize",
+        "native_frames": true,
+        "start_ms": 219,
+        "complete_ms": 1511
+      },
+      {
+        "kind": "restore",
+        "native_frames": true,
+        "start_ms": 275,
+        "complete_ms": 1646
+      },
+      {
+        "kind": "maximize",
+        "native_frames": false,
+        "start_ms": 286,
+        "complete_ms": 1704
+      },
+      {
+        "kind": "restore",
+        "native_frames": false,
+        "start_ms": 322,
+        "complete_ms": 2186
+      },
+      {
+        "kind": "maximize",
+        "native_frames": true,
+        "start_ms": 345,
+        "complete_ms": 1821
+      },
+      {
+        "kind": "restore",
+        "native_frames": true,
+        "start_ms": 395,
+        "complete_ms": 1895
+      }
+    ]
+  },
+  "desktop": [
+    {
+      "local_run": "restore_fix_final_hidpi_pixels_20261002",
+      "dpr": 2.25,
+      "diagnostic_endpoint_hold_ms": 250,
+      "primary_toggles": 6,
+      "transition_count": 9,
+      "passed": true,
+      "sample_count": 360,
+      "observations": [
+        {
+          "cycle_index": 1,
+          "frozen_marker": {
+            "bounds": [
+              261,
+              207,
+              39,
+              34
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "live_marker": {
+            "bounds": [
+              261,
+              207,
+              39,
+              34
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "native_rectangles": [
+            [
+              4040,
+              146,
+              2338,
+              1424
+            ]
+          ]
+        },
+        {
+          "cycle_index": 3,
+          "frozen_marker": {
+            "bounds": [
+              261,
+              207,
+              39,
+              34
+            ],
+            "matching_samples": 3,
+            "total_samples": 3
+          },
+          "live_marker": {
+            "bounds": [
+              261,
+              207,
+              39,
+              34
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "native_rectangles": [
+            [
+              4040,
+              146,
+              2338,
+              1424
+            ]
+          ]
+        },
+        {
+          "cycle_index": 5,
+          "frozen_marker": {
+            "bounds": [
+              363,
+              252,
+              38,
+              37
+            ],
+            "matching_samples": 3,
+            "total_samples": 3
+          },
+          "live_marker": {
+            "bounds": [
+              363,
+              252,
+              38,
+              37
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "native_rectangles": [
+            [
+              4142,
+              191,
+              2338,
+              1424
+            ]
+          ]
+        }
+      ],
+      "failures": []
+    },
+    {
+      "local_run": "restore_fix_final_primary_pixels_20261002",
+      "dpr": 1.0,
+      "diagnostic_endpoint_hold_ms": 250,
+      "primary_toggles": 6,
+      "transition_count": 9,
+      "passed": true,
+      "sample_count": 370,
+      "observations": [
+        {
+          "cycle_index": 1,
+          "frozen_marker": {
+            "bounds": [
+              271,
+              118,
+              17,
+              17
+            ],
+            "matching_samples": 3,
+            "total_samples": 3
+          },
+          "live_marker": {
+            "bounds": [
+              271,
+              118,
+              17,
+              17
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "native_rectangles": [
+            [
+              240,
+              87,
+              1440,
+              858
+            ]
+          ]
+        },
+        {
+          "cycle_index": 3,
+          "frozen_marker": {
+            "bounds": [
+              271,
+              118,
+              17,
+              17
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "live_marker": {
+            "bounds": [
+              271,
+              118,
+              17,
+              17
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "native_rectangles": [
+            [
+              240,
+              87,
+              1440,
+              858
+            ]
+          ]
+        },
+        {
+          "cycle_index": 5,
+          "frozen_marker": {
+            "bounds": [
+              316,
+              138,
+              17,
+              17
+            ],
+            "matching_samples": 4,
+            "total_samples": 4
+          },
+          "live_marker": {
+            "bounds": [
+              316,
+              138,
+              17,
+              17
+            ],
+            "matching_samples": 2,
+            "total_samples": 2
+          },
+          "native_rectangles": [
+            [
+              285,
+              107,
+              1440,
+              858
+            ]
+          ]
+        }
+      ],
+      "failures": []
+    }
+  ],
+  "release": {
+    "installed_package": "C:/Programs/CSPM",
+    "build_stamp": "BUILD 2026-10-02 PIXEL ALIGNED HANDOFF",
+    "main_exe_bytes": 9190747,
+    "recovery_exe_bytes": 2170513,
+    "main_exe_sha256": "0CF9EC7923DE3F0E84ACC1B0EE9608E51868CED11B23522D511BEFE6B17F9F11",
+    "recovery_exe_sha256": "091249F152E1E184E4EB84CD40EF15A2CD5829BEA414EEACD1BAF034E1CBDFF8",
+    "candidate_startup_seconds": 17.93,
+    "installed_startup_seconds": 27.92,
+    "candidate_titlebar_toggles": 4,
+    "installed_titlebar_toggles": 4,
+    "titlebar_input": "Windows UI Automation InvokePattern",
+    "transition_hwnd_observed_and_retired": true,
+    "exact_restore_rectangles": true,
+    "candidate_webengine_pdf_bytes": 41201,
+    "installed_webengine_pdf_bytes": 41201,
+    "runtime_files": 4377,
+    "runtime_bytes": 679044943,
+    "bundled_source_qml_files": 168,
+    "installed_runtime_matches_candidate": true,
+    "source_qml_matches_bundle": true,
+    "protected_workbook_settings_hashes_unchanged": true,
+    "rollback_package": "to_delete/installed__before_pixel_alignment_release_20261002",
+    "manual_user_acceptance_pending": true,
+    "git_publication_pending": true
+  }
+}

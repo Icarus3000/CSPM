@@ -17,8 +17,23 @@ import time
 parser = argparse.ArgumentParser(description="Outside-sandbox desktop timing fixture on disposable data; no screenshots are saved.")
 parser.add_argument('--audit-label', default='window_responsiveness_' + time.strftime('%Y%m%d_%H%M%S'))
 parser.add_argument('--compare', action='store_true', help='Alternate the earlier preparation order and the early-motion path for 20 toggles.')
+parser.add_argument('--compare-capture', action='store_true', help='Alternate content-only and native-frame capture for matched timing pairs.')
 parser.add_argument('--pixels', action='store_true', help='Collect actual desktop marker coordinates in a separate process; requires desktop duplication access.')
+parser.add_argument('--geometry', action='store_true', help='Record content-to-desktop coordinates at transition stages and late live frames.')
+parser.add_argument('--cycles', type=int, default=10, help='Even number of primary toggles (default: 10; --compare defaults to 20).')
+parser.add_argument('--screen-index', type=int, help='Place the disposable app on this Qt screen index; defaults to the primary screen.')
+parser.add_argument('--keep-visible', action='store_true', help='Keep the disposable window above other windows so desktop pixel measurements are unoccluded.')
+parser.add_argument('--endpoint-hold-ms', type=int, default=0, help='Diagnostic-only endpoint hold for stable pixel sampling; excluded from normal timing claims.')
 args = parser.parse_args()
+if args.cycles < 2 or args.cycles % 2:
+    parser.error('--cycles must be an even number of at least two')
+if args.screen_index is not None and args.screen_index < 0:
+    parser.error('--screen-index must be nonnegative')
+if args.compare and args.compare_capture:
+    parser.error('--compare and --compare-capture are mutually exclusive')
+if args.endpoint_hold_ms < 0 or args.endpoint_hold_ms > 1000:
+    parser.error('--endpoint-hold-ms must be between zero and 1000')
+cycle_count = 20 if (args.compare or args.compare_capture) and args.cycles == 10 else args.cycles
 if not args.audit_label or any(ch not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for ch in args.audit_label):
     parser.error('--audit-label must contain only letters, digits, underscores or hyphens')
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +67,48 @@ shell = replace_once(shell, '    function toggleWindowMaximize() {', '''
     function toggleWindowMaximize() {
         if (!responsivenessProbeActive) beginResponsivenessProbe("direct-command");
         recordResponsivenessStage("toggle-entry");''')
+if args.geometry:
+    shell = replace_once(shell,
+        '    property var responsivenessProbeEvents: []', '''
+    property var responsivenessProbeGeometry: []
+    property int responsivenessProbeGeometrySequence: 0
+    property string responsivenessProbeGeometryKind: ""
+    property double responsivenessProbeGeometryUntil: 0
+    function recordResponsivenessGeometry(label) {
+        var p = contentLayer.mapToGlobal(0, 0);
+        responsivenessProbeGeometry.push({label:label, time:Date.now(),
+            sequence:responsivenessProbeGeometrySequence,
+            kind:responsivenessProbeGeometryKind,
+            window:[x,y,width,height], host:[hostX,hostY,hostW,hostH],
+            finalRect:[finalX,finalY,finalW,finalH],
+            canvas:[canvasX,canvasY,canvasW,canvasH],
+            local:[canvasLocalX,canvasLocalY,contentLocalX,contentLocalY],
+            content:[p.x,p.y,contentLayer.width,contentLayer.height],
+            dpr:Screen.devicePixelRatio, opacity:mainWin.opacity,
+            phase:animationPhase,
+            otherMotion:isMinimizing || isRestoringFromMinimize || wasWindowMinimized || isClosing,
+            transforms:[settledScaleX(),settledScaleY(),settledTransX(),settledTransY(),settledRotate()],
+            surfaceStage:maximizeOverlayRef ? maximizeOverlayRef.stage : "none"});
+    }
+    Connections {
+        target: mainWin
+        function onFrameSwapped() {
+            if (Date.now() < mainWin.responsivenessProbeGeometryUntil)
+                mainWin.recordResponsivenessGeometry("live-frame");
+        }
+    }
+    property var responsivenessProbeEvents: []''')
+    shell = replace_once(shell, '        responsivenessProbeEvents = [];', '''
+        responsivenessProbeGeometrySequence++;
+        responsivenessProbeGeometryKind = uiMaximized ? "restore" : "maximize";
+        responsivenessProbeEvents = [];''')
+    shell = replace_once(shell,
+        '        if (responsivenessProbeActive) responsivenessProbeEvents.push([label, Date.now()]);', '''
+        if (responsivenessProbeActive) {
+            responsivenessProbeEvents.push([label, Date.now()]);
+            recordResponsivenessGeometry(label);
+            if (label === "motion-finished") responsivenessProbeGeometryUntil = Date.now()+1500;
+        }''')
 shell = replace_once(shell,
     '                console.warn("Professional window surface handoff timed out");',
     '''                recordResponsivenessStage("watchdog-" + (maximizeOverlayRef ? maximizeOverlayRef.stage : "no-surface"));
@@ -67,21 +124,24 @@ shell = replace_once(shell, '        return maximized;\n    }\n\n    function be
 shell = replace_once(shell,
     '        professionalSurfaceWatchdog.restart();\n        var sourceHeaderMetrics',
     '        recordResponsivenessStage("source-grab-request");\n        professionalSurfaceWatchdog.restart();\n        var sourceHeaderMetrics')
-shell = replace_once(shell, '        var accepted = contentLayer.grabToImage(function(result) {',
-    '        var accepted = contentLayer.grabToImage(function(result) {\n            mainWin.recordResponsivenessStage("source-grab-ready");')
+source_grab_line = '        var accepted = grabProfessionalWindowFrame(function(result) {'
+shell = replace_once(shell, source_grab_line,
+    source_grab_line+'\n            mainWin.recordResponsivenessStage("source-grab-ready");')
 create_line = '            var surface = professionalSurfaceComponent.createObject(null, {'
 shell = replace_once(shell, create_line,
     '            mainWin.recordResponsivenessStage("surface-create-start");\n'+create_line)
-shell = replace_once(shell, '            if (!surface) { mainWin.stopMaximizeFxAnimations(); return; }',
-    '            mainWin.recordResponsivenessStage("surface-create-end");\n            if (!surface) { mainWin.stopMaximizeFxAnimations(); return; }')
+surface_create_guard = '            if (!surface) {\n                windowFrameCapture.release(result.url);'
+shell = replace_once(shell, surface_create_guard,
+    '            mainWin.recordResponsivenessStage("surface-create-end");\n'+surface_create_guard)
 source_connect = '            surface.sourcePresented.connect(function() {'
 shell = replace_once(shell, source_connect,
     source_connect+'\n                mainWin.recordResponsivenessStage("source-presented");')
 target_connect = '            surface.targetCaptureRequested.connect(function() {'
 shell = replace_once(shell, target_connect,
     target_connect+'\n                mainWin.recordResponsivenessStage("target-grab-request");')
-shell = replace_once(shell, '                var targetAccepted = contentLayer.grabToImage(function(targetResult) {',
-    '                var targetAccepted = contentLayer.grabToImage(function(targetResult) {\n                    mainWin.recordResponsivenessStage("target-grab-ready");')
+target_grab_line = '                var targetAccepted = mainWin.grabProfessionalWindowFrame(function(targetResult) {'
+shell = replace_once(shell, target_grab_line,
+    target_grab_line+'\n                    mainWin.recordResponsivenessStage("target-grab-ready");')
 present_connect = '            surface.targetPresented.connect(function() {'
 shell = replace_once(shell, present_connect,
     present_connect+'\n                mainWin.recordResponsivenessStage("live-target-reveal");')
@@ -122,6 +182,21 @@ finish = finish.rstrip()[:-1]+'''
 shell = shell[:start]+finish+shell[end:]
 shell = shell.replace('responsivenessProbeRuns.push({kind: kind, events: responsivenessProbeEvents});',
     'responsivenessProbeRuns.push({kind: kind, optimized: professionalEarlyWindowMotionEnabled, events: responsivenessProbeEvents});')
+shell = shell.replace('optimized: professionalEarlyWindowMotionEnabled,',
+    'optimized: professionalEarlyWindowMotionEnabled, nativeFrames: professionalPixelAlignedWindowCaptureEnabled,')
+if args.endpoint_hold_ms:
+    shell = replace_once(shell, '    function toggleWindowMaximize() {', '''
+    Timer {
+        id: responsivenessEndpointHoldTimer
+        interval: '''+str(args.endpoint_hold_ms)+'''
+        property var revealAction
+        onTriggered: revealAction()
+    }
+    function toggleWindowMaximize() {''')
+    shell = replace_once(shell, present_connect,
+        present_connect+'\n                responsivenessEndpointHoldTimer.revealAction = function() {')
+    shell = replace_once(shell, '                surface.expectLiveHandoff();\n            });',
+        '                surface.expectLiveHandoff();\n                };\n                responsivenessEndpointHoldTimer.restart();\n            });')
 shell_path.write_text(shell, encoding='utf-8')
 
 surface_path = MIRROR/'src/qml/WindowTransitionSurface.qml'
@@ -244,16 +319,38 @@ code = code.replace('    def write_results(self):', '''+repr('''    def write_re
         if hasattr(self, 'engine'):
             payload = self.evaluate("JSON.stringify(_probeWindow.responsivenessProbeRuns)").toString()
             (AUDIT/'latency_events.json').write_text(payload, encoding='utf-8')
+            geometry = self.evaluate("JSON.stringify(_probeWindow.responsivenessProbeGeometry || [])").toString()
+            (AUDIT/'geometry_events.json').write_text(geometry, encoding='utf-8')
             (AUDIT/'mask_times.json').write_text(json.dumps(_probe_mask_times), encoding='utf-8')
             (AUDIT/'display_probe.json').write_text(json.dumps({'dpr':self.window.devicePixelRatio(), 'visible':self.window.isVisible()}), encoding='utf-8')''')+''')
 '''
 wrapper = replace_once(wrapper, "code = code.replace('raise SystemExit(1 if failures else 0)', '')",
     insertion+"\ncode = code.replace('raise SystemExit(1 if failures else 0)', '')")
+wrapper = replace_once(wrapper, "code = code.replace('raise SystemExit(1 if failures else 0)', '')",
+    f"code = code.replace('if self.index < 10:', 'if self.index < {cycle_count}:')\n"
+    + ("code = code.replace('            self.check_cycle()', '            QTimer.singleShot(300, self.check_cycle)')\n" if args.geometry else "")
+    + "code = code.replace('raise SystemExit(1 if failures else 0)', '')")
 if args.compare:
     wrapper = wrapper.replace("code = code.replace('raise SystemExit(1 if failures else 0)', '')", '''
-code = code.replace('if self.index < 10:', 'if self.index < 20:')
 code = code.replace('    def step(self):', '    def step(self):\\n        self.evaluate("_probeWindow.professionalEarlyWindowMotionEnabled = " + ("true" if (self.index // 2) % 2 else "false"))\\n        QTimer.singleShot(100, self.command_step)\\n\\n    def command_step(self):')
 code = code.replace('raise SystemExit(1 if failures else 0)', '')''')
+if args.compare_capture:
+    wrapper = wrapper.replace("code = code.replace('raise SystemExit(1 if failures else 0)', '')", '''
+code = code.replace('    def step(self):', '    def step(self):\\n        self.evaluate("_probeWindow.professionalPixelAlignedWindowCaptureEnabled = " + ("true" if (self.index // 2) % 2 else "false"))\\n        QTimer.singleShot(100, self.command_step)\\n\\n    def command_step(self):')
+code = code.replace('raise SystemExit(1 if failures else 0)', '')''')
+if args.screen_index is not None:
+    wrapper = replace_once(wrapper, "code = code.replace('raise SystemExit(1 if failures else 0)', '')",
+        "code = code.replace('primary=QGuiApplication.primaryScreen()', "
+        + repr(f'primary=QGuiApplication.screens()[{args.screen_index}]') + ")\n"
+        + "code = code.replace('raise SystemExit(1 if failures else 0)', '')")
+if args.keep_visible:
+    wrapper = replace_once(wrapper, "code = code.replace('raise SystemExit(1 if failures else 0)', '')",
+        "code = code.replace('    def begin_cycles(self):', " + repr('''    def begin_cycles(self):
+        # Diagnostic-only HWND z-order; released when this disposable app exits.
+        u.SetWindowPos.argtypes = [ctypes.wintypes.HWND,ctypes.wintypes.HWND,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_uint]
+        assert u.SetWindowPos(int(self.window.winId()), -1, 0, 0, 0, 0, 0x13)
+        self.window.update()''') + ")\n"
+        + "code = code.replace('raise SystemExit(1 if failures else 0)', '')")
 try:
     exec(compile(wrapper, str(ROOT/'logs/run_settlement_fixture_20261002.py'), 'exec'),
          {'__file__':str(ROOT/'logs/run_settlement_fixture_20261002.py'), '__name__':'__main__', 'args': args})
@@ -265,8 +362,8 @@ runs = json.loads((AUDIT/'latency_events.json').read_text())
 report = json.loads((AUDIT/'window_transition_results.json').read_text(encoding='utf-8'))
 assert not report['failures'], report['failures']
 assert 'Professional window surface handoff timed out' not in runtime
-expected = 23 if args.compare else 13
+expected = cycle_count + 3
 assert len(runs) == expected, (len(runs), expected)
-assert len([row for row in report['results'] if row['label'].startswith('cycle ')]) == (20 if args.compare else 10)
+assert len([row for row in report['results'] if row['label'].startswith('cycle ')]) == cycle_count
 (AUDIT/'latency_events.json').write_text(json.dumps(runs, indent=2), encoding='utf-8')
 print(json.dumps({'timed_runs':len(runs), 'result':str(AUDIT/'latency_events.json')}), flush=True)

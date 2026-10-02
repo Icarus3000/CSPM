@@ -1891,6 +1891,9 @@ def main() -> None:
     # AP is composed on AppController (app.apController), matching docketing/billing.
     # Keep a context-property alias for older QML resolution paths during transition.
     engine.rootContext().setContextProperty("app", controller)
+    from backend.window_frame_capture import WindowFrameCapture
+    window_frame_capture = WindowFrameCapture(engine)
+    engine.rootContext().setContextProperty("windowFrameCapture", window_frame_capture)
     engine.rootContext().setContextProperty("apBackendController", controller.apController)
     _boot_log("context.app.injected")
     engine.rootContext().setContextProperty("docketApp", controller.docketing)
