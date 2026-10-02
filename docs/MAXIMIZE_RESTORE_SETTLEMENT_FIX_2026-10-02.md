@@ -4,6 +4,8 @@ This continuation supersedes the single-capture/terminal-fade mechanism in `MAXI
 
 ## Later full rebuild requested by user
 
+Publication completed: `c0d16ec` contains the fix and release handoff and was pushed to `origin/fix/invoice-billing-client-correction-20260926`. Remote SHA verified as `c0d16ecd93652ca8127ddc97833c96c5de6b29b5`; this documentation follow-up records completion. The P0 manual gate remains open.
+
 The initial asset-only delivery described below has been followed by a full main/recovery EXE rebuild with the approved release builder and confidentiality checks. The complete package is installed at `C:/Programs/CSPM`. Candidate and installed outside-sandbox startup pass (44.22 / 51.85 seconds); real installed WebEngine HTML/PDF rendering passes (41,201 bytes). The first cold candidate attempt exceeded its original 60-second fixture deadline and is retained as failed; the diagnostic now allows an explicit startup timeout, and the successful retry used 120 seconds. No application watchdog was lengthened.
 
 Dist/installed runtime manifests match all 4,370 files / 678,954,950 bytes; all 168 QML-tree files match source. Protected workbook/settings hashes remain unchanged. Main EXE SHA-256: `D27374DDAA0B815ED53077096CDFDA1ED0A29BE08AC8CEB545BB2B5B0D8FA0B6`. Prior installed runtime is at `to_delete/installed__before_titlebar_release_20261002`; prior dist is at `to_delete/dist__replaced_release_20261002_121021`. Evidence is under `logs/titlebar_release_20261002_*`. The user explicitly authorized publication to `origin/fix/invoice-billing-client-correction-20260926`; manual visual acceptance remains open.

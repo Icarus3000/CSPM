@@ -8,6 +8,7 @@
 - [x] Outside-sandbox installed startup passes in 51.85 seconds; actual installed WebEngine HTML/PDF rendering passes (41,201 bytes). Startup harness closes the main window and stops only its remaining tray fixture.
 - [x] Verify 4,370 runtime files / 678,954,950 bytes match dist/installed; all 168 QML-tree files match source. Workbook/settings hashes remain unchanged. Main EXE SHA-256: `D27374DDAA0B815ED53077096CDFDA1ED0A29BE08AC8CEB545BB2B5B0D8FA0B6`. Recovery: `BC7B68F5C451D253421272262CF9B6BE3014D85FCF387D6D953EC8C37A9923C3`.
 - [x] Carry forward the unchanged application's passing 38 sandbox-safe tests, governed QML lint and outside-sandbox GPU/full-source lifecycle results; new diagnostic CLI compiles and staged whitespace check passes.
+- [x] Commit the fix, GPU regression, diagnostic timeout option and release handoff as `c0d16ec`; push successfully to `origin/fix/invoice-billing-client-correction-20260926`. Remote branch SHA verified as `c0d16ecd93652ca8127ddc97833c96c5de6b29b5`. This follow-up documentation records the completed publication.
 - [ ] P0 manual visual acceptance remains open. This full rebuild does not establish title/glyph perception, responsiveness, caption stress or physical mixed-DPI movement acceptance. Publication target: `origin/fix/invoice-billing-client-correction-20260926`.
 
 ## Title-Bar And Final-Layout Settlement Candidate (2026-10-02)

@@ -2,6 +2,8 @@
 
 ## 2026-10-02: Title-Bar Candidate Fully Rebuilt And Installed For Publication
 
+Publication completed: code/release commit `c0d16ec` was pushed successfully to `origin/fix/invoice-billing-client-correction-20260926`; the remote SHA was independently verified as `c0d16ecd93652ca8127ddc97833c96c5de6b29b5`. This documentation follow-up records that completed push. User visual acceptance remains pending.
+
 The user explicitly requested commit/push and full EXE recompilation after the earlier external-asset patch. `scripts/build_release.py --validate --no-deploy` rebuilt both main and recovery executables successfully; approved-template governance and confidentiality checks passed. Main executable modification time is 2026-10-02 12:08:46 Eastern. Prior dist is retained at `to_delete/dist__replaced_release_20261002_121021`. The builder's initial Windows rename returned access denied, then its existing fallback move promoted the completed package successfully; this was not a build failure.
 
 The first outside-sandbox candidate smoke exceeded its original 60-second deadline. Its log reached input-ready at 60.421 seconds while fixture cleanup was closing the main window; it remains a failed test. The diagnostic now exposes `--startup-timeout`, retaining the 60-second default. Retrying with a 120-second allowance passed in 44.22 seconds. No application startup behavior or transition watchdog was changed. The full package was then deployed through `deploy_to_programs()` to `C:/Programs/CSPM`, after backing up the previous runtime to `to_delete/installed__before_titlebar_release_20261002`.
