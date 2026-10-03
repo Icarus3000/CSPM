@@ -1,0 +1,624 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-03",
+  "scope": "Sanitized independent audit of one authorized fixed-clock QML fallback and same-process production control. Private workbooks/settings, raw frames, screenshots and application records excluded.",
+  "overallGate": "FAIL",
+  "architectureDecision": "REJECTED_CURRENT_FIXED_CLOCK_CANDIDATE",
+  "productionRemainsDefault": true,
+  "authoredCandidateMotionMs": 350,
+  "authoredAppearanceTransferStartFraction": 0.55,
+  "authoredAppearanceTransferDeadlineMs": 192.5,
+  "measuredMotionDurationStatus": "UNMEASURED_PHYSICAL",
+  "runs": [
+    {
+      "evidenceLabel": "cleanroom_single_clock_ab_20261003_run1",
+      "configuration": null,
+      "sourceProvenance": null,
+      "recordedPrimaryTransitions": 8,
+      "recordedLifecycleTransitions": 3,
+      "protectedOriginalHashesUnchanged": true,
+      "functionalFailures": [
+        "wrong native/UI state at 2",
+        "wrong native/UI state at 6",
+        "maximized taskbar return lost maximized UI"
+      ],
+      "qualificationFailureMessagesRecorded": 12,
+      "physicalContinuityStatus": "UNMEASURED",
+      "evidencePaths": [
+        "logs/cleanroom_single_clock_ab_20261003_run1/cleanroom_frames.json",
+        "logs/cleanroom_single_clock_ab_20261003_run1/cleanroom_physical_geometry.json",
+        "logs/cleanroom_single_clock_ab_20261003_run1/window_transition_results.json",
+        "logs/cleanroom_single_clock_ab_20261003_run1/window_transition_pixel8.csv",
+        "logs/cleanroom_single_clock_ab_20261003_run1/protected_hashes.json"
+      ],
+      "result": "INVALID_COMPARISON_FIXTURE_CONTAMINATION_AND_SCREEN_WRAPPER_GUARD",
+      "timingComparisonStatus": "EXCLUDED",
+      "interpretation": "Native endpoint snapshots have minimized (-32000,-32000,160,28) HWNDs while QML/model geometry reports ordinary states. The old screen wrapper identity check independently rejects six distinct fallback transactions before motion. Wrong native/UI checks and taskbar state failure make this an invalid production speed A/B; no apparent short rejected-toggle duration is a successful transition. The origin of native minimization is unresolved. Raw failure retained.",
+      "distinctFallbackGuardFailures": 6,
+      "provenanceLimit": "First report contains no configuration/source hash manifest; current fixture guard/screen descriptor repair cannot retroactively validate its timing."
+    },
+    {
+      "evidenceLabel": "cleanroom_single_clock_ab_20261003_run2",
+      "configuration": {
+        "audit_label": "cleanroom_single_clock_ab_20261003_run2",
+        "engine": "compare",
+        "cycles": 8,
+        "screen_index": 0,
+        "pixels": true,
+        "keep_visible": false
+      },
+      "sourceProvenance": {
+        "scope": "SHA-256 at fixture startup",
+        "sources": {
+          "scripts/diagnostics/cleanroom_transition_probe.py": "7c04f2e889580414b7a54554c3a874bb978982022fc1a8c4032721ff3922b0cf",
+          "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+          "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+          "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+          "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8",
+          "src/qml/CleanRoomTransitionSurface.qml": "e616557576640401f43d770b81d6e657559f4d27cb9f440631f9eaa5e51c0627",
+          "src/qml/WindowTransitionSurface.qml": "588bef8738e9432fffdee42cdae1f45b5e84efe23133b7a6c85550f24ec3a260",
+          "src/qml/shaders/cleanroom_transition.vert.qsb": "393c2fbba4bbdbf747008ea3c2c577ebd1bc893f1cfc653003d15e206c13c496",
+          "src/qml/shaders/cleanroom_transition.frag.qsb": "4bce540d0cc46e254c0bf3d726fc86182a30054ba94305a7ccdcbbad712a44d1"
+        }
+      },
+      "recordedPrimaryTransitions": 8,
+      "recordedLifecycleTransitions": 3,
+      "protectedOriginalHashesUnchanged": true,
+      "functionalFailures": [],
+      "qualificationFailureMessagesRecorded": 14,
+      "physicalContinuityStatus": "UNMEASURED",
+      "evidencePaths": [
+        "logs/cleanroom_single_clock_ab_20261003_run2/cleanroom_frames.json",
+        "logs/cleanroom_single_clock_ab_20261003_run2/cleanroom_physical_geometry.json",
+        "logs/cleanroom_single_clock_ab_20261003_run2/window_transition_results.json",
+        "logs/cleanroom_single_clock_ab_20261003_run2/window_transition_pixel8.csv",
+        "logs/cleanroom_single_clock_ab_20261003_run2/protected_hashes.json"
+      ],
+      "result": "FUNCTIONAL_PASS_QUALIFICATION_FAIL",
+      "functionalHarnessStatus": "PASS",
+      "validPrimaryTransitions": 8,
+      "validLifecycleTransitions": 3,
+      "qualifiedCandidatePrimaryTransitions": 0,
+      "comparisonScope": "Production and sole fallback alternate pairs in one populated app on output 0 at 100%. Two primary samples per engine/direction; three subsequent candidate lifecycle transitions excluded from medians. Native main window is visible/nonminimized at primary commands/endpoints. Same 350 ms fallback; screen descriptor comparison repairs wrapper identity guard without duration tuning.",
+      "transitionSummaries": [
+        {
+          "index": 0,
+          "primary": true,
+          "engine": "production",
+          "direction": "maximize",
+          "commandToInputReleaseObservationMs": 1844.9508,
+          "sourceContentRectLogical": [
+            320,
+            140,
+            1100,
+            760
+          ],
+          "targetContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "endQtGeometryLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ]
+        },
+        {
+          "index": 1,
+          "primary": true,
+          "engine": "production",
+          "direction": "restore",
+          "commandToInputReleaseObservationMs": 1986.7799,
+          "sourceContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "targetContentRectLogical": [
+            320,
+            140,
+            1100,
+            760
+          ],
+          "endQtGeometryLogical": [
+            309,
+            129,
+            1122,
+            782
+          ]
+        },
+        {
+          "index": 2,
+          "primary": true,
+          "engine": "single-clock",
+          "direction": "maximize",
+          "commandToInputReleaseObservationMs": 1623.119,
+          "sourceContentRectLogical": [
+            320,
+            140,
+            1100,
+            760
+          ],
+          "targetContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "endQtGeometryLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ]
+        },
+        {
+          "index": 3,
+          "primary": true,
+          "engine": "single-clock",
+          "direction": "restore",
+          "commandToInputReleaseObservationMs": 1722.3261,
+          "sourceContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "targetContentRectLogical": [
+            320,
+            140,
+            1100,
+            760
+          ],
+          "endQtGeometryLogical": [
+            309,
+            129,
+            1122,
+            782
+          ]
+        },
+        {
+          "index": 4,
+          "primary": true,
+          "engine": "production",
+          "direction": "maximize",
+          "commandToInputReleaseObservationMs": 2086.2282,
+          "sourceContentRectLogical": [
+            365,
+            160,
+            1100,
+            760
+          ],
+          "targetContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "endQtGeometryLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ]
+        },
+        {
+          "index": 5,
+          "primary": true,
+          "engine": "production",
+          "direction": "restore",
+          "commandToInputReleaseObservationMs": 2000.4221,
+          "sourceContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "targetContentRectLogical": [
+            365,
+            160,
+            1100,
+            760
+          ],
+          "endQtGeometryLogical": [
+            354,
+            149,
+            1122,
+            782
+          ]
+        },
+        {
+          "index": 6,
+          "primary": true,
+          "engine": "single-clock",
+          "direction": "maximize",
+          "commandToInputReleaseObservationMs": 1203.3904,
+          "sourceContentRectLogical": [
+            365,
+            160,
+            1100,
+            760
+          ],
+          "targetContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "endQtGeometryLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ]
+        },
+        {
+          "index": 7,
+          "primary": true,
+          "engine": "single-clock",
+          "direction": "restore",
+          "commandToInputReleaseObservationMs": 1100.3301,
+          "sourceContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "targetContentRectLogical": [
+            365,
+            160,
+            1100,
+            760
+          ],
+          "endQtGeometryLogical": [
+            354,
+            149,
+            1122,
+            782
+          ]
+        },
+        {
+          "index": 8,
+          "primary": false,
+          "engine": "single-clock",
+          "direction": "maximize",
+          "commandToInputReleaseObservationMs": 1594.6553,
+          "sourceContentRectLogical": [
+            410,
+            180,
+            1100,
+            760
+          ],
+          "targetContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "endQtGeometryLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ]
+        },
+        {
+          "index": 9,
+          "primary": false,
+          "engine": "single-clock",
+          "direction": "restore",
+          "commandToInputReleaseObservationMs": 1463.6355,
+          "sourceContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "targetContentRectLogical": [
+            410,
+            180,
+            1100,
+            760
+          ],
+          "endQtGeometryLogical": [
+            399,
+            169,
+            1122,
+            782
+          ]
+        },
+        {
+          "index": 10,
+          "primary": false,
+          "engine": "single-clock",
+          "direction": "maximize",
+          "commandToInputReleaseObservationMs": 1522.951,
+          "sourceContentRectLogical": [
+            410,
+            180,
+            1100,
+            760
+          ],
+          "targetContentRectLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "endQtGeometryLogical": [
+            0,
+            0,
+            1920,
+            1040
+          ]
+        }
+      ],
+      "primaryDiagnosticTiming": [
+        {
+          "engine": "production",
+          "direction": "maximize",
+          "samples": 2,
+          "medianCommandToInputReleaseObservationMs": 1965.5895,
+          "minimumMs": 1844.9508,
+          "maximumMs": 2086.2282
+        },
+        {
+          "engine": "production",
+          "direction": "restore",
+          "samples": 2,
+          "medianCommandToInputReleaseObservationMs": 1993.601,
+          "minimumMs": 1986.7799,
+          "maximumMs": 2000.4221
+        },
+        {
+          "engine": "single-clock",
+          "direction": "maximize",
+          "samples": 2,
+          "medianCommandToInputReleaseObservationMs": 1413.2547,
+          "minimumMs": 1203.3904,
+          "maximumMs": 1623.119
+        },
+        {
+          "engine": "single-clock",
+          "direction": "restore",
+          "samples": 2,
+          "medianCommandToInputReleaseObservationMs": 1411.3281,
+          "minimumMs": 1100.3301,
+          "maximumMs": 1722.3261
+        }
+      ],
+      "diagnosticObservedMedianRatio": {
+        "maximize": 1.3908,
+        "restore": 1.4126
+      },
+      "diagnosticTimingLimit": "inputReleaseObserved is a GUI-delivered poll/snapshot timestamp including handler invocation, frame observer overhead, polling and scheduling. It is not the exact input-unlock instant, physical scanout or 350 ms displayed motion. n=2 per engine/direction and unequal order/load preclude a reliable production performance claim; observed ratios 1.39/1.41 do not meet 3x and candidate qualified 0/4.",
+      "candidateUniqueTraceSummary": [
+        {
+          "runIndex": 2,
+          "primary": true,
+          "direction": "maximize",
+          "qualificationFailure": "target-missed-fixed-transfer-deadline",
+          "sourceEndpointsPinned": true,
+          "targetCaptureAfterClockStartMs": 832.8993,
+          "targetPresentationGuiObservationAfterClockStartMs": 948.7769,
+          "motionEndGuiDeliveryAfterClockStartMs": 1232.8985,
+          "targetLayoutCallMs": 409.9146
+        },
+        {
+          "runIndex": 3,
+          "primary": true,
+          "direction": "restore",
+          "qualificationFailure": "target-missed-fixed-transfer-deadline",
+          "sourceEndpointsPinned": true,
+          "targetCaptureAfterClockStartMs": 860.2031,
+          "targetPresentationGuiObservationAfterClockStartMs": 1026.2858,
+          "motionEndGuiDeliveryAfterClockStartMs": 1347.2241,
+          "targetLayoutCallMs": 509.1615
+        },
+        {
+          "runIndex": 6,
+          "primary": true,
+          "direction": "maximize",
+          "qualificationFailure": "target-missed-fixed-transfer-deadline",
+          "sourceEndpointsPinned": true,
+          "targetCaptureAfterClockStartMs": 835.6098,
+          "targetPresentationGuiObservationAfterClockStartMs": 837.3161,
+          "motionEndGuiDeliveryAfterClockStartMs": 944.964,
+          "targetLayoutCallMs": 389.0061
+        },
+        {
+          "runIndex": 7,
+          "primary": true,
+          "direction": "restore",
+          "qualificationFailure": "target-missed-fixed-transfer-deadline",
+          "sourceEndpointsPinned": true,
+          "targetCaptureAfterClockStartMs": 679.8038,
+          "targetPresentationGuiObservationAfterClockStartMs": 682.3171,
+          "motionEndGuiDeliveryAfterClockStartMs": 786.7029,
+          "targetLayoutCallMs": 308.6506
+        },
+        {
+          "runIndex": 8,
+          "primary": false,
+          "direction": "maximize",
+          "qualificationFailure": "target-missed-fixed-transfer-deadline",
+          "sourceEndpointsPinned": true,
+          "targetCaptureAfterClockStartMs": 875.8923,
+          "targetPresentationGuiObservationAfterClockStartMs": 999.5009,
+          "motionEndGuiDeliveryAfterClockStartMs": 1300.7437,
+          "targetLayoutCallMs": 443.5473
+        },
+        {
+          "runIndex": 9,
+          "primary": false,
+          "direction": "restore",
+          "qualificationFailure": "target-missed-fixed-transfer-deadline",
+          "sourceEndpointsPinned": true,
+          "targetCaptureAfterClockStartMs": 761.0367,
+          "targetPresentationGuiObservationAfterClockStartMs": 867.1792,
+          "motionEndGuiDeliveryAfterClockStartMs": 1170.4208,
+          "targetLayoutCallMs": 391.2738
+        },
+        {
+          "runIndex": 10,
+          "primary": false,
+          "direction": "maximize",
+          "qualificationFailure": "target-missed-fixed-transfer-deadline",
+          "sourceEndpointsPinned": true,
+          "targetCaptureAfterClockStartMs": 775.1017,
+          "targetPresentationGuiObservationAfterClockStartMs": 780.1472,
+          "motionEndGuiDeliveryAfterClockStartMs": 917.3057,
+          "targetLayoutCallMs": 353.0054
+        }
+      ],
+      "candidateDeadlineResults": {
+        "primaryTargetsTested": 4,
+        "primaryTargetsMetDeadline": 0,
+        "primaryTargetsMissedDeadline": 4,
+        "allUniqueCandidateTransactionsIncludingLifecycle": 7,
+        "allUniqueCandidateDeadlinesMissed": 7,
+        "duplicateRawFailureCountExplanation": "Each candidate trace appears once on the live object and once in completed archive. Four primary failures are counted once; fourteen raw messages represent seven unique transactions, not fourteen independent failures."
+      },
+      "physicalGeometryObservations": [
+        {
+          "run": 0,
+          "engine": "production",
+          "kind": "maximize",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 112.83329990692437,
+          "commandToFirstMarkerMovementMs": 369.7668999666348
+        },
+        {
+          "run": 1,
+          "engine": "production",
+          "kind": "restore",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 135.04359999205917,
+          "commandToFirstMarkerMovementMs": 470.39909998420626
+        },
+        {
+          "run": 2,
+          "engine": "single-clock",
+          "kind": "maximize",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 100.83640005905181,
+          "commandToFirstMarkerMovementMs": 1207.0137000409886
+        },
+        {
+          "run": 3,
+          "engine": "single-clock",
+          "kind": "restore",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 179.56079996656626,
+          "commandToFirstMarkerMovementMs": 1256.3754000002518
+        },
+        {
+          "run": 4,
+          "engine": "production",
+          "kind": "maximize",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 122.62260005809367,
+          "commandToFirstMarkerMovementMs": 45.44969997368753
+        },
+        {
+          "run": 5,
+          "engine": "production",
+          "kind": "restore",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 139.10649996250868,
+          "commandToFirstMarkerMovementMs": 436.78599991835654
+        },
+        {
+          "run": 6,
+          "engine": "single-clock",
+          "kind": "maximize",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 147.03180000651628,
+          "commandToFirstMarkerMovementMs": 799.3547000223771
+        },
+        {
+          "run": 7,
+          "engine": "single-clock",
+          "kind": "restore",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 137.67679990269244,
+          "commandToFirstMarkerMovementMs": 634.0576000511646
+        },
+        {
+          "run": 8,
+          "engine": "single-clock",
+          "kind": "maximize",
+          "status": "UNMEASURED",
+          "reason": "missing repeated physical source/target marker spans"
+        },
+        {
+          "run": 9,
+          "engine": "single-clock",
+          "kind": "restore",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 77.72140007000417,
+          "commandToFirstMarkerMovementMs": 1092.1999000711367
+        },
+        {
+          "run": 10,
+          "engine": "single-clock",
+          "kind": "maximize",
+          "status": "UNMEASURED",
+          "reason": "nonmonotonic or over-50ms collector gap",
+          "maxGapMs": 229.01350003667176,
+          "commandToFirstMarkerMovementMs": 773.0029999511316
+        }
+      ],
+      "physicalEvidenceLimit": "Every primary physical classification is UNMEASURED because collector intervals exceed 50 ms (100.84\u2013179.56 ms maxima). These are sampling gaps, not established display drops or a motion failure localization. Whole texture/luminance/sharpness and source/target pixel handoff are not measured by marker geometry. Modeled absolute polynomial samples are not observations of render uniforms.",
+      "retainedFindings": {
+        "provenByMeasurement": [
+          "Eight primary transitions plus three lifecycle commands finish with no functional harness failure.",
+          "Four primary and three lifecycle candidate target captures miss the fixed 192.5 ms transfer deadline.",
+          "Primary target captures arrive 679.80\u2013860.20 ms after clock start; primary motion-end GUI deliveries 786.70\u20131347.22 ms after clock start."
+        ],
+        "supportedByObservation": [
+          "Repaired screen descriptor comparison permits same-monitor fallback operation while retaining pinned geometry.",
+          "Final target readiness remains on complete handoff critical path despite a single authored 350 ms timeline."
+        ],
+        "disproven": [
+          "A short fixed animator by itself yields a qualifying threefold faster populated complete experience."
+        ],
+        "stillUnknown": [
+          "No-pause physical trajectory and accurate continuous content handoff.",
+          "Whole frame pixel/brightness/sharpness and protected glyph fidelity.",
+          "Installed KDE-quality acceptance."
+        ]
+      }
+    }
+  ],
+  "validation": {
+    "auditSafeChecks": "JSON/trace calculations and whitespace validation only; no new experiment by evidence auditor.",
+    "rootReportedSandboxSafeChecks": "51 focused tests, native compilation/ABI checks and governed QML lint pass. These are structural/regression checks and do not establish desktop visual quality.",
+    "outsideSandbox": "Root executed populated full-app source A/B and native profile on real desktop with disposable workbook/settings copies.",
+    "dedicatedWebEngineHtmlPdf": "NOT_RUN_IN_THIS_CONTINUATION",
+    "installedCandidateOrCoryAcceptance": "NOT_TESTED",
+    "postRunReportingCleanup": "After run2, root made trace-failure deduplication idempotent across write_results and hidden/minimized guards symmetric. Python compilation checks cover that reporting/guard cleanup; it has no new desktop run. Preserve run2 original fourteen failure strings as copies of seven distinct transactions."
+  },
+  "privacy": "Aggregate durations, counters, sanitized geometry and source hashes only; no production workbooks, names, amounts, screenshots or raw runtime contents.",
+  "remainingUnknown": [
+    "Physical no-pause motion and derivatives.",
+    "Whole-frame source and target/live pixel/luminance/sharpness identity for the QML fallback.",
+    "Protected glyph dimensions, mixed DPI/all monitor correctness and caption/focus/interruption stress.",
+    "A qualifying faster complete candidate and Cory installed-app KDE-quality acceptance."
+  ],
+  "architectureDecisionBasis": "Native GPU foundation is rejected as current cold candidate; the one permitted independent QML fallback is also rejected because every primary target misses its authored transfer deadline, the diagnostic complete observations improve only 1.39/1.41x and physical/pixel/perceptual qualification is absent. No further architecture variant was tested.",
+  "integrationPackagingInstallation": "NONE; installed production unchanged, production selector remains default. Preserve capability code, all failed runs and safe explicit selector for future authorized work."
+}

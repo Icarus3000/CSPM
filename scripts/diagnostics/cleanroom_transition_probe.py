@@ -84,6 +84,13 @@ def main():
     if not args.audit_label or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in args.audit_label):
         parser.error("audit label must contain letters, digits, underscores or hyphens")
     root = Path(__file__).resolve().parents[2]
+    source_provenance = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+        for name in ("scripts/diagnostics/cleanroom_transition_probe.py",
+            "scripts/diagnostics/window_transition_probe.py", "src/python/main.py",
+            "src/python/backend/transition_experiment.py", "src/qml/DetachedShellWindow.qml",
+            "src/qml/CleanRoomTransitionSurface.qml", "src/qml/WindowTransitionSurface.qml",
+            "src/qml/shaders/cleanroom_transition.vert.qsb",
+            "src/qml/shaders/cleanroom_transition.frag.qsb")}
     audit = root / "logs" / args.audit_label
     audit.mkdir(parents=True, exist_ok=False)
     mirror = audit / "tree"
@@ -139,6 +146,8 @@ class PixelTracker:
     context = {"__file__": str(probe), "__name__": "cleanroom_fixture"}
     exec(compile(source, str(probe), "exec"), context)
     entry, base = context["entry"], context["ProbeApplication"]
+    context["u"].IsIconic.argtypes = [context["ctypes"].c_void_p]
+    context["u"].IsWindowVisible.argtypes = [context["ctypes"].c_void_p]
     QTimer, Qt = context["QTimer"], context["Qt"]
     from PySide6.QtCore import QObject, QUrl
     from PySide6.QtQml import QQmlApplicationEngine
@@ -196,6 +205,9 @@ class PixelTracker:
             super().step()
 
         def invoke_toggle(self):
+            hwnd = int(self.window.winId())
+            if context["u"].IsIconic(hwnd) or not context["u"].IsWindowVisible(hwnd):
+                raise RuntimeError("native main window is minimized or hidden before comparison command")
             self.finish_run()
             self.current = {"index": len(runs), "primary": self.index < args.cycles,
                             "kind": "restore" if self.window.property("uiMaximized") else "maximize",
@@ -203,6 +215,22 @@ class PixelTracker:
                             "sourceRect": [self.window.property(k) for k in ("finalX", "finalY", "finalW", "finalH")],
                             "modeledFrameIds": [], "physicalContinuity": {"status": "UNMEASURED"}}
             return self.evaluate("_probeMaximizeButton.clicked(); true")
+
+        def snapshot(self, label):
+            data = super().snapshot(label)
+            data["nativeMinimized"] = bool(context["u"].IsIconic(int(self.window.winId())))
+            data["nativeVisible"] = bool(context["u"].IsWindowVisible(int(self.window.winId())))
+            data["qtVisibility"] = self.window.visibility().name
+            return data
+
+        def check_cycle(self):
+            hwnd = int(self.window.winId())
+            if context["u"].IsIconic(hwnd) or not context["u"].IsWindowVisible(hwnd):
+                self.snapshot("invalid comparison endpoint " + str(self.index))
+                context["failures"].append("native main window minimized or hidden during comparison; physical timing invalid")
+                self.finish()
+                return
+            super().check_cycle()
 
         def active(self):
             return any(bool(self.window.property(p)) for p in ("professionalWindowTransitionActive", "maximizeAnimInProgress", "isRestoringFromMinimize", "isMinimizing"))
@@ -292,10 +320,15 @@ class PixelTracker:
             if self.window is not None and isValid(self.window):
                 completed = plain(self.window.property("cleanRoomProbeSurfaceTraces")) or {}
                 traces.update({"completed_" + key: events for key, events in completed.items()})
-            for events in traces.values():
-                if any(event.get("qualificationFailure") is True or str(event.get("event", "")).startswith("qualification-failure:") for event in events if isinstance(event, dict)):
-                    context["failures"].append("candidate reported qualificationFailure")
-            (audit / "cleanroom_frames.json").write_text(json.dumps({"runs": runs, "frames": frame_rows, "surfaceTraces": traces,
+            # Surface observations and archived traces can describe the same
+            # transaction. Report the failed gate once, not once per copy.
+            if "candidate reported qualificationFailure" not in context["failures"] and any(event.get("qualificationFailure") is True
+                    or str(event.get("event", "")).startswith("qualification-failure:")
+                    for events in traces.values() for event in events if isinstance(event, dict)):
+                context["failures"].append("candidate reported qualificationFailure")
+            (audit / "cleanroom_frames.json").write_text(json.dumps({"configuration": vars(args),
+                "sourceProvenance": {"scope": "SHA-256 at fixture startup", "sources": source_provenance},
+                "runs": runs, "frames": frame_rows, "surfaceTraces": traces,
                 "failures": context["failures"], "physicalContinuity": "UNMEASURED until independent compositor analysis"}, indent=2), encoding="utf-8")
 
     def launch_context():

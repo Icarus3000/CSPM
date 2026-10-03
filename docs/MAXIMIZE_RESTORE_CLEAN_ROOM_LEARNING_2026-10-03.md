@@ -7,6 +7,12 @@ Fedora KDE Plasma is the governing external perceptual benchmark; CSPM's
 accepted opening and closing are the protected internal benchmark. Cory's
 populated installed-app judgment remains the final authority.
 
+**Latest continuation decision:** neither the current native GPU engine nor
+the sole QML fixed-clock fallback qualifies. Preserve their useful capability
+findings and explicit selectors; production remains the default and installed
+package is unchanged. The final profile/A/B checkpoint below records rejection,
+not completion of the user's desired experience.
+
 ## Checkpoint 1 — initial model, before implementation-level inspection
 
 - **PROVEN BY MEASUREMENT (historical):** shortening production's timelines
@@ -386,3 +392,97 @@ cannot qualify, the sole independent QML fixed-clock production comparison.
 This new full-app desktop run was executed by the root outside sandbox; the
 evidence audit itself uses only safe file/JSON/CSV inspection. No new dedicated
 WebEngine HTML/PDF rendering or installed acceptance is established here.
+
+## Final continuation checkpoint — scoped profile and sole fallback rejected
+
+**PROVEN BY MEASUREMENT:** `native_gpu_cold_profile_20261003_run1` again fails
+the 240 ms native transfer deadline; target delivery is 685.41 ms after logged
+native start, with zero completed directions. This timing-only run disables
+desktop pixels/collector. QML statement boundaries measure **79 ms at finalW
+and 274 ms at finalH**: 353 ms, approximately 97.8% of the 361 ms commit. The
+Qt extent stays 1122x782 through those assignments and changes to 1920x1040
+only at the 5 ms host-envelope adoption. **SUPPORTED BY OBSERVATION:** expensive
+final-state propagation precedes native resize; native resize alone does not
+explain this commit. Individual binding/layout causes remain **STILL UNKNOWN**.
+
+Commit-to-`beforeFrameBegin` observation is 132.94 ms. The 28.30 ms observed
+synchronization span uses Python/GIL callbacks and is not pure Qt work. Actual
+capture entry is 618.38 ms after start; the profiler's after-pass slot follows
+at 624.43 ms because the native 5.98 ms capture executes first. Queued GUI
+delivery costs another 61.05 ms. Subtracting that delivery and deliberate
+80.28 ms sleep arithmetically still leaves about 544.08 ms, exceeding both
+240/350 ms. This is an arithmetic timing estimate, not a measured no-delay run.
+The new fixture records startup source hashes and its disposable shell hash;
+those identify this run and do not establish prior exact source provenance.
+
+D10 loads `components/ProductivityReportPanel.qml` through
+`PlaceholderSubmenuView.qml`. Dormant `ProductivityDashboardView.qml` WebEngine
+code is not the active report. Missing unrelated web assets in the disposable
+mirror do not invalidate this native D10 profile, and no WebEngine cause is
+established. A prior README assertion of three target submissions also cannot
+be inferred from the current spike, which requests capture after commit and
+uses the next after-pass callback. Absent historical source manifests, retain
+the earlier prepared pixel passes only under their saved configuration and
+timing. Source fanout through uiMetrics, contentLayer height or shortCanvas is
+a future scoped hypothesis; no additional variant or experiment is undertaken.
+
+**Primary decision:** reject the current native implementation as a complete
+cold candidate. Retain GPU access, motion independence and constrained exact
+endpoint identity as useful capabilities. No integration/package/install follows.
+
+The one authorized QML fallback retains one authored **350 ms** uniform clock
+and a fixed transfer start at 55% (**192.5 ms**). It uses the framebuffer image
+provider; it is not described as GPU-only. No duration variants are tested.
+
+- `cleanroom_single_clock_ab_20261003_run1` is an **invalid comparison**:
+  native HWND snapshots are minimized while QML/model geometry describes
+  ordinary states, and the old per-window screen-wrapper identity guard rejects
+  fallback transactions before motion. Wrong-state and taskbar assertions fail.
+  Preserve the run; exclude its timing from performance conclusions. The origin
+  of native minimization remains unresolved.
+- `cleanroom_single_clock_ab_20261003_run2`, after screen-descriptor and fixture
+  visibility guards are corrected, completes **eight primary toggles plus three
+  lifecycle transitions** without functional state/geometry failure. All **four
+  primary candidate targets miss** the fixed transfer deadline: capture arrives
+  679.80–860.20 ms after logged clock start. All seven distinct candidate traces,
+  including lifecycle, reject qualification. Fourteen raw failure strings count
+  both live-object and archived copies, not fourteen independent failures.
+
+| Primary diagnostic command-to-input observation | Maximize median | Restore median |
+| --- | ---: | ---: |
+| Production | 1965.59 ms | 1993.60 ms |
+| Sole fixed-clock fallback | 1413.25 ms | 1411.33 ms |
+| Observed diagnostic ratio | 1.39x | 1.41x |
+
+Each median uses two primary samples; lifecycle rows are excluded. These are
+GUI-delivered poll/snapshot observations that include handler, frame-observer,
+polling and scheduling overhead, not exact input-unlock or scanout times. They
+do not meet threefold improvement. Candidate motion-end deliveries occur
+786.70–1347.22 ms after clock start; the authored 350 ms animator is not measured
+350 ms physical movement. All primary physical classifications are **UNMEASURED**
+because collector gaps exceed 50 ms (100.84–179.56 ms maxima). Sampling gaps do
+not establish display drops. Whole-frame pixel/luminance/sharpness identity,
+protected glyphs and no-pause handoff remain **STILL UNKNOWN**.
+
+**Fallback decision:** reject its complete-candidate qualification. Functional
+completion cannot rescue missed appearance deadlines or missing physical proof.
+Neither evaluated engine proceeds to integration, packaging or installation;
+the real KDE-quality objective and Cory's installed acceptance remain unmet.
+Preserve all evidence and production as the safe default. The next useful
+technical boundary is the measured final-size binding/layout fanout; no fix
+for that cost is established here.
+
+Validation split: root's 51 focused safe tests, native compilation/ABI checks
+and governed QML lint pass; the evidence audit checks aggregate JSON and
+whitespace. Root's native profile and populated A/B run execute outside sandbox
+with disposable workbook/settings copies, whose protected originals remain
+unchanged. No new dedicated WebEngine HTML/PDF test or installed candidate/user
+acceptance is established. Sanitized evidence is in
+`CLEANROOM_NATIVE_SPIKE_RESULTS_2026-10-03.json` and
+`CLEANROOM_FIXED_CLOCK_RESULTS_2026-10-03.json`; raw runtime/frame evidence and
+private workbook copies remain ignored local artifacts.
+
+After run2, root makes trace-failure deduplication idempotent across result
+writes and hidden/minimized guards symmetric. Python compilation checks that
+reporting cleanup; it has no new desktop trial. The preserved run2's fourteen
+raw strings remain copies of seven distinct rejected candidate transactions.

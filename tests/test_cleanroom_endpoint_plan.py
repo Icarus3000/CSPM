@@ -1,6 +1,9 @@
 """Run the QML endpoint contract in a JS engine without desktop/GPU creation."""
 from pathlib import Path
+import os
 import re
+import subprocess
+import sys
 
 import pytest
 from PySide6.QtCore import QCoreApplication
@@ -10,7 +13,7 @@ from PySide6.QtQml import QJSEngine
 QML = Path(__file__).resolve().parents[1] / "src/qml/CleanRoomTransitionSurface.qml"
 FUNCTIONS = (
     "elapsed", "record", "reject", "prepareNativeGeometry", "nearestNativePixel",
-    "near", "targetMatchesPlan", "capturedContentBounds", "nextFrame", "setTargetGrab",
+    "near", "samePhysicalScreen", "targetMatchesPlan", "capturedContentBounds", "nextFrame", "setTargetGrab",
 )
 
 
@@ -37,7 +40,8 @@ def engine():
         callLater: function(callback) { callback(); }
     };
     var console = {warn:function() {}};
-    var screen = {}, stopCount = 0, released = [];
+    var screen = {name:'primary', virtualX:0, virtualY:0,
+        width:1920, height:1080, devicePixelRatio:1}, stopCount = 0, released = [];
     var surface = {screen:screen, update:function(){}};
     var mainWindow = {screen:screen, professionalWindowTransitionKind:'maximize',
         usableW:1920, usableH:1040, glowPadding:12,
@@ -123,9 +127,72 @@ def test_target_pixel_mapping_mismatch_rejects_without_retargeting(engine, mutat
 
 
 def test_cross_monitor_source_transform_is_rejected_before_motion(engine):
-    evaluate(engine, "surface.screen={}")
+    evaluate(engine, "surface.screen={name:'secondary', virtualX:1920, virtualY:0, width:1920, height:1080, devicePixelRatio:1}")
     assert not evaluate(engine, "prepareNativeGeometry()").toBool()
     assert evaluate(engine, "qualificationReason").toString() == "cross-monitor-endpoint-plan-unavailable"
+
+
+def test_distinct_same_monitor_screen_wrappers_are_accepted(engine):
+    evaluate(engine, "surface.screen=JSON.parse(JSON.stringify(mainWindow.screen))")
+    assert not evaluate(engine, "mainWindow.screen === surface.screen").toBool()
+    assert evaluate(engine, "prepareNativeGeometry()").toBool()
+
+
+@pytest.mark.parametrize("mutation", [
+    "surface.screen.name='secondary'", "surface.screen.virtualX+=1",
+    "surface.screen.virtualY+=1", "surface.screen.width+=1",
+    "surface.screen.height+=1", "surface.screen.devicePixelRatio=1.25",
+    "delete surface.screen.name", "delete surface.screen.width",
+    "surface.screen.devicePixelRatio=0",
+])
+def test_screen_descriptor_or_pixel_transform_difference_is_rejected(engine, mutation):
+    evaluate(engine, "surface.screen=JSON.parse(JSON.stringify(mainWindow.screen));" + mutation)
+    assert not evaluate(engine, "prepareNativeGeometry()").toBool()
+    assert not evaluate(engine, "endpointPlanReady").toBool()
+    assert evaluate(engine, "qualificationReason").toString() == "cross-monitor-endpoint-plan-unavailable"
+
+
+def test_real_hidden_qml_windows_share_qscreen_but_have_distinct_wrappers():
+    # A separate process permits QGuiApplication while the JS tests use a
+    # QCoreApplication. The offscreen windows remain hidden and start no GPU
+    # scene or WebEngine process.
+    helpers = "\n".join(qml_function(QML.read_text(encoding="utf-8"), name)
+                        for name in ("near", "samePhysicalScreen"))
+    qml = """import QtQuick
+import QtQuick.Window
+Window {
+    id: first; visible: false
+    property Window peer: Window { id: second; objectName: "screenWrapperPeer"; visible: false }
+    property bool wrappersMatch: first.screen === second.screen
+    property bool descriptorsMatch: samePhysicalScreen(first.screen, second.screen)
+""" + helpers + "\n}"
+    script = """
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlEngine, QQmlComponent
+from PySide6.QtQuick import QQuickWindow
+from shiboken6 import getCppPointer
+app = QGuiApplication([])
+engine = QQmlEngine()
+component = QQmlComponent(engine)
+component.setData(QML_SOURCE.encode('utf-8'), QUrl('file:///hidden_screen_wrapper_test.qml'))
+first = component.create()
+assert first is not None, [error.toString() for error in component.errors()]
+second = first.findChild(QQuickWindow, 'screenWrapperPeer')
+assert second is not None
+assert not first.isVisible() and not second.isVisible()
+assert getCppPointer(first.screen())[0] == getCppPointer(second.screen())[0]
+assert first.property('wrappersMatch') is False
+assert first.property('descriptorsMatch') is True
+first.deleteLater()
+app.processEvents()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", "QML_SOURCE=" + repr(qml) + "\n" + script],
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_fractional_dpi_negative_origin_uses_native_source_anchor(engine):

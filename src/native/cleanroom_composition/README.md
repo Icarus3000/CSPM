@@ -1,5 +1,23 @@
 # Experimental native GPU composition bridge
 
+## Current decision — 2026-10-03 continuation
+
+The cold complete candidate is rejected for integration. The rebuilt preserved
+bridge again misses its fixed content deadline: target delivery is about 855 ms
+after native start, with an observed source endpoint hold of at least 428 ms.
+The optional disposable profile associates 353 ms with the two final-size
+assignments before native host resizing, then observes substantial first-frame
+and GUI-delivery delay. GPU export itself takes about 6 ms in that profile.
+No source/target transport or pacing change demonstrated removal of this cold
+Qt dependency. Individual expensive bindings remain unidentified.
+
+The sole fixed-clock QML comparison also misses every primary target deadline.
+There is no qualifying complete engine to package, install or make the default.
+Native texture access, independent presentation and prepared pixel identity
+remain useful capability results. All failed runs are retained locally, and
+privacy-safe aggregate results are preserved on the experimental Git branch.
+See the clean-room learning record for classifications and measurement limits.
+
 This is a capability spike, disabled in production. It builds against the
 existing Microsoft Windows SDK and MSVC without Qt C++ headers or Qt ABI
 emulation. Python passes only the borrowed `ID3D11DeviceContext*` returned by
@@ -179,3 +197,15 @@ Static DLL load/ABI/null-argument rejection passed; these are sandbox-safe
 checks, with no Qt/WebEngine or desktop launch by this native subtask.
 Root owns the outside-sandbox populated Qt/WebEngine desktop gate and reports
 its separate physical endpoint/repeat evidence.
+
+The preceding description recorded three Qt submissions before prepared
+capture. Current diagnostic source instead requests the next after-pass capture;
+no saved source manifest establishes that older gate exactly. The historical
+pixel pass belongs to its preserved run and is not a fresh pass of every later
+script edit. New runs save source/DLL hashes at startup. Use
+`--profile-boundaries` to create an instrumented disposable QML mirror and record
+only commit statements and one-shot render/adoption callbacks. Profiling buffers
+event output; its render callbacks still need Python's GIL. Millisecond QML
+wall-clock observations are calibrated per transaction. These are neither pure
+Qt stage durations nor physical scanout timestamps. No CPU framebuffer image
+feeds the native host in either mode.

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-10-03",
-  "scope": "Independent read-only audit of populated CSPM native GPU spike and coordinate-only desktop collector; no new desktop trial.",
+  "scope": "Sanitized audit of preserved and continuation native GPU runs, desktop marker collection and scoped layout/render profiling. No desktop trial by the evidence auditor; original top-level gates remain historical.",
   "nativeDllSha256": "e8b5b476755a66ff58de347a422fb0c7470b8d48f7de92c81b961560e79b23e3",
   "overallGate": "FAIL",
   "overallReason": "Cold target GPU representation misses the immutable 240 ms appearance deadline. Geometry finishes before target content becomes available; complete appearance continuity, target presentation and live handoff cannot qualify.",
@@ -1166,6 +1166,138 @@
         "outputs/native_cleanroom/build_20261003_145746_59056.log"
       ],
       "sourceProvenance": "Root rebuilt the current preserved C++ under a distinct continuity DLL filename before this run. The observed continuity source snapshot SHA256 in continuityReconstruction is not a contemporaneous original-run manifest; the raw fixture saves DLL SHA256 only. No original binary or raw run was overwritten."
+    },
+    {
+      "evidenceLabel": "native_gpu_cold_profile_20261003_run1",
+      "mode": "cold native profile with scoped statement and Qt render-boundary observers",
+      "nativeDllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "configuration": {
+        "audit_label": "native_gpu_cold_profile_20261003_run1",
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true
+      },
+      "result": "FAIL_COLD_TARGET_READINESS_PROFILE_ONLY",
+      "requestedCycles": 2,
+      "qualifiedCompletedCycles": 0,
+      "attemptedDirections": [
+        "maximize"
+      ],
+      "captures": [
+        {
+          "kind": "source",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1122,
+            782
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 44.7792,
+          "nativeCaptureBoundaryMs": 28.3139,
+          "captureFinishToGuiDeliveryMs": 2.236,
+          "requestToGuiDeliveryMs": 75.3291
+        },
+        {
+          "kind": "target",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1920,
+            1040
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 176.1187,
+          "nativeCaptureBoundaryMs": 5.9788,
+          "captureFinishToGuiDeliveryMs": 61.0453,
+          "requestToGuiDeliveryMs": 243.1428
+        }
+      ],
+      "sourceProvenance": {
+        "scope": "SHA-256 read at fixture startup, before application launch",
+        "sources": {
+          "scripts/diagnostics/native_gpu_transition_spike.py": "ad611adc4fd30c178f48e62913641bdbf80deeba12823b8a35bfaa7e8a6a1ba2",
+          "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+          "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+          "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+          "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+          "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+          "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+        },
+        "disposableMirror": {
+          "src/qml/DetachedShellWindow.qml": "130b6ef35a9a99dcdc6e8f81756ba6ce07c01d216f1a3298d838e441fe67275c"
+        }
+      },
+      "sourcePixelComparison": {
+        "status": "UNMEASURED",
+        "reason": "Endpoint desktop sampling disabled for scoped timing trial."
+      },
+      "targetLivePixelComparison": {
+        "status": "NOT_EXERCISED",
+        "reason": "Target reaches an already-failed fixed-deadline host; no successful handoff."
+      },
+      "physicalContinuity": {
+        "status": "UNMEASURED",
+        "reason": "Independent desktop collector disabled in this profile run."
+      },
+      "protectedOriginalHashesUnchanged": true,
+      "presentationCpuReadbacksReported": 0,
+      "presentationCpuUploadsReported": 0,
+      "timing": {
+        "commandToNativeStartMs": 283.5083,
+        "intentionalGuiDelayMs": 80.277,
+        "layoutCallMs": 360.9997,
+        "targetGpuDeliveredAfterNativeStartMs": 685.4053,
+        "targetCaptureCallbackAfterNativeStartMs": 618.3812,
+        "targetCaptureFinishedAfterNativeStartMs": 624.36,
+        "targetProfilerAfterPassSlotAfterNativeStartMs": 624.4321,
+        "failureObservedByGuiAfterNativeStartMs": 685.9527,
+        "fixtureFinishedAfterNativeStartMs": 700.8997,
+        "commandToFixtureFinishedMs": 984.408,
+        "statementBoundariesMs": {
+          "suppression": 0.0,
+          "finalX": 0.0,
+          "finalY": 0.0,
+          "finalW": 79.0,
+          "finalH": 274.0,
+          "uiMaximized": 1.0,
+          "adoptTargetScreen": 0.0,
+          "refreshVisibleRect": 0.0,
+          "hostEnvelope": 5.0,
+          "canvasGeometry": 1.0
+        },
+        "finalWidthPlusHeightBoundaryMs": 353.0,
+        "finalWidthPlusHeightPercentOfObservedCommit": 97.784,
+        "commitToBeforeFrameBeginObservationMs": 132.9358,
+        "beforeSyncToAfterSyncObservationMs": 28.301,
+        "targetAfterStartMinusDeliberateSleepAndQueuedDeliveryArithmeticMs": 544.083
+      },
+      "profileInterpretation": {
+        "measured": "QML finalW/finalH assignments consume 79/274 ms; together 353 ms, approximately 97.8% of the 361 ms blocking commit. The observed Qt extent stays 1122x782 through those assignments and changes to 1920x1040 only at the 5 ms hostEnvelope boundary.",
+        "supported": "Expensive final-state propagation occurs before native host resize; native resize alone does not explain this measured commit. This narrows the next investigation to synchronous final-state fanout while retaining the same workspace.",
+        "clockAndGILLimits": "QML statement stamps use Date.now at 1 ms resolution, calibrated with a 0.1726 ms bracket. One-shot Python adoption/render slots need the GIL and can perturb/order observations; the 28.301 ms synchronization span is not isolated pure Qt sync work.",
+        "callbackOrdering": "Actual native capture callback entry is 618.3812 ms after start; profiler afterRenderPassRecording slot is 624.4321 ms because the 5.9788 ms capture callback executes first. Do not add this profiler slot delay as another native render cost.",
+        "arithmeticOnly": "Removing the deliberately injected 80.277 ms and observed 61.0453 ms queued delivery arithmetically still leaves 544.083 ms before captured target, exceeding 240/350 ms. This is not a measured no-delay counterfactual.",
+        "route": "D10 actually loads src/qml/components/ProductivityReportPanel.qml through PlaceholderSubmenuView. Dormant ProductivityDashboardView.qml WebEngine code is not this route. The disposable mirror missing unrelated web content does not invalidate the native D10 profile; no WebEngine cause is established.",
+        "stillUnknown": "Individual bindings, layouts, polish, render synchronization, GPU fences and component costs. Final-state uiMetrics, contentLayer height and shortCanvas fanout are hypotheses for future scoped work only; not tested in this checkpoint.",
+        "provenance": "New fixture stores source hashes at startup and disposable shell hash. These identify this profile input; they do not retroactively prove exact source provenance for earlier prepared/cold runs or replace a source-to-DLL build manifest."
+      },
+      "failures": [
+        "target readiness: Target requires source, accepts one GPU frame, and rejects failed transactions"
+      ],
+      "evidencePaths": [
+        "logs/native_gpu_cold_profile_20261003_run1/native_gpu_spike.json",
+        "logs/native_gpu_cold_profile_20261003_run1_console.log",
+        "logs/native_gpu_cold_profile_20261003_run1/protected_hashes.json"
+      ]
     }
   ],
   "gates": {
@@ -1278,7 +1410,7 @@
     ],
     "nextDecision": "Isolate target presentation and physical-pixel handoff using a pre-ready target diagnostic without claiming that moved preparation delay qualifies the cold command. If cold readiness cannot meet the fixed gate, reject primary full-candidate qualification and test at most one materially different fallback."
   },
-  "latestDiagnosticEvidence": "Continuation current-source rebuilt cold run also fails: target arrives 854.95 ms after logged native start; source endpoint is stationary for at least 428.12 ms despite endpoint_hold_ms=0; zero completed directions. Preserved paced cold failure remains. Prepared 4/4 source plus 4/4 target/live zero-difference capability uses preprepared target and a 120 ms diagnostic hold, and remains nonqualifying.",
+  "latestDiagnosticEvidence": "Scoped native cold profile still fails: target GUI delivery is 685.4053 ms after native start; finalW/finalH assignment boundaries of 79/274 ms dominate the 361 ms commit before native extent adoption. GPU access and constrained prepared identity remain capabilities; the current cold native candidate is rejected. The sole fixed-clock QML A/B also fails, recorded separately.",
   "gateScope": "Top-level gates describe the original cold composition run; the prepared-target run contains its own narrower gate interpretation and does not qualify a cold candidate.",
   "continuityReconstruction": {
     "scope": "Read-only reconstruction of the preserved pre-continuation experiments; no new desktop trial. Original top-level gates and gateScope remain historical.",
@@ -1331,5 +1463,19 @@
     "minimumObservedSourceOnlyEndpointHoldMs": 428.1158,
     "qualifiedCycles": 0,
     "nextBoundary": "Focused optional geometry/layout/render/delivery profiling and sole authorized fixed-clock QML fallback A/B. No qualifying native integration or packaging."
-  }
+  },
+  "primaryArchitectureDecision": {
+    "status": "REJECTED_CURRENT_COLD_CANDIDATE",
+    "evidenceClassification": "PROVEN_BY_MEASUREMENT_WITH_SCOPED_PROFILE_LIMITS",
+    "basis": [
+      "Three preserved cold presentation trials and current scoped profile all miss their immutable appearance deadline.",
+      "Current-source rebuild does not remove cold readiness.",
+      "Prepared endpoint pixel identity remains valuable capability evidence with pre-motion target preparation plus diagnostic hold."
+    ],
+    "retainedValue": "Typed native GPU framebuffer access, independent presentation during GUI blockage and constrained exact endpoint transfer.",
+    "notEstablished": "A qualifying native design, bounded precommit fallback, no-hold cold target/live identity, individual binding fix, mixed DPI/lifecycle/perceptual acceptance.",
+    "integrationPackagingInstallation": "NONE; production remains unchanged and default.",
+    "nextBoundary": "The sole independent fixed-clock QML fallback is measured separately and also fails qualification; neither current architecture proceeds to integration or packaging."
+  },
+  "priorPreparedDescriptionLimit": "Prior native README asserted three target submissions before prepared capture. The current spike requests capture immediately after target commit and uses the next afterRenderPassRecording callback. Absent prior source manifests, a three-frame gate cannot be inferred for historical runs; retain earlier zero-difference observations only under their saved configuration/timings."
 }

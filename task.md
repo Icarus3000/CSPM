@@ -6,11 +6,13 @@
 - [x] Reconstruct the later corrected paced cold run, previously absent from the learning record: target delivery about 884 ms after native start; zero qualified transitions. Retain the prepared endpoint comparisons as constrained pixel capability evidence only.
 - [x] Compile the preserved native bridge with existing MSVC `/W4`, compile Python diagnostics, pass 40 focused safe tests and governed QML lint (existing warnings), and check native ABI/null-argument rejection without creating a window.
 - [x] Repeat the cold populated desktop gate outside sandbox with no prepared target or endpoint hold. Source comparison is exact; target arrives about 855 ms after start and misses the fixed 240 ms deadline. Retain the earlier missing-collector-dependency fixture failure separately.
-- [ ] Finish focused cold geometry/render boundary profiling and the single authorized QML fixed-clock production A/B. Reject any endpoint hold, late layout replacement or unsupported physical qualification.
-- [ ] Preserve reviewed privacy-safe checkpoints on the experimental remote branch; no merge, package, installation or production-default change unless a complete candidate qualifies.
+- [x] Finish focused cold geometry/render boundary profiling: finalW/finalH assignment boundaries consume 353 ms before native-host resizing in a 361 ms commit; target GUI delivery is about 685 ms after start. Native export is about 6 ms. Individual binding costs and the first-frame wait remain unresolved; current ordinary resized Qt content cannot meet this fixed deadline through transport/pacing changes alone.
+- [x] Test the one QML fixed-clock fallback against production after repairing its false same-monitor Screen-wrapper rejection. Eight primary toggles plus lifecycle checks pass functional geometry/workspace assertions; all four primary fallback transitions miss their content deadline. Observed complete medians improve only about 1.4x, and physical collector gaps prevent continuity certification. Reject both complete candidates; preserve the initial invalid A/B and every failed run.
+- [x] Preserve reviewed privacy-safe checkpoint `4868fbf` on the experimental remote branch and independently verify it. Final result/source follow-up is preserved on that same branch; no merge, package, installation or production-default change.
+- [x] Final safe checks: 51 focused tests, Python compilation, governed QML lint (existing warnings), native compilation/ABI and index privacy/whitespace review. Outside sandbox: cold native desktop gate, focused profile and QML production A/B. No new dedicated WebEngine HTML/PDF or packaged smoke claim.
 - [ ] P0 real populated installed-app acceptance remains open. This experimental capability checkpoint is not a faster accepted transition.
 
-Evidence and classifications: `docs/MAXIMIZE_RESTORE_CLEAN_ROOM_LEARNING_2026-10-03.md` and `docs/CLEANROOM_NATIVE_SPIKE_RESULTS_2026-10-03.json`. Raw captures, isolated profiles and failed runs stay ignored locally.
+Evidence and classifications: `docs/MAXIMIZE_RESTORE_CLEAN_ROOM_LEARNING_2026-10-03.md`, `docs/CLEANROOM_NATIVE_SPIKE_RESULTS_2026-10-03.json` and `docs/CLEANROOM_FIXED_CLOCK_RESULTS_2026-10-03.json`. Raw captures, isolated profiles and failed runs stay ignored locally.
 
 ## Pixel-Aligned Restore Fix And Release (2026-10-02)
 

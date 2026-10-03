@@ -77,7 +77,7 @@ Window {
                 || !isFinite(sourceGrab.dpr) || sourceGrab.dpr <= 0) return false;
         // Future cross-monitor native placement cannot be inferred from the
         // source monitor's pixel transform. Reject that premise before motion.
-        if (mainWindow.screen !== surface.screen) {
+        if (!samePhysicalScreen(mainWindow.screen, surface.screen)) {
             reject("cross-monitor-endpoint-plan-unavailable"); return false;
         }
         var requestedTarget = Qt.rect(targetBounds.x, targetBounds.y,
@@ -132,6 +132,21 @@ Window {
         return value < 0 ? -Math.round(-value) : Math.round(value);
     }
     function near(a, b) { return Math.abs(a - b) <= 0.0001; }
+    function samePhysicalScreen(left, right) {
+        // Window.screen exposes a separate QQuickScreenInfo wrapper for each
+        // window, even when both wrappers refer to the same native QScreen.
+        // Match the screen descriptor and pixel transform, not wrapper identity.
+        if (!left || !right || typeof left.name !== "string"
+                || typeof right.name !== "string" || left.name !== right.name)
+            return false;
+        var keys = ["virtualX", "virtualY", "width", "height", "devicePixelRatio"];
+        for (var i = 0; i < keys.length; ++i) {
+            var key = keys[i];
+            if (!isFinite(left[key]) || !isFinite(right[key])
+                    || !near(left[key], right[key])) return false;
+        }
+        return left.width > 0 && left.height > 0 && left.devicePixelRatio > 0;
+    }
     function targetMatchesPlan(result, rightWidth) {
         if (!endpointPlanReady || !result || !result.nativeFrame
                 || !result.nativeOrigin || !result.physicalSize
