@@ -103,6 +103,8 @@ Window {
     property bool professionalInWindowTransitionEnabled: true
     property bool professionalEarlyWindowMotionEnabled: true
     property bool professionalPixelAlignedWindowCaptureEnabled: true
+    readonly property string cleanRoomEngine: typeof transitionExperiment !== "undefined"
+        ? transitionExperiment.engine : "production"
     property int professionalWindowTransitionTargetX: 0
     property int professionalWindowTransitionTargetY: 0
     property int professionalWindowTransitionTargetW: 0
@@ -3713,6 +3715,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         destroyMaximizeOverlay();
         maximizeOverlayHandoffSeq = maximizeOverlayHandoffSeq + 1;
         var sequence = maximizeOverlayHandoffSeq;
+        if (typeof transitionExperiment !== "undefined") transitionExperiment.registerWindow(mainWin);
         professionalWindowTransitionActive = true;
         professionalWindowTransitionKind = kind;
         professionalWindowTransitionTarget = targetRect;
@@ -3723,6 +3726,17 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             + fmtRect(sourceRect.x, sourceRect.y, sourceRect.w, sourceRect.h)
             + " -> " + fmtRect(targetRect.x, targetRect.y,
                 targetRect.w, targetRect.h));
+
+        if (cleanRoomEngine !== "production") {
+            if (transitionExperiment.reducedMotion) {
+                return completeProfessionalWindowTransitionDirect(sequence, "experimental-reduced-motion");
+            }
+            if (cleanRoomEngine === "single-clock") {
+                return captureCleanRoomTransitionSurface(sequence, kind, sourceRect,
+                    targetRect, targetScreenOverride);
+            }
+            console.warn("Clean-room native composition engine unavailable; explicit production fallback");
+        }
 
         if (mainWin.professionalInWindowTransitionEnabled) {
             return captureProfessionalTransitionSurface(sequence, kind,
@@ -3844,6 +3858,96 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             surface.visible = true;
         });
         if (!accepted) stopMaximizeFxAnimations();
+        return accepted;
+    }
+
+    // Independent experimental transaction; production's preparation and
+    // settlement state machine is deliberately left intact above.
+    function captureCleanRoomTransitionSurface(sequence, kind, sourceRect,
+            targetRect, targetScreenOverride) {
+        professionalSurfaceWatchdog.restart();
+        var header = mainContent.professionalTransitionHeaderMetrics();
+        var commandMs = transitionExperiment.monotonicMs();
+        var accepted = grabProfessionalWindowFrame(function(result) {
+            if (sequence !== mainWin.maximizeOverlayHandoffSeq
+                    || !mainWin.professionalWindowTransitionActive) {
+                if (result && result.url) windowFrameCapture.release(result.url);
+                return;
+            }
+            if (!result || !result.url) {
+                console.warn("Clean-room source capture failed");
+                mainWin.stopMaximizeFxAnimations(); return;
+            }
+            var envelope = mainWin.maximizeOverlayMotionRect(sourceRect, targetRect);
+            var pad = Math.max(32, (mainWin.width - contentLayer.width) / 2,
+                (mainWin.height - contentLayer.height) / 2);
+            envelope.x -= pad; envelope.y -= pad;
+            envelope.w += pad * 2; envelope.h += pad * 2;
+            var surface = cleanRoomSurfaceComponent.createObject(null, {
+                "mainWindow": mainWin, "sourceGrab": result,
+                "headerMetrics": header, "commandMs": commandMs,
+                "sourceBounds": Qt.rect(sourceRect.x - envelope.x, sourceRect.y - envelope.y,
+                    sourceRect.w, sourceRect.h),
+                "targetBounds": Qt.rect(targetRect.x - envelope.x, targetRect.y - envelope.y,
+                    targetRect.w, targetRect.h),
+                "overlayX": envelope.x, "overlayY": envelope.y,
+                "overlayWidth": envelope.w, "overlayHeight": envelope.h,
+                "screen": targetScreenOverride || mainWin.screen
+            });
+            if (!surface || !surface.prepareNativeGeometry()) {
+                console.warn("Clean-room fixed native surface creation failed");
+                if (surface) surface.closeOverlay("create-failure");
+                else windowFrameCapture.release(result.url);
+                mainWin.stopMaximizeFxAnimations(); return;
+            }
+            mainWin.maximizeOverlayRef = surface;
+            surface.sourcePresented.connect(function() {
+                if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                mainWin.opacity = 0.0;
+            });
+            surface.motionStarted.connect(function() {
+                if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                surface.record("layout-begin");
+                mainWin.commitProfessionalWindowTransitionTarget(kind, targetRect, targetScreenOverride);
+                surface.record("layout-committed");
+                surface.expectLiveTarget();
+            });
+            surface.targetCaptureRequested.connect(function() {
+                if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                surface.record("target-capture-request");
+                var targetHeader = mainContent.professionalTransitionHeaderMetrics();
+                var targetAccepted = mainWin.grabProfessionalWindowFrame(function(targetResult) {
+                    if (sequence !== mainWin.maximizeOverlayHandoffSeq
+                            || !mainWin.professionalWindowTransitionActive) {
+                        if (targetResult && targetResult.url) windowFrameCapture.release(targetResult.url);
+                        return;
+                    }
+                    if (!targetResult || !targetResult.url) {
+                        console.warn("Clean-room target capture failed");
+                        mainWin.stopMaximizeFxAnimations(); return;
+                    }
+                    surface.setTargetGrab(targetResult, targetHeader.y);
+                });
+                if (!targetAccepted) {
+                    console.warn("Clean-room target capture rejected");
+                    mainWin.stopMaximizeFxAnimations();
+                }
+            });
+            surface.targetPresented.connect(function() {
+                if (sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+                mainWin.opacity = 1.0;
+                surface.expectLiveHandoff();
+            });
+            surface.transitionFinished.connect(function() {
+                surface.record("input-release");
+                mainWin.finishProfessionalWindowTransition(sequence, "clean-room-single-clock");
+            });
+            surface.visible = true;
+        });
+        if (!accepted) {
+            console.warn("Clean-room source capture rejected");
+            stopMaximizeFxAnimations();
+        }
         return accepted;
     }
 
@@ -12466,6 +12570,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     Component {
         id: professionalSurfaceComponent
         WindowTransitionSurface {}
+    }
+
+    Component {
+        id: cleanRoomSurfaceComponent
+        CleanRoomTransitionSurface {}
     }
 
     SfxBus {

@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-03: Preserved Clean-Room Native Transition Checkpoint
+
+- [x] Resume the exact existing `experiment/clean-room-fluid-maximize-restore` worktree at base `ad72d59`; inspect source, diffs, worktrees, stashes, remote state and retained evidence without discarding local work.
+- [x] Reconstruct the later corrected paced cold run, previously absent from the learning record: target delivery about 884 ms after native start; zero qualified transitions. Retain the prepared endpoint comparisons as constrained pixel capability evidence only.
+- [x] Compile the preserved native bridge with existing MSVC `/W4`, compile Python diagnostics, pass 40 focused safe tests and governed QML lint (existing warnings), and check native ABI/null-argument rejection without creating a window.
+- [x] Repeat the cold populated desktop gate outside sandbox with no prepared target or endpoint hold. Source comparison is exact; target arrives about 855 ms after start and misses the fixed 240 ms deadline. Retain the earlier missing-collector-dependency fixture failure separately.
+- [ ] Finish focused cold geometry/render boundary profiling and the single authorized QML fixed-clock production A/B. Reject any endpoint hold, late layout replacement or unsupported physical qualification.
+- [ ] Preserve reviewed privacy-safe checkpoints on the experimental remote branch; no merge, package, installation or production-default change unless a complete candidate qualifies.
+- [ ] P0 real populated installed-app acceptance remains open. This experimental capability checkpoint is not a faster accepted transition.
+
+Evidence and classifications: `docs/MAXIMIZE_RESTORE_CLEAN_ROOM_LEARNING_2026-10-03.md` and `docs/CLEANROOM_NATIVE_SPIKE_RESULTS_2026-10-03.json`. Raw captures, isolated profiles and failed runs stay ignored locally.
+
 ## Pixel-Aligned Restore Fix And Release (2026-10-02)
 
 - [x] User authorizes the scoped fix; honor the existing commit/push/recompile request. Preserve accepted title/glyph rendering, early motion and the existing workspace.

@@ -1894,6 +1894,9 @@ def main() -> None:
     from backend.window_frame_capture import WindowFrameCapture
     window_frame_capture = WindowFrameCapture(engine)
     engine.rootContext().setContextProperty("windowFrameCapture", window_frame_capture)
+    from backend.transition_experiment import TransitionExperiment
+    transition_experiment = TransitionExperiment(engine)
+    engine.rootContext().setContextProperty("transitionExperiment", transition_experiment)
     engine.rootContext().setContextProperty("apBackendController", controller.apController)
     _boot_log("context.app.injected")
     engine.rootContext().setContextProperty("docketApp", controller.docketing)

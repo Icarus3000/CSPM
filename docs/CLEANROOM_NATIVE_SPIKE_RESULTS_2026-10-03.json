@@ -1,0 +1,1335 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-03",
+  "scope": "Independent read-only audit of populated CSPM native GPU spike and coordinate-only desktop collector; no new desktop trial.",
+  "nativeDllSha256": "e8b5b476755a66ff58de347a422fb0c7470b8d48f7de92c81b961560e79b23e3",
+  "overallGate": "FAIL",
+  "overallReason": "Cold target GPU representation misses the immutable 240 ms appearance deadline. Geometry finishes before target content becomes available; complete appearance continuity, target presentation and live handoff cannot qualify.",
+  "privacy": "Contains nonsensitive timing, geometry, local evidence labels and status only. No screenshots, workspace values, workbook filenames, workbook locations or private profile locations.",
+  "runs": [
+    {
+      "evidenceLabel": "native_gpu_access_20261003_run1",
+      "mode": "capture-only",
+      "result": "PASS_TEXTURE_ACCESS_ONLY",
+      "captures": [
+        {
+          "kind": "source",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1122,
+            782
+          ],
+          "clientGeometryPx": [
+            309,
+            129,
+            1122,
+            782
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 42.3585,
+          "nativeCaptureBoundaryMs": 44.9335,
+          "captureFinishToGuiDeliveryMs": 1.3712,
+          "requestToGuiDeliveryMs": 88.6632
+        }
+      ],
+      "protectedOriginalHashesUnchanged": true,
+      "requestedPresentationCycles": 0,
+      "qualifiedMaximizeRestoreCycles": 0,
+      "note": "completedCycles=1 in the fixture counts a capture-only completion, not a maximize/restore motion or handoff."
+    },
+    {
+      "evidenceLabel": "native_gpu_composition_20261003_run1",
+      "mode": "cold native composition",
+      "result": "FAIL_TARGET_READINESS",
+      "requestedCycles": 4,
+      "qualifiedCompletedCycles": 0,
+      "attemptedDirections": [
+        "maximize"
+      ],
+      "captures": [
+        {
+          "kind": "source",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1122,
+            782
+          ],
+          "clientGeometryPx": [
+            309,
+            129,
+            1122,
+            782
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 16.9041,
+          "nativeCaptureBoundaryMs": 0.8756,
+          "captureFinishToGuiDeliveryMs": 0.916,
+          "requestToGuiDeliveryMs": 18.6957
+        },
+        {
+          "kind": "target",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1920,
+            1040
+          ],
+          "clientGeometryPx": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 229.6419,
+          "nativeCaptureBoundaryMs": 6.5712,
+          "captureFinishToGuiDeliveryMs": 64.2507,
+          "requestToGuiDeliveryMs": 300.4638
+        }
+      ],
+      "protectedOriginalHashesUnchanged": true,
+      "configuration": {
+        "motionDurationMs": 350,
+        "fixedAppearanceDeadlineMs": 240,
+        "intentionalGuiDelayMs": 80
+      },
+      "timing": {
+        "commandToSourceGuiDeliveryMs": 18.739,
+        "commandToSourceCompositionCommitMs": 52.3017,
+        "commandToNativeMotionStartMs": 118.8643,
+        "commandToFirstChangedMarkerSampleMs": 139.0604,
+        "nativeMotionStartToFirstChangedMarkerSampleMs": 20.1961,
+        "nativeMotionStartToFirstChangedMarkerReadFinishedMs": 27.2494,
+        "previousUnchangedMarkerSampleAfterMotionStartMs": 4.2601,
+        "intentionalGuiDelayMeasuredMs": 80.586,
+        "layoutCallMs": 323.2279,
+        "layoutCommittedAfterMotionStartMs": 403.9669,
+        "targetGpuDeliveredAfterMotionStartMs": 704.5218,
+        "targetGpuDeadlineMissMs": 464.5218,
+        "targetGpuDeliveredAfterNominalMotionEndMs": 354.5218,
+        "firstCompleteEndpointMarkerSignatureAfterMotionStartMs": 340.1137,
+        "lastObservedEndpointMarkerHoldAfterMotionStartMs": 702.496,
+        "minimumObservedEndpointHoldMs": 362.3823,
+        "failureDetectedAfterMotionStartMs": 704.9352,
+        "fixtureFinishedAfterMotionStartMs": 708.6562,
+        "commandToFixtureFinishedMs": 827.5205,
+        "firstDifferentCleanupLiveMarkerSampleAfterMotionStartMs": 726.8805
+      },
+      "independentDesktopCollector": {
+        "sampleCount": 296,
+        "nominalMotion": {
+          "samples": 21,
+          "intervalCount": 20,
+          "medianIntervalMs": 15.1232,
+          "p95NearestRankIntervalMs": 28.7901,
+          "maximumIntervalMs": 31.4994,
+          "intervalsOver20Ms": 5,
+          "intervalsOver40Ms": 0,
+          "successiveUnchangedMarkerCoordinateSignatures": 0
+        },
+        "endpointHold": {
+          "samples": 14,
+          "intervalCount": 13,
+          "medianIntervalMs": 25.6752,
+          "p95NearestRankIntervalMs": 46.114,
+          "maximumIntervalMs": 46.5367,
+          "intervalsOver20Ms": 9,
+          "intervalsOver40Ms": 4,
+          "successiveUnchangedMarkerCoordinateSignatures": 13
+        },
+        "allSamples": {
+          "samples": 296,
+          "intervalCount": 295,
+          "medianIntervalMs": 16.9007,
+          "p95NearestRankIntervalMs": 32.7138,
+          "maximumIntervalMs": 74.2093,
+          "intervalsOver20Ms": 105,
+          "intervalsOver40Ms": 7,
+          "successiveUnchangedMarkerCoordinateSignatures": 258
+        },
+        "movingSamplesDuringIntentionalGuiDelay": 3,
+        "movingSamplesDuringLayoutCall": 17,
+        "method": "DXGI desktop duplication, exact-color interior bounding boxes, pitch-two subsampling. Row timestamp precedes frame grab and color processing. Desktop pixels are read in RAM for observation and do not feed native presentation. The native_x/y/w/h columns describe the live Qt HWND, not the composition host.",
+        "limits": "Intervals are collector observations, not compositor presentation timestamps. A 31.50 ms sampling gap can hide a frame. Exact-color erosion and fractional translation vary marker dimensions; these boxes do not certify glyph size, weight, sharpness, alpha, whole-frame pixel equality or KDE-like perceptual smoothness."
+      }
+    },
+    {
+      "evidenceLabel": "native_gpu_prepared_20261003_run1",
+      "mode": "prepared-target GPU shader capability isolation",
+      "nativeDllSha256": "8c1dec039523243956541ba13d8332fc91fe914014a32dce826563a361698f77",
+      "result": "NONQUALIFYING_DIAGNOSTIC_TARGET_PIXEL_COMPARISONS_FAIL",
+      "coldCandidateQualification": "NOT QUALIFYING",
+      "architecture": "Fixed HWND hosting a native D3D11 composition swapchain. Shader presentation runs on the native worker clock; this differs from the earlier compositor-owned property-animation source trial.",
+      "completedDiagnosticDirections": 4,
+      "qualifiedCompleteTransitions": 0,
+      "sourceFullFrameComparisonsPassed": 4,
+      "targetLiveFullFrameComparisonsPassed": 0,
+      "protectedOriginalHashesUnchanged": true,
+      "stationaryPreparationIncludedInFullTiming": true,
+      "timingScope": "Preparation, GPU access, fixture coverage holds, pixel sampling and handoff holds are included in command-to-handoff. These are diagnostic timings, not a qualifying installed engine speed measurement.",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "FAIL",
+            "differentPixels": 1268015,
+            "maxChannelDifference": 245,
+            "meanChannelDifference": 12.215695112179487,
+            "luminanceDifference": -0.11866152510683747,
+            "targetAreaPx": 1996800,
+            "differentPixelPercent": 63.5024
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 24.6013,
+              "nativeCaptureBoundaryMs": 23.304,
+              "captureFinishToGuiDeliveryMs": 2.0945,
+              "requestToGuiDeliveryMs": 49.9998
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 321.1956,
+              "nativeCaptureBoundaryMs": 13.9739,
+              "captureFinishToGuiDeliveryMs": 154.5787,
+              "requestToGuiDeliveryMs": 489.7482
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 1385.063,
+            "layoutCallMs": 442.4491,
+            "intentionalGuiDelayMeasuredMs": 80.3058,
+            "commandToHandoffMs": 1984.2518,
+            "nativeEndpointStatusAfterMotionStartMs": 390.8414,
+            "liveHandoffAfterMotionStartMs": 599.1224,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 74.1337,
+            "firstDifferentMarkerReadFinishedAfterMotionStartMs": 95.8622,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 691.7627
+          },
+          "collectorNominal350msMotion": {
+            "samples": 11,
+            "medianIntervalMs": 31.538,
+            "maximumIntervalMs": 48.4288,
+            "intervalsOver40Ms": 1,
+            "successiveUnchangedMarkerCoordinateSignatures": 3,
+            "movingSamplesDuringIntentionalGuiDelay": 1,
+            "firstSampleAfterNativeEndpointStatus": {
+              "afterMotionStartMs": 394.5015,
+              "topLeftMarkerXY": [
+                96.0,
+                58.0
+              ],
+              "bottomRightMarkerXY": [
+                1744.0,
+                954.0
+              ],
+              "matchesLaterLiveMarkerCoordinateSignature": false
+            }
+          }
+        },
+        {
+          "cycle": 1,
+          "direction": "restore",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "FAIL",
+            "differentPixels": 503212,
+            "maxChannelDifference": 240,
+            "meanChannelDifference": 12.98236986610501,
+            "luminanceDifference": 1.6117649338275228,
+            "targetAreaPx": 877404,
+            "differentPixelPercent": 57.3524
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 5.4489,
+              "nativeCaptureBoundaryMs": 1.2407,
+              "captureFinishToGuiDeliveryMs": 2.129,
+              "requestToGuiDeliveryMs": 8.8186
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 251.8906,
+              "nativeCaptureBoundaryMs": 8.4942,
+              "captureFinishToGuiDeliveryMs": 147.401,
+              "requestToGuiDeliveryMs": 407.7858
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 1183.2641,
+            "layoutCallMs": 359.0876,
+            "intentionalGuiDelayMeasuredMs": 80.2907,
+            "commandToHandoffMs": 1757.9458,
+            "nativeEndpointStatusAfterMotionStartMs": 390.542,
+            "liveHandoffAfterMotionStartMs": 574.6235,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 100.8774,
+            "firstDifferentMarkerReadFinishedAfterMotionStartMs": 142.629,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 528.1101
+          },
+          "collectorNominal350msMotion": {
+            "samples": 11,
+            "medianIntervalMs": 33.4955,
+            "maximumIntervalMs": 45.6833,
+            "intervalsOver40Ms": 4,
+            "successiveUnchangedMarkerCoordinateSignatures": 3,
+            "movingSamplesDuringIntentionalGuiDelay": 0,
+            "firstSampleAfterNativeEndpointStatus": {
+              "afterMotionStartMs": 468.8328,
+              "topLeftMarkerXY": [
+                336.0,
+                158.0
+              ],
+              "bottomRightMarkerXY": [
+                -1.0,
+                -1.0
+              ],
+              "matchesLaterLiveMarkerCoordinateSignature": false
+            }
+          }
+        },
+        {
+          "cycle": 2,
+          "direction": "maximize",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "FAIL",
+            "differentPixels": 1253071,
+            "maxChannelDifference": 245,
+            "meanChannelDifference": 12.191703725961538,
+            "luminanceDifference": -0.2207264957264954,
+            "targetAreaPx": 1996800,
+            "differentPixelPercent": 62.754
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 1.1596,
+              "nativeCaptureBoundaryMs": 1.2509,
+              "captureFinishToGuiDeliveryMs": 3.2069,
+              "requestToGuiDeliveryMs": 5.6174
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 281.4922,
+              "nativeCaptureBoundaryMs": 12.1223,
+              "captureFinishToGuiDeliveryMs": 100.4149,
+              "requestToGuiDeliveryMs": 394.0294
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 1171.4492,
+            "layoutCallMs": 430.4455,
+            "intentionalGuiDelayMeasuredMs": 80.0586,
+            "commandToHandoffMs": 1761.0247,
+            "nativeEndpointStatusAfterMotionStartMs": 391.9453,
+            "liveHandoffAfterMotionStartMs": 589.5366,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 79.7799,
+            "firstDifferentMarkerReadFinishedAfterMotionStartMs": 99.6979,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 547.4704
+          },
+          "collectorNominal350msMotion": {
+            "samples": 11,
+            "medianIntervalMs": 32.4358,
+            "maximumIntervalMs": 46.8563,
+            "intervalsOver40Ms": 1,
+            "successiveUnchangedMarkerCoordinateSignatures": 2,
+            "movingSamplesDuringIntentionalGuiDelay": 1,
+            "firstSampleAfterNativeEndpointStatus": {
+              "afterMotionStartMs": 417.5023,
+              "topLeftMarkerXY": [
+                88.0,
+                54.0
+              ],
+              "bottomRightMarkerXY": [
+                1754.0,
+                956.0
+              ],
+              "matchesLaterLiveMarkerCoordinateSignature": false
+            }
+          }
+        },
+        {
+          "cycle": 3,
+          "direction": "restore",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "FAIL",
+            "differentPixels": 499171,
+            "maxChannelDifference": 240,
+            "meanChannelDifference": 12.860644583339033,
+            "luminanceDifference": 1.619822415519721,
+            "targetAreaPx": 877404,
+            "differentPixelPercent": 56.8918
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 2.219,
+              "nativeCaptureBoundaryMs": 1.3865,
+              "captureFinishToGuiDeliveryMs": 1.3508,
+              "requestToGuiDeliveryMs": 4.9563
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 252.62,
+              "nativeCaptureBoundaryMs": 9.0077,
+              "captureFinishToGuiDeliveryMs": 135.1218,
+              "requestToGuiDeliveryMs": 396.7495
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 1140.1602,
+            "layoutCallMs": 327.5664,
+            "intentionalGuiDelayMeasuredMs": 80.9661,
+            "commandToHandoffMs": 1732.1824,
+            "nativeEndpointStatusAfterMotionStartMs": 401.0116,
+            "liveHandoffAfterMotionStartMs": 591.8843,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 71.4227,
+            "firstDifferentMarkerReadFinishedAfterMotionStartMs": 94.8315,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 548.6496
+          },
+          "collectorNominal350msMotion": {
+            "samples": 11,
+            "medianIntervalMs": 31.4526,
+            "maximumIntervalMs": 45.2461,
+            "intervalsOver40Ms": 2,
+            "successiveUnchangedMarkerCoordinateSignatures": 1,
+            "movingSamplesDuringIntentionalGuiDelay": 1,
+            "firstSampleAfterNativeEndpointStatus": {
+              "afterMotionStartMs": 405.6186,
+              "topLeftMarkerXY": [
+                278.0,
+                128.0
+              ],
+              "bottomRightMarkerXY": [
+                1488.0,
+                904.0
+              ],
+              "matchesLaterLiveMarkerCoordinateSignature": false
+            }
+          }
+        }
+      ],
+      "collectorTotalSamples": 577,
+      "presentationCpuReadbacksReported": 0,
+      "presentationCpuUploadsReported": 0,
+      "gateInterpretation": {
+        "sourceExactPixels": "PASS on all four compared endpoints.",
+        "resizedTargetGpuImport": "PASS native target upload/commit on all four diagnostic directions. No CPU framebuffer supplies presentation.",
+        "coldReadinessDeadline": "NOT TESTED in this run: target is prepared before the native clock starts. Original cold failure remains.",
+        "scheduledVisibleMotionAndArrival": "FAIL TO QUALIFY: physical geometry remains in motion after native endpoint status. Collector nominal-motion intervals have 31-33 ms medians and 45-48 ms maxima. Smooth visible motion is not established.",
+        "targetAndLiveExactPixels": "FAIL comparison in all four directions, but failure cause is unresolved. Endpoint capture occurs immediately after native endpoint status; collector evidence indicates this can precede displayed endpoint arrival. Do not treat the comparison alone as proof of a texture-coordinate or alpha defect.",
+        "fixedProtectedHeader": "STILL UNKNOWN: exact-color marker interiors shrink/disappear during transfer, which is affected by cross-fade and color matching. This does not establish glyph pixel dimensions.",
+        "repeatLifecycle": "Four directions complete and resources return normally, with original protected hashes unchanged. Successful complete visual lifecycle gate remains unmet.",
+        "installedPerceptualAcceptance": "NOT TESTED."
+      },
+      "architecturalLesson": "GPU source identity and resized target import are feasible. A native submitted-endpoint flag is insufficient to prove that the desktop already presents that endpoint. GPU presentation latency/queue synchronization and the fixture endpoint sampling boundary must be resolved before exact target/live handoff can be assessed."
+    },
+    {
+      "evidenceLabel": "native_gpu_paced_prepared_20261003_run1",
+      "mode": "paced prepared-target GPU shader capability isolation",
+      "nativeDllSha256": "68391f186018c1af4d4f6526d8f28a299dba0f10929886d98c9b882ce6aa03a7",
+      "result": "PASS_PIXEL_TRANSFER_CAPABILITY_ONLY_NOT_COLD_CANDIDATE",
+      "coldCandidateQualification": "NOT QUALIFYING",
+      "architecture": "Same native GPU shader/composition-swapchain architecture; queue limited to one frame, wait before rendering, and explicit 120 ms diagnostic hold before endpoint measurement.",
+      "completedDiagnosticDirections": 4,
+      "qualifiedCompleteTransitions": 0,
+      "sourceFullFrameComparisonsPassed": 4,
+      "targetLiveFullFrameComparisonsPassed": 4,
+      "protectedOriginalHashesUnchanged": true,
+      "stationaryPreparationIncludedInFullTiming": true,
+      "timingScope": "All preparation, source coverage, endpoint measurement/120 ms hold and live handoff holds are included. This is capability isolation, not a fast installed transition. No speed median or speed ratio is inferred from this fixture.",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0,
+            "targetAreaPx": 1996800,
+            "differentPixelPercent": 0.0
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 3.4564,
+              "nativeCaptureBoundaryMs": 21.292,
+              "captureFinishToGuiDeliveryMs": 1.5781,
+              "requestToGuiDeliveryMs": 26.3265
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 235.2318,
+              "nativeCaptureBoundaryMs": 10.7697,
+              "captureFinishToGuiDeliveryMs": 103.0759,
+              "requestToGuiDeliveryMs": 349.0774
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 1028.1038,
+            "layoutCallMs": 284.2035,
+            "intentionalGuiDelayMeasuredMs": 80.2431,
+            "commandToHandoffMs": 1716.665,
+            "nativeEndpointSubmittedAfterMotionStartMs": 371.8076,
+            "diagnosticEndpointHoldConfiguredMs": 120,
+            "desktopEndpointMeasurementAfterMotionStartMs": 502.2087,
+            "liveHandoffAfterMotionStartMs": 688.4998,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 81.5079,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 434.2001
+          },
+          "collectorNominal350msMotion": {
+            "samples": 12,
+            "medianIntervalMs": 31.6208,
+            "maximumIntervalMs": 44.8457,
+            "intervalsOver40Ms": 1,
+            "successiveUnchangedMarkerCoordinateSignatures": 1,
+            "movingSamplesDuringIntentionalGuiDelay": 0,
+            "firstSampleAfterNativeEndpointSubmitted": {
+              "afterMotionStartMs": 372.4458,
+              "matchesLaterLiveMarkerCoordinateSignature": false
+            }
+          }
+        },
+        {
+          "cycle": 1,
+          "direction": "restore",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0,
+            "targetAreaPx": 877404,
+            "differentPixelPercent": 0.0
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 1.6985,
+              "nativeCaptureBoundaryMs": 0.6146,
+              "captureFinishToGuiDeliveryMs": 1.91,
+              "requestToGuiDeliveryMs": 4.2231
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 193.1181,
+              "nativeCaptureBoundaryMs": 8.1859,
+              "captureFinishToGuiDeliveryMs": 104.1425,
+              "requestToGuiDeliveryMs": 305.4465
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 945.5168,
+            "layoutCallMs": 281.0027,
+            "intentionalGuiDelayMeasuredMs": 80.6563,
+            "commandToHandoffMs": 1607.0997,
+            "nativeEndpointSubmittedAfterMotionStartMs": 370.1374,
+            "diagnosticEndpointHoldConfiguredMs": 120,
+            "desktopEndpointMeasurementAfterMotionStartMs": 495.5028,
+            "liveHandoffAfterMotionStartMs": 661.5204,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 55.3766,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 421.0162
+          },
+          "collectorNominal350msMotion": {
+            "samples": 13,
+            "medianIntervalMs": 25.391,
+            "maximumIntervalMs": 39.0146,
+            "intervalsOver40Ms": 0,
+            "successiveUnchangedMarkerCoordinateSignatures": 0,
+            "movingSamplesDuringIntentionalGuiDelay": 1,
+            "firstSampleAfterNativeEndpointSubmitted": {
+              "afterMotionStartMs": 371.8852,
+              "matchesLaterLiveMarkerCoordinateSignature": false
+            }
+          }
+        },
+        {
+          "cycle": 2,
+          "direction": "maximize",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0,
+            "targetAreaPx": 1996800,
+            "differentPixelPercent": 0.0
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 6.1914,
+              "nativeCaptureBoundaryMs": 0.976,
+              "captureFinishToGuiDeliveryMs": 1.9431,
+              "requestToGuiDeliveryMs": 9.1105
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 182.3669,
+              "nativeCaptureBoundaryMs": 9.5639,
+              "captureFinishToGuiDeliveryMs": 79.0458,
+              "requestToGuiDeliveryMs": 270.9766
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 797.1992,
+            "layoutCallMs": 241.2629,
+            "intentionalGuiDelayMeasuredMs": 80.3379,
+            "commandToHandoffMs": 1450.9438,
+            "nativeEndpointSubmittedAfterMotionStartMs": 354.3488,
+            "diagnosticEndpointHoldConfiguredMs": 120,
+            "desktopEndpointMeasurementAfterMotionStartMs": 484.7081,
+            "liveHandoffAfterMotionStartMs": 653.6627,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 76.7506,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 421.6314
+          },
+          "collectorNominal350msMotion": {
+            "samples": 12,
+            "medianIntervalMs": 30.8754,
+            "maximumIntervalMs": 39.3603,
+            "intervalsOver40Ms": 0,
+            "successiveUnchangedMarkerCoordinateSignatures": 2,
+            "movingSamplesDuringIntentionalGuiDelay": 1,
+            "firstSampleAfterNativeEndpointSubmitted": {
+              "afterMotionStartMs": 359.8959,
+              "matchesLaterLiveMarkerCoordinateSignature": false
+            }
+          }
+        },
+        {
+          "cycle": 3,
+          "direction": "restore",
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetLivePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0,
+            "targetAreaPx": 877404,
+            "differentPixelPercent": 0.0
+          },
+          "captures": [
+            {
+              "kind": "source",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1920,
+                1040
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 3.3481,
+              "nativeCaptureBoundaryMs": 1.2227,
+              "captureFinishToGuiDeliveryMs": 2.1668,
+              "requestToGuiDeliveryMs": 6.7376
+            },
+            {
+              "kind": "target",
+              "graphicsApi": "Direct3D11",
+              "physicalSizePx": [
+                1122,
+                782
+              ],
+              "sizeMatchesClient": true,
+              "gpuOnlyReported": true,
+              "requestToRenderCallbackMs": 175.9574,
+              "nativeCaptureBoundaryMs": 8.2091,
+              "captureFinishToGuiDeliveryMs": 133.9445,
+              "requestToGuiDeliveryMs": 318.111
+            }
+          ],
+          "timing": {
+            "commandToNativeStartMs": 967.0803,
+            "layoutCallMs": 234.6433,
+            "intentionalGuiDelayMeasuredMs": 80.6973,
+            "commandToHandoffMs": 1633.7615,
+            "nativeEndpointSubmittedAfterMotionStartMs": 378.4895,
+            "diagnosticEndpointHoldConfiguredMs": 120,
+            "desktopEndpointMeasurementAfterMotionStartMs": 498.6135,
+            "liveHandoffAfterMotionStartMs": 666.6504,
+            "firstDifferentMarkerSampleAfterMotionStartMs": 80.8107,
+            "firstObservedLaterLiveMarkerCoordinateSignatureAfterMotionStartMs": 419.6061
+          },
+          "collectorNominal350msMotion": {
+            "samples": 11,
+            "medianIntervalMs": 30.8242,
+            "maximumIntervalMs": 46.1786,
+            "intervalsOver40Ms": 1,
+            "successiveUnchangedMarkerCoordinateSignatures": 1,
+            "movingSamplesDuringIntentionalGuiDelay": 0,
+            "firstSampleAfterNativeEndpointSubmitted": {
+              "afterMotionStartMs": 419.6061,
+              "matchesLaterLiveMarkerCoordinateSignature": true
+            }
+          }
+        }
+      ],
+      "collectorTotalSamples": 601,
+      "presentationCpuReadbacksReported": 0,
+      "presentationCpuUploadsReported": 0,
+      "gateInterpretation": {
+        "sourceExactPixels": "PASS 4/4 full framebuffer comparisons with zero differences.",
+        "resizedTargetGpuImport": "PASS 4/4 diagnostic directions by native commit and exact later displayed pixels.",
+        "targetAndLiveExactPixels": "PASS 4/4 whole-frame comparisons after explicit endpoint settling hold. This proves feasible exact pixel transfer and endpoint identity under diagnostic conditions, not a no-pause 350 ms handoff.",
+        "coldReadinessDeadline": "NOT TESTED: target is fully prepared before motion. Original cold readiness failure remains.",
+        "motionDuringIntentionalGuiDelay": "SUPPORTED in two directions by one changed marker sample during each 80 ms sleep. Other two first-change rows are just after delay end; sparse sampling does not establish smooth progress in every delay. Original compositor-only trial remains the stronger independence evidence.",
+        "visible350msArrival": "FAIL TO QUALIFY: first later-live full marker coordinate signatures occur around 420-434 ms after start. Submitted endpoint still is not desktop arrival. These are observer timestamps, not exact scanout timestamps.",
+        "physicalFramePacing": "UNQUALIFIED: nominal motion has 11-13 collector samples, median intervals 25.39-31.62 ms and maxima 39.02-46.18 ms. Collector intervals cannot alone assign display-frame drop counts.",
+        "protectedHeaderDimensions": "STILL UNKNOWN: pitch-two exact-color markers and cross-fade do not certify glyph sharpness, dimensions or text weight.",
+        "repeatLifecycle": "Four diagnostic directions finish with exact endpoint pixel identities and protected hashes unchanged. Taskbar, focus, interruption, accessibility, never-ready target and monitor regressions remain untested.",
+        "perceptualAndInstalledAcceptance": "NOT TESTED; no candidate installation or Cory acceptance."
+      },
+      "architecturalLesson": "The GPU source/target presentation and exact physical target/live identity are feasible on this device. The prior prepared target comparison failures disappear after queue/sampling changes, supporting the presentation-boundary diagnosis rather than a necessary texture-access or alpha defect. This does not resolve the cold readiness contract or visible pacing/arrival requirements."
+    },
+    {
+      "evidenceLabel": "native_gpu_paced_cold_20261003_run1",
+      "mode": "paced cold native GPU shader/composition transition",
+      "nativeDllSha256": "68391f186018c1af4d4f6526d8f28a299dba0f10929886d98c9b882ce6aa03a7",
+      "result": "FAIL_COLD_TARGET_READINESS_NO_ENDPOINT_HOLD_CONFIGURED",
+      "coldCandidateQualification": "FAIL",
+      "requestedCycles": 2,
+      "qualifiedCompletedCycles": 0,
+      "attemptedDirections": [
+        "maximize"
+      ],
+      "configuration": {
+        "audit_label": "native_gpu_paced_cold_20261003_run1",
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": true,
+        "pixels": true,
+        "bridge_dll": "cspm_cleanroom_composition_paced.dll",
+        "endpoint_hold_ms": 0
+      },
+      "captures": [
+        {
+          "kind": "source",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1122,
+            782
+          ],
+          "clientGeometryPx": [
+            309,
+            129,
+            1122,
+            782
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 5.9707,
+          "nativeCaptureBoundaryMs": 2.0657,
+          "captureFinishToGuiDeliveryMs": 2.1604,
+          "requestToGuiDeliveryMs": 10.1968
+        },
+        {
+          "kind": "target",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1920,
+            1040
+          ],
+          "clientGeometryPx": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 239.525,
+          "nativeCaptureBoundaryMs": 13.903,
+          "captureFinishToGuiDeliveryMs": 110.7434,
+          "requestToGuiDeliveryMs": 364.1714
+        }
+      ],
+      "sourcePixelComparison": {
+        "status": "PASS",
+        "differentPixels": 0,
+        "maxChannelDifference": 0,
+        "meanChannelDifference": 0.0,
+        "luminanceDifference": 0.0
+      },
+      "targetLivePixelComparison": {
+        "status": "NOT_EXERCISED",
+        "reason": "Target arrival occurs after the native host has marked the fixed transfer deadline failed. No target upload, presentation or success-path live handoff occurs."
+      },
+      "protectedOriginalHashesUnchanged": true,
+      "presentationCpuReadbacksReported": 0,
+      "presentationCpuUploadsReported": 0,
+      "timing": {
+        "commandToSourceGuiDeliveryMs": 23.8165,
+        "commandToSourceCompositionCommitMs": 122.5343,
+        "commandToNativeMotionStartMs": 337.8266,
+        "commandToFirstChangedMarkerSampleMs": 412.6341,
+        "nativeMotionStartToFirstChangedMarkerSampleMs": 74.8075,
+        "intentionalGuiDelayMeasuredMs": 80.2303,
+        "layoutCallMs": 439.5082,
+        "layoutCommittedAfterMotionStartMs": 519.9153,
+        "targetGpuDeliveredAfterMotionStartMs": 884.1569,
+        "targetGpuDeadlineMissMs": 644.1569,
+        "targetGpuDeliveredAfterNominalMotionEndMs": 534.1569,
+        "firstCompleteEndpointMarkerSignatureAfterMotionStartMs": 440.662,
+        "lastObservedEndpointMarkerHoldAfterMotionStartMs": 881.339,
+        "minimumObservedEndpointHoldMs": 440.677,
+        "failureObservedByGuiAfterMotionStartMs": 884.5231,
+        "fixtureFinishedAfterMotionStartMs": 906.7428,
+        "commandToFixtureFinishedMs": 1244.5694,
+        "firstDifferentCleanupLiveMarkerSampleAfterMotionStartMs": 916.1557
+      },
+      "independentDesktopCollector": {
+        "sampleCount": 377,
+        "nominalMotion": {
+          "samples": 12,
+          "intervalCount": 11,
+          "medianIntervalMs": 30.5904,
+          "p95NearestRankIntervalMs": 44.851,
+          "maximumIntervalMs": 44.851,
+          "intervalsOver20Ms": 10,
+          "intervalsOver40Ms": 1,
+          "successiveUnchangedMarkerCoordinateSignatures": 1
+        },
+        "endpointHold": {
+          "samples": 17,
+          "intervalCount": 16,
+          "medianIntervalMs": 30.1244,
+          "p95NearestRankIntervalMs": 50.6131,
+          "maximumIntervalMs": 50.6131,
+          "intervalsOver20Ms": 11,
+          "intervalsOver40Ms": 2,
+          "successiveUnchangedMarkerCoordinateSignatures": 16
+        },
+        "movingSamplesDuringIntentionalGuiDelay": 1,
+        "movingSamplesDuringLayoutCall": 11,
+        "method": "DXGI desktop duplication, eight exact-color marker coordinate signatures. Row timestamp precedes frame grab and processing. CPU desktop observation does not supply presentation pixels. native_x/y/w/h describe the live Qt HWND.",
+        "limits": "Pitch-two marker observation is sparse and does not establish exact scanout, compositor frame counts, complete pixel trajectory, glyph sharpness, brightness continuity or subjective KDE quality."
+      },
+      "gateInterpretation": {
+        "coldDeadline": "FAIL: corrected pacing still misses the immutable 240 ms appearance deadline; target arrives at 884.16 ms after the logged native start.",
+        "sourceExactPixels": "PASS: zero different full-frame source pixels in this run.",
+        "nativeIndependentMotion": "SUPPORTED: changed marker samples occur through GUI delay and blocking layout. This is capability evidence, not smoothness acceptance.",
+        "noEndpointHold": "FAIL: no diagnostic endpoint hold was configured, yet a source-only endpoint marker signature remains stationary for at least 440.68 ms before failure cleanup changes the scene.",
+        "targetLiveExactPixels": "UNEXERCISED success path; earlier prepared 4/4 identity remains a constrained capability result.",
+        "repeatAndRestore": "UNEXERCISED: first maximize fails, so zero of two requested directions complete.",
+        "boundedFailure": "Native code marks its failure at the authored deadline without changing geometry progress. The Qt fixture does not observe/reveal cleanup until the late capture returns; safe rejection before visible commitment and never-arrives recovery remain unvalidated.",
+        "readinessCause": "Measured boundary decomposition: 80.23 ms intentional GUI sleep, 439.51 ms blocking geometry/layout call, 239.53 ms capture-request-to-render-callback wait, 13.90 ms capture submission boundary and 110.74 ms queued GUI delivery. These are aggregate boundaries, not individual QML binding/render/component attribution.",
+        "comparisonLimits": "The original 704.52 ms cold trial used a different visual-control DLL and omitted whole-frame source pixel instrumentation. Latest 884.16 ms is not a causal pacing regression or a matched production speed comparison."
+      },
+      "failureDiagnostics": {
+        "reportedError": "target readiness: Target requires source, accepts one GPU frame, and rejects failed transactions",
+        "sourceInterpretation": "Current native render code first sets failed status when target content is absent after blendStart. Subsequent set_target_frame refuses any failed transaction and replaces the earlier deadline message with a generic source/one-frame/failed guard message. The preserved raw log therefore does not directly timestamp or retain the earlier native failure."
+      },
+      "evidencePaths": [
+        "logs/native_gpu_paced_cold_20261003_run1/native_gpu_spike.json",
+        "logs/native_gpu_paced_cold_20261003_run1/window_transition_pixel8.csv",
+        "logs/native_gpu_paced_cold_20261003_run1/window_transition_pixel8.commands.csv",
+        "logs/native_gpu_paced_cold_20261003_run1/protected_hashes.json",
+        "logs/native_gpu_paced_cold_20261003_run1_console.log"
+      ]
+    },
+    {
+      "evidenceLabel": "native_gpu_continuity_cold_20261003_run1",
+      "mode": "continuity cold fixture before dependency repair",
+      "result": "FAIL_FIXTURE_BEFORE_MOTION",
+      "nativeDllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "configuration": {
+        "audit_label": "native_gpu_continuity_cold_20261003_run1",
+        "cycles": 4,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": true,
+        "pixels": true,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0
+      },
+      "qualifiedCompletedCycles": 0,
+      "attemptedDirections": [],
+      "failures": [
+        "fixture integration: begin_cycles: No module named 'dxcam'"
+      ],
+      "protectedOriginalHashesUnchanged": true,
+      "interpretation": "Missing optional dxcam instrumentation dependency causes begin_cycles to fail before any command/native motion/geometry commit. Preserved fixture failure, not a new architecture timing result. Dependencies were subsequently made available through ignored isolated outputs/pixel_dependencies."
+    },
+    {
+      "evidenceLabel": "native_gpu_continuity_cold_20261003_run2",
+      "mode": "continuity cold rerun after current preserved source rebuild",
+      "nativeDllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "result": "FAIL_COLD_TARGET_READINESS_NO_ENDPOINT_HOLD_CONFIGURED",
+      "coldCandidateQualification": "FAIL",
+      "requestedCycles": 4,
+      "qualifiedCompletedCycles": 0,
+      "attemptedDirections": [
+        "maximize"
+      ],
+      "configuration": {
+        "audit_label": "native_gpu_continuity_cold_20261003_run2",
+        "cycles": 4,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": true,
+        "pixels": true,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0
+      },
+      "captures": [
+        {
+          "kind": "source",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1122,
+            782
+          ],
+          "clientGeometryPx": [
+            309,
+            129,
+            1122,
+            782
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 24.0832,
+          "nativeCaptureBoundaryMs": 27.9071,
+          "captureFinishToGuiDeliveryMs": 1.5189,
+          "requestToGuiDeliveryMs": 53.5092
+        },
+        {
+          "kind": "target",
+          "graphicsApi": "Direct3D11",
+          "physicalSizePx": [
+            1920,
+            1040
+          ],
+          "clientGeometryPx": [
+            0,
+            0,
+            1920,
+            1040
+          ],
+          "sizeMatchesClient": true,
+          "gpuOnlyReported": true,
+          "requestToRenderCallbackMs": 219.4787,
+          "nativeCaptureBoundaryMs": 11.5499,
+          "captureFinishToGuiDeliveryMs": 89.5336,
+          "requestToGuiDeliveryMs": 320.5622
+        }
+      ],
+      "sourcePixelComparison": {
+        "status": "PASS",
+        "differentPixels": 0,
+        "maxChannelDifference": 0,
+        "meanChannelDifference": 0.0,
+        "luminanceDifference": 0.0
+      },
+      "targetLivePixelComparison": {
+        "status": "NOT_EXERCISED",
+        "reason": "Target arrival occurs after the native host has marked the fixed transfer deadline failed. No target upload, presentation or success-path live handoff occurs."
+      },
+      "protectedOriginalHashesUnchanged": true,
+      "presentationCpuReadbacksReported": 0,
+      "presentationCpuUploadsReported": 0,
+      "timing": {
+        "commandToSourceGuiDeliveryMs": 109.4393,
+        "commandToSourceCompositionCommitMs": 228.6715,
+        "commandToNativeMotionStartMs": 425.8891,
+        "commandToFirstChangedMarkerSampleMs": 489.6632,
+        "nativeMotionStartToFirstChangedMarkerSampleMs": 63.7741,
+        "intentionalGuiDelayMeasuredMs": 80.9237,
+        "layoutCallMs": 453.2502,
+        "layoutCommittedAfterMotionStartMs": 534.3283,
+        "targetGpuDeliveredAfterMotionStartMs": 854.9465,
+        "targetGpuDeadlineMissMs": 614.9465,
+        "targetGpuDeliveredAfterNominalMotionEndMs": 504.9465,
+        "firstCompleteEndpointMarkerSignatureAfterMotionStartMs": 435.522,
+        "lastObservedEndpointMarkerHoldAfterMotionStartMs": 863.6378,
+        "minimumObservedEndpointHoldMs": 428.1158,
+        "failureObservedByGuiAfterMotionStartMs": 855.7938,
+        "fixtureFinishedAfterMotionStartMs": 874.4762,
+        "commandToFixtureFinishedMs": 1300.3653,
+        "firstDifferentCleanupLiveMarkerSampleAfterMotionStartMs": 894.5035
+      },
+      "independentDesktopCollector": {
+        "sampleCount": 383,
+        "nominalMotion": {
+          "samples": 12,
+          "intervalCount": 11,
+          "medianIntervalMs": 30.5026,
+          "p95NearestRankIntervalMs": 39.8167,
+          "maximumIntervalMs": 39.8167,
+          "intervalsOver20Ms": 10,
+          "intervalsOver40Ms": 0,
+          "successiveUnchangedMarkerCoordinateSignatures": 1
+        },
+        "endpointHold": {
+          "samples": 15,
+          "intervalCount": 14,
+          "medianIntervalMs": 30.4586,
+          "p95NearestRankIntervalMs": 46.8812,
+          "maximumIntervalMs": 46.8812,
+          "intervalsOver20Ms": 13,
+          "intervalsOver40Ms": 2,
+          "successiveUnchangedMarkerCoordinateSignatures": 14
+        },
+        "movingSamplesDuringIntentionalGuiDelay": 1,
+        "movingSamplesDuringLayoutCall": 11,
+        "method": "DXGI desktop duplication, eight exact-color marker coordinate signatures. Row timestamp precedes frame grab and processing. CPU desktop observation does not supply presentation pixels. native_x/y/w/h describe the live Qt HWND.",
+        "limits": "Pitch-two marker observation is sparse and does not establish exact scanout, compositor frame counts, complete pixel trajectory, glyph sharpness, brightness continuity or subjective KDE quality."
+      },
+      "gateInterpretation": {
+        "coldDeadline": "FAIL: current-source rebuilt bridge still misses the immutable 240 ms appearance deadline; target arrives at 854.95 ms after logged native start.",
+        "sourceExactPixels": "PASS: zero different full-frame source pixels in this run.",
+        "nativeIndependentMotion": "SUPPORTED: changed marker samples occur through GUI delay and blocking layout. This is capability evidence, not smoothness acceptance.",
+        "noEndpointHold": "FAIL: endpoint_hold_ms=0, but source-only endpoint marker coordinates remain stationary for at least 428.12 ms before cleanup.",
+        "targetLiveExactPixels": "UNEXERCISED success path; earlier prepared 4/4 identity remains a constrained capability result.",
+        "repeatAndRestore": "UNEXERCISED: first maximize fails; zero of four requested directions complete.",
+        "boundedFailure": "Native code marks its failure at the authored deadline without changing geometry progress. The Qt fixture does not observe/reveal cleanup until the late capture returns; safe rejection before visible commitment and never-arrives recovery remain unvalidated.",
+        "readinessCause": "Measured aggregate boundaries: 80.92 ms intentional sleep, 453.25 ms blocking target geometry/layout call, 219.48 ms target-request-to-render-callback wait, 11.55 ms capture submission, 89.53 ms result-to-GUI delivery. Individual layout/render/component attribution remains unresolved.",
+        "comparisonLimits": "One current preserved-source rebuild, same authored motion/deadline and cold/no-hold fixture; this reproduces cold failure but is not a matched production performance A/B or load-controlled causal comparison."
+      },
+      "failureDiagnostics": {
+        "reportedError": "target readiness: Target requires source, accepts one GPU frame, and rejects failed transactions",
+        "sourceInterpretation": "Current native render code first sets failed status when target content is absent after blendStart. Subsequent set_target_frame refuses any failed transaction and replaces the earlier deadline message with a generic source/one-frame/failed guard message. The preserved raw log therefore does not directly timestamp or retain the earlier native failure."
+      },
+      "evidencePaths": [
+        "logs/native_gpu_continuity_cold_20261003_run2/native_gpu_spike.json",
+        "logs/native_gpu_continuity_cold_20261003_run2/window_transition_pixel8.csv",
+        "logs/native_gpu_continuity_cold_20261003_run2/window_transition_pixel8.commands.csv",
+        "logs/native_gpu_continuity_cold_20261003_run2/protected_hashes.json",
+        "logs/native_gpu_continuity_cold_20261003_run2_console.log",
+        "outputs/native_cleanroom/build_20261003_145746_59056.log"
+      ],
+      "sourceProvenance": "Root rebuilt the current preserved C++ under a distinct continuity DLL filename before this run. The observed continuity source snapshot SHA256 in continuityReconstruction is not a contemporaneous original-run manifest; the raw fixture saves DLL SHA256 only. No original binary or raw run was overwritten."
+    }
+  ],
+  "gates": {
+    "populatedRepresentativeQtWorkspace": {
+      "status": "PASS",
+      "evidenceClassification": "SUPPORTED_BY_OBSERVATION",
+      "detail": "Harness uses the existing populated report workspace, not a rectangle-only scene; physical markers observe that rendered scene."
+    },
+    "sourceGpuStorageAndNativeImport": {
+      "status": "PASS",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT_AND_SUPPORTED_BY_CODE_INSPECTION",
+      "detail": "Source native capture succeeds at the actual 1122x782 client dimensions; composition presents moving source markers. Typed D3D11 GPU copy/shared storage path feeds the host."
+    },
+    "fixedHostMotionDuringGuiDelay": {
+      "status": "PASS_CAPABILITY_ONLY",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT",
+      "detail": "Three changed samples occur while intentional GUI sleep is active; 17 further changed samples occur during the blocking layout call. This establishes independent motion, not silky perceptual acceptance."
+    },
+    "intentionalGuiDelay": {
+      "status": "PASS",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT",
+      "detail": "Requested 80 ms; measured 80.586 ms."
+    },
+    "differentlySizedTargetQtGpuCapture": {
+      "status": "PASS",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT",
+      "detail": "Target actual framebuffer dimensions are 1920x1040, different from 1122x782 source. Request-to-GUI target capture takes 300.464 ms; native copy boundary takes 6.5712 ms."
+    },
+    "gpuTargetImportAndPresentation": {
+      "status": "UNVALIDATED_QUALIFICATION_FAIL",
+      "evidenceClassification": "STILL_UNKNOWN",
+      "detail": "Target GPU capture succeeds, but fixed readiness rejection occurs before target import/presentation. Source import does not prove target import or exact target appearance."
+    },
+    "noCpuPresentationReadbackReupload": {
+      "status": "PASS_PATH_INSPECTION",
+      "evidenceClassification": "SUPPORTED_BY_CODE_INSPECTION",
+      "detail": "Capture/host path uses D3D11 CopyResource/shared resources, not CPU Map or pixel-buffer upload. Report counters are zero. Desktop CPU readback is instrumentation only; no independent GPU API trace was collected."
+    },
+    "fixedScheduleAppearanceTransfer": {
+      "status": "FAIL",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT",
+      "detail": "No target content is available at the 240 ms deadline. Target arrives at 704.522 ms; no successful fixed-schedule appearance transfer was exercised."
+    },
+    "readinessDoesNotAlterMotion": {
+      "status": "PASS_GEOMETRY_ONLY",
+      "evidenceClassification": "SUPPORTED_BY_MEASUREMENT_AND_CODE_INSPECTION",
+      "detail": "Physical source motion advances through GUI blockage and reaches its endpoint before readiness. No observed trajectory pause or restart precedes the endpoint. This does not establish continuous final appearance."
+    },
+    "protectedHeaderPixelDimensions": {
+      "status": "UNVALIDATED_QUALIFICATION_FAIL",
+      "evidenceClassification": "STILL_UNKNOWN",
+      "detail": "Exact-color top markers vary between 14 and 16 px interiors during fractional movement. That variation is not proof of glyph scaling; translation-only implementation and exact protected-header pixels require dedicated endpoint/image evidence."
+    },
+    "exactSourcePixelPresentation": {
+      "status": "UNVALIDATED_QUALIFICATION_FAIL",
+      "evidenceClassification": "STILL_UNKNOWN",
+      "detail": "GPU dimensions match native geometry, but no full source/live pixel equality test was present in these runs."
+    },
+    "exactTargetPhysicalPixelEndpoint": {
+      "status": "UNVALIDATED_QUALIFICATION_FAIL",
+      "evidenceClassification": "STILL_UNKNOWN",
+      "detail": "Target import/presentation is rejected. Correct target capture size and live geometry are necessary but insufficient."
+    },
+    "exactLiveHwndHandoff": {
+      "status": "FAIL_UNEXERCISED_SUCCESS_PATH",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT",
+      "detail": "Cold trial follows rejection cleanup, with a stationary source endpoint for at least 362.38 ms and a later different live marker arrangement. A successful exact handoff was not exercised."
+    },
+    "repeatedMaximizeRestoreUse": {
+      "status": "UNVALIDATED_QUALIFICATION_FAIL",
+      "evidenceClassification": "STILL_UNKNOWN",
+      "detail": "Four cycles requested, zero qualified cycles completed. Restore and repeat-use lifecycle have not been measured."
+    },
+    "boundedLateTargetFailure": {
+      "status": "PASS_OBSERVED_REJECTION_ONLY",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT",
+      "detail": "Late target is explicitly rejected and fixture closes safely at 708.656 ms after native start; protected hashes match. Failure detection waits until 704.935 ms, rather than enforcing immediate cleanup at the 240 ms deadline. No missing-target-never-arrives trial was collected."
+    },
+    "fullExperienceWithoutPauseOrReplacement": {
+      "status": "FAIL",
+      "evidenceClassification": "PROVEN_BY_MEASUREMENT",
+      "detail": "Complete source endpoint marker signature remains stationary for at least 362.38 ms before cleanup reveals a different live scene. Mathematical motion continuity does not rescue this complete-experience failure."
+    },
+    "mixedDpiMultipleMonitorsNegativeOrigins": {
+      "status": "UNVALIDATED_QUALIFICATION_FAIL",
+      "evidenceClassification": "STILL_UNKNOWN",
+      "detail": "Trial is at one 100% monitor. A fixed host envelope with negative coordinates is logged, but this does not prove a negative-origin monitor or mixed-DPI behavior."
+    },
+    "commercialPackageAndInstalledAcceptance": {
+      "status": "UNVALIDATED_QUALIFICATION_FAIL",
+      "evidenceClassification": "STILL_UNKNOWN",
+      "detail": "No candidate commercial package/side installation or Cory acceptance exists for these two runs."
+    }
+  },
+  "architecturalConclusions": {
+    "provenByMeasurement": [
+      "Qt D3D11 source and resized target framebuffer capture is available to a small typed native bridge.",
+      "The native source presentation moves while Qt GUI sleep and layout block the Qt thread.",
+      "Target delivery misses the immutable appearance deadline and the complete trial fails."
+    ],
+    "supportedByObservation": [
+      "Source can be imported to the composition device without a full CPU framebuffer roundtrip by the implemented D3D11 sharing path.",
+      "Removing CPU image capture does not remove the measured Qt layout/render readiness latency."
+    ],
+    "stillUnknown": [
+      "Exact source/target and live pixel matching.",
+      "Protected glyph pixel dimensions and sharpness during motion.",
+      "Repeated restore lifecycle and all mixed-DPI/monitor contracts.",
+      "KDE-like flowing character and Cory installed-app acceptance."
+    ],
+    "nextDecision": "Isolate target presentation and physical-pixel handoff using a pre-ready target diagnostic without claiming that moved preparation delay qualifies the cold command. If cold readiness cannot meet the fixed gate, reject primary full-candidate qualification and test at most one materially different fallback."
+  },
+  "latestDiagnosticEvidence": "Continuation current-source rebuilt cold run also fails: target arrives 854.95 ms after logged native start; source endpoint is stationary for at least 428.12 ms despite endpoint_hold_ms=0; zero completed directions. Preserved paced cold failure remains. Prepared 4/4 source plus 4/4 target/live zero-difference capability uses preprepared target and a 120 ms diagnostic hold, and remains nonqualifying.",
+  "gateScope": "Top-level gates describe the original cold composition run; the prepared-target run contains its own narrower gate interpretation and does not qualify a cold candidate.",
+  "continuityReconstruction": {
+    "scope": "Read-only reconstruction of the preserved pre-continuation experiments; no new desktop trial. Original top-level gates and gateScope remain historical.",
+    "latestPreservedRun": "native_gpu_paced_cold_20261003_run1",
+    "recordedLocalFinish": "2026-10-03 12:00:39 America/Toronto",
+    "boundary": "The paced cold rerun was already completed before the prior session stopped; it failed. Current next step is focused preserved-code checks and decision-changing cold cost profiling, followed by the one authorized QML fixed-clock comparison if primary cannot qualify.",
+    "provenance": {
+      "savedContemporaneousSourceHashes": false,
+      "nativeSourceObservedMtimeLocal": "2026-10-03 11:54:37",
+      "pacedDllBuildRecordedLocal": "2026-10-03 11:54:48",
+      "scriptObservedMtimeLocal": "2026-10-03 11:58:58",
+      "preparedRunFinishedLocal": "2026-10-03 11:57:38",
+      "interpretation": "Native source timestamp precedes the paced binary build, and its exports/logic agree with that build, but no saved source hash binds it to the measured binary. The current script was edited after the passing prepared run and before the failed cold run. Exact source provenance is not established by timestamps or DLL hashes alone.",
+      "knownPostPreparedEdit": "Current script includes optional cspm_comp_presentation telemetry and presentation fields on endpoint events. Preserved prepared endpoint rows contain neither field; cold failure exits before poll_native. This current optional telemetry branch therefore has no preserved desktop evidence.",
+      "continuationObservedSourceSha256": {
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "scripts/diagnostics/native_gpu_transition_spike.py": "6d0c96bdef717ae5dcaa33d5a003c1b78b9e7cc01a0c34d2430d8e54e1b4166c"
+      },
+      "hashScope": "Hashes observed during this continuity audit, not original run manifests. Do not infer that every current source branch was exercised."
+    },
+    "measurementClassification": {
+      "provenByMeasurement": [
+        "Paced cold source endpoint identity is exact.",
+        "The current paced DLL still receives the differently sized cold GPU target far after its fixed deadline.",
+        "A source-only endpoint plateau remains without a configured diagnostic hold."
+      ],
+      "supportedByObservation": [
+        "Native GPU presentation ownership and constrained exact endpoint transfer remain useful capabilities.",
+        "Cold Qt layout/readiness and delayed GUI result delivery remain on this complete-experience critical path."
+      ],
+      "disproven": [
+        "Correcting the presentation queue alone qualified the cold populated transition."
+      ],
+      "stillUnknown": [
+        "Individual geometry/layout/render/queued delivery cost attribution.",
+        "No-hold successful cold target/live pixel identity in repeated maximize and restore.",
+        "Prompt safe precommit failure, missing-target recovery, protected glyph dimensions, mixed DPI and lifecycle regressions.",
+        "A materially faster complete candidate and Cory installed-app acceptance."
+      ]
+    }
+  },
+  "continuationColdRecheck": {
+    "evidenceLabels": [
+      "native_gpu_continuity_cold_20261003_run1",
+      "native_gpu_continuity_cold_20261003_run2"
+    ],
+    "result": "FAIL_COLD_GATE_REPRODUCED_AFTER_CURRENT_SOURCE_REBUILD",
+    "nativeDllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+    "targetAfterLoggedNativeStartMs": 854.9465,
+    "minimumObservedSourceOnlyEndpointHoldMs": 428.1158,
+    "qualifiedCycles": 0,
+    "nextBoundary": "Focused optional geometry/layout/render/delivery profiling and sole authorized fixed-clock QML fallback A/B. No qualifying native integration or packaging."
+  }
+}

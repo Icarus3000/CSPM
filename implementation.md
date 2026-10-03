@@ -1,5 +1,15 @@
 # Implementation History
 
+## 2026-10-03: Exact Clean-Room Continuation And Native Capability Checkpoint
+
+Resume the user's preserved experimental worktree and all uncommitted source at `ad72d59`. No new branch/worktree, destructive Git operation or production change is made. The native C++ bridge, explicit process-local selector, competing QML surface and disposable diagnostic harnesses remain experimental; ordinary launches select production. Read the clean-room learning record and native README for their failure/lifecycle limitations.
+
+The later paced cold evidence already existed at handoff: source pixels matched but target delivery took about 884 ms after the fixed 350 ms motion began. Rebuilding the preserved source and repeating the cold gate yields about 855 ms, including a 453 ms target commit and 321 ms capture request-to-GUI delivery. Both cold runs fail the 240 ms content deadline with zero qualified transitions. Four prepared source and four prepared target/live zero-difference comparisons prove GPU endpoint capability under preparation and a labelled 120 ms diagnostic hold; they do not qualify cold speed or uninterrupted handoff.
+
+Sandbox-safe checks: preserved C++ compilation using existing MSVC `/W4`, Python compilation, 40 focused clean-room tests, governed QML lint with existing warnings, native ABI/null rejection and whitespace checks. Outside sandbox: populated full-source Qt GPU/native cold rerun with independent desktop collection and exact source pixel comparison. The first rerun was a retained fixture failure caused by unavailable `dxcam`; diagnostic dependencies were installed only into ignored `outputs/pixel_dependencies`. No dedicated WebEngine HTML/PDF e2e or packaged smoke validation is claimed in this checkpoint.
+
+Next: profile only geometry/first-target-render boundaries that can change the architecture decision, then test the one fixed-clock QML fallback against production. Preserve privacy-safe source and aggregate evidence remotely before completing the experiment. Installed EXE hash remains `8D461B679B4D578CFB6BE6DE259AB2E183E62A6D9F1EB944A69527BEFC8C0FA3`; original data/settings hashes match after the completed fixtures. No package, installation or merge is authorized for these failed candidates; real-app P0 acceptance remains open.
+
 ## 2026-10-02: Native Framebuffer Restore Endpoint Fix And Installed Release
 
 The user authorizes fixing the diagnosed restore nudge. A transient `backend/window_frame_capture.py` service captures the actual QQuickWindow framebuffer on the GUI thread, publishes physical-size images in memory, and releases them at finish/cancellation. The engine exposes it before QML load. The fixed transition window queries actual Windows client origin/size while hidden; shader endpoint replay maps those pixels directly while retaining intermediate fixed-size header mapping and early movement. Original durations, frame gates and 3500 ms watchdog are unchanged. Whole-root item rerendering and predictive coordinate rounding were rejected by pixel tests. No alternate workspace or persistent screenshot is introduced.
