@@ -171,3 +171,125 @@ def test_backdrop_cleanup_destroys_only_its_owned_window_class_and_brush():
     backdrop.close()
     backdrop.close()
     assert calls == [("window", 101), ("class", "owned", 303), ("brush", 202)]
+
+
+def test_endpoint_target_and_live_probe_adapters_return_owned_arrays_without_presentation_calls():
+    calls, buffers = [], []
+    def endpoint(host, coordinates, count, target, submitted):
+        calls.append(("endpoint", host, list(coordinates), count))
+        buffers.extend((target, submitted))
+        for i in range(count*4):
+            target[i], submitted[i] = i, i+1
+        return 1
+    def live(host, frame, coordinates, count, samples):
+        calls.append(("live", host, frame, list(coordinates), count))
+        buffers.append(samples)
+        for i in range(count*4):
+            samples[i] = i+2
+        return 1
+    dll = SimpleNamespace(cspm_comp_probe_endpoint_pixels=FakeFunction(endpoint),
+        cspm_comp_probe_frame_pixels=FakeFunction(live))
+    target, submitted = module.probe_gpu_endpoint_composition(dll, 101, [(3, 4), (5, 6)])
+    live_samples = module.probe_gpu_live_frame(dll, 101, 303, [(3, 4), (5, 6)])
+    assert calls == [("endpoint", 101, [3, 4, 5, 6], 2), ("live", 101, 303, [3, 4, 5, 6], 2)]
+    for buffer in buffers:
+        buffer[0] = 99
+    assert target[0, 0] == 0 and submitted[0, 0] == 1 and live_samples[0, 0] == 2
+    dll.cspm_comp_probe_endpoint_pixels.callback = lambda *args: 0
+    dll.cspm_comp_probe_frame_pixels.callback = lambda *args: 0
+    with pytest.raises(RuntimeError, match="rejected"):
+        module.probe_gpu_endpoint_composition(dll, 101, [(3, 4)])
+    with pytest.raises(RuntimeError, match="rejected"):
+        module.probe_gpu_live_frame(dll, 101, 303, [(3, 4)])
+
+
+@pytest.mark.parametrize("points", [[], [(0, 0)]*65, [(-1, 0)], [(0.5, 0)], [(True, 0)], [(2147483648, 0)]])
+def test_endpoint_adapters_reject_invalid_coordinates_before_native_calls(points):
+    reject = FakeFunction(lambda *args: pytest.fail("native called"))
+    dll = SimpleNamespace(cspm_comp_probe_endpoint_pixels=reject, cspm_comp_probe_frame_pixels=reject)
+    with pytest.raises(ValueError):
+        module.probe_gpu_endpoint_composition(dll, 101, points)
+    with pytest.raises(ValueError):
+        module.probe_gpu_live_frame(dll, 101, 303, points)
+
+
+def test_transparent_unchanged_endpoint_texels_explain_changed_fresh_backdrop_without_qualifying_pixels():
+    before = np.full((1, 2, 4), [83, 61, 37, 255], np.uint8)
+    after = before.copy()
+    after[0, 1, :3] = [31, 29, 23]
+    transparent = np.zeros((2, 4), np.uint8)
+    result = module.endpoint_composition_analysis(before, after, [(0, 0), (1, 0)],
+        ["clientMargin"]*2, transparent, transparent, transparent,
+        backdrop_before=before, backdrop_after=after)
+    assert result["desktopDifferentSamples"] == 1
+    assert result["targetSubmittedDifferentSamples"] == result["targetLiveDifferentSamples"] == 0
+    assert result["transparentTargetLiveButDesktopDifferentSamples"] == 1
+    assert result["transparentTargetSubmittedLiveButDesktopDifferentSamples"] == 1
+    assert result["backdropChangedWhereDesktopDifferentSamples"] == 1
+    assert all(model["differentSamples"] == 0 for model in result["models"].values())
+    assert result["textures"]["target"]["alphaHistogram"][0] == 2
+    assert result["regions"]["clientMargin"]["desktopDifferentSamples"] == 1
+    encoded = json.dumps(result)
+    assert "coordinates" not in result and "samples" not in result
+    assert "[31, 29, 23" not in encoded
+    assert module.compare_pixels(before, after)["status"] == "FAIL"
+
+
+def test_endpoint_diagnosis_distinguishes_target_live_frame_changes_from_static_backdrop():
+    backdrop = np.full((1, 1, 4), [83, 61, 37, 255], np.uint8)
+    target = np.zeros((1, 4), np.uint8)
+    live_texels = np.array([[20, 10, 5, 64]], np.uint8)
+    live_rgb = np.rint(live_texels[0, :3]+(1-64/255)*backdrop[0, 0, :3]).astype(np.uint8)
+    live = backdrop.copy()
+    live[0, 0, :3] = live_rgb
+    result = module.endpoint_composition_analysis(backdrop, live, [(0, 0)], ["clientMargin"],
+        target, target, live_texels, backdrop_before=backdrop, backdrop_after=backdrop)
+    assert result["targetLiveDifferentSamples"] == 1
+    assert result["transparentTargetLiveButDesktopDifferentSamples"] == 0
+    assert result["backdropDifferentSamples"] == 0
+    assert result["models"]["livePremultipliedOverAfterBackdropToLive"]["differentSamples"] == 0
+    assert result["models"]["targetPremultipliedOverAfterBackdropToLive"]["differentSamples"] == 1
+    assert result["textures"]["live"]["partialAlphaSamples"] == 1
+
+
+def test_endpoint_target_submitted_identity_and_nonpremultiplied_texels_remain_separate():
+    desktop = np.full((1, 1, 4), 255, np.uint8)
+    target = np.zeros((1, 4), np.uint8)
+    submitted = np.array([[1, 0, 0, 0]], np.uint8)
+    result = module.endpoint_composition_analysis(desktop, desktop, [(0, 0)],
+        ["clientMargin"], target, submitted)
+    assert result["desktopDifferentSamples"] == 0
+    assert result["targetSubmittedDifferentSamples"] == 1
+    assert result["textures"]["submitted"]["zeroAlphaNonzeroColorSamples"] == 1
+    assert result["textures"]["submitted"]["premultipliedViolationSamples"] == 1
+    assert result["models"] == {}
+    assert "targetLiveDifferentSamples" not in result
+
+
+def test_nonzero_submitted_texel_prevents_all_three_transparent_backdrop_explanation():
+    endpoint = np.full((1, 1, 4), [83, 61, 37, 255], np.uint8)
+    live = endpoint.copy()
+    live[0, 0, 0] += 1
+    target = np.zeros((1, 4), np.uint8)
+    submitted = np.array([[1, 0, 0, 0]], np.uint8)
+    result = module.endpoint_composition_analysis(endpoint, live, [(0, 0)],
+        ["clientMargin"], target, submitted, target)
+    assert result["transparentTargetLiveButDesktopDifferentSamples"] == 1
+    assert result["transparentTargetSubmittedLiveButDesktopDifferentSamples"] == 0
+    assert result["targetSubmittedDifferentSamples"] == 1
+
+
+@pytest.mark.parametrize("change", ["extent", "bounds", "labels", "sample_dtype", "sample_extent", "backdrop_pair", "backdrop_extent"])
+def test_invalid_endpoint_model_arguments_reject_without_changing_comparison(change):
+    desktop = np.full((2, 2, 4), 255, np.uint8)
+    samples = np.zeros((1, 4), np.uint8)
+    kwargs = {}
+    if change == "backdrop_pair":
+        kwargs["backdrop_before"] = desktop
+    if change == "backdrop_extent":
+        kwargs.update(backdrop_before=desktop[:-1], backdrop_after=desktop)
+    with pytest.raises(ValueError):
+        module.endpoint_composition_analysis(desktop, desktop[:-1] if change == "extent" else desktop,
+            [(2, 0)] if change == "bounds" else [(0, 0)], [] if change == "labels" else ["clientMargin"],
+            samples.astype(float) if change == "sample_dtype" else samples[:-1] if change == "sample_extent" else samples,
+            samples, **kwargs)

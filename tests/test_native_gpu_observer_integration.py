@@ -53,7 +53,9 @@ def harness():
         cspm_comp_set_observer_witness=FakeFunction(lambda *args: actions.append(("witness", args)) or 1))
     options = SimpleNamespace(physical_diagnostics=True, source_observation_only=False,
                               endpoint_pixels=True, controlled_backdrop=False, probe_composition=False,
-                              input_witness=False, single_owner_source=False, source_unlocked=False)
+                              input_witness=False, single_owner_source=False, source_unlocked=False,
+                              intrinsic_only=False, probe_endpoint=False, post_input_pixels=False,
+                              endpoint_hold_ms=0)
     source = ast.parse((DIAGNOSTICS / "native_gpu_transition_spike.py").read_text(encoding="utf-8"))
     classes = [node for node in ast.walk(source) if isinstance(node, ast.ClassDef) and node.name == "NativeSpike"]
     assert len(classes) == 1
@@ -62,7 +64,9 @@ def harness():
              "begin_input_witness", "input_witness_finished", "defer_source_visibility",
              "resume_live_host_hidden", "transfer_source_visibility", "after_source_coverage",
              "restore_source_activation", "source_reference_observed", "after_source_transfer_observed",
-             "raise_source_visibility"}
+             "raise_source_visibility", "endpoint_observed", "live_host_frame", "live_host_deadline",
+             "handoff", "handoff_compare", "analyze_endpoint_frame", "finish_handoff",
+             "accepted_input_pixels_observed", "poll_native"}
     methods = [copy.deepcopy(node) for node in classes[0].body
                if isinstance(node, ast.FunctionDef) and node.name in names]
     assert {method.name for method in methods} == names
@@ -73,6 +77,7 @@ def harness():
         "time": SimpleNamespace(perf_counter=lambda: 10.25), "isValid": lambda window: True,
         "native_error": lambda host: "synthetic native rejection",
         "native_present_trace": lambda dll, host: {"scope": "synthetic no-runtime trace"},
+        "native_observation": lambda dll, host: {"hostHideReturnSeconds": 10.2},
         "FreshPresentationGate": observer_module.FreshPresentationGate}
     exec(compile(ast.Module(body=methods, type_ignores=[]), "<real spike methods, no GUI>", "exec"), namespace)
     records = []
@@ -86,7 +91,8 @@ def harness():
         target_desktop=None, snapshot_observations={}, desktop_camera=SimpleNamespace(
             release=lambda: actions.append(("release-camera",))),
         composition_probe=None, controlled_backdrop=None,
-        input_witness=None, input_release_seconds=None,
+        input_witness=None, input_release_seconds=None, input_trace=None,
+        endpoint_diagnostic_pixels=None, diagnostic_texel_readbacks=0,
         live_visibility_transferred=False,
         source_foreground_before_transfer=False, source_active_before_transfer=False,
         source_before_resume=None,
@@ -363,30 +369,24 @@ def test_single_owner_transfer_geometry_change_is_rejected_before_observation(ha
 
 
 @pytest.mark.parametrize("was_foreground", [False, True])
-def test_activation_restoration_is_conditional_and_api_success_is_separate_from_observed_state(harness, was_foreground):
+def test_activation_is_never_requested_on_disabled_live_reveal(harness, was_foreground):
     app = harness.app
     app.source_foreground_before_transfer = was_foreground
-    app.window.requestActivate = lambda: harness.actions.append(("request-activate",))
+    app.window.requestActivate = lambda: pytest.fail("Reveal must not request activation while the source is disabled")
     app.window.isActive = lambda: False
     app.window_observation = lambda hwnd: {"foreground": False, "foregroundHwnd": 999}
     harness.namespace["user"] = SimpleNamespace(SetForegroundWindow=lambda hwnd: harness.actions.append(("activate", hwnd)) or 1)
     app.restore_source_activation("live-host-revealed")
-    if was_foreground:
-        assert harness.actions == [("request-activate",), ("activate", 123)]
-        assert harness.records[-1]["apiAccepted"] is True
-        assert harness.records[-1]["observedForeground"] is False
-    else:
-        assert harness.actions == [] and harness.records[-1]["event"] == "source-activation-not-requested"
+    assert harness.actions == [] and harness.records[-1]["event"] == "source-activation-not-requested"
 
 
 @pytest.mark.parametrize("rejection", ["never-foreground", "other-foreground", "changed-foreground",
     "foreign-process", "foreign-thread", "unknown-thread", "disabled", "still-locked", "invalid", None])
-def test_unlock_focus_restores_only_still_foreground_owned_enabled_gui_thread(harness, monkeypatch, rejection):
+def test_unlock_activation_requests_only_still_foreground_owned_enabled_gui_thread(harness, monkeypatch, rejection):
     app = harness.app
     app.source_foreground_before_transfer = rejection != "never-foreground"
     app.input_was_enabled = True if rejection == "still-locked" else None
     app.window.isActive = lambda: False
-    app.window.requestActivate = lambda: pytest.fail("Unlock must not retry desktop activation")
     app.window_observation = lambda hwnd: {"foregroundHwnd": 999 if rejection == "other-foreground" else hwnd}
     focus = {"hwnd": 0}
     posts = []
@@ -395,17 +395,19 @@ def test_unlock_focus_restores_only_still_foreground_owned_enabled_gui_thread(ha
         pointer._obj.value = os.getpid() + int(rejection == "foreign-process")
         return 0 if rejection == "unknown-thread" else (99 if rejection == "foreign-thread" else 77)
 
-    def set_focus(hwnd):
-        previous = focus["hwnd"]
-        focus["hwnd"] = hwnd
-        posts.append(hwnd)
-        return previous
+    def request_activate():
+        focus["hwnd"] = 123  # Model Qt's native focus restoration.
+        posts.append("owned-qt-request")
+
+    app.window.requestActivate = request_activate
 
     user = SimpleNamespace(
         GetForegroundWindow=FakeFunction(lambda: 999 if rejection == "changed-foreground" else 123),
         GetWindowThreadProcessId=FakeFunction(identify),
         IsWindowEnabled=FakeFunction(lambda hwnd: rejection != "disabled"),
-        GetFocus=FakeFunction(lambda: focus["hwnd"]), SetFocus=FakeFunction(set_focus),
+        GetFocus=FakeFunction(lambda: focus["hwnd"]),
+        GetActiveWindow=FakeFunction(lambda: 123),
+        SetFocus=FakeFunction(lambda hwnd: pytest.fail("Qt request must not have duplicate native focus calls")),
         SetForegroundWindow=FakeFunction(lambda hwnd: pytest.fail("Unlock must not change desktop foreground")))
     kernel = SimpleNamespace(GetCurrentThreadId=FakeFunction(lambda: 77))
     monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: kernel)
@@ -415,10 +417,9 @@ def test_unlock_focus_restores_only_still_foreground_owned_enabled_gui_thread(ha
         assert posts == []
         assert harness.records[-1]["event"] in ("source-focus-not-requested", "source-activation-not-requested")
     else:
-        assert posts == [123] and focus["hwnd"] == 123
-        assert harness.records[-1]["event"] == "source-focus-restoration"
+        assert posts == ["owned-qt-request"] and focus["hwnd"] == 123
+        assert harness.records[-1]["event"] == "source-activation-restoration"
         assert harness.records[-1]["focusBeforeHwnd"] == 0
-        assert harness.records[-1]["apiPreviousFocusHwnd"] == 0
         assert harness.records[-1]["focusAfterHwnd"] == 123
         assert harness.records[-1]["nativeFocusOwned"] is True
         assert harness.records[-1]["qtActive"] is False
@@ -430,19 +431,52 @@ def test_focus_api_outcome_does_not_qualify_the_independent_input_witness(harnes
     app.source_foreground_before_transfer = True
     app.input_was_enabled = None
     app.window.isActive = lambda: False
+    app.window.requestActivate = lambda: None
     app.window_observation = lambda hwnd: {"foregroundHwnd": hwnd}
     def identify(hwnd, pointer):
         pointer._obj.value = os.getpid()
         return 77
     user = SimpleNamespace(GetForegroundWindow=FakeFunction(lambda: 123),
         GetWindowThreadProcessId=FakeFunction(identify), IsWindowEnabled=lambda hwnd: True,
-        GetFocus=FakeFunction(lambda: 999), SetFocus=FakeFunction(lambda hwnd: 0))
+        GetFocus=FakeFunction(lambda: 999), GetActiveWindow=FakeFunction(lambda: 123))
     kernel = SimpleNamespace(GetCurrentThreadId=FakeFunction(lambda: 77))
     monkeypatch.setattr(ctypes, "WinDLL", lambda *args, **kwargs: kernel)
     harness.namespace["user"] = user
     app.restore_source_activation("input-restored")
     assert harness.records[-1]["nativeFocusOwned"] is False
     assert app.completed == 0 and harness.timer.calls == []
+
+
+def test_trace_heartbeat_starts_before_post_and_stops_at_witness_terminal(harness, monkeypatch):
+    app = harness.app
+    app.input_release_seconds = 10.1
+    app.current = {"command": 9.0}
+    app.engine, app.step = "owned-engine", lambda: None
+    app.evaluate = lambda command: SimpleNamespace(toQObject=lambda: object())
+    actions = []
+    app.input_trace = SimpleNamespace(set_pending=lambda pending, **values: actions.append((pending, values["cycle"])))
+
+    class Witness:
+        def __init__(self, *args, **kwargs):
+            self.finished = kwargs["finished"]
+        def start(self):
+            assert actions == [(True, 0)]
+            self.finished({"status": "FAIL", "acceptedSeconds": None, "reason": "bounded timeout"})
+
+    monkeypatch.setitem(sys.modules, "input_restoration_witness", SimpleNamespace(InputRestorationWitness=Witness))
+    app.begin_input_witness()
+    assert actions == [(True, 0), (False, 0)]
+    assert app.completed == 0
+    assert harness.context["failures"] == ["input restoration: bounded timeout"]
+
+
+def test_cleanup_stops_trace_heartbeat_before_cancelling_witness(harness):
+    app = harness.app
+    app.input_trace = SimpleNamespace(set_pending=lambda pending, **values:
+        harness.actions.append(("trace-heartbeat", pending)))
+    app.input_witness = SimpleNamespace(cancel=lambda: harness.actions.append(("cancel-witness",)))
+    app.complete()
+    assert harness.actions[:2] == [("trace-heartbeat", False), ("cancel-witness",)]
 
 
 def test_original_source_foreground_is_saved_before_input_lock_changes_actual_activation(harness):
@@ -492,7 +526,7 @@ def test_source_raise_requires_stopped_prepared_owned_visible_host(harness, reje
     else:
         app.raise_source_visibility()
         assert calls == [101]
-        assert harness.records[-1]["api"] == "native owner-thread HWND_TOP source ordering"
+        assert harness.records[-1]["api"] == "native owner-thread saved source window-band ordering"
         assert harness.actions == [("state", "source-after-visibility-reorder")]
 
 
@@ -610,3 +644,215 @@ def test_one_wrong_witness_pixel_requires_retry_and_bounded_reported_failure(har
     assert proof["reason"] == "intended presentation visual witness unavailable"
     assert proof["frame"]["witnessMatchedPixels"] == 63
     assert len(harness.context["failures"]) == 1
+
+
+def test_intrinsic_transfer_requires_guarded_submission_geometry_and_skips_desktop(harness):
+    app = harness.app
+    harness.args.single_owner_source = harness.args.intrinsic_only = True
+    harness.args.physical_diagnostics = harness.args.endpoint_pixels = False
+    physical = [100, 100, 6, 4]
+    app.window.property = dict(zip(("finalX", "finalY", "finalW", "finalH"), physical)).get
+    app.window.isActive = lambda: True
+    app.window_observation = lambda hwnd: {"foreground": True}
+    app.state_observation = lambda label: None
+    app.resume_live_host_hidden = lambda: harness.actions.append(("resume-hidden",))
+    app.raise_source_visibility = lambda: harness.actions.append(("source-reorder",))
+    app.start_native = lambda: harness.actions.append(("start-fixed-native-clock",))
+    app.observe_desktop = lambda *args, **kwargs: pytest.fail("Intrinsic control cannot sample desktop")
+    harness.namespace["client"] = lambda window: physical
+    def transfer(host, hwnd):
+        assert harness.actions == [("lock-input",)]
+        harness.actions.append(("transfer",))
+        return 1
+    harness.dll.cspm_comp_transfer_source_visibility = FakeFunction(transfer)
+    app.transfer_source_visibility(physical)
+    assert harness.actions == [("lock-input",), ("transfer",), ("resume-hidden",),
+        ("source-reorder",), ("start-fixed-native-clock",)]
+    assert harness.timer.calls == []
+    submission = next(row for row in harness.records if row["event"] == "intrinsic-source-submission")
+    assert "pixels and visibility continuity unmeasured" in submission["scope"]
+    assert app.pixel_pairs == [] and not any(row.get("status") == "PASS" for row in harness.records)
+
+
+def test_intrinsic_geometry_failure_cannot_start_native_clock(harness):
+    app = harness.app
+    harness.args.intrinsic_only = True
+    physical = [100, 100, 6, 4]
+    app.window.property = dict(zip(("finalX", "finalY", "finalW", "finalH"), physical)).get
+    app.window.isActive = lambda: True
+    app.window_observation = lambda hwnd: {"foreground": True}
+    app.state_observation = lambda label: None
+    app.resume_live_host_hidden = lambda: None
+    harness.namespace["client"] = lambda window: [100, 100, 7, 4]
+    harness.dll.cspm_comp_transfer_source_visibility = FakeFunction(lambda *args: 1)
+    app.start_native = lambda: pytest.fail("Changed geometry cannot start clock")
+    with pytest.raises(RuntimeError, match="changed saved geometry"):
+        app.transfer_source_visibility(physical)
+
+
+def test_intrinsic_live_handoff_uses_first_frame_and_unchanged_deadline_without_fixed_waits(harness):
+    app = harness.app
+    harness.args.intrinsic_only = True
+    harness.args.physical_diagnostics = harness.args.endpoint_pixels = False
+    app.current = {"kind": "restore"}
+    signal_actions = []
+    app.window.frameSwapped = SimpleNamespace(connect=lambda *args: signal_actions.append("connect"),
+        disconnect=lambda *args: signal_actions.append("disconnect"))
+    app.window.update = lambda: harness.actions.append(("window-update",))
+    harness.namespace["Qt"] = SimpleNamespace(QueuedConnection="queued")
+    app.handoff_compare = lambda: harness.actions.append(("intrinsic-handoff-compare",))
+    app.observe_desktop = lambda *args, **kwargs: pytest.fail("Intrinsic handoff cannot observe desktop")
+    harness.dll.cspm_comp_finish = lambda host: harness.actions.append(("finish-host", host)) or 1
+    app.endpoint_observed(None)
+    assert app.live_handoff_connected and signal_actions == ["connect"]
+    assert [delay for delay, _ in harness.timer.calls] == [750]
+    app.live_host_frame()
+    assert not app.live_handoff_connected and signal_actions == ["connect", "disconnect"]
+    assert harness.actions[-2:] == [("finish-host", 101), ("intrinsic-handoff-compare",)]
+    assert [delay for delay, _ in harness.timer.calls] == [750]
+    app.live_host_deadline()
+    assert harness.context["failures"] == []
+    assert not any(row.get("status") == "PASS" for row in harness.records)
+
+
+def test_intrinsic_missing_live_frame_fails_the_same_bounded_gate(harness):
+    harness.app.live_handoff_connected = True
+    harness.app.live_host_deadline()
+    assert harness.context["failures"] == [
+        "live-HWND handoff: No submitted live-host frame before bounded observation deadline"]
+
+
+def test_intrinsic_status_failure_cannot_be_treated_as_a_ready_endpoint(harness):
+    app = harness.app
+    harness.args.intrinsic_only = True
+    harness.args.physical_diagnostics = False
+    harness.dll.cspm_comp_status = lambda host: 16
+    app.presentation_telemetry = lambda: {}
+    app.measure_endpoint = lambda: pytest.fail("Rejected target cannot reveal endpoint")
+    app.poll_native()
+    assert harness.context["failures"] == ["DirectComposition presentation: synthetic native rejection"]
+    assert harness.timer.calls == []
+
+
+def test_endpoint_probe_preserves_complete_target_comparison_and_native_ownership_until_analysis(harness, monkeypatch):
+    app = harness.app
+    harness.args.probe_endpoint = True
+    app.current, app.target_client = {"command": 9.0}, [100, 100, 6, 4]
+    native_pixels = np.zeros((4, 6, 4), np.uint8)
+    live_pixels = native_pixels.copy()
+    live_pixels[3, 5, 0] = 1
+    app.target_desktop = native_pixels
+    app.target_pixel_regions[0] = {"clientMargin": [[5, 0, 6, 4]]}
+    app.state_observation = lambda label: None
+    app.request_capture = lambda kind: harness.actions.append(("capture", kind))
+    harness.namespace["client"] = lambda window: app.target_client
+    app.handoff_compare(live_pixels)
+    assert app.pixel_pairs[0][1] == "gpu-to-live-target-pixels"
+    assert app.pixel_pairs[0][2] is native_pixels and app.pixel_pairs[0][3] is live_pixels
+    assert app.endpoint_diagnostic_pixels is live_pixels
+    assert app.host == 101 and app.frames == [201, 202]
+    assert harness.actions == [("capture", "endpoint-live-diagnostic")]
+    attempts = []
+    def coordinates(target, live, final, regions, radius):
+        assert target is native_pixels and live is live_pixels and final is live_pixels
+        assert regions == app.target_pixel_regions[0]
+        return [(5, 3)], ["clientMargin"], {"scope": "complete-client partition"}
+    def native_probe(dll, host, coordinates):
+        assert host == 101 and app.host == 101
+        attempts.append("native")
+        return np.zeros((1, 4), np.uint8), np.zeros((1, 4), np.uint8)
+    def live_probe(dll, host, frame, coordinates):
+        assert host == 101 and frame == 303
+        attempts.append("live")
+        return np.array([[1, 0, 0, 0]], np.uint8)
+    monkeypatch.setitem(sys.modules, "source_pixel_analysis", SimpleNamespace(
+        composition_probe_coordinates=coordinates, probe_gpu_endpoint_composition=native_probe,
+        probe_gpu_live_frame=live_probe, endpoint_composition_analysis=lambda *args: {"differentSamples": 1}))
+    app.evaluate = lambda command: SimpleNamespace(toNumber=lambda: 3)
+    app.finish_handoff = lambda: harness.actions.append(("finish-after-probe",))
+    app.analyze_endpoint_frame({"client": app.target_client, "size": [6, 4], "frame": 303})
+    assert attempts == ["native", "live"] and app.diagnostic_texel_readbacks == 3
+    assert app.endpoint_diagnostic_pixels is None and harness.actions[-1] == ("finish-after-probe",)
+    evidence = next(row for row in harness.records if row["event"] == "endpoint-composition-analysis")
+    assert evidence["differentSamples"] == 1 and "Diagnostic only" in evidence["timingQualification"]
+    app.evaluate = lambda command: harness.actions.append(("evaluate", command))
+    app.complete()
+    comparison = next(row for row in harness.records if row["event"] == "physical-pixel-analysis")
+    assert comparison["pixels"] == 24 and comparison["differentPixels"] == 1
+    assert harness.context["failures"] == ["gpu-to-live-target-pixels: physical pixels differ"]
+
+
+def test_post_input_observation_starts_after_accepted_pair_without_advancing_cycle(harness):
+    app = harness.app
+    harness.args.post_input_pixels = True
+    app.current, app.target_client = {"command": 9.0}, [100, 100, 6, 4]
+    app.input_release_seconds, app.input_witness = 10.1, object()
+    app.window.update = lambda: harness.actions.append(("update-after-input",))
+    app.observe_desktop = lambda *args, **kwargs: harness.actions.append(("observe-after-input", args, kwargs))
+    app.input_witness_finished({"status": "PASS", "acceptedSeconds": 10.12, "reason": "owned pair consumed"})
+    assert app.completed == 0 and app.input_witness is None
+    assert harness.actions[0] == ("update-after-input",)
+    requested = harness.actions[1][1]
+    assert requested[0:3] == (app.target_client, "target-after-accepted-input", 10.25)
+    assert requested[3]["witnessAbsent"] is True and requested[3]["live.clientXYWH"] == app.target_client
+    assert harness.timer.calls == []
+    harness.actions.clear()
+    app.input_witness_finished({"status": "FAIL", "acceptedSeconds": None, "reason": "bounded timeout"})
+    assert harness.actions == [] and app.completed == 0
+
+
+def test_post_input_margin_difference_is_compared_in_complete_target_partition(harness):
+    app = harness.app
+    app.current, app.step = {"command": 9.0}, lambda: None
+    source = np.zeros((8, 10, 4), np.uint8)
+    target = np.zeros((4, 6, 4), np.uint8)
+    after_input = target.copy()
+    after_input[3, 5, 0] = 1
+    app.source_desktop, app.target_desktop = source, target
+    app.pixel_regions[0] = {"clientBody": [[0, 0, 10, 8]]}
+    app.target_pixel_regions[0] = {"clientMargin": [[5, 0, 6, 4]]}
+    app.window.isActive = lambda: True
+    app.applicationState = lambda: SimpleNamespace(value=4)
+    app.accepted_input_pixels_observed(after_input)
+    assert app.completed == 1 and harness.timer.calls[0][0] == 200
+    assert app.pixel_pairs[0][1] == "gpu-to-live-target-after-input-pixels"
+    app.complete()
+    analysis = next(row for row in harness.records if row["event"] == "physical-pixel-analysis")
+    assert analysis["pixels"] == 24 and analysis["differentPixels"] == 1
+    assert harness.context["failures"] == ["gpu-to-live-target-after-input-pixels: physical pixels differ"]
+
+
+def test_failure_cleanup_restores_activation_after_reveal_unlock_and_native_host_destruction(harness):
+    app = harness.app
+    harness.args.single_owner_source = True
+    app.input_was_enabled = True
+    harness.context["failures"].append("retained fixture failure")
+    app.source_foreground_before_transfer = True
+    app.live_visibility_transferred = True
+    app.window.show = lambda: harness.actions.append(("reveal-owned-live",))
+    harness.namespace["user"] = SimpleNamespace(ShowWindow=lambda hwnd, mode:
+        harness.actions.append(("native-owned-show", hwnd, mode)))
+    def unlock():
+        assert ("reveal-owned-live",) in harness.actions
+        app.input_was_enabled = None
+        harness.actions.append(("release-owned-input",))
+    def restore(boundary):
+        assert boundary == "input-restored"
+        assert app.host is None and app.input_was_enabled is None
+        assert harness.actions[-1] == ("release-frame", 202)
+        harness.actions.append(("guarded-owned-activation",))
+    app.unlock_input, app.restore_source_activation = unlock, restore
+    app.complete()
+    assert ("guarded-owned-activation",) in harness.actions
+    assert harness.actions.index(("release-owned-input",)) < harness.actions.index(("destroy-host", 101))
+    assert harness.actions.index(("destroy-host", 101)) < harness.actions.index(("guarded-owned-activation",))
+    assert harness.actions.index(("release-frame", 202)) < harness.actions.index(("guarded-owned-activation",))
+
+
+def test_normal_completed_handoff_cleanup_does_not_request_activation_twice(harness):
+    app = harness.app
+    harness.args.single_owner_source = True
+    app.input_was_enabled = None
+    app.host = None
+    app.restore_source_activation = lambda boundary: pytest.fail("Released normal handoff must not request activation twice")
+    app.complete()

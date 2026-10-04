@@ -725,3 +725,139 @@ class ControlledBackdrop:
         if self.brush:
             self.gdi.DeleteObject(self.brush)
             self.brush = None
+
+
+def _endpoint_probe_coordinates(coordinates):
+    """Validate bounded native adapter arguments before invoking any GPU API."""
+    if not 1 <= len(coordinates) <= 64:
+        raise ValueError("Endpoint GPU probe requires 1 to 64 texels")
+    parsed = []
+    for coordinate in coordinates:
+        if len(coordinate) != 2 or any(not isinstance(v, int) or isinstance(v, bool)
+                                     or v < 0 or v > 2147483647 for v in coordinate):
+            raise ValueError("Endpoint GPU probe coordinates must be nonnegative integer texels")
+        parsed.extend(coordinate)
+    return (ctypes.c_int * len(parsed))(*parsed)
+
+
+def probe_gpu_endpoint_composition(dll, host, coordinates):
+    """Owned target/submitted BGRA samples, only at a stopped native endpoint."""
+    if not host or not hasattr(dll, "cspm_comp_probe_endpoint_pixels"):
+        raise RuntimeError("Stopped-clock endpoint composition probe is unavailable")
+    xy = _endpoint_probe_coordinates(coordinates)
+    target = (ctypes.c_ubyte * (len(coordinates)*4))()
+    submitted = (ctypes.c_ubyte * (len(coordinates)*4))()
+    function = dll.cspm_comp_probe_endpoint_pixels
+    function.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int), ctypes.c_uint,
+                        ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_ubyte)]
+    function.restype = ctypes.c_int
+    if not function(host, xy, len(coordinates), target, submitted):
+        raise RuntimeError("Stopped-clock endpoint composition probe rejected bounded texels")
+    return (np.ctypeslib.as_array(target).reshape(-1, 4).copy(),
+            np.ctypeslib.as_array(submitted).reshape(-1, 4).copy())
+
+
+def probe_gpu_live_frame(dll, host, frame, coordinates):
+    """Read a separate immutable live export; it never becomes a target frame."""
+    if not host or not frame or not hasattr(dll, "cspm_comp_probe_frame_pixels"):
+        raise RuntimeError("Stopped-clock immutable live-frame probe is unavailable")
+    xy = _endpoint_probe_coordinates(coordinates)
+    samples = (ctypes.c_ubyte * (len(coordinates)*4))()
+    function = dll.cspm_comp_probe_frame_pixels
+    function.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int),
+                        ctypes.c_uint, ctypes.POINTER(ctypes.c_ubyte)]
+    function.restype = ctypes.c_int
+    if not function(host, frame, xy, len(coordinates), samples):
+        raise RuntimeError("Stopped-clock immutable live-frame probe rejected bounded texels")
+    return np.ctypeslib.as_array(samples).reshape(-1, 4).copy()
+
+
+def endpoint_composition_analysis(endpoint_desktop, live_desktop, coordinates, labels,
+                                  target_bgra, submitted_bgra, live_bgra=None, *,
+                                  backdrop_before=None, backdrop_after=None):
+    """Bounded texture/backdrop explanations, independent of full-client equality.
+
+    Coordinates/raw samples stay in RAM. Alpha histograms and exact identities
+    describe the sampled pixels only; zero-alpha controls at other locations
+    cannot explain an unsampled failure. No model changes a failing comparison.
+    """
+    endpoint, live = map(_pixels, (endpoint_desktop, live_desktop))
+    if endpoint.shape != live.shape:
+        raise ValueError("Endpoint diagnosis requires matching complete client arrays")
+    _endpoint_probe_coordinates(coordinates)
+    if len(labels) != len(coordinates) or any(not isinstance(label, str) for label in labels):
+        raise ValueError("Endpoint labels must match every sampled texel")
+    xy = np.asarray(coordinates)
+    x, y = xy[:, 0], xy[:, 1]
+    if np.any(x >= endpoint.shape[1]) or np.any(y >= endpoint.shape[0]):
+        raise ValueError("Endpoint samples exceed the complete client extent")
+    def texels(value):
+        array = np.asarray(value)
+        if array.dtype != np.uint8 or array.shape != (len(coordinates), 4):
+            raise ValueError("Endpoint GPU samples require matching uint8 BGRA texels")
+        return array
+    textures = {"target": texels(target_bgra), "submitted": texels(submitted_bgra)}
+    if live_bgra is not None:
+        textures["live"] = texels(live_bgra)
+    if (backdrop_before is None) != (backdrop_after is None):
+        raise ValueError("Backdrop diagnosis requires both before and after observations")
+    backdrops = None
+    if backdrop_before is not None:
+        backdrops = list(map(_pixels, (backdrop_before, backdrop_after)))
+        if any(array.shape != endpoint.shape for array in backdrops):
+            raise ValueError("Backdrop observations require the complete endpoint client extent")
+    endpoint_rgb, live_rgb = endpoint[y, x, :3], live[y, x, :3]
+    desktop_changed = np.any(endpoint_rgb != live_rgb, axis=1)
+    def different(first, second):
+        return np.any(first != second, axis=1)
+    def texture_summary(array):
+        alpha = array[:, 3]
+        return {"sampleCount": len(array), "alphaHistogram": np.bincount(alpha, minlength=256).tolist(),
+            "zeroAlphaSamples": int(np.count_nonzero(alpha == 0)),
+            "opaqueSamples": int(np.count_nonzero(alpha == 255)),
+            "partialAlphaSamples": int(np.count_nonzero((alpha > 0) & (alpha < 255))),
+            "zeroAlphaNonzeroColorSamples": int(np.count_nonzero((alpha == 0) & np.any(array[:, :3] != 0, axis=1))),
+            "premultipliedViolationSamples": int(np.count_nonzero(np.any(array[:, :3] > alpha[:, None], axis=1)))}
+    def score(predicted, observed):
+        predicted = np.clip(np.rint(predicted), 0, 255)
+        delta = np.abs(predicted-observed.astype(np.float64))
+        return {"differentSamples": int(np.count_nonzero(np.any(delta != 0, axis=1))),
+            "maxChannelDifference": float(delta.max()), "meanChannelDifference": float(delta.mean())}
+    def compose(samples, background):
+        alpha = samples[:, 3:4].astype(np.float64)/255
+        return samples[:, :3].astype(np.float64)+(1-alpha)*background.astype(np.float64)
+    result = {"sampleCount": len(coordinates),
+        "desktopDifferentSamples": int(desktop_changed.sum()),
+        "targetSubmittedDifferentSamples": int(different(textures["target"], textures["submitted"]).sum()),
+        "textures": {name: texture_summary(array) for name, array in textures.items()},
+        "regions": {}, "models": {},
+        "scope": "Stopped endpoint target/submitted and separately exported live-frame texels; optional independent fresh backdrop observations. Encoded-BGR premultiplied hypotheses only; no raw coordinates/colors retained. Complete-client exact equality remains the gate."}
+    target_live_changed = None
+    if "live" in textures:
+        target_live_changed = different(textures["target"], textures["live"])
+        transparent = np.all(textures["target"] == 0, axis=1) & np.all(textures["live"] == 0, axis=1)
+        result.update(targetLiveDifferentSamples=int(target_live_changed.sum()),
+            unchangedTargetLiveButDesktopDifferentSamples=int(np.count_nonzero(~target_live_changed & desktop_changed)),
+            transparentTargetLiveButDesktopDifferentSamples=int(np.count_nonzero(transparent & desktop_changed)),
+            transparentTargetSubmittedLiveButDesktopDifferentSamples=int(np.count_nonzero(
+                transparent & np.all(textures["submitted"] == 0, axis=1) & desktop_changed)))
+    if backdrops is not None:
+        before_rgb, after_rgb = [array[y, x, :3] for array in backdrops]
+        backdrop_changed = different(before_rgb, after_rgb)
+        result["backdropDifferentSamples"] = int(backdrop_changed.sum())
+        result["backdropChangedWhereDesktopDifferentSamples"] = int(np.count_nonzero(backdrop_changed & desktop_changed))
+        result["models"].update(
+            targetPremultipliedOverBeforeBackdropToEndpoint=score(compose(textures["target"], before_rgb), endpoint_rgb),
+            submittedPremultipliedOverBeforeBackdropToEndpoint=score(compose(textures["submitted"], before_rgb), endpoint_rgb),
+            targetPremultipliedOverAfterBackdropToLive=score(compose(textures["target"], after_rgb), live_rgb))
+        if "live" in textures:
+            result["models"]["livePremultipliedOverAfterBackdropToLive"] = score(compose(textures["live"], after_rgb), live_rgb)
+    for label in sorted(set(labels)):
+        selected = np.asarray([value == label for value in labels])
+        region = {"sampleCount": int(selected.sum()),
+            "desktopDifferentSamples": int(desktop_changed[selected].sum()),
+            "textures": {name: texture_summary(array[selected]) for name, array in textures.items()}}
+        if target_live_changed is not None:
+            region["targetLiveDifferentSamples"] = int(target_live_changed[selected].sum())
+        result["regions"][label] = region
+    return result

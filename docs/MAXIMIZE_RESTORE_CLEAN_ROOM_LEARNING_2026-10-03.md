@@ -1,5 +1,13 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-04: Preserved Repeat And Separate Input/Readiness Controls
+
+Checkpoint `50234e6` preserves the complete recovered source-ordering and failed-input cleanup work. The new preserved physical Productivity repeat again has five exact complete-client source/target directions and thirty fresh passes, yet only four accepted F24 pairs. Guard release and native focus alone therefore cannot qualify repeated input. The fifth failure is retained, including delayed-key quarantine and deterministic witness cleanup.
+
+Passive native ingress, Qt key/activation events and bounded GUI heartbeat observations now remain separate. The activation request belongs after unlock and requires original/current foreground ownership, process, GUI thread and enabled guard checks. No synthetic Qt activation or global input is used. Two subsequent physical trace runs stop before motion; they provide no input/readiness result. Native band metadata differs from the topmost owned live source already before transfer, so the general source-band repair explicitly derives, applies and verifies that policy. Fresh desktop proof remains required.
+
+Two collector-free cold restore controls still miss the fixed 240 ms target deadline. This rules out treating removal of the physical collector as a demonstrated cure; it does not establish a causal overhead ratio. Stopped endpoint target/submitted/live probes now sample actual full-client mismatches, with no presentation input, crop or tolerated difference. Texture samples exported later than a desktop raster do not alone prove temporal backdrop causality. Directory margin, repeated Qt/QML input and full uninterrupted handoff remain open; production stays installed and Cory's acceptance remains pending.
+
 ## 2026-10-04: Measured Single Source Ownership And Remaining Delivery Gates
 
 **PROVEN BY MEASUREMENT:** controlled Time Entry/Directory/invoice overlap has 16/10/10 differences, all at sampled partially transparent corner texels. Source/submitted GPU BGRA is identical, premultiplied single-layer and double-layer models are exact, and the live native region includes those texels. Straight-alpha/linear-light alternatives disagree in these samples. Tiny stopped-clock readback is diagnostic only; the native presentation path retains zero CPU readback/upload.

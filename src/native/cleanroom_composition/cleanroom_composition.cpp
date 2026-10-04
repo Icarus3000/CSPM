@@ -63,6 +63,19 @@ bool probeCoordinatesValid(const int* xy,unsigned count,unsigned width,unsigned 
     }
     return true;
 }
+bool probeEndpointStateValid(unsigned flags,bool endpointSubmitted,bool targetAvailable,
+                             bool submittedAvailable,double motion,double content) {
+    // The running flag remains set after completion. Endpoint submission and
+    // the exact final submitted sample establish that this is a stopped clock.
+    return (flags&(1|2|4|8))==(1|2|4|8) && !(flags&16) && endpointSubmitted &&
+        targetAvailable && submittedAvailable && motion==1. && content==1.;
+}
+HWND sourceVisibilityBand(bool sourceTopmost) {
+    return sourceTopmost ? HWND_TOPMOST : HWND_NOTOPMOST;
+}
+bool sourceVisibilityBandMatches(LONG_PTR extendedStyle,bool sourceTopmost) {
+    return ((extendedStyle&WS_EX_TOPMOST)!=0)==sourceTopmost;
+}
 struct ProbePixels {
     int xy[128]{};
     unsigned char source[256]{},submitted[256]{};
@@ -145,6 +158,9 @@ struct Host {
     uint32_t witnessRevision=0;
     bool apartment=false;
     bool deferredSourceVisibility=false;
+    // Published by the authorized live GUI owner before native visibility
+    // transfer; the stopped worker raise consumes that same source policy.
+    std::atomic<bool> sourceTopmost{false},sourceBandKnown{false};
     template<class F> void observe(F writer) {
         std::lock_guard<std::mutex> lock(observationMutex);
         writer(observation); ++observation.sequence;
@@ -484,6 +500,55 @@ EXPORT int cspm_comp_probe_pixels(void* pointer,const int* xy,unsigned count,
     }
     return result;
 }
+// Additive endpoint diagnostics. The immutable target and last submitted
+// allocation are sampled only after complete endpoint submission; no Present,
+// visibility change, shader input or destination replacement occurs here.
+EXPORT int cspm_comp_probe_endpoint_pixels(void* pointer,const int* xy,unsigned count,
+                                           unsigned char* targetBGRA,unsigned char* submittedBGRA) {
+    if(!pointer || !xy || !targetBGRA || !submittedBGRA || !count || count>64) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    auto samples=std::make_shared<ProbePixels>();
+    memcpy(samples->xy,xy,count*2*sizeof(int));
+    const int result=h.call([&h,samples,count] {
+        if(!probeEndpointStateValid(h.flags.load(),h.endpointSubmitted,bool(h.destination.texture),
+                bool(h.lastSubmittedTexture),h.observation.lastFrameMotion,h.observation.lastFrameContent))
+            throw std::runtime_error("Diagnostic target samples require a stopped complete endpoint");
+        if(!probeCoordinatesValid(samples->xy,count,h.destination.width,h.destination.height,
+                int(h.targetX),int(h.targetY),unsigned(h.hostWidth),unsigned(h.hostHeight)))
+            throw std::runtime_error("Diagnostic endpoint texels exceed target or submitted extent");
+        probeTexels(h,h.destination.texture.Get(),samples->xy,count,0,0,samples->source);
+        probeTexels(h,h.lastSubmittedTexture.Get(),samples->xy,count,
+            int(h.targetX),int(h.targetY),samples->submitted);
+    });
+    if(result) {
+        memcpy(targetBGRA,samples->source,count*4);
+        memcpy(submittedBGRA,samples->submitted,count*4);
+    }
+    return result;
+}
+// A separately exported live Qt frame is retained and copied to a diagnostic
+// allocation on this host's GPU worker. It never becomes presentation input.
+EXPORT int cspm_comp_probe_frame_pixels(void* pointer,void* frame,const int* xy,unsigned count,
+                                        unsigned char* frameBGRA) {
+    if(!pointer || !frame || !xy || !frameBGRA || !count || count>64) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    auto retained=std::make_shared<Frame>(*static_cast<Frame*>(frame));
+    auto samples=std::make_shared<ProbePixels>();
+    memcpy(samples->xy,xy,count*2*sizeof(int));
+    const int result=h.call([&h,retained,samples,count] {
+        if(!probeEndpointStateValid(h.flags.load(),h.endpointSubmitted,bool(h.destination.texture),
+                bool(h.lastSubmittedTexture),h.observation.lastFrameMotion,h.observation.lastFrameContent))
+            throw std::runtime_error("Diagnostic live-frame samples require a stopped complete endpoint");
+        if(retained->desc.Width!=h.destination.width || retained->desc.Height!=h.destination.height ||
+           !probeCoordinatesValid(samples->xy,count,retained->desc.Width,retained->desc.Height,
+                0,0,retained->desc.Width,retained->desc.Height))
+            throw std::runtime_error("Diagnostic live frame differs from the complete target extent");
+        const Pixels copied=copyPixels(h,*retained);
+        probeTexels(h,copied.texture.Get(),samples->xy,count,0,0,samples->source);
+    });
+    if(result) memcpy(frameBGRA,samples->source,count*4);
+    return result;
+}
 EXPORT void* cspm_gpu_capture(void* nativeContext,unsigned* width,unsigned* height) {
     try {
         if(!nativeContext || !width || !height) throw std::runtime_error("GPU capture arguments are null");
@@ -562,13 +627,15 @@ EXPORT int cspm_comp_transfer_source_visibility(void* pointer,uintptr_t livePoin
        process!=GetCurrentProcessId() || guiThread!=GetCurrentThreadId() ||
        !IsWindowVisible(live) || IsWindowVisible(h.hwnd) || GetParent(live)!=GetParent(h.hwnd))
         return rejected("Source visibility transfer requires owned GUI thread, same parent and stopped prepared state");
+    const bool sourceTopmost=(GetWindowLongPtrW(live,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0;
+    h.sourceTopmost.store(sourceTopmost); h.sourceBandKnown.store(true);
     const double began=nowSeconds();
     HDWP batch=BeginDeferWindowPos(2);
     if(!batch) return rejected("Begin source visibility batch failed",true);
     batch=DeferWindowPos(batch,live,nullptr,0,0,0,0,
         SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_HIDEWINDOW);
     if(!batch) return rejected("Defer live source hide failed",true);
-    batch=DeferWindowPos(batch,h.hwnd,HWND_TOP,0,0,0,0,
+    batch=DeferWindowPos(batch,h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,
         SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
     if(!batch) return rejected("Defer native source reveal failed",true);
     if(!EndDeferWindowPos(batch)) return rejected("End source visibility batch failed",true);
@@ -578,16 +645,21 @@ EXPORT int cspm_comp_transfer_source_visibility(void* pointer,uintptr_t livePoin
     });
     if(IsWindowVisible(live) || !IsWindowVisible(h.hwnd))
         return rejected("Source visibility batch returned without the requested ownership state");
+    if(!sourceVisibilityBandMatches(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE),sourceTopmost))
+        return rejected("Source visibility batch did not preserve the owned live window band");
     return 1;
 }
 EXPORT int cspm_comp_raise_source_visibility(void* pointer) {
     if(!pointer) return 0; auto& h=*static_cast<Host*>(pointer);
     return h.call([&h] {
         const auto flags=h.flags.load();
-        if(!(flags&1) || (flags&(2|16)) || !IsWindowVisible(h.hwnd))
+        if(!(flags&1) || (flags&(2|16)) || !IsWindowVisible(h.hwnd) || !h.sourceBandKnown.load())
             throw std::runtime_error("Source ordering requires a visible stopped prepared host");
-        if(!SetWindowPos(h.hwnd,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+        const bool sourceTopmost=h.sourceTopmost.load();
+        if(!SetWindowPos(h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
             throw std::runtime_error("Stopped source host z-order unavailable");
+        if(!sourceVisibilityBandMatches(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE),sourceTopmost))
+            throw std::runtime_error("Stopped source raise did not preserve the owned live window band");
     });
 }
 static void validateWitnessOutside(const Host& h,float x,float y,float width,float height) {
@@ -644,11 +716,9 @@ EXPORT int cspm_comp_set_source_frame(void* pointer,void* frame,float x,float y,
         check(waitResult,"Source commit processed");
         if(h.flags.load()&16) throw std::runtime_error("Source preparation already failed");
         if(h.deferredSourceVisibility) {
-            // Establish the topmost group while still hidden. The subsequent
-            // two-window batch uses the measured HWND_TOP source ordering.
-            if(!SetWindowPos(h.hwnd,HWND_TOPMOST,0,0,0,0,
-                    SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
-                throw std::runtime_error("Hidden source host ordering unavailable");
+            // Hidden preparation has no source band contract. The owned GUI
+            // transfer derives and explicitly applies its live window's band
+            // while revealing the native host, then verifies that metadata.
             h.flags.fetch_or(1); // Prepared while hidden; separate batch owns visibility.
             return;
         }

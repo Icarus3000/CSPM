@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-04: Exact-State Resume And Lifecycle Localization
+
+- [x] Recover and review all eighteen tracked/eight untracked edits, both ignored report constructors and later evidence; preserve four stashes and existing worktrees; push and verify checkpoint `50234e6` without force.
+- [x] Retain the preserved five-direction Productivity repeat: thirty fresh gates and exact source/target pixels, four accepted input pairs, fifth-pair failure.
+- [x] Add passive owned-window input tracing, explicit collector-free control, stopped endpoint texel diagnosis, accepted-input fresh pixels and guarded activation after unlock/failure cleanup; preserve fixed 350/240 ms motion/readiness and complete-client comparisons.
+- [x] Correct native source window-band transfer generally from the verified owned live source; validate native compilation/contracts and focused safe tests.
+- [ ] Physically verify source band preservation, diagnose Directory's 73 target-margin differences, and establish repeated Qt activation/QML acceptance with matched collector/readiness evidence.
+- [ ] Complete all cold, continuous-motion, reduced-motion and native lifecycle gates before packaging; production and Cory's P0 acceptance remain unchanged.
+
 ## 2026-10-04: Measured Source Ownership And Cold Readiness
 
 - [x] Create/push/verify early bounded checkpoint `11abc48b6a15a8058accdb21a8d817841292e3cd`; preserve every recovered edit, worktree, stash and historical failure.
