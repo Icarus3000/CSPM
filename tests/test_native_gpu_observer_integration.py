@@ -279,7 +279,7 @@ def test_single_owner_transfer_runs_on_caller_then_resumes_same_hidden_opacity_l
     properties = dict(zip(("finalX", "finalY", "finalW", "finalH"), physical))
     app.window.property = properties.get
     app.window.isActive = lambda: True
-    app.window_observation = lambda hwnd: {"foreground": True}
+    app.window_observation = lambda hwnd: {"foreground": True, "processId": os.getpid(), "visible": True}
     app.window.show = lambda: harness.actions.append(("qt-show",))  # Model Qt's cached-visible no-op.
     app.witness_revision = 10
     app.current = {"sourceClient": physical}
@@ -291,6 +291,11 @@ def test_single_owner_transfer_runs_on_caller_then_resumes_same_hidden_opacity_l
         ShowWindow=lambda hwnd, mode: visible.update(live=True) or harness.actions.append(("native-show", hwnd, mode)))
     harness.namespace.update(user=user, client=lambda window: physical,
         native_observation=lambda dll, host: {"sourceShowReturnSeconds": 10.2, "lastPresentReturnSeconds": 10.3})
+    clock = iter((10.1, 10.2, 10.35, 10.4, 10.45, 10.5))
+    harness.namespace["time"] = SimpleNamespace(perf_counter=lambda: next(clock))
+    harness.dll.cspm_comp_status = lambda host: 1
+    harness.dll.cspm_comp_raise_source_visibility = FakeFunction(
+        lambda host: harness.actions.append(("owner-thread-raise", host)) or 1)
     def transfer(host, hwnd):
         assert host == 101 and hwnd == 123
         assert harness.actions[-1] == ("lock-input",)
@@ -309,17 +314,49 @@ def test_single_owner_transfer_runs_on_caller_then_resumes_same_hidden_opacity_l
     app.transfer_source_visibility(physical)
     assert not visible["live"] and app.live_visibility_transferred
     before_proof = next(action for action in harness.actions if action[0] == "observe")
+    first_raise = ("owner-thread-raise", 101)
+    assert harness.actions.index(("caller-transfer", 101, 123)) < harness.actions.index(first_raise)
+    assert harness.actions.index(first_raise) < harness.actions.index(before_proof)
     assert before_proof[1][1] == "source-transfer-before-resume"
+    assert before_proof[1][2] == 10.4  # Acquisition must be newer than the successful ordering return.
     assert before_proof[1][3]["live.visible"] is False and before_proof[1][3]["qtOpacity"] == 1
-    app.raise_source_visibility = lambda: setattr(app, "source_reorder_return_seconds", 10.28)
     app.after_source_transfer_observed(app.source_desktop.copy())
     assert visible["live"] and not app.live_visibility_transferred
     assert ("opacity", 0) in harness.actions and ("native-show", 123, 4) in harness.actions
     assert app.witness_revision == 11
     proof = [action for action in harness.actions if action[0] == "observe"][-1]
-    assert proof[1][:3] == (physical, "source-transfer", 10.3)
+    assert proof[1][:3] == (physical, "source-transfer", 10.5)
     assert proof[1][3]["qtOpacity"] == 0 and "live.foregroundHwnd" not in proof[1][3]
     assert proof[2] == {"phase": 1}
+    raises = [index for index, action in enumerate(harness.actions) if action == first_raise]
+    assert len(raises) == 2
+    assert harness.actions.index(("native-show", 123, 4)) < raises[1] < harness.actions.index(proof)
+
+
+@pytest.mark.parametrize("intrinsic", [False, True])
+def test_failed_source_ordering_cannot_claim_desktop_proof_or_start_native_clock(harness, intrinsic):
+    app = harness.app
+    harness.args.single_owner_source = True
+    harness.args.intrinsic_only = intrinsic
+    physical = [100, 100, 6, 4]
+    properties = dict(zip(("finalX", "finalY", "finalW", "finalH"), physical))
+    app.window.property = properties.get
+    app.window.isActive = lambda: True
+    app.window_observation = lambda hwnd: {"foreground": True, "processId": os.getpid(), "visible": True}
+    app.state_observation = lambda label: harness.actions.append(("state", label))
+    app.resume_live_host_hidden = lambda: harness.actions.append(("resume-hidden-live",))
+    app.observe_desktop = lambda *args, **kwargs: pytest.fail("Failed ordering cannot claim desktop proof")
+    app.start_native = lambda: pytest.fail("Failed ordering cannot start the fixed native clock")
+    harness.namespace["client"] = lambda window: physical
+    harness.dll.cspm_comp_transfer_source_visibility = FakeFunction(lambda *args: 1)
+    harness.dll.cspm_comp_status = lambda host: 1
+    harness.dll.cspm_comp_raise_source_visibility = FakeFunction(
+        lambda host: harness.actions.append(("owner-thread-raise", host)) or 0)
+    with pytest.raises(RuntimeError, match="Stopped native source ordering failed"):
+        app.transfer_source_visibility(physical)
+    assert ("owner-thread-raise", 101) in harness.actions
+    assert not any(row["event"] == "source-visibility-reordered" for row in harness.records)
+    assert not hasattr(app, "source_reorder_return_seconds")
 
 
 def test_single_owner_coverage_is_a_required_transfer_comparison_not_an_overlap(harness):

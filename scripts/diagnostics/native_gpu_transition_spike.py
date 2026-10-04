@@ -1166,9 +1166,14 @@ Item {
                 self.raise_source_visibility()
                 self.start_native()
                 return
+            # The GUI batch can establish the native band without bringing
+            # its worker-owned HWND above the source in the observed Z-order.
+            # Order on that HWND's own thread before asking for desktop proof.
+            self.raise_source_visibility()
             native = native_observation(dll, self.host)
             self.observe_desktop(physical, "source-transfer-before-resume",
-                max(ended, native["sourceShowReturnSeconds"], native["lastPresentReturnSeconds"]),
+                max(ended, self.source_reorder_return_seconds,
+                    native["sourceShowReturnSeconds"], native["lastPresentReturnSeconds"]),
                 {"live.visible": False, "qtOpacity": 1.0, "transition.visible": True,
                  "live.clientXYWH": physical}, self.after_source_transfer_observed, phase=1)
 
