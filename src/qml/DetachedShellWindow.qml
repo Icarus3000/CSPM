@@ -105,6 +105,8 @@ Window {
     property bool professionalPixelAlignedWindowCaptureEnabled: true
     readonly property string cleanRoomEngine: typeof transitionExperiment !== "undefined"
         ? transitionExperiment.engine : "production"
+    readonly property bool layoutRepairEnabled: typeof transitionExperiment !== "undefined"
+        && transitionExperiment.layoutRepair
     property int professionalWindowTransitionTargetX: 0
     property int professionalWindowTransitionTargetY: 0
     property int professionalWindowTransitionTargetW: 0
@@ -400,6 +402,12 @@ Window {
     property int finalY: 0
     property int finalW: 1
     property int finalH: 1
+    onFinalWChanged: {
+        if (layoutRepairEnabled && !layoutMetricsCommitInProgress) layoutMetricsSnapshot = null;
+    }
+    onFinalHChanged: {
+        if (layoutRepairEnabled && !layoutMetricsCommitInProgress) layoutMetricsSnapshot = null;
+    }
     property real maximizeRenderX: 0.0
     property real maximizeRenderY: 0.0
     property real maximizeRenderW: 1.0
@@ -631,7 +639,25 @@ Window {
 
     // Unified metrics payload for downstream components.
     // All responsive sizing should trace back to monitor usable geometry + settled content geometry.
-    property var uiMetrics: (function() {
+    property bool layoutMetricsCommitInProgress: false
+    property var layoutMetricsSnapshot: null
+    // A committed snapshot is valid only while its other responsive inputs
+    // match. Keep monitor/DPI and interactive resize changes reactive too.
+    readonly property string layoutMetricsEnvironmentKey: layoutRepairEnabled ? [
+        usableW, usableH, monitorScalePercent,
+        targetScreen ? targetScreen.width : 0,
+        targetScreen ? targetScreen.height : 0,
+        usableW > 0 ? 0 : width, usableH > 0 ? 0 : height,
+        userResizeInProgress, userMoveInProgress,
+        frozenContentW, frozenContentH, resizeStartFinalW, resizeStartFinalH
+    ].join("|") : ""
+    onLayoutMetricsEnvironmentKeyChanged: {
+        if (layoutRepairEnabled && !layoutMetricsCommitInProgress) layoutMetricsSnapshot = null;
+    }
+    property var uiMetrics: layoutRepairEnabled && layoutMetricsSnapshot
+        ? layoutMetricsSnapshot : computeUiMetrics()
+
+    function computeUiMetrics() {
         var activeW = Math.max(1, finalW)
         var activeH = Math.max(1, finalH)
         if (mainWin.userResizeInProgress || mainWin.userMoveInProgress) {
@@ -654,7 +680,7 @@ Window {
             "fontFloorBodyPx": metricFloorPx(0.0109, 8),
             "fontFloorLabelPx": metricFloorPx(0.0098, 7)
         }
-    })()
+    }
     
     // ============================================================
     // WINDOW SETUP
@@ -3421,21 +3447,38 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function commitProfessionalWindowTransitionTarget(kind, targetRect, targetScreenOverride) {
         geometryTransitionSuppressed = true;
-        finalX = Math.round(targetRect.x);
-        finalY = Math.round(targetRect.y);
-        finalW = Math.max(1, Math.round(targetRect.w));
-        finalH = Math.max(1, Math.round(targetRect.h));
-        uiMaximized = kind === "maximize";
-        if (targetScreenOverride) {
-            adoptTargetScreen(targetScreenOverride, true);
-        } else {
-            updateTargetScreenFromFinalCenter();
+        // Hold the previously published metrics while native/item dimensions
+        // and monitor descriptors adopt the target. Publish one complete layout
+        // payload before the first target frame; ordinary resize stays reactive.
+        if (layoutRepairEnabled) {
+            layoutMetricsCommitInProgress = true;
+            layoutMetricsSnapshot = uiMetrics;
         }
-        refreshActiveVisibleRect();
-        applyHostEnvelopeForTarget();
-        updateCanvasGeometry();
-        if (!uiMaximized) {
-            maximizedOwnerScreen = null;
+        try {
+            finalX = Math.round(targetRect.x);
+            finalY = Math.round(targetRect.y);
+            finalW = Math.max(1, Math.round(targetRect.w));
+            finalH = Math.max(1, Math.round(targetRect.h));
+            uiMaximized = kind === "maximize";
+            if (targetScreenOverride) {
+                adoptTargetScreen(targetScreenOverride, true);
+            } else {
+                updateTargetScreenFromFinalCenter();
+            }
+            refreshActiveVisibleRect();
+            applyHostEnvelopeForTarget();
+            updateCanvasGeometry();
+            if (!uiMaximized) {
+                maximizedOwnerScreen = null;
+            }
+            if (layoutRepairEnabled) {
+                layoutMetricsSnapshot = computeUiMetrics();
+            }
+        } catch (error) {
+            if (layoutRepairEnabled) layoutMetricsSnapshot = null;
+            throw error;
+        } finally {
+            if (layoutRepairEnabled) layoutMetricsCommitInProgress = false;
         }
     }
 

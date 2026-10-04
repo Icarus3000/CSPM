@@ -26,6 +26,7 @@ class TransitionExperiment(QObject):
             selected = "production"
         self._engine = selected
         self._reduced = os.environ.get("CSPM_EXPERIMENTAL_REDUCED_MOTION") == "1"
+        self._layout_repair = os.environ.get("CSPM_EXPERIMENTAL_LAYOUT_REPAIR") == "1"
         logging.getLogger(__name__).info("Window transition engine=%s", selected)
 
     @Property(str, notify=engineChanged)
@@ -35,6 +36,11 @@ class TransitionExperiment(QObject):
     @Property(bool, constant=True)
     def reducedMotion(self):
         return self._reduced
+
+    @Property(bool, constant=True)
+    def layoutRepair(self):
+        """Independent, process-local opt-in; ordinary launches preserve layout."""
+        return self._layout_repair
 
     @Slot(result=float)
     def monotonicMs(self):

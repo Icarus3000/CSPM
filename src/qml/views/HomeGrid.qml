@@ -18,6 +18,20 @@ Item {
         && appRef.runtimeConfig.searchBarDebugEnabled === true
     )
     property var metrics
+    readonly property bool layoutRepairEnabled: typeof transitionExperiment !== "undefined"
+        && transitionExperiment.layoutRepair
+    readonly property var layoutMetrics: layoutRepairEnabled ? homeMetricsGate.snapshot : metrics
+    LayoutMetricsGate {
+        id: homeMetricsGate
+        inputMetrics: root.metrics
+        active: root.layoutRepairEnabled && root.visible
+    }
+    LayoutMetricsGate {
+        id: homeViewportGate
+        inputMetrics: ({"width": root.width, "height": root.height})
+        active: root.layoutRepairEnabled && root.visible
+        snapshot: ({"width": 1, "height": 1})
+    }
     property var windowRef: null
     property bool maximized: false
     property color bgColor: SemanticTheme.surfaceApp(root.t, "Professional")
@@ -122,11 +136,11 @@ Item {
     })
 
     function contentUnit() {
-        var rw = root.width
-        var rh = root.height
-        if (metrics && typeof metrics.contentW === "number" && typeof metrics.contentH === "number") {
-            rw = metrics.contentW
-            rh = metrics.contentH
+        var rw = root.layoutRepairEnabled ? homeViewportGate.snapshot.width : root.width
+        var rh = root.layoutRepairEnabled ? homeViewportGate.snapshot.height : root.height
+        if (layoutMetrics && typeof layoutMetrics.contentW === "number" && typeof layoutMetrics.contentH === "number") {
+            rw = layoutMetrics.contentW
+            rh = layoutMetrics.contentH
         }
         return Math.min(Math.max(1, rw), Math.max(1, rh))
     }
@@ -137,8 +151,8 @@ Item {
     }
 
     function metricFloor(metricKey, fallbackPx) {
-        if (metrics && typeof metrics[metricKey] === "number") {
-            return Math.max(1, Math.round(metrics[metricKey]))
+        if (layoutMetrics && typeof layoutMetrics[metricKey] === "number") {
+            return Math.max(1, Math.round(layoutMetrics[metricKey]))
         }
         return Math.max(1, Math.round(fallbackPx))
     }
@@ -296,8 +310,8 @@ Item {
         root.hubClicked(index, moduleIndexes, Qt.rect(globalPos.x, globalPos.y, itemRef.width, itemRef.height))
     }
 
-    property real dpiScaleFactor: (metrics && typeof metrics.scalePercent === "number")
-        ? Math.max(1.0, metrics.scalePercent / 100.0)
+    property real dpiScaleFactor: (layoutMetrics && typeof layoutMetrics.scalePercent === "number")
+        ? Math.max(1.0, layoutMetrics.scalePercent / 100.0)
         : 1.0
     property int greetingFontPx: {
         var basePx = root.ratioPx(root.scaleRatios.greetingFontPct, root.metricFloor("fontFloorTitlePx", 14))
@@ -334,7 +348,11 @@ Item {
 
     Rectangle {
         id: homeSceneFrame
-        anchors.fill: parent
+        // Invisible pages need no target viewport. Preserve their objects and
+        // data, then adopt the current viewport synchronously on visibility.
+        anchors.fill: root.layoutRepairEnabled ? null : parent
+        width: root.layoutRepairEnabled ? homeViewportGate.snapshot.width : root.width
+        height: root.layoutRepairEnabled ? homeViewportGate.snapshot.height : root.height
         radius: 0
         clip: true
         antialiasing: true

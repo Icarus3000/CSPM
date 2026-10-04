@@ -486,3 +486,163 @@ After run2, root makes trace-failure deduplication idempotent across result
 writes and hidden/minimized guards symmetric. Python compilation checks that
 reporting cleanup; it has no new desktop trial. The preserved run2's fourteen
 raw strings remain copies of seven distinct rejected candidate transactions.
+
+## Recovered target-layout continuation — shader, polish and batching evidence
+
+This section recovers **already completed** prior-session diagnostics through
+20:20 Eastern on October 3. It does not repeat those experiments or claim a
+new desktop validation. The previous learning text stopped before substantial
+later progress. All raw failed runs, disposable source trees and result files
+remain ignored locally. Sanitized configurations, timings and recorded source
+hashes are in `CLEANROOM_TARGET_LAYOUT_RESULTS_2026-10-03.json`.
+
+**PROVEN BY MEASUREMENT:** the uncounted fanout baseline assigns finalW in
+87 ms and finalH in 259 ms: **346 ms** combined, with a 357.40 ms complete
+commit. A separately instrumented GaussianBlur run observes **162 hidden
+shader rebuilds during finalH propagation**, taking 92 ms inside the measured
+helper. Qt's installed GaussianBlur calls its shader builder when radius or
+samples change, including for invisible effects. The instrumented run takes
+136/374 ms at the assignments; do not substitute those perturbed costs for
+the uncounted baseline or add nested helper times as independent costs.
+
+**PROVEN BY MEASUREMENT:** coalescing the responsive metrics publication alone
+moves the work: finalW/finalH take 21/18 ms, but publication takes **334 ms**
+and still causes 162 hidden rebuilds. The hidden-layout isolation without
+helper counters instead takes **55/109 ms**, or **164 ms** combined, in a
+178.27 ms commit. The user's approximately 166 ms handoff is an approximate
+description; exact raw statement observations total 164 ms. The counted
+hidden-layout run takes 191 ms combined. Preserve these distinct configurations.
+The hidden-font-only isolation is not a fix: its 465 ms combined assignments
+and retained shader rebuilds remain contrary evidence.
+
+**SUPPORTED BY OBSERVATION:** the retained opt-in repair applies
+`LayoutMetricsGate.qml` to ModernTextField, ModernComboBox and PillButton.
+Visible controls continue to consume current responsive metrics. Hidden
+controls preserve a prior metrics snapshot during irrelevant publications,
+then catch up when visible. Disabled shadows use stable inactive radius/sample
+parameters; enabling the effects must restore current responsive values.
+`CSPM_EXPERIMENTAL_LAYOUT_REPAIR` controls this process-local repair separately
+from the transition engine selector. Ordinary launches leave the repair off
+and preserve production as the transition default. This is shared-control
+behavior, not a Productivity-route condition.
+
+**PROVEN BY MEASUREMENT:** the first retained repair cold run takes
+**57/139 ms**, or **196 ms** combined assignments, and a **212.05 ms** commit.
+The target nevertheless reaches the GUI at **627.83 ms after native start**.
+The causal boundaries account for that elapsed interval: 80.99 ms deliberate
+GUI delay; approximately 0.63 ms to commit entry; 212.05 ms commit; 269.15 ms
+capture request to render callback; 5.04 ms export callback; and 59.96 ms queued
+GUI delivery. The fixed 240 ms content deadline is missed; zero directions
+complete. This is not a measured 628 ms no-delay optimized transaction.
+
+**PROVEN BY MEASUREMENT:** the Python commit profile records one screen query
+and small event-filter work. It does not assign the remaining QML cost to an
+expensive controller operation. The Python-profiled run itself is perturbed
+and must not replace the unprofiled baseline.
+
+### Qt stages explain the post-commit gap
+
+The earlier session's Qt-stage run2 **finished** at 16:21:03 Eastern, with a
+valid result, protected hashes and ordinary close. There was no unfinished Qt
+run at recovery. Its no-delay target reaches the GUI in **433.59 ms** after
+native start. Qt's first resized frame reports **170 ms polish, 30 ms sync,
+32 ms render and 1 ms swap**. The commit is 139.70 ms; native export is 6.45 ms
+inside that render span; queued GUI delivery is 57.55 ms. Adding export again
+would double count it. These durations largely explain the interval previously
+called a first-frame wait. Render-thread preparation versus actual GPU execution
+is not separately measured by these CPU stage timers.
+
+**PROVEN BY MEASUREMENT — instrumented layout boundaries:** the later polish
+diagnostic records 360 entry/exit messages, paired as 180 calls. Two hidden
+ColumnLayouts beneath the hub's SwipeView/ListView consume approximately
+67.80 and 59.07 ms in observed inclusive spans. Invisible popup, wizard and
+inactive screen layouts also polish; the active Productivity report is only
+part of the work. That heavily instrumented frame reports 324 ms polish and
+67 ms sync. GIL/message/debug overhead and nested work mean those per-layout
+spans are observations, not pure component costs to sum indiscriminately.
+
+**SUPPORTED BY OBSERVATION:** the subsequent general repair adds a HomeGrid
+viewport gate and batches the shell's metrics publication across final-size
+commit. Hidden HomeGrid responsive geometry stops following irrelevant viewport
+changes, then catches up on visibility. The shell retains visible responsive
+state at the intended publication boundary. The repair does not hard-code D10,
+one monitor size or a report layout. Visibility, failure cleanup, DPI and theme
+correctness still require the dedicated gate/component regression evidence;
+raw performance timings alone cannot prove them.
+
+The two preserved six-cycle **layout-only** runs each complete three maximize
+and three restore geometries with unchanged protected originals:
+
+| Direction median, three samples | Repair off | Repair on |
+| --- | ---: | ---: |
+| Maximize commit | 249.85 ms | 58.56 ms |
+| Restore commit | 248.83 ms | 141.38 ms |
+| Maximize first-target Qt polish | 145 ms | 19 ms |
+| Restore first-target Qt polish | 98 ms | 32 ms |
+| Maximize geometry entry to target GUI delivery | 550.63 ms | 136.98 ms |
+| Restore geometry entry to target GUI delivery | 482.52 ms | 285.85 ms |
+
+**PROVEN BY MEASUREMENT:** the intended geometry/polish costs materially fall
+in these separate-process isolations. They omit native motion and its resource
+competition; they cannot qualify a complete cold transition or establish a
+matched installed before/after speed ratio. Restore publication remains more
+expensive: its repair-on median publication is 99 ms, versus 32 ms maximize.
+
+### Complete cold and endpoint results remain failures or constrained evidence
+
+The instrumented atomic repair cold run has no deliberate GUI delay and reaches
+the target in **305.75 ms**: commit 100.87 ms, request-to-render 136.93 ms,
+export 11.88 ms and GUI delivery 54.89 ms. Qt reports 60 ms polish, 30 ms sync,
+53 ms render and 1 ms swap. It is still late. Its shell differs from the later
+quiet run, so this is not a controlled instrumentation-overhead comparison.
+
+**PROVEN BY MEASUREMENT:** the later quiet cold run, without QML boundary or
+Qt-stage profiling, requests six directions but fails on the first maximize.
+Target delivery is **534.05 ms** after native start: commit **119.86 ms**,
+request-to-render callback **319.88 ms**, export **12.94 ms**, queued GUI
+delivery **79.46 ms**, plus small entry gaps. Zero directions complete and
+no target import/presentation is exercised. Without stage timers, the 319.88 ms
+cannot be apportioned accurately among polish, scheduling, synchronization and
+render. **STILL UNKNOWN:** that run's internal decomposition and a stable cold
+repair that meets the fixed deadline in both directions.
+
+The later prepared endpoint comparison completes four directions with all four
+target/live comparisons exact, but its **third source comparison fails with
+48 differing pixels** and a maximum channel difference of 118. The other
+three source comparisons are exact. Preserve this failed source result; its
+cause is not established. Targets are prepared before motion and a labelled
+**120 ms endpoint hold** is configured. Full command-to-live observations are
+approximately 1183–1509 ms. These checks retain constrained endpoint capability;
+they do not qualify cold speed, no-hold live transfer or perceptual continuity.
+
+The retained lifecycle attempt fails **before launch** because disposable
+instrumentation expects one source-grab statement but now finds two. There is
+no lifecycle validation from that run. Correct the fixture without deleting
+its failed console/tree evidence, then execute the intended regression.
+
+**STILL UNKNOWN:** fence/keyed-mutex subcosts within export; separately timed
+bridge import, DirectComposition commit and observable target presentation on
+a successful cold transaction; first matching live frame and exact input unlock;
+physical uninterrupted motion, glyph/brightness/sharpness continuity; multiple
+populated workspaces and mixed-DPI acceptance. Failed cold runs never reach
+the native target presentation boundary, so function-return arithmetic must
+not be described as physical presentation evidence.
+
+### Recovery, provenance and validation limits
+
+No target-layout/native diagnostic process was active at recovery. Worktree
+`logs/cspm.log` is absent; installed and disposable runtime logs were inspected.
+Qt GaussianBlur instrumentation is confined to ignored `tree/imports` copies:
+the installed GraphicalEffects module contains no FanoutTrace markers and
+retains its qrc-preference directive. No installed Qt module is mutated by the
+delivered repair. Later startup manifests include the shared controls and
+HomeGrid; earlier manifests omit those files. Existing hashes identify only
+the files they actually recorded, not reconstructed historical source states.
+
+This recovery performs sandbox-safe filesystem/JSON/hash inspection only.
+The preserved GPU/desktop trials were outside sandbox on disposable data and
+settings, with unchanged protected originals. No new dedicated WebEngine
+HTML/PDF check, packaging, installation or user acceptance is established.
+Production remains the default and the installed application remains unchanged.
+**Decision:** retain the coherent experimental general repairs and GPU bridge,
+but reject complete-candidate qualification. **Not yet accepted by Cory.**

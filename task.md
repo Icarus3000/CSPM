@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-03: Recovered Target-Layout Fanout Repair
+
+- [x] Recover the exact `e15dbcf` worktree, seven unstaged edits and five new files, live experimental remote, worktrees and untouched stashes. Recover unrecorded later Qt-stage, HomeGrid, atomic-publication, repeated-layout and pixel evidence before further experimentation.
+- [x] Review and retain the explicit process-local layout repair: hidden shared-control scalar metrics snapshots, stable disabled shadow parameters, hidden HomeGrid viewport, and one completed shell metrics publication. Ordinary launches retain production behavior. Data/models stay alive and visible controls receive current inputs.
+- [x] Verify the repair with 81 sandbox-safe selector/gate/shell/fanout/actual-control checks, Python compilation, governed scoped QML lint (existing warnings), and a separate MSVC `/W4` native bridge/shader build. No installed Qt module modification belongs to the implementation.
+- [x] Preserve the failed lifecycle fixture's ambiguous capture anchor; repair the diagnostic to instrument the production callback explicitly. The prior failure occurred before application launch.
+- [x] New outside-sandbox populated cold maximize stage baseline: 121.79 ms geometry commit; Qt reports polish 26 ms, composite sync 30 ms, render 43 ms including 15.79 ms GPU export. Export finishes 227.17 ms after native start, but queued GUI receipt is 290.28 ms and misses the unchanged 240 ms deadline. Zero complete directions; no candidate installation.
+- [ ] Separate target GPU import from queued GUI notification and measure a cold restore plus other representative routes without weakening readiness, physical-pixel or presentation contracts.
+- [ ] P0 remains this maximize/restore path. Do not install or advance to another visual state machine before a complete qualified candidate and Cory's real-app acceptance.
+
+Evidence: `docs/MAXIMIZE_RESTORE_CLEAN_ROOM_LEARNING_2026-10-03.md` and `docs/CLEANROOM_TARGET_LAYOUT_RESULTS_2026-10-03.json`. Raw failed runs, private logs, instrumented Qt copies and disposable workbooks remain ignored locally. No new dedicated WebEngine HTML/PDF validation is claimed.
+
 ## 2026-10-03: Preserved Clean-Room Native Transition Checkpoint
 
 - [x] Resume the exact existing `experiment/clean-room-fluid-maximize-restore` worktree at base `ad72d59`; inspect source, diffs, worktrees, stashes, remote state and retained evidence without discarding local work.

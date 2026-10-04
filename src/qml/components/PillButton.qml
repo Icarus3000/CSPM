@@ -9,6 +9,14 @@ Button {
     id: control
     property var t
     property var metrics
+    readonly property bool layoutRepairEnabled: typeof transitionExperiment !== "undefined"
+        && transitionExperiment.layoutRepair
+    readonly property var layoutMetrics: layoutRepairEnabled ? layoutMetricsGate.snapshot : metrics
+    LayoutMetricsGate {
+        id: layoutMetricsGate
+        inputMetrics: control.metrics
+        active: control.layoutRepairEnabled && control.visible
+    }
     property var sfxBus: null
     property bool primary: false
     // Opt-in scale for dense action strips.  Views use this together with a
@@ -91,9 +99,9 @@ Button {
     function ratioPx(ratio, minPx) {
         var rw = control.width
         var rh = control.height
-        if (metrics && typeof metrics.contentW === "number" && typeof metrics.contentH === "number") {
-            rw = metrics.contentW
-            rh = metrics.contentH
+        if (layoutMetrics && typeof layoutMetrics.contentW === "number" && typeof layoutMetrics.contentH === "number") {
+            rw = layoutMetrics.contentW
+            rh = layoutMetrics.contentH
         }
         var unit = Math.min(Math.max(1, rw), Math.max(1, rh))
         var floorPx = (typeof minPx === "number") ? minPx : 1
@@ -101,8 +109,8 @@ Button {
     }
 
     function metricFloor(metricKey, fallbackPx) {
-        if (metrics && typeof metrics[metricKey] === "number") {
-            return Math.max(1, Math.round(metrics[metricKey]))
+        if (layoutMetrics && typeof layoutMetrics[metricKey] === "number") {
+            return Math.max(1, Math.round(layoutMetrics[metricKey]))
         }
         return Math.max(1, Math.round(fallbackPx))
     }
@@ -188,8 +196,10 @@ Button {
             color: control.hovered
                 ? SemanticTheme.borderSubtle(control.t, control.appStyle)
                 : SemanticTheme.borderSubtle(control.t, control.appStyle)
-            radius: control.ratioPx(control.scaleRatios.shadowRadiusPct, 1)
-            samples: control.ratioPx(control.scaleRatios.shadowSamplesPct, 5)
+            radius: control.layoutRepairEnabled && visualRules.shadowOpacity <= 0 ? 0
+                : control.ratioPx(control.scaleRatios.shadowRadiusPct, 1)
+            samples: control.layoutRepairEnabled && visualRules.shadowOpacity <= 0 ? 9
+                : control.ratioPx(control.scaleRatios.shadowSamplesPct, 5)
             horizontalOffset: 0
             verticalOffset: control.ratioPx(control.scaleRatios.shadowYOffsetPct, 1)
         }

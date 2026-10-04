@@ -125,8 +125,11 @@ shell = replace_once(shell,
     '        professionalSurfaceWatchdog.restart();\n        var sourceHeaderMetrics',
     '        recordResponsivenessStage("source-grab-request");\n        professionalSurfaceWatchdog.restart();\n        var sourceHeaderMetrics')
 source_grab_line = '        var accepted = grabProfessionalWindowFrame(function(result) {'
-shell = replace_once(shell, source_grab_line,
-    source_grab_line+'\n            mainWin.recordResponsivenessStage("source-grab-ready");')
+# Both experimental and production paths capture a source. Instrument only
+# the production transaction, retaining the strict one-match guard within it.
+source_grab_context = '        var sourceHeaderMetrics = mainContent.professionalTransitionHeaderMetrics();\n' + source_grab_line
+shell = replace_once(shell, source_grab_context,
+    source_grab_context+'\n            mainWin.recordResponsivenessStage("source-grab-ready");')
 create_line = '            var surface = professionalSurfaceComponent.createObject(null, {'
 shell = replace_once(shell, create_line,
     '            mainWin.recordResponsivenessStage("surface-create-start");\n'+create_line)

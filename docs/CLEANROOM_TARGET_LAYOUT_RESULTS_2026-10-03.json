@@ -1,0 +1,2292 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-03",
+  "scope": "Read-only recovery of preserved prior-session diagnostics; static data extraction is not a new GUI validation",
+  "decision": "TARGET READINESS MATERIALLY IMPROVED; COMPLETE COLD NATIVE CANDIDATE NOT QUALIFIED",
+  "productionDefault": "production",
+  "userAcceptance": "Not yet accepted by Cory",
+  "privacy": "Only whitelisted configurations, aggregate timings, outcomes and source/DLL hashes. No workbook data, raw log messages, desktop pixels, object addresses or absolute private paths.",
+  "measurementCaveats": [
+    "QML statements use Date.now calibrated to perf_counter, 1 ms resolution.",
+    "Qt stage durations are Qt timers; Python message/callback entry timestamps can be perturbed by GIL and diagnostic work.",
+    "Qt render timings are CPU stage durations, not GPU execution or observable desktop presentation.",
+    "Native texture export callback span includes copy/synchronization work and cannot be split into fence/keyed-mutex sub-stages from these logs.",
+    "Native export occurs inside the recorded render stage; adding it again double counts.",
+    "Cold failed runs never reach target import or target presentation; those costs remain unmeasured.",
+    "Separate-process variants with different instrumentation, source snapshots and deliberate delays are not matched causal before/after trials.",
+    "Repeated layout-only results omit native motion and cannot qualify the fixed target transfer deadline.",
+    "Prepared endpoint comparison uses pre-prepared target and 120 ms hold; cannot establish cold speed or uninterrupted live handoff.",
+    "The first-target-frame result proves a captured frame at resized extent; layout completeness and later stability need pixel/semantic evidence."
+  ],
+  "priorRequestVerification": {
+    "disabledBlurRebuilds": 162,
+    "uncountedBaselineCombinedAssignmentsMs": 346,
+    "reportedIsolationApproxMs": 166,
+    "verifiedIsolationCombinedAssignmentsMs": 164,
+    "verifiedIsolationCommitMs": 178.27,
+    "optInRepairCombinedAssignmentsMs": 196,
+    "optInRepairCommitMs": 212.05,
+    "optInRepairTargetArrivalMs": 627.826,
+    "optInRepairIntentionalGuiDelayMs": 80.986,
+    "coalescedMetricsPublicationMs": 334,
+    "note": "The approximately 166 ms prior prose does not match exact raw statement sum, which is 55+109=164 ms; preserve the approximate claim and the corrected exact observation separately."
+  },
+  "runs": [
+    {
+      "auditLabel": "native_gpu_fanout_baseline_20261003_run1",
+      "evidencePath": "logs/native_gpu_fanout_baseline_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "ad611adc4fd30c178f48e62913641bdbf80deeba12823b8a35bfaa7e8a6a1ba2",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 357.398,
+            "captureRequestToRenderCallback": 217.185,
+            "nativeExportCallback": 8.672,
+            "queuedGuiDelivery": 98.164,
+            "geometryBeginToTargetGuiDelivery": 681.429,
+            "commitEndToTargetGuiDelivery": 324.031,
+            "nativeStartToTargetGuiDelivery": 762.948,
+            "intentionalGuiDelay": 80.297
+          },
+          "statementMs": {
+            "finalW": 87.0,
+            "finalH": 259.0,
+            "hostEnvelope": 7.0,
+            "canvasGeometry": 3.0,
+            "combinedAssignments": 346.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_blur_counts_20261003_run1",
+      "evidencePath": "logs/native_gpu_blur_counts_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "counts"
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "d1140bae876a1925b86484949f9a808837e9cecaacea26e8e9e7dfa79ec49086",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 520.335,
+            "captureRequestToRenderCallback": 337.394,
+            "nativeExportCallback": 8.292,
+            "queuedGuiDelivery": 109.252,
+            "geometryBeginToTargetGuiDelivery": 975.281,
+            "commitEndToTargetGuiDelivery": 454.945,
+            "nativeStartToTargetGuiDelivery": 1056.525,
+            "intentionalGuiDelay": 80.157
+          },
+          "statementMs": {
+            "finalW": 136.0,
+            "finalH": 374.0,
+            "hostEnvelope": 7.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 510.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true,
+      "blurShaderRebuildCounters": [
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 162,
+          "inclusiveHelperMs": 92.0
+        }
+      ]
+    },
+    {
+      "auditLabel": "native_gpu_atomic_metrics_20261003_run1",
+      "evidencePath": "logs/native_gpu_atomic_metrics_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "atomic-metrics"
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "d1140bae876a1925b86484949f9a808837e9cecaacea26e8e9e7dfa79ec49086",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 384.588,
+            "captureRequestToRenderCallback": 277.788,
+            "nativeExportCallback": 42.005,
+            "queuedGuiDelivery": 81.855,
+            "geometryBeginToTargetGuiDelivery": 786.242,
+            "commitEndToTargetGuiDelivery": 401.654,
+            "nativeStartToTargetGuiDelivery": 867.42,
+            "intentionalGuiDelay": 80.116
+          },
+          "statementMs": {
+            "finalW": 21.0,
+            "finalH": 18.0,
+            "metricsPublication": 334.0,
+            "hostEnvelope": 7.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 39.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true,
+      "blurShaderRebuildCounters": [
+        {
+          "cycle": 0,
+          "stage": "before:metricsPublication",
+          "visibility": "hidden",
+          "count": 162,
+          "inclusiveHelperMs": 81.0
+        }
+      ]
+    },
+    {
+      "auditLabel": "native_gpu_dormant_shadows_20261003_run1",
+      "evidencePath": "logs/native_gpu_dormant_shadows_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "dormant-shadows"
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "d1140bae876a1925b86484949f9a808837e9cecaacea26e8e9e7dfa79ec49086",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 389.341,
+            "captureRequestToRenderCallback": 277.288,
+            "nativeExportCallback": 6.012,
+            "queuedGuiDelivery": 91.358,
+            "geometryBeginToTargetGuiDelivery": 764.009,
+            "commitEndToTargetGuiDelivery": 374.668,
+            "nativeStartToTargetGuiDelivery": 845.75,
+            "intentionalGuiDelay": 80.625
+          },
+          "statementMs": {
+            "finalW": 137.0,
+            "finalH": 239.0,
+            "hostEnvelope": 8.0,
+            "canvasGeometry": 3.0,
+            "combinedAssignments": 376.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true,
+      "blurShaderRebuildCounters": [
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 6,
+          "inclusiveHelperMs": 5.0
+        }
+      ]
+    },
+    {
+      "auditLabel": "native_gpu_hidden_controls_20261003_run1",
+      "evidencePath": "logs/native_gpu_hidden_controls_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "hidden-controls"
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "d1140bae876a1925b86484949f9a808837e9cecaacea26e8e9e7dfa79ec49086",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 375.248,
+            "captureRequestToRenderCallback": 225.173,
+            "nativeExportCallback": 8.577,
+            "queuedGuiDelivery": 82.33,
+            "geometryBeginToTargetGuiDelivery": 691.335,
+            "commitEndToTargetGuiDelivery": 316.086,
+            "nativeStartToTargetGuiDelivery": 772.539,
+            "intentionalGuiDelay": 80.242
+          },
+          "statementMs": {
+            "finalW": 96.0,
+            "finalH": 269.0,
+            "hostEnvelope": 7.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 365.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true,
+      "blurShaderRebuildCounters": [
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 116,
+          "inclusiveHelperMs": 79.0
+        }
+      ]
+    },
+    {
+      "auditLabel": "native_gpu_hidden_layout_20261003_run1",
+      "evidencePath": "logs/native_gpu_hidden_layout_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "hidden-layout"
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "other diagnostic failure"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "d1140bae876a1925b86484949f9a808837e9cecaacea26e8e9e7dfa79ec49086",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_hidden_layout_20261003_run2",
+      "evidencePath": "logs/native_gpu_hidden_layout_20261003_run2/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "hidden-layout"
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "d1140bae876a1925b86484949f9a808837e9cecaacea26e8e9e7dfa79ec49086",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 207.866,
+            "captureRequestToRenderCallback": 328.576,
+            "nativeExportCallback": 7.549,
+            "queuedGuiDelivery": 105.375,
+            "geometryBeginToTargetGuiDelivery": 649.378,
+            "commitEndToTargetGuiDelivery": 441.512,
+            "nativeStartToTargetGuiDelivery": 730.812,
+            "intentionalGuiDelay": 80.789
+          },
+          "statementMs": {
+            "finalW": 49.0,
+            "finalH": 142.0,
+            "hostEnvelope": 10.0,
+            "canvasGeometry": 4.0,
+            "combinedAssignments": 191.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true,
+      "blurShaderRebuildCounters": [
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 6,
+          "inclusiveHelperMs": 4.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 3,
+          "inclusiveHelperMs": 3.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 3,
+          "inclusiveHelperMs": 2.0
+        }
+      ]
+    },
+    {
+      "auditLabel": "native_gpu_hidden_layout_quiet_20261003_run1",
+      "evidencePath": "logs/native_gpu_hidden_layout_quiet_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "hidden-layout",
+        "fanout_quiet": true
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "c0551ba8168329c9c61d986f48c40c72340cf5ee30d5e89b3be0af2897285408",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 178.27,
+            "captureRequestToRenderCallback": 232.333,
+            "nativeExportCallback": 9.179,
+            "queuedGuiDelivery": 61.372,
+            "geometryBeginToTargetGuiDelivery": 481.16,
+            "commitEndToTargetGuiDelivery": 302.89,
+            "nativeStartToTargetGuiDelivery": 562.223,
+            "intentionalGuiDelay": 80.172
+          },
+          "statementMs": {
+            "finalW": 55.0,
+            "finalH": 109.0,
+            "hostEnvelope": 8.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 164.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_hidden_fonts_20261003_run1",
+      "evidencePath": "logs/native_gpu_hidden_fonts_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": "hidden-fonts",
+        "fanout_quiet": false
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "c0551ba8168329c9c61d986f48c40c72340cf5ee30d5e89b3be0af2897285408",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 486.409,
+            "captureRequestToRenderCallback": 298.618,
+            "nativeExportCallback": 8.131,
+            "queuedGuiDelivery": 85.507,
+            "geometryBeginToTargetGuiDelivery": 878.678,
+            "commitEndToTargetGuiDelivery": 392.269,
+            "nativeStartToTargetGuiDelivery": 959.572,
+            "intentionalGuiDelay": 80.128
+          },
+          "statementMs": {
+            "finalW": 78.0,
+            "finalH": 387.0,
+            "hostEnvelope": 16.0,
+            "canvasGeometry": 2.0,
+            "combinedAssignments": 465.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true,
+      "blurShaderRebuildCounters": [
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 1.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 6,
+          "inclusiveHelperMs": 5.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 4,
+          "inclusiveHelperMs": 4.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 86,
+          "inclusiveHelperMs": 54.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 6,
+          "inclusiveHelperMs": 3.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 2.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 2.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 0.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 3,
+          "inclusiveHelperMs": 2.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 3,
+          "inclusiveHelperMs": 3.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 4,
+          "inclusiveHelperMs": 1.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 8,
+          "inclusiveHelperMs": 5.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 24,
+          "inclusiveHelperMs": 17.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 2.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 2.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 1.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 1.0
+        },
+        {
+          "cycle": 0,
+          "stage": "before:finalH",
+          "visibility": "hidden",
+          "count": 2,
+          "inclusiveHelperMs": 1.0
+        }
+      ]
+    },
+    {
+      "auditLabel": "native_gpu_python_commit_20261003_run1",
+      "evidencePath": "logs/native_gpu_python_commit_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": true
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "6b0878fa4db7da1b1db17b8bb58758f0b4b99c223acf9da7a96e2ccf3ee92dab",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "db18bfab0d00d50b497dfa13b014ec026c3dd5d82cb16c579882c62877ec512e",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 567.578,
+            "captureRequestToRenderCallback": 446.571,
+            "nativeExportCallback": 37.585,
+            "queuedGuiDelivery": 89.549,
+            "geometryBeginToTargetGuiDelivery": 1142.024,
+            "commitEndToTargetGuiDelivery": 574.446,
+            "nativeStartToTargetGuiDelivery": 1223.655,
+            "intentionalGuiDelay": 80.732
+          },
+          "statementMs": {
+            "finalW": 172.0,
+            "finalH": 380.0,
+            "hostEnvelope": 8.0,
+            "canvasGeometry": 2.0,
+            "combinedAssignments": 552.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_layout_repair_20261003_run1",
+      "evidencePath": "logs/native_gpu_layout_repair_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 80,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "456b8ec08c0f2ff189ff3d84b8f626c80b921174454d155ca3a4b05424b3bfde",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 212.05,
+            "captureRequestToRenderCallback": 269.149,
+            "nativeExportCallback": 5.037,
+            "queuedGuiDelivery": 59.964,
+            "geometryBeginToTargetGuiDelivery": 546.215,
+            "commitEndToTargetGuiDelivery": 334.165,
+            "nativeStartToTargetGuiDelivery": 627.826,
+            "intentionalGuiDelay": 80.986
+          },
+          "statementMs": {
+            "finalW": 57.0,
+            "finalH": 139.0,
+            "hostEnvelope": 11.0,
+            "canvasGeometry": 3.0,
+            "combinedAssignments": 196.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_qt_stages_20261003_run1",
+      "evidencePath": "logs/native_gpu_qt_stages_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": true
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "f7c1fa958fb9d96b93df2f274c858f8b4043f0f745374f59b8711e138c852bc0",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 172.604,
+            "captureRequestToRenderCallback": 204.722,
+            "nativeExportCallback": 9.157,
+            "queuedGuiDelivery": 64.196,
+            "geometryBeginToTargetGuiDelivery": 450.686,
+            "commitEndToTargetGuiDelivery": 278.082,
+            "nativeStartToTargetGuiDelivery": 451.714,
+            "intentionalGuiDelay": 0.007
+          },
+          "statementMs": {
+            "finalW": 63.0,
+            "finalH": 100.0,
+            "hostEnvelope": 6.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 163.0
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_qt_stages_20261003_run2",
+      "evidencePath": "logs/native_gpu_qt_stages_20261003_run2/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": true
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "c5e1ec9925e5402b3465397949861eaf245a88c186f9f42a23e7590a37ed41c4",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 139.696,
+            "captureRequestToRenderCallback": 229.125,
+            "nativeExportCallback": 6.449,
+            "queuedGuiDelivery": 57.547,
+            "geometryBeginToTargetGuiDelivery": 432.823,
+            "commitEndToTargetGuiDelivery": 293.126,
+            "nativeStartToTargetGuiDelivery": 433.588,
+            "intentionalGuiDelay": 0.015
+          },
+          "statementMs": {
+            "finalW": 41.0,
+            "finalH": 89.0,
+            "hostEnvelope": 5.0,
+            "canvasGeometry": 2.0,
+            "combinedAssignments": 130.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 170,
+            "lockMs": 0,
+            "blockedForSyncMs": 64,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 565.158
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 64,
+            "syncMs": 30,
+            "renderMs": 32,
+            "swapMs": 1,
+            "messageDeliveryAfterCommandMs": 565.033
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_layout_polish_20261003_run1",
+      "evidencePath": "logs/native_gpu_layout_polish_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": true,
+        "qt_layout_polish": true
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "1fe567d4d58157faa2129e2ee002acf0a031dca398edefea2498549f459944af",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 249.581,
+            "captureRequestToRenderCallback": 418.779,
+            "nativeExportCallback": 11.835,
+            "queuedGuiDelivery": 107.766,
+            "geometryBeginToTargetGuiDelivery": 834.157,
+            "commitEndToTargetGuiDelivery": 584.576,
+            "nativeStartToTargetGuiDelivery": 835.443,
+            "intentionalGuiDelay": 0.023
+          },
+          "statementMs": {
+            "finalW": 72.0,
+            "finalH": 160.0,
+            "hostEnvelope": 10.0,
+            "canvasGeometry": 4.0,
+            "combinedAssignments": 232.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 324,
+            "lockMs": 0,
+            "blockedForSyncMs": 102,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 1148.906
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 102,
+            "syncMs": 67,
+            "renderMs": 34,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 1148.879
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_home_gate_20261003_run1",
+      "evidencePath": "logs/native_gpu_home_gate_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": true,
+        "qt_layout_polish": false
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "1fe567d4d58157faa2129e2ee002acf0a031dca398edefea2498549f459944af",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 182.885,
+            "captureRequestToRenderCallback": 210.455,
+            "nativeExportCallback": 48.008,
+            "queuedGuiDelivery": 58.008,
+            "geometryBeginToTargetGuiDelivery": 499.387,
+            "commitEndToTargetGuiDelivery": 316.502,
+            "nativeStartToTargetGuiDelivery": 500.163,
+            "intentionalGuiDelay": 0.021
+          },
+          "statementMs": {
+            "finalW": 35.0,
+            "finalH": 137.0,
+            "hostEnvelope": 7.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 172.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 73,
+            "lockMs": 0,
+            "blockedForSyncMs": 185,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 646.891
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 185,
+            "syncMs": 42,
+            "renderMs": 138,
+            "swapMs": 4,
+            "messageDeliveryAfterCommandMs": 646.842
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_home_gate_20261003_run2",
+      "evidencePath": "logs/native_gpu_home_gate_20261003_run2/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": true,
+        "qt_layout_polish": false
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "1fe567d4d58157faa2129e2ee002acf0a031dca398edefea2498549f459944af",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 138.786,
+            "captureRequestToRenderCallback": 125.518,
+            "nativeExportCallback": 12.867,
+            "queuedGuiDelivery": 59.273,
+            "geometryBeginToTargetGuiDelivery": 336.456,
+            "commitEndToTargetGuiDelivery": 197.671,
+            "nativeStartToTargetGuiDelivery": 337.152,
+            "intentionalGuiDelay": 0.007
+          },
+          "statementMs": {
+            "finalW": 54.0,
+            "finalH": 69.0,
+            "hostEnvelope": 10.0,
+            "canvasGeometry": 3.0,
+            "combinedAssignments": 123.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 48,
+            "lockMs": 0,
+            "blockedForSyncMs": 84,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 477.406
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 84,
+            "syncMs": 38,
+            "renderMs": 45,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 477.38
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_repeated_layout_baseline_20261003_run1",
+      "evidencePath": "logs/native_gpu_repeated_layout_baseline_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 6,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": false,
+        "qt_render_timings": true,
+        "qt_layout_polish": false,
+        "layout_only": true
+      },
+      "completedCycles": 6,
+      "coldCandidateQualification": "NOT QUALIFYING",
+      "failureCount": 0,
+      "failureCategories": [],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "3879cafe19d0baf34b08b449097d96a87b11f0777cb6dbf2c77ab04cc8c30f02",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "bbb2c6f7688d993d2d710e4443ac3217ea889da4c5c993d5c64da6db5ade76d8"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 249.853,
+            "captureRequestToRenderCallback": 262.437,
+            "nativeExportCallback": 9.378,
+            "queuedGuiDelivery": 82.932,
+            "geometryBeginToTargetGuiDelivery": 604.622,
+            "commitEndToTargetGuiDelivery": 354.769
+          },
+          "statementMs": {
+            "finalW": 60.0,
+            "finalH": 182.0,
+            "hostEnvelope": 5.0,
+            "canvasGeometry": 2.0,
+            "combinedAssignments": 242.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 204,
+            "lockMs": 0,
+            "blockedForSyncMs": 60,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 741.721
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 60,
+            "syncMs": 34,
+            "renderMs": 25,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 741.686
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 1,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 248.833,
+            "captureRequestToRenderCallback": 134.451,
+            "nativeExportCallback": 6.946,
+            "queuedGuiDelivery": 92.285,
+            "geometryBeginToTargetGuiDelivery": 482.523,
+            "commitEndToTargetGuiDelivery": 233.69
+          },
+          "statementMs": {
+            "finalW": 54.0,
+            "finalH": 182.0,
+            "hostEnvelope": 4.0,
+            "canvasGeometry": 2.0,
+            "combinedAssignments": 236.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 98,
+            "lockMs": 0,
+            "blockedForSyncMs": 41,
+            "animationsMs": 5,
+            "messageDeliveryAfterCommandMs": 578.649
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 41,
+            "syncMs": 16,
+            "renderMs": 24,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 573.337
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 2,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 209.244,
+            "captureRequestToRenderCallback": 156.246,
+            "nativeExportCallback": 6.116,
+            "queuedGuiDelivery": 67.841,
+            "geometryBeginToTargetGuiDelivery": 439.45,
+            "commitEndToTargetGuiDelivery": 230.207
+          },
+          "statementMs": {
+            "finalW": 42.0,
+            "finalH": 161.0,
+            "hostEnvelope": 4.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 203.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 133,
+            "lockMs": 0,
+            "blockedForSyncMs": 28,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 574.746
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 28,
+            "syncMs": 16,
+            "renderMs": 12,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 574.725
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 3,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 264.222,
+            "captureRequestToRenderCallback": 126.464,
+            "nativeExportCallback": 5.625,
+            "queuedGuiDelivery": 97.152,
+            "geometryBeginToTargetGuiDelivery": 493.467,
+            "commitEndToTargetGuiDelivery": 229.245
+          },
+          "statementMs": {
+            "finalW": 81.0,
+            "finalH": 173.0,
+            "hostEnvelope": 4.0,
+            "canvasGeometry": 0.0,
+            "combinedAssignments": 254.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 97,
+            "lockMs": 0,
+            "blockedForSyncMs": 34,
+            "animationsMs": 5,
+            "messageDeliveryAfterCommandMs": 602.047
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 34,
+            "syncMs": 13,
+            "renderMs": 20,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 597.018
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 4,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 308.804,
+            "captureRequestToRenderCallback": 164.003,
+            "nativeExportCallback": 8.243,
+            "queuedGuiDelivery": 69.573,
+            "geometryBeginToTargetGuiDelivery": 550.627,
+            "commitEndToTargetGuiDelivery": 241.823
+          },
+          "statementMs": {
+            "finalW": 75.0,
+            "finalH": 226.0,
+            "hostEnvelope": 6.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 301.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 145,
+            "lockMs": 0,
+            "blockedForSyncMs": 26,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 683.448
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 26,
+            "syncMs": 12,
+            "renderMs": 12,
+            "swapMs": 1,
+            "messageDeliveryAfterCommandMs": 683.356
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 5,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 209.33,
+            "captureRequestToRenderCallback": 126.914,
+            "nativeExportCallback": 8.667,
+            "queuedGuiDelivery": 86.491,
+            "geometryBeginToTargetGuiDelivery": 431.405,
+            "commitEndToTargetGuiDelivery": 222.076
+          },
+          "statementMs": {
+            "finalW": 45.0,
+            "finalH": 151.0,
+            "hostEnvelope": 5.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 196.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 99,
+            "lockMs": 0,
+            "blockedForSyncMs": 35,
+            "animationsMs": 5,
+            "messageDeliveryAfterCommandMs": 560.528
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 35,
+            "syncMs": 13,
+            "renderMs": 22,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 554.648
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_atomic_repair_20261003_run1",
+      "evidencePath": "logs/native_gpu_atomic_repair_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 2,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": true,
+        "qt_layout_polish": false,
+        "layout_only": false
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "3879cafe19d0baf34b08b449097d96a87b11f0777cb6dbf2c77ab04cc8c30f02",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "6ca1748de681943a9bea9b5ccb47dbe691973ead2e0ae625225af2cbcdde8e12"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 100.872,
+            "captureRequestToRenderCallback": 136.927,
+            "nativeExportCallback": 11.877,
+            "queuedGuiDelivery": 54.888,
+            "geometryBeginToTargetGuiDelivery": 304.577,
+            "commitEndToTargetGuiDelivery": 203.705,
+            "nativeStartToTargetGuiDelivery": 305.746,
+            "intentionalGuiDelay": 0.122
+          },
+          "statementMs": {
+            "finalW": 14.0,
+            "finalH": 16.0,
+            "hostEnvelope": 9.0,
+            "canvasGeometry": 2.0,
+            "combinedAssignments": 30.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 60,
+            "lockMs": 0,
+            "blockedForSyncMs": 86,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 453.494
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 86,
+            "syncMs": 30,
+            "renderMs": 53,
+            "swapMs": 1,
+            "messageDeliveryAfterCommandMs": 453.458
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_atomic_repeated_layout_20261003_run1",
+      "evidencePath": "logs/native_gpu_atomic_repeated_layout_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 6,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": true,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": true,
+        "qt_layout_polish": false,
+        "layout_only": true
+      },
+      "completedCycles": 6,
+      "coldCandidateQualification": "NOT QUALIFYING",
+      "failureCount": 0,
+      "failureCategories": [],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "9ac71b19f7aa8e4dffc32d92c04cdbafa6b73ebb9ef54bb15efced158aeb9af3",
+        "scripts/diagnostics/target_layout_fanout.py": "8c9756c1505cad15522e9d7a7d49f6da1070fce3b4d6d2345e0c4fb13a245b81",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "6ca1748de681943a9bea9b5ccb47dbe691973ead2e0ae625225af2cbcdde8e12",
+        "src/qml/components/LayoutMetricsGate.qml": "063b3d7a59597614990dc0e61ae0aa47eb6f2b6fa934479afaf1e2fbd271507a",
+        "src/qml/components/ModernTextField.qml": "c54bd489a968e24d4dfbfa83a5376d815aa8e7b634e41545c46a15d93b0020fb",
+        "src/qml/components/ModernComboBox.qml": "bc83f4beb4423f33c0a6d613db6343621a47bdc59ed45d85b64982729f01191c",
+        "src/qml/components/PillButton.qml": "eb9800579b7af82aa9c662234d7d566c7929e40155a4bc7cd799ffe4fc8b7311",
+        "src/qml/views/HomeGrid.qml": "ff95d088f2a07b1fe1ae1ed3af430a79ff1e73613da243340a3a78297b6b699c"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 96.855,
+            "captureRequestToRenderCallback": 98.948,
+            "nativeExportCallback": 21.285,
+            "queuedGuiDelivery": 55.823,
+            "geometryBeginToTargetGuiDelivery": 272.921,
+            "commitEndToTargetGuiDelivery": 176.066
+          },
+          "statementMs": {
+            "finalW": 11.0,
+            "finalH": 13.0,
+            "metricsHold": 0.0,
+            "metricsPublication": 54.0,
+            "hostEnvelope": 13.0,
+            "canvasGeometry": 3.0,
+            "combinedAssignments": 24.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 29,
+            "lockMs": 0,
+            "blockedForSyncMs": 87,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 403.668
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 87,
+            "syncMs": 30,
+            "renderMs": 55,
+            "swapMs": 1,
+            "messageDeliveryAfterCommandMs": 403.708
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 1,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 112.395,
+            "captureRequestToRenderCallback": 57.092,
+            "nativeExportCallback": 4.825,
+            "queuedGuiDelivery": 71.147,
+            "geometryBeginToTargetGuiDelivery": 245.463,
+            "commitEndToTargetGuiDelivery": 133.068
+          },
+          "statementMs": {
+            "finalW": 6.0,
+            "finalH": 4.0,
+            "metricsHold": 0.0,
+            "metricsPublication": 81.0,
+            "hostEnvelope": 10.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 10.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 31,
+            "lockMs": 0,
+            "blockedForSyncMs": 29,
+            "animationsMs": 5,
+            "messageDeliveryAfterCommandMs": 383.387
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 29,
+            "syncMs": 9,
+            "renderMs": 19,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 378.331
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 2,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 58.555,
+            "captureRequestToRenderCallback": 31.09,
+            "nativeExportCallback": 6.528,
+            "queuedGuiDelivery": 34.534,
+            "geometryBeginToTargetGuiDelivery": 130.713,
+            "commitEndToTargetGuiDelivery": 72.157
+          },
+          "statementMs": {
+            "finalW": 8.0,
+            "finalH": 9.0,
+            "metricsHold": 0.0,
+            "metricsPublication": 31.0,
+            "hostEnvelope": 6.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 17.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 12,
+            "lockMs": 0,
+            "blockedForSyncMs": 23,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 280.949
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 23,
+            "syncMs": 7,
+            "renderMs": 14,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 280.929
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 3,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 158.277,
+            "captureRequestToRenderCallback": 70.188,
+            "nativeExportCallback": 7.911,
+            "queuedGuiDelivery": 99.779,
+            "geometryBeginToTargetGuiDelivery": 336.162,
+            "commitEndToTargetGuiDelivery": 177.884
+          },
+          "statementMs": {
+            "finalW": 7.0,
+            "finalH": 6.0,
+            "metricsHold": 0.0,
+            "metricsPublication": 118.0,
+            "hostEnvelope": 13.0,
+            "canvasGeometry": 1.0,
+            "combinedAssignments": 13.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 34,
+            "lockMs": 0,
+            "blockedForSyncMs": 43,
+            "animationsMs": 6,
+            "messageDeliveryAfterCommandMs": 451.448
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 43,
+            "syncMs": 10,
+            "renderMs": 32,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 444.81
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 4,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 57.908,
+            "captureRequestToRenderCallback": 35.206,
+            "nativeExportCallback": 6.643,
+            "queuedGuiDelivery": 37.219,
+            "geometryBeginToTargetGuiDelivery": 136.981,
+            "commitEndToTargetGuiDelivery": 79.072
+          },
+          "statementMs": {
+            "finalW": 10.0,
+            "finalH": 10.0,
+            "metricsHold": 0.0,
+            "metricsPublication": 32.0,
+            "hostEnvelope": 4.0,
+            "canvasGeometry": 0.0,
+            "combinedAssignments": 20.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 19,
+            "lockMs": 0,
+            "blockedForSyncMs": 20,
+            "animationsMs": 0,
+            "messageDeliveryAfterCommandMs": 284.834
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 20,
+            "syncMs": 8,
+            "renderMs": 11,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 284.802
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        },
+        {
+          "cycle": 5,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 141.385,
+            "captureRequestToRenderCallback": 57.578,
+            "nativeExportCallback": 7.82,
+            "queuedGuiDelivery": 79.057,
+            "geometryBeginToTargetGuiDelivery": 285.845,
+            "commitEndToTargetGuiDelivery": 144.46
+          },
+          "statementMs": {
+            "finalW": 10.0,
+            "finalH": 6.0,
+            "metricsHold": 0.0,
+            "metricsPublication": 99.0,
+            "hostEnvelope": 9.0,
+            "canvasGeometry": 2.0,
+            "combinedAssignments": 16.0
+          },
+          "firstTargetQtGuiFrame": {
+            "polishMs": 32,
+            "lockMs": 0,
+            "blockedForSyncMs": 31,
+            "animationsMs": 5,
+            "messageDeliveryAfterCommandMs": 433.04
+          },
+          "firstTargetQtRenderFrame": {
+            "totalMs": 31,
+            "syncMs": 9,
+            "renderMs": 22,
+            "swapMs": 0,
+            "messageDeliveryAfterCommandMs": 427.451
+          },
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_atomic_cold_quiet_20261003_run1",
+      "evidencePath": "logs/native_gpu_atomic_cold_quiet_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 6,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": false,
+        "endpoint_pixels": false,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 0,
+        "profile_boundaries": false,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": false,
+        "qt_layout_polish": false,
+        "layout_only": false
+      },
+      "completedCycles": 0,
+      "coldCandidateQualification": "FAIL",
+      "failureCount": 1,
+      "failureCategories": [
+        "target readiness"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "9ac71b19f7aa8e4dffc32d92c04cdbafa6b73ebb9ef54bb15efced158aeb9af3",
+        "scripts/diagnostics/target_layout_fanout.py": "8c9756c1505cad15522e9d7a7d49f6da1070fce3b4d6d2345e0c4fb13a245b81",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "f73c6be1b3ec6577073ec4b7a5cc7440ae5f4a6e60b69ebcb7092eb3e491ab82",
+        "src/qml/components/LayoutMetricsGate.qml": "063b3d7a59597614990dc0e61ae0aa47eb6f2b6fa934479afaf1e2fbd271507a",
+        "src/qml/components/ModernTextField.qml": "c54bd489a968e24d4dfbfa83a5376d815aa8e7b634e41545c46a15d93b0020fb",
+        "src/qml/components/ModernComboBox.qml": "bc83f4beb4423f33c0a6d613db6343621a47bdc59ed45d85b64982729f01191c",
+        "src/qml/components/PillButton.qml": "eb9800579b7af82aa9c662234d7d566c7929e40155a4bc7cd799ffe4fc8b7311",
+        "src/qml/views/HomeGrid.qml": "ff95d088f2a07b1fe1ae1ed3af430a79ff1e73613da243340a3a78297b6b699c"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 119.862,
+            "captureRequestToRenderCallback": 319.877,
+            "nativeExportCallback": 12.939,
+            "queuedGuiDelivery": 79.463,
+            "geometryBeginToTargetGuiDelivery": 532.233,
+            "commitEndToTargetGuiDelivery": 412.37,
+            "nativeStartToTargetGuiDelivery": 534.05,
+            "intentionalGuiDelay": 1.59
+          },
+          "statementMs": {},
+          "sourcePixelComparison": {
+            "status": "UNMEASURED"
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    },
+    {
+      "auditLabel": "native_gpu_atomic_endpoint_pixels_20261003_run1",
+      "evidencePath": "logs/native_gpu_atomic_endpoint_pixels_20261003_run1/native_gpu_spike.json",
+      "configuration": {
+        "cycles": 4,
+        "gui_delay_ms": 0,
+        "duration_ms": 350,
+        "blend_start_ms": 240,
+        "capture_only": false,
+        "prepared_target": true,
+        "endpoint_pixels": true,
+        "pixels": false,
+        "bridge_dll": "cspm_cleanroom_continuity.dll",
+        "endpoint_hold_ms": 120,
+        "profile_boundaries": false,
+        "fanout_variant": null,
+        "fanout_quiet": false,
+        "profile_python_commit": false,
+        "layout_repair": true,
+        "qt_render_timings": false,
+        "qt_layout_polish": false,
+        "layout_only": false
+      },
+      "completedCycles": 4,
+      "coldCandidateQualification": "NOT QUALIFYING",
+      "failureCount": 1,
+      "failureCategories": [
+        "source pixel mismatch"
+      ],
+      "dllSha256": "42f63dec5e329af22e622460b51aac52ddb5af64f369d6f6819fb4842834815a",
+      "sourceSha256": {
+        "scripts/diagnostics/native_gpu_transition_spike.py": "9ac71b19f7aa8e4dffc32d92c04cdbafa6b73ebb9ef54bb15efced158aeb9af3",
+        "scripts/diagnostics/target_layout_fanout.py": "6fc523e342e6f25f573fcd410e6669c19b588e0fe006fa80e5303850fe8302d4",
+        "scripts/diagnostics/window_transition_probe.py": "642eef3302590ed7083db27d4bbf9c6cdf308032dd16552d4b7e29c2ccbb85de",
+        "scripts/build_cleanroom_native.ps1": "b9e471a7ed009446a44060abfbab35771dd727bbcb21f81dddec91304f088016",
+        "src/native/cleanroom_composition/cleanroom_composition.cpp": "361f3d195e92da39108c0d568f8d7cd68801c40e875026713a213b52939d7ed6",
+        "src/python/main.py": "1370cc5a32a12931d7d94cb42a74d7fc2de4f64dcf59ca07dbc16df7cd6eae26",
+        "src/python/backend/transition_experiment.py": "0ddb9a6d241fcc46fe939268f661b9f1d2a51ce41d57bd43bee0518e0bbbf759",
+        "src/qml/DetachedShellWindow.qml": "f73c6be1b3ec6577073ec4b7a5cc7440ae5f4a6e60b69ebcb7092eb3e491ab82",
+        "src/qml/components/LayoutMetricsGate.qml": "063b3d7a59597614990dc0e61ae0aa47eb6f2b6fa934479afaf1e2fbd271507a",
+        "src/qml/components/ModernTextField.qml": "c54bd489a968e24d4dfbfa83a5376d815aa8e7b634e41545c46a15d93b0020fb",
+        "src/qml/components/ModernComboBox.qml": "bc83f4beb4423f33c0a6d613db6343621a47bdc59ed45d85b64982729f01191c",
+        "src/qml/components/PillButton.qml": "eb9800579b7af82aa9c662234d7d566c7929e40155a4bc7cd799ffe4fc8b7311",
+        "src/qml/views/HomeGrid.qml": "ff95d088f2a07b1fe1ae1ed3af430a79ff1e73613da243340a3a78297b6b699c"
+      },
+      "sourceProvenanceScope": "Recorded at fixture startup; absent file hashes are not reconstructed retroactively",
+      "cycles": [
+        {
+          "cycle": 0,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 110.947,
+            "captureRequestToRenderCallback": 91.693,
+            "nativeExportCallback": 7.325,
+            "queuedGuiDelivery": 66.993,
+            "geometryBeginToTargetGuiDelivery": 277.049,
+            "commitEndToTargetGuiDelivery": 166.101,
+            "nativeStartToTargetGuiDelivery": -3.627,
+            "intentionalGuiDelay": 13.331,
+            "commandToLiveHandoff": 1408.215
+          },
+          "statementMs": {},
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetPixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          }
+        },
+        {
+          "cycle": 1,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 219.634,
+            "captureRequestToRenderCallback": 98.097,
+            "nativeExportCallback": 10.261,
+            "queuedGuiDelivery": 119.173,
+            "geometryBeginToTargetGuiDelivery": 447.245,
+            "commitEndToTargetGuiDelivery": 227.611,
+            "nativeStartToTargetGuiDelivery": -1.003,
+            "intentionalGuiDelay": 8.184,
+            "commandToLiveHandoff": 1508.713
+          },
+          "statementMs": {},
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetPixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          }
+        },
+        {
+          "cycle": 2,
+          "direction": "maximize",
+          "measuredMs": {
+            "commit": 120.014,
+            "captureRequestToRenderCallback": 53.044,
+            "nativeExportCallback": 11.395,
+            "queuedGuiDelivery": 64.719,
+            "geometryBeginToTargetGuiDelivery": 249.25,
+            "commitEndToTargetGuiDelivery": 129.236,
+            "nativeStartToTargetGuiDelivery": -2.527,
+            "intentionalGuiDelay": 0.441,
+            "commandToLiveHandoff": 1237.609
+          },
+          "statementMs": {},
+          "sourcePixelComparison": {
+            "status": "FAIL",
+            "differentPixels": 48,
+            "maxChannelDifference": 118,
+            "meanChannelDifference": 0.0037838897474823455,
+            "luminanceDifference": -0.005045186329972751
+          },
+          "targetPixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          }
+        },
+        {
+          "cycle": 3,
+          "direction": "restore",
+          "measuredMs": {
+            "commit": 78.589,
+            "captureRequestToRenderCallback": 39.073,
+            "nativeExportCallback": 7.673,
+            "queuedGuiDelivery": 72.019,
+            "geometryBeginToTargetGuiDelivery": 197.404,
+            "commitEndToTargetGuiDelivery": 118.815,
+            "nativeStartToTargetGuiDelivery": -1.879,
+            "intentionalGuiDelay": 0.007,
+            "commandToLiveHandoff": 1182.716
+          },
+          "statementMs": {},
+          "sourcePixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          },
+          "targetPixelComparison": {
+            "status": "PASS",
+            "differentPixels": 0,
+            "maxChannelDifference": 0,
+            "meanChannelDifference": 0.0,
+            "luminanceDifference": 0.0
+          }
+        }
+      ],
+      "protectedOriginalsUnchanged": true
+    }
+  ],
+  "repeatedLayoutComparison": {
+    "native_gpu_repeated_layout_baseline_20261003_run1": {
+      "maximize": {
+        "samples": 3,
+        "medianMs": {
+          "commit": 249.853,
+          "geometryBeginToTargetGuiDelivery": 550.627,
+          "commitEndToTargetGuiDelivery": 241.823,
+          "nativeExportCallback": 8.243,
+          "queuedGuiDelivery": 69.573,
+          "finalW": 60.0,
+          "finalH": 182.0,
+          "combinedAssignments": 242.0,
+          "metricsPublication": null,
+          "hostEnvelope": 5.0,
+          "polish": 145,
+          "sync": 16,
+          "render": 12,
+          "swap": 0
+        }
+      },
+      "restore": {
+        "samples": 3,
+        "medianMs": {
+          "commit": 248.833,
+          "geometryBeginToTargetGuiDelivery": 482.523,
+          "commitEndToTargetGuiDelivery": 229.245,
+          "nativeExportCallback": 6.946,
+          "queuedGuiDelivery": 92.285,
+          "finalW": 54.0,
+          "finalH": 173.0,
+          "combinedAssignments": 236.0,
+          "metricsPublication": null,
+          "hostEnvelope": 4.0,
+          "polish": 98,
+          "sync": 13,
+          "render": 22,
+          "swap": 0
+        }
+      }
+    },
+    "native_gpu_atomic_repeated_layout_20261003_run1": {
+      "maximize": {
+        "samples": 3,
+        "medianMs": {
+          "commit": 58.555,
+          "geometryBeginToTargetGuiDelivery": 136.981,
+          "commitEndToTargetGuiDelivery": 79.072,
+          "nativeExportCallback": 6.643,
+          "queuedGuiDelivery": 37.219,
+          "finalW": 10.0,
+          "finalH": 10.0,
+          "combinedAssignments": 20.0,
+          "metricsPublication": 32.0,
+          "hostEnvelope": 6.0,
+          "polish": 19,
+          "sync": 8,
+          "render": 14,
+          "swap": 0
+        }
+      },
+      "restore": {
+        "samples": 3,
+        "medianMs": {
+          "commit": 141.385,
+          "geometryBeginToTargetGuiDelivery": 285.845,
+          "commitEndToTargetGuiDelivery": 144.46,
+          "nativeExportCallback": 7.82,
+          "queuedGuiDelivery": 79.057,
+          "finalW": 7.0,
+          "finalH": 6.0,
+          "combinedAssignments": 13.0,
+          "metricsPublication": 99.0,
+          "hostEnvelope": 10.0,
+          "polish": 32,
+          "sync": 9,
+          "render": 22,
+          "swap": 0
+        }
+      }
+    }
+  },
+  "retainedFixtureFailure": {
+    "auditLabel": "target_layout_repair_lifecycle_20261003_run1",
+    "failurePhase": "before application launch",
+    "category": "ambiguous disposable source instrumentation",
+    "matchingSourceGrabOccurrences": 2,
+    "result": "no lifecycle validation",
+    "consoleEvidencePath": "logs/target_layout_repair_lifecycle_20261003_run1_console.log"
+  },
+  "recoveryEnvironment": {
+    "qtInstrumentation": "GraphicalEffects copied only to ignored logs/<audit>/tree/imports; installed module contains no FanoutTrace tokens and keeps qrc prefer directive.",
+    "unfinishedDiagnosticProcessObserved": false,
+    "unfinishedQtStageRun": "none; Qt-stage run2 completed with JSON, protected hashes and normal close",
+    "runtimeLog": "worktree logs/cspm.log absent; installed and diagnostic runtime logs inspected",
+    "newDedicatedWebEngineValidation": false
+  },
+  "layoutPolishIsolation": {
+    "auditLabel": "native_gpu_layout_polish_20261003_run1",
+    "entryExitMessages": 360,
+    "pairedCalls": 180,
+    "hiddenHubObservedInclusiveMs": [
+      67.797,
+      59.069,
+      1.49,
+      1.074,
+      0.726,
+      0.69,
+      0.172,
+      0.165,
+      0.145,
+      0.136,
+      0.074,
+      0.07,
+      0.058,
+      0.054,
+      0.049,
+      0.049
+    ],
+    "scope": "Paired Python message-delivery spans, inclusive of nested work and GIL/debug overhead; not pure component timing or additive independent costs."
+  },
+  "pythonCommitProfile": {
+    "auditLabel": "native_gpu_python_commit_20261003_run1",
+    "scope": "Python callbacks invoked synchronously during target commit only; QJSEngine native work remains opaque and cProfile perturbs total.",
+    "callbacks": [
+      {
+        "file": "main.py",
+        "function": "eventFilter",
+        "calls": 9,
+        "selfMs": 0.128,
+        "inclusiveMs": 0.16
+      },
+      {
+        "file": "main.py",
+        "function": "eventFilter",
+        "calls": 9,
+        "selfMs": 0.058,
+        "inclusiveMs": 0.188
+      },
+      {
+        "file": "app_controller.py",
+        "function": "getScreenGeometry",
+        "calls": 1,
+        "selfMs": 0.227,
+        "inclusiveMs": 0.312
+      },
+      {
+        "file": "win_shift_arrow.py",
+        "function": "nativeEventFilter",
+        "calls": 18,
+        "selfMs": 0.083,
+        "inclusiveMs": 0.138
+      },
+      {
+        "file": "orange_pass_through.py",
+        "function": "nativeEventFilter",
+        "calls": 18,
+        "selfMs": 0.314,
+        "inclusiveMs": 1.011
+      }
+    ]
+  }
+}

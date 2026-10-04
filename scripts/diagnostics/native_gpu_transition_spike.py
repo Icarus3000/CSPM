@@ -16,7 +16,9 @@ from pathlib import Path
 import shutil
 import sys
 import time
+import cProfile
 from functools import wraps
+from target_layout_fanout import VARIANTS, instrument_mirror, instrument_qt_blur
 
 
 def profile_shell_source(source):
@@ -43,6 +45,11 @@ def profile_shell_source(source):
         ("canvasGeometry", "updateCanvasGeometry();"),
         ("clearMaximizedOwner", "maximizedOwnerScreen = null;"),
     )
+    if "layoutMetricsSnapshot = computeUiMetrics();" in function:
+        statements += (
+            ("metricsHold", "layoutMetricsSnapshot = uiMetrics;"),
+            ("metricsPublication", "layoutMetricsSnapshot = computeUiMetrics();"),
+        )
     for name, statement in statements:
         if function.count(statement) != 1:
             raise RuntimeError("Target profiling statement is unavailable or ambiguous: " + name)
@@ -87,7 +94,27 @@ def main():
         help="Diagnostic endpoint submission-to-desktop wait; included in full timing")
     parser.add_argument("--profile-boundaries", action="store_true",
         help="Disposable QML statement and one-shot Qt/render boundary observations; buffered logging")
+    parser.add_argument("--fanout-variant", choices=VARIANTS,
+        help="Targeted helper counters and a disposable layout isolation; requires --profile-boundaries")
+    parser.add_argument("--fanout-quiet", action="store_true",
+        help="Apply the disposable variant without helper counters or modified Qt module")
+    parser.add_argument("--profile-python-commit", action="store_true",
+        help="Save ignored cProfile of callbacks invoked synchronously by target commit")
+    parser.add_argument("--layout-repair", action="store_true",
+        help="Opt into the process-local shared-control repair; production remains default")
+    parser.add_argument("--qt-render-timings", action="store_true",
+        help="Enable Qt's own stage timers in the ignored runtime log")
+    parser.add_argument("--qt-layout-polish", action="store_true",
+        help="Pair Qt layout polish entry/exit boundaries after commit, with object metadata")
+    parser.add_argument("--layout-only", action="store_true",
+        help="Repeated geometry/render isolation; no native motion or transition qualification")
     args = parser.parse_args()
+    if args.fanout_variant and not args.profile_boundaries:
+        parser.error("fanout variants require disposable boundary profiling")
+    if args.fanout_quiet and not args.fanout_variant:
+        parser.error("quiet fanout requires an explicit isolation variant")
+    if args.layout_only and (args.prepared_target or args.capture_only or args.endpoint_hold_ms):
+        parser.error("layout-only isolation cannot prepare targets, skip capture, or hold motion endpoints")
     if not args.audit_label or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in args.audit_label):
         parser.error("audit label must use letters, numbers, underscore or hyphen")
     if not 1 <= args.cycles <= 12 or not 0 <= args.gui_delay_ms <= 1000 or not 100 <= args.duration_ms <= 1000 or not 0 < args.blend_start_ms < args.duration_ms:
@@ -99,12 +126,18 @@ def main():
     audit.mkdir(parents=True, exist_ok=False)
     provenance_paths = (
         "scripts/diagnostics/native_gpu_transition_spike.py",
+        "scripts/diagnostics/target_layout_fanout.py",
         "scripts/diagnostics/window_transition_probe.py",
         "scripts/build_cleanroom_native.ps1",
         "src/native/cleanroom_composition/cleanroom_composition.cpp",
         "src/python/main.py",
         "src/python/backend/transition_experiment.py",
         "src/qml/DetachedShellWindow.qml",
+        "src/qml/components/LayoutMetricsGate.qml",
+        "src/qml/components/ModernTextField.qml",
+        "src/qml/components/ModernComboBox.qml",
+        "src/qml/components/PillButton.qml",
+        "src/qml/views/HomeGrid.qml",
     )
     source_provenance = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
         for name in provenance_paths}
@@ -117,6 +150,13 @@ def main():
         shell_path = mirror / "src/qml/DetachedShellWindow.qml"
         shell_path.write_text(profile_shell_source(shell_path.read_text(encoding="utf-8")),
             encoding="utf-8")
+        if args.fanout_variant:
+            for name, changed_source in instrument_mirror(mirror, args.fanout_variant,
+                    collect_counts=not args.fanout_quiet).items():
+                mirror_provenance[name] = hashlib.sha256(changed_source.encode("utf-8")).hexdigest()
+            if not args.fanout_quiet:
+                for name, changed_source in instrument_qt_blur(mirror).items():
+                    mirror_provenance[name] = hashlib.sha256(changed_source.encode("utf-8")).hexdigest()
         mirror_provenance["src/qml/DetachedShellWindow.qml"] = hashlib.sha256(shell_path.read_bytes()).hexdigest()
     bridge_directory = (root / "outputs/native_cleanroom").resolve()
     dll_path = (bridge_directory / args.bridge_dll).resolve()
@@ -157,6 +197,9 @@ def main():
     before = hashes()
     os.environ["CSPM_MACHINE_ID_FILE"] = str(audit / "disposable_profile/machine_id.json")
     os.environ["CSPM_EXPERIMENTAL_TRANSITION"] = "production"
+    os.environ["CSPM_EXPERIMENTAL_LAYOUT_REPAIR"] = "1" if args.layout_repair else "0"
+    if args.qt_render_timings:
+        os.environ["QSG_RENDER_TIMING"] = "1"
     probe = root / "scripts/diagnostics/window_transition_probe.py"
     source = probe.read_text(encoding="utf-8")
     source = source[:source.index("\nentry._capture_startup_launch_context = diagnostic_launch_context")]
@@ -176,13 +219,17 @@ class PixelTracker:
     context = {"__file__": str(probe), "__name__": "native_gpu_fixture"}
     exec(compile(source, str(probe), "exec"), context)
     entry, base = context["entry"], context["ProbeApplication"]
-    from PySide6.QtCore import QObject, QTimer, Qt, QUrl, Signal
+    from PySide6.QtCore import QObject, QTimer, Qt, QUrl, Signal, QLoggingCategory
     from PySide6.QtQml import QQmlApplicationEngine
-    from PySide6.QtQuick import QSGRendererInterface
-    from shiboken6 import isValid
+    from PySide6.QtQuick import QSGRendererInterface, QQuickItem
+    from shiboken6 import isValid, getCppPointer
 
     if mirror is not None:
         class ProfileEngine(QQmlApplicationEngine):
+            def __init__(self, *values):
+                super().__init__(*values)
+                if args.fanout_variant and not args.fanout_quiet:
+                    self.addImportPath(str(mirror / "imports"))
             def load(self, url):
                 local = url.toLocalFile() if isinstance(url, QUrl) else str(url)
                 if Path(local).name == "Main.qml":
@@ -228,6 +275,11 @@ class PixelTracker:
             self.source_desktop = None
             self.target_desktop = None
             self.boundary_rows = []
+            self.fanout_rows = []
+            self.qt_timing_rows = []
+            self.qt_layout_rows = []
+            self.qt_layout_objects = {}
+            self.qt_target_capture_pending = False
             self.profile_armed = False
             self.profile_seen = set()
             self.profile_connections = {}
@@ -253,6 +305,23 @@ class PixelTracker:
             self.window.afterRenderPassRecording.connect(self.on_render, Qt.DirectConnection)
             self.normal = {name: self.window.property(name) for name in ("finalX", "finalY", "finalW", "finalH")}
             self.normal_client = client(self.window)
+            if args.qt_layout_polish:
+                for item in self.window.findChildren(QQuickItem):
+                    class_name = item.metaObject().className()
+                    if not any(name in class_name for name in ("GridLayout", "RowLayout", "ColumnLayout")):
+                        continue
+                    ancestors = []
+                    parent = item
+                    for _ in range(8):
+                        if parent is None:
+                            break
+                        qml_context = QQmlApplicationEngine.contextForObject(parent)
+                        ancestors.append({"class": parent.metaObject().className(),
+                            "id": qml_context.nameForObject(parent) if qml_context else ""})
+                        parent = parent.parentItem()
+                    self.qt_layout_objects[hex(getCppPointer(item)[0])] = {
+                        "visible": item.isVisible(), "size": [item.width(), item.height()],
+                        "ancestors": ancestors}
             if args.endpoint_pixels:
                 dependencies = os.environ.get("CSPM_PIXEL_DEPENDENCIES")
                 if dependencies:
@@ -341,6 +410,8 @@ class PixelTracker:
             self.record("profile-clock-calibration", **self.profile_clock)
             self.evaluate("_probeWindow.cleanRoomNativeProfileMarkers = []; "
                 "_probeWindow.cleanRoomNativeProfileEnabled = true")
+            if args.fanout_variant:
+                self.evaluate("_probeWindow.cleanRoomFanoutBegin()")
             self.profile_seen = set()
             self.profile_cycle = self.completed
             self.profile_armed = True
@@ -368,6 +439,9 @@ class PixelTracker:
             for name in list(self.profile_connections):
                 self.disconnect_profile_signal(name)
             self.evaluate("_probeWindow.cleanRoomNativeProfileEnabled = false")
+            if args.fanout_variant:
+                counts = self.evaluate("_probeWindow.cleanRoomFanoutFinish()").toVariant()
+                self.fanout_rows.append({"cycle": self.profile_cycle, "counts": counts})
             markers = self.window.property("cleanRoomNativeProfileMarkers")
             if hasattr(markers, "toVariant"):
                 markers = markers.toVariant()
@@ -442,6 +516,24 @@ class PixelTracker:
             self.frames.append(result["frame"])
             if result["kind"] == "target":
                 self.finish_target_profile()
+                self.qt_target_capture_pending = False
+                if args.qt_layout_polish:
+                    QLoggingCategory.setFilterRules("qt.quick.layouts.debug=false\nqt.scenegraph.time.*.debug=true")
+                if args.layout_only:
+                    if result["client"] != self.target_client:
+                        self.fail("physical-pixel mapping", "Layout isolation target differs from planned client")
+                        return
+                    self.record("layout-profile-ready", actualClient=client(self.window))
+                    self.window.setOpacity(1)
+                    self.evaluate("_probeWindow.geometryTransitionSuppressed = false")
+                    dll.cspm_comp_destroy(self.host)
+                    self.host = None
+                    for frame in self.frames:
+                        dll.cspm_gpu_release(frame)
+                    self.frames.clear()
+                    self.completed += 1
+                    QTimer.singleShot(500, self.step)
+                    return
             if args.capture_only:
                 self.completed += 1
                 self.complete()
@@ -500,6 +592,9 @@ class PixelTracker:
                 self.desktop_pixels(self.current["sourceClient"]))
             if args.prepared_target:
                 self.prepare_live_target()
+            elif args.layout_only:
+                self.record("layout-profile-start", scope="static source coverage, no native motion")
+                self.prepare_live_target()
             else:
                 self.start_native()
 
@@ -524,10 +619,19 @@ class PixelTracker:
         def prepare_live_target(self):
             goal = json.dumps(self.goal)
             kind = json.dumps(self.current["kind"])
+            self.qt_target_capture_pending = True
             self.begin_target_profile()
             self.record("layout-begin")
-            self.evaluate("_probeWindow.geometryTransitionSuppressed = true; _probeWindow.commitProfessionalWindowTransitionTarget(" + kind + ", " + goal + ", _probeWindow.screen)")
+            command = "_probeWindow.geometryTransitionSuppressed = true; _probeWindow.commitProfessionalWindowTransitionTarget(" + kind + ", " + goal + ", _probeWindow.screen)"
+            if args.profile_python_commit:
+                profiler = cProfile.Profile()
+                profiler.runcall(self.evaluate, command)
+                profiler.dump_stats(str(audit / ("commit_%d.pstats" % self.completed)))
+            else:
+                self.evaluate(command)
             self.record("layout-committed", actualClient=client(self.window))
+            if args.qt_layout_polish:
+                QLoggingCategory.setFilterRules("qt.quick.layouts.debug=true\nqt.scenegraph.time.*.debug=true")
             self.request_capture("target")
 
         @guarded
@@ -631,6 +735,10 @@ class PixelTracker:
                     "sources": source_provenance, "disposableMirror": mirror_provenance},
                 "events": self.rows,
                 "profileBoundaries": sorted(self.boundary_rows, key=lambda row: row["t"]),
+                "fanoutCounts": self.fanout_rows,
+                "qtStageTimings": self.qt_timing_rows,
+                "qtLayoutPolish": self.qt_layout_rows,
+                "qtLayoutObjects": self.qt_layout_objects,
                 "profileScope": ("QML statements are millisecond wall-clock observations calibrated per cycle. "
                     "Qt adoption/render signals are one-shot Python callbacks that require the GIL. "
                     "Render observations may span frames while target commit/capture is pending; "
@@ -639,7 +747,7 @@ class PixelTracker:
                     if args.profile_boundaries else "not enabled"),
                 "completedCycles": self.completed, "failures": context["failures"],
                 "measurementScope": "GPU transfer and native status; physical geometry needs separate collector analysis",
-                "coldCandidateQualification": "NOT QUALIFYING" if args.prepared_target or args.capture_only else "FAIL" if context["failures"] else "REQUIRES ALL PHYSICAL GATES",
+                "coldCandidateQualification": "NOT QUALIFYING" if args.prepared_target or args.capture_only or args.layout_only else "FAIL" if context["failures"] else "REQUIRES ALL PHYSICAL GATES",
                 "presentationCpuReadbacks": 0, "presentationCpuUploads": 0}
             (audit / "native_gpu_spike.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
             if args.profile_boundaries and not self.buffered_output_written:
@@ -649,6 +757,24 @@ class PixelTracker:
 
     entry._capture_startup_launch_context = lambda: {"screenIndex": 0, "cursorX": 900, "cursorY": 500}
     entry.QApplication = NativeSpike
+    if args.qt_render_timings or args.qt_layout_polish:
+        original_qt_handler = entry._qt_message_handler
+        def qt_stage_handler(mode, context, message):
+            category = str(context.category or "")
+            app = NativeSpike.instance()
+            if category == "qt.quick.layouts":
+                if app and app.qt_target_capture_pending and str(message).startswith("updatePolish()"):
+                    app.qt_layout_rows.append({"cycle": app.completed, "t": time.perf_counter(),
+                        "message": str(message), "scope": "Qt polish entry/exit; Python GIL and debug overhead"})
+                return
+            if category.startswith("qt.scenegraph.time"):
+                if app and app.qt_target_capture_pending:
+                    app.qt_timing_rows.append({"cycle": app.completed, "t": time.perf_counter(),
+                        "category": category, "message": str(message),
+                        "scope": "Qt stage timers; message delivery requires Python GIL"})
+                return
+            original_qt_handler(mode, context, message)
+        entry._qt_message_handler = qt_stage_handler
     try:
         entry.main()
     except SystemExit as exc:
