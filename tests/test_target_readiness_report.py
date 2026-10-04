@@ -123,3 +123,108 @@ def test_duplicate_statement_boundary_is_rejected():
     source["profileBoundaries"] = [{"cycle": 0, "t": 1.15, "boundary": "before:finalW"}] * 2
     with pytest.raises(ValueError):
         report.summarize(source)
+
+
+def render_import_fixture(imported=True):
+    source = fixture()
+    source["events"][-1].update(targetImportStarted=1.421,
+        targetImportFinished=1.43, targetImported=imported)
+    source["configuration"]["render_target_import"] = True
+    if imported:
+        source["events"].append({"event": "target-gpu-composition-committed", "cycle": 0,
+            "t": 1.501, "importThread": "render", "importStarted": 1.421, "importFinished": 1.43})
+    else:
+        source["events"][-1]["targetImportError"] = "Private Customer and C:/Private"
+    return source
+
+
+def test_render_import_critical_path_excludes_queued_gui_observation():
+    cycle = report.summarize(render_import_fixture())["cycles"][0]
+    assert cycle["chainTotalMs"] == 330
+    assert cycle["nativeOwnedTargetPublishedMs"] == 330
+    assert cycle["targetGuiArrivalMs"] == 400
+    assert cycle["apiBoundaryChain"][-1]["durationMs"] == 9
+    assert cycle["asynchronousGuiObservations"][0]["durationMs"] == 70
+    assert all(row["stage"] != "queuedGuiDelivery" for row in cycle["apiBoundaryChain"])
+
+
+def test_rejected_render_import_has_no_presentable_target_or_private_error():
+    result = report.summarize(render_import_fixture(False))
+    assert result["cycles"][0]["nativeOwnedTargetPublishedMs"] is None
+    assert result["cycles"][0]["nativeImportStatus"] == "native import rejected"
+    assert "Private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("mutation", ["before_export", "after_delivery", "mismatched_event", "missing_finish", "wrong_thread"])
+def test_inconsistent_render_import_is_rejected(mutation):
+    source = render_import_fixture()
+    target, event = source["events"][-2:]
+    if mutation == "before_export":
+        target["targetImportStarted"] = 1.4
+    elif mutation == "after_delivery":
+        target["targetImportFinished"] = 1.6
+    elif mutation == "mismatched_event":
+        event["importFinished"] = 1.432
+    elif mutation == "missing_finish":
+        del target["targetImportFinished"]
+    else:
+        event["importThread"] = "GUI"
+    with pytest.raises(ValueError):
+        report.summarize(source)
+
+
+@pytest.mark.parametrize("client,size", [([0, 0, 10, 0], [10, 0]),
+    ([0, 0, 10.5, 10], [10.5, 10]), ([0, 0, 10], [10]), ([0, 0, 10, 10], None)])
+def test_malformed_physical_extent_is_rejected(client, size):
+    source = fixture()
+    source["events"][-1].update(client=client, size=size)
+    with pytest.raises(ValueError):
+        report.summarize(source)
+
+
+def test_known_configuration_is_retained_without_private_values():
+    source = fixture()
+    source["configuration"].update(workspace="invoice-preview", first_direction="restore",
+        restored_size=[760, 540], keep_visible=True, pixels=True)
+    result = report.summarize(source)["configuration"]
+    assert result["workspace"] == "invoice-preview"
+    assert result["first_direction"] == "restore"
+    assert result["restored_size"] == [760, 540]
+    assert result["keep_visible"] is True
+    source["configuration"].update(workspace=["Private Client"], first_direction="Private Client",
+        restored_size=["C:/Private", 540], keep_visible="Private Client", duration_ms="Private Client")
+    assert "Private" not in json.dumps(report.summarize(source))
+
+
+def test_pixel_failures_and_submission_counts_do_not_certify_presentation():
+    source = fixture()
+    source["events"].extend([
+        {"event": "source-live-to-gpu-pixels", "cycle": 0, "t": 1.51, "status": "FAIL", "differentPixels": 48, "private": "Private Client"},
+        {"event": "native-endpoint-submitted", "cycle": 0, "t": 1.52, "presentation": {"submitted": 18, "displayed": 15, "private": "Private Client"}},
+        {"event": "live-handoff", "cycle": 0, "t": 1.6},
+    ])
+    cycle = report.summarize(source)["cycles"][0]
+    assert cycle["pixelObservations"] == [{"comparison": "source-live-to-gpu-pixels", "status": "FAIL", "differentPixels": 48}]
+    assert cycle["submissionObservations"][0]["displayed"] == 15
+    assert all(row["physicalPresentationEstablished"] is False for row in cycle["submissionObservations"])
+    assert "Private" not in json.dumps(cycle)
+
+
+def test_render_notification_deferral_and_unknown_costs_are_explicit():
+    cycle = report.summarize(render_import_fixture())["cycles"][0]
+    observation = cycle["asynchronousGuiObservations"][0]
+    assert observation["requiredForFirstTarget"] is False
+    assert observation["safelyDeferrable"] is True
+    assert cycle["apiBoundaryChain"][1]["safelyDeferrable"] is None
+    assert cycle["apiBoundaryChain"][1]["unnecessarilyRepeated"] is None
+
+
+def test_fanout_only_exports_recognized_instrumentation_labels():
+    source = fixture()
+    source["fanoutCounts"] = [{"cycle": 0, "counts": {
+        "before:metricsPublication:Shell.uiMetricsCompute:visible": {"count": 1, "helperMs": 2},
+        "Private Customer/C:/Private": {"count": 200, "helperMs": 100},
+    }}]
+    result = report.summarize(source)
+    assert len(result["fanoutObservations"][0]["helpers"]) == 1
+    assert "Private" not in json.dumps(result)

@@ -209,3 +209,39 @@ event output; its render callbacks still need Python's GIL. Millisecond QML
 wall-clock observations are calibrated per transaction. These are neither pure
 Qt stage durations nor physical scanout timestamps. No CPU framebuffer image
 feeds the native host in either mode.
+
+## Target-readiness continuation, 2026-10-03
+
+The opt-in shared-control/disabled-effect, HomeGrid and batched shell metrics
+repair is checkpointed at `485ff58`. It retains ordinary production behavior
+when the process-local repair flag is absent. The current separately named
+`cspm_cleanroom_stage_resume.dll` build passes MSVC `/W4`, shader compilation and
+ABI/null checks; SHA256
+`69556EA8A21F483281DE2234646CC01355A595EB9FF1D3CE860FF04D021F80BE`.
+No installed Qt module is patched by these source changes.
+
+The diagnostic `--render-target-import` caller validates the predetermined
+physical endpoint and calls the unchanged target setter from the render
+callback after export. The native owner thread still acquires/copies the shared
+resource, publishes its own SRV, and enforces the same 240 ms transfer deadline
+before and after copying. No direct render-thread access to native-owned
+resources or weaker readiness gate is introduced. Captured frame lifetime and
+terminal cleanup cover active imports and undelivered queued notifications.
+
+One populated cold Productivity maximize publishes its native target at
+205.66 ms; queued GUI receipt arrives at 244.19 ms. Following restore misses at
+280.00 ms, and a separate cold restore misses at 389.58 ms, including 169 ms
+metrics publication. Other workspace/size fixtures achieve internal readiness
+in both directions, but table and foreground Time Entry pixel checks fail.
+Chromium HTML load success in the existing preview is separately established;
+visible preview/PDF fidelity is untested. Native API returns and DXGI counters
+do not prove desktop scanout, endpoint equality or input restoration. The
+command-to-live fixture still includes source preparation and explicit
+endpoint/live observation waits. Zero configured endpoint hold is not a
+physical no-plateau certification.
+
+All failed raw runs remain ignored locally. Sanitized stage/thread intervals,
+overlap limits and source hashes are recorded in
+`docs/CLEANROOM_TARGET_READINESS_DECOMPOSITION_2026-10-03.json`; interpretation
+and remaining restore/layout costs are in the clean-room learning record.
+**Candidate not qualified; no package/install/default change or user acceptance.**

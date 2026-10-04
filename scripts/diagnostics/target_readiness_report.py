@@ -29,6 +29,8 @@ MARKER_NAMES = {
     "hostEnvelope", "canvasGeometry", "clearMaximizedOwner", "metricsHold",
     "metricsPublication",
 }
+WORKSPACES = {"productivity", "time-entry", "client-directory", "invoice-preview", "home"}
+FANOUT_LABEL = re.compile(r"^(?:before|after):[A-Za-z_][A-Za-z0-9_]*:[A-Za-z_.][A-Za-z0-9_.]*:(?:visible|hidden)$")
 
 
 def number(value, name):
@@ -68,12 +70,101 @@ def interval(name, start, end, command, clock, thread, scope, blocking=None):
         "startAfterClockMs": ms(start - clock),
         "endAfterClockMs": ms(end - clock), "durationMs": ms(end - start),
         "blocking": blocking, "evidence": "direct boundary observation",
+        "requiredForFirstTarget": False if name == "clockToGeometryBegin" else True,
+        "safelyDeferrable": None,
+        "unnecessarilyRepeated": None,
+        "overlap": ("contained in geometryCommit" if name in MARKER_NAMES else
+                    "Qt frame and layout observations overlap API chain and each other" if name in
+                    ("qtGuiFrame", "qtRenderFrame", "layoutUpdatePolish") else
+                    "Qt stage observations may overlap this interval" if name == "captureRequestToRenderCallback" else
+                    "render/native work can overlap GUI notification" if name == "queuedGuiDelivery" else
+                    "nonoverlapping API-chain boundary"),
         "scope": scope,
     }
 
 
 def safe_label(value):
     return value if isinstance(value, str) and LABEL.fullmatch(value) else "unknown"
+
+
+def configuration_summary(source):
+    """Copy only typed fixture settings; never publish arbitrary raw labels/paths."""
+    result = {}
+    for name in ("prepared_target", "capture_only", "layout_only", "layout_repair", "render_target_import",
+                 "profile_boundaries", "qt_render_timings", "qt_layout_polish", "pixels", "endpoint_pixels", "keep_visible"):
+        value = source.get(name)
+        result[name] = value if type(value) is bool else None
+    for name in ("gui_delay_ms", "endpoint_hold_ms", "duration_ms", "blend_start_ms"):
+        value = source.get(name)
+        result[name] = value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
+    workspace = source.get("workspace")
+    result["workspace"] = workspace if isinstance(workspace, str) and workspace in WORKSPACES else None
+    result["first_direction"] = source.get("first_direction") if source.get("first_direction") in ("maximize", "restore") else None
+    size = source.get("restored_size")
+    result["restored_size"] = size if isinstance(size, list) and len(size) == 2 and all(type(item) is int and item > 0 for item in size) else None
+    result["fanout_variant"] = source.get("fanout_variant") if source.get("fanout_variant") in ("counts", "quiet") else None
+    return result
+
+
+def pixel_observations(rows):
+    result = []
+    for row in rows:
+        if row.get("event") not in ("source-live-to-gpu-pixels", "gpu-to-live-target-pixels"):
+            continue
+        item = {"comparison": row["event"], "status": row.get("status") if row.get("status") in ("PASS", "FAIL", "UNMEASURED") else "unknown"}
+        for name in ("differentPixels", "maxChannelDifference", "meanChannelDifference", "luminanceDifference"):
+            if name in row:
+                item[name] = number(row[name], name)
+        result.append(item)
+    return result
+
+
+def submission_observations(rows, command, clock):
+    result = []
+    for row in rows:
+        if row.get("event") not in ("native-endpoint-submitted", "live-handoff"):
+            continue
+        item = {"boundary": row["event"], "afterCommandMs": ms(row["t"] - command),
+                "afterClockMs": ms(row["t"] - clock), "physicalPresentationEstablished": False}
+        if row["event"] == "native-endpoint-submitted":
+            for name in ("submitted", "displayed"):
+                value = row.get("presentation", {}).get(name)
+                if type(value) is int and value >= 0:
+                    item[name] = value
+        result.append(item)
+    return result
+
+
+def fanout_summary(payload):
+    result = []
+    for row in payload.get("fanoutCounts", []):
+        cycle = row.get("cycle")
+        if type(cycle) is not int or cycle < 0:
+            raise ValueError("Invalid fanout cycle")
+        counts = []
+        for label, value in row.get("counts", {}).items():
+            if not isinstance(label, str) or not FANOUT_LABEL.fullmatch(label):
+                continue
+            count = value.get("count")
+            if type(count) is not int or count < 0:
+                raise ValueError("Invalid fanout count")
+            counts.append({"boundaryAndHelper": label, "calls": count,
+                           "inclusiveHelperMs": number(value.get("helperMs"), "helper milliseconds")})
+        result.append({"cycle": cycle, "helpers": counts,
+                       "scope": "Disposable counted QML copies; inclusive helpers overlap, millisecond resolution and logging perturbation. Absence of a blur row means zero observed instrumented calls, not a global GPU shader guarantee."})
+    return result
+
+
+def validate_extent(target):
+    client, size = target.get("client"), target.get("size")
+    if client is None and size is None:
+        return  # Historical diagnostic rows may not include physical extents.
+    if not isinstance(client, list) or len(client) != 4 or not isinstance(size, list) or len(size) != 2:
+        raise ValueError("Malformed target texture/client extent")
+    if any(type(value) is not int for value in client + size) or any(value <= 0 for value in client[2:] + size):
+        raise ValueError("Non-integral or non-positive target texture/client extent")
+    if client[2:] != size:
+        raise ValueError("Target texture/client dimensions disagree")
 
 
 def layout_summary(rows, metadata, command, clock):
@@ -198,7 +289,9 @@ def summarize(payload):
         targets = [row for row in rows if row.get("event") == "gpu-capture" and row.get("kind") == "target"]
         if len(targets) > 1:
             raise ValueError("Cycle contains multiple target captures")
-        chain = []
+        chain, asynchronous = [], []
+        native_ready = None
+        import_status = "not measured"
         if "layout-begin" in unique and "layout-committed" in unique:
             begin, commit = unique["layout-begin"]["t"], unique["layout-committed"]["t"]
             if commit < begin:
@@ -216,17 +309,45 @@ def summarize(payload):
                     request, callback, finished, delivery = [number(target.get(name), name) for name in ("requested", "renderCallback", "captureFinished", "t")]
                     if not commit <= request <= callback <= finished <= delivery:
                         raise ValueError("Inconsistent target capture ordering")
-                    if isinstance(target.get("client"), list) and isinstance(target.get("size"), list) and target["client"][2:] != target["size"]:
-                        raise ValueError("Target texture/client dimensions disagree")
+                    validate_extent(target)
                     chain.extend([
                         interval("commitToCaptureRequest", commit, request, command, clock, "GUI", "Fixture logging/category activation and client query.", True),
                         interval("captureRequestToRenderCallback", request, callback, command, clock, "GUI/render", "Scheduling, polish, synchronization and rendering; stage timers overlap this interval.", False),
                         interval("textureExportBoundary", callback, finished, command, clock, "render", "Native API CPU span: allocation, keyed mutex, GPU copy submission and flush; GPU completion is not isolated.", True),
-                        interval("queuedGuiDelivery", finished, delivery, command, clock, "GUI/render", "Queued signal delivery plus GUI/GIL scheduling; render may continue in parallel.", False),
                     ])
                     imported = unique.get("target-gpu-composition-committed")
-                    if imported:
-                        chain.append(interval("bridgeImportBoundary", delivery, imported["t"], command, clock, "GUI/native", "Native command queue, shared-resource acquisition/copy/SRV creation; no separate target DComp Commit.", True))
+                    import_fields = ("targetImportStarted", "targetImportFinished", "targetImported")
+                    if any(name in target for name in import_fields):
+                        if not all(name in target for name in import_fields) or type(target["targetImported"]) is not bool:
+                            raise ValueError("Incomplete render-thread target import result")
+                        import_started = number(target["targetImportStarted"], "target import start")
+                        import_finished = number(target["targetImportFinished"], "target import finish")
+                        if not finished <= import_started <= import_finished <= delivery:
+                            raise ValueError("Inconsistent render-thread target import ordering")
+                        if imported:
+                            if imported.get("importThread") != "render" or not target["targetImported"]:
+                                raise ValueError("Target import event disagrees with render result")
+                            for field, expected in (("importStarted", import_started), ("importFinished", import_finished)):
+                                if field in imported and abs(number(imported[field], field) - expected) > 1e-9:
+                                    raise ValueError("Target import event timestamp disagrees with capture result")
+                        chain.extend([
+                            interval("exportToImportDispatch", finished, import_started, command, clock, "render", "Render callback dispatch to the existing native SDK setter.", True),
+                            interval("bridgeImportBoundary", import_started, import_finished, command, clock, "render/native", "Existing SDK command queue, keyed-mutex acquisition, native owned copy submission and SRV publication; not physical presentation.", True),
+                        ])
+                        asynchronous.append(interval("queuedGuiDelivery", import_finished, delivery, command, clock, "GUI/render", "Notification only after render-thread import; outside target-readiness critical path.", False))
+                        asynchronous[-1]["requiredForFirstTarget"] = False
+                        asynchronous[-1]["safelyDeferrable"] = True
+                        import_status = "native owned target published" if target["targetImported"] else "native import rejected"
+                        if target["targetImported"]:
+                            native_ready = ms(import_finished - clock)
+                    else:
+                        if imported and imported.get("importThread") == "render":
+                            raise ValueError("Render-thread import event lacks capture-side timestamps")
+                        chain.append(interval("queuedGuiDelivery", finished, delivery, command, clock, "GUI/render", "Queued signal delivery plus GUI/GIL scheduling; render may continue in parallel.", False))
+                        if imported:
+                            chain.append(interval("bridgeImportBoundary", delivery, imported["t"], command, clock, "GUI/native", "Native command queue, shared-resource acquisition/copy/SRV creation; no separate target DComp Commit.", True))
+                            native_ready = ms(imported["t"] - clock)
+                            import_status = "native owned target published; API return observed on GUI"
         marker_rows = profiles.get(cycle, [])
         marker_by_name = {}
         for row in marker_rows:
@@ -245,10 +366,14 @@ def summarize(payload):
             "clock": "native" if "native-clock-start" in unique else "layout isolation",
             "commandToClockMs": ms(clock - command), "apiBoundaryChain": chain,
             "chainTotalMs": round(sum(item["durationMs"] for item in chain), 3),
+            "asynchronousGuiObservations": asynchronous,
+            "nativeOwnedTargetPublishedMs": native_ready, "nativeImportStatus": import_status,
             "targetGuiArrivalMs": ms(targets[0]["t"] - clock) if targets and not targets[0].get("error") else None,
             "qmlStatements": statements, "qt": qt_summary(stages.get(cycle, []), command, clock),
             "layoutPolish": layout_summary(layouts.get(cycle, []), payload.get("qtLayoutObjects", {}), command, clock),
             "qualificationFailureCount": sum(row.get("event") == "qualification-failure" for row in rows),
+            "pixelObservations": pixel_observations(rows),
+            "submissionObservations": submission_observations(rows, command, clock),
             "unmeasured": ["first visible motion", "pure GPU execution", "GPU copy completion", "bridge keyed-mutex wait separately", "first target-bearing native Present", "physical desktop presentation", "unconfigured endpoint hold", "matching live pixels", "input restored"]})
     known = {item["cycle"] for item in cycles}
     if any(cycle not in known for source in (profiles, stages, layouts) for cycle in source):
@@ -256,8 +381,12 @@ def summarize(payload):
     return {"schemaVersion": 1, "qtVersionInterpretation": "6.10.3", "sources": [QT_SOURCE, LAYOUT_SOURCE],
         "cycles": cycles, "completedCycles": payload.get("completedCycles"),
         "fixtureFailureCount": len(payload.get("failures", [])),
+        "webEngineHtmlLoadSucceeded": any(row.get("event") == "webengine-html-ready" for rows in events.values() for row in rows),
+        "webEngineScope": "Existing Chromium preview load notification only; visible HTML, PDF and pixel fidelity are not established.",
+        "fanoutObservations": fanout_summary(payload),
+        "unknownStageMetadata": "Null blocking/deferral/repetition metadata means unmeasured. An observed repeated polish call is not automatically unnecessary. CPU timers do not isolate GPU execution or desktop scanout.",
         "interpretation": "API chain intervals add to target delivery/import. QML statements, Qt GUI/render frames and layout spans overlap that chain and each other; do not sum them into another critical path. Prepared-target and layout-only fixtures are not cold motion evidence.",
-        "configuration": {key: payload.get("configuration", {}).get(key) for key in ("prepared_target", "layout_only", "layout_repair", "gui_delay_ms", "endpoint_hold_ms", "duration_ms", "blend_start_ms", "profile_boundaries", "qt_render_timings", "qt_layout_polish")}}
+        "configuration": configuration_summary(payload.get("configuration", {}))}
 
 
 def main():

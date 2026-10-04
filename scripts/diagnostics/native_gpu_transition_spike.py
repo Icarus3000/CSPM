@@ -21,6 +21,48 @@ from functools import wraps
 from target_layout_fanout import VARIANTS, instrument_mirror, instrument_qt_blur
 
 
+WORKSPACES = {"productivity": (3, "D10"), "time-entry": (1, "B01"),
+              "client-directory": (0, "A01"), "invoice-preview": (2, "C03"), "home": None}
+
+
+def configure_fixture_source(source, first_direction, workspace, restored_size):
+    """Change only disposable startup/settings and navigation; never prepare a target."""
+    def replace_once(old, new):
+        nonlocal source
+        if source.count(old) != 1:
+            raise ValueError("Disposable startup/navigation anchor is unavailable or ambiguous")
+        source = source.replace(old, new, 1)
+    width, height = restored_size
+    replace_once('mainWindowLayout={"maximized": False, "hasExactRect": True,',
+                 'mainWindowLayout={"maximized": ' + str(first_direction == "restore") + ', "hasExactRect": True,')
+    replace_once('"width": 1100, "height": 760,', f'"width": {width}, "height": {height},')
+    old = 'self.evaluate("_probeWindow.mainContentRef.option3OpenWorkspaceForTile(3, \'D10\', {})")'
+    route = WORKSPACES[workspace]
+    navigation = (f'self.evaluate("_probeWindow.mainContentRef.option3OpenWorkspaceForTile({route[0]}, \'{route[1]}\', {{}})")'
+                  if route else 'self.evaluate("true")')
+    replace_once(old, navigation)
+    if route is None:
+        replace_once('if not self.expected_tab:', 'if False:  # Home has no work tab.')
+    return source
+
+
+def import_render_target(result, host, expected_client, set_target, native_error, clock=time.perf_counter):
+    """Import this verified resized GPU frame without waiting for GUI notification.
+
+    The SDK worker still enforces its unchanged clock deadline and keyed mutex.
+    No Qt object access, GUI cleanup or readiness gate is performed here.
+    """
+    if result.get("client") != expected_client or result.get("size") != expected_client[2:]:
+        raise RuntimeError("Target texture/client differs from predetermined physical endpoint")
+    if not host or not result.get("frame"):
+        raise RuntimeError("Target import requires an owned host and GPU frame")
+    result["targetImportStarted"] = clock()
+    result["targetImported"] = bool(set_target(host, result["frame"]))
+    result["targetImportFinished"] = clock()
+    if not result["targetImported"]:
+        result["targetImportError"] = native_error(host)
+
+
 def profile_shell_source(source):
     """Instrument only the disposable target-commit function, using a QML clock.
 
@@ -108,6 +150,14 @@ def main():
         help="Pair Qt layout polish entry/exit boundaries after commit, with object metadata")
     parser.add_argument("--layout-only", action="store_true",
         help="Repeated geometry/render isolation; no native motion or transition qualification")
+    parser.add_argument("--render-target-import", action="store_true",
+        help="Import the verified target in its render callback; native deadline remains unchanged")
+    parser.add_argument("--first-direction", choices=("maximize", "restore"), default="maximize",
+        help="Cold restore starts maximized through disposable launch settings")
+    parser.add_argument("--workspace", choices=WORKSPACES, default="productivity")
+    parser.add_argument("--keep-visible", action="store_true",
+        help="Keep the disposable source above other windows for physical pixel measurements")
+    parser.add_argument("--restored-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"), default=(1100, 760))
     args = parser.parse_args()
     if args.fanout_variant and not args.profile_boundaries:
         parser.error("fanout variants require disposable boundary profiling")
@@ -115,6 +165,10 @@ def main():
         parser.error("quiet fanout requires an explicit isolation variant")
     if args.layout_only and (args.prepared_target or args.capture_only or args.endpoint_hold_ms):
         parser.error("layout-only isolation cannot prepare targets, skip capture, or hold motion endpoints")
+    if args.render_target_import and (args.prepared_target or args.capture_only or args.layout_only):
+        parser.error("render target import is a cold native motion isolation")
+    if not 700 <= args.restored_size[0] <= 1550 or not 540 <= args.restored_size[1] <= 900:
+        parser.error("restored size must fit this bounded output-0 diagnostic fixture")
     if not args.audit_label or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in args.audit_label):
         parser.error("audit label must use letters, numbers, underscore or hyphen")
     if not 1 <= args.cycles <= 12 or not 0 <= args.gui_delay_ms <= 1000 or not 100 <= args.duration_ms <= 1000 or not 0 < args.blend_start_ms < args.duration_ms:
@@ -204,6 +258,7 @@ def main():
     source = probe.read_text(encoding="utf-8")
     source = source[:source.index("\nentry._capture_startup_launch_context = diagnostic_launch_context")]
     source = source.replace('AUDIT = ROOT / "logs/window_transition_diagnostic"', "AUDIT = Path(" + repr(str(audit)) + ")")
+    source = configure_fixture_source(source, args.first_direction, args.workspace, args.restored_size)
     # Disable Python per-frame instrumentation inherited from historical fixture.
     for names in ("('beforeFrameBegin','beforeSynchronizing','afterSynchronizing','beforeRendering','afterRendering','afterFrameEnd','frameSwapped')", "('xChanged','yChanged','widthChanged','heightChanged','finalXChanged','finalYChanged','finalWChanged','finalHChanged')"):
         source = source.replace("for name in " + names + ":", "for name in ():")
@@ -266,6 +321,9 @@ class PixelTracker:
             self.rows, self.frames = [], []
             self.host = None
             self.capture_request = None
+            self.capture_in_progress = False
+            self.completion_pending = False
+            self.webengine_probe = None
             self.capture_signal = None
             self.started_native = None
             self.current = None
@@ -300,11 +358,70 @@ class PixelTracker:
 
         @guarded
         def begin_cycles(self):
+            if args.workspace == "invoice-preview":
+                if self.webengine_probe is None:
+                    views = [item for item in self.window.findChildren(QObject)
+                             if "WebEngineView" in item.metaObject().className()]
+                    if not views:
+                        QTimer.singleShot(100, self.begin_cycles)
+                        return
+                    self.engine.rootContext().setContextProperty("diagnosticInvoiceView", views[0])
+                    self.engine.globalObject().setProperty("diagnosticInvoiceView", self.engine.newQObject(views[0]))
+                    observer = '''import QtQuick
+import QtWebEngine
+Item {
+    id: probe
+    property bool ready: false
+    property bool failed: false
+    visible: false
+    Connections {
+        target: diagnosticInvoiceView
+        function onLoadingChanged(request) {
+            if (request.status === WebEngineView.LoadSucceededStatus) probe.ready = true
+            if (request.status === WebEngineView.LoadFailedStatus) probe.failed = true
+        }
+    }
+}'''
+                    self.webengine_probe = self.evaluate("Qt.createQmlObject(" + json.dumps(observer)
+                        + ", _probeWindow.contentItem, 'NativeReadinessWebEngineObserver')").toQObject()
+                    html = "<html><body style='background:#f5f7fa;color:#203047;font:20px Segoe UI'><h1>Readiness preview</h1><p>Live Chromium content in the existing invoice preview.</p></body></html>"
+                    self.evaluate("diagnosticInvoiceView.loadHtml(" + json.dumps(html) + "); true")
+                    self.record("webengine-html-requested", scope="synthetic HTML in existing preview; no invoice action")
+                    QTimer.singleShot(100, self.begin_cycles)
+                    return
+                if self.webengine_probe.property("failed"):
+                    raise RuntimeError("Existing invoice WebEngine preview failed synthetic HTML load")
+                if not self.webengine_probe.property("ready"):
+                    QTimer.singleShot(100, self.begin_cycles)
+                    return
+                self.record("webengine-html-ready", scope="actual Chromium load success; PDF not exercised")
+            if args.keep_visible:
+                user.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND,
+                    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, uint]
+                if not user.SetWindowPos(int(self.window.winId()), -1, 0, 0, 0, 0, 0x13):
+                    raise RuntimeError("Diagnostic source z-order unavailable")
+                self.window.update()
             self.capture_signal = Captured(self)
             self.capture_signal.ready.connect(self.captured, Qt.QueuedConnection)
             self.window.afterRenderPassRecording.connect(self.on_render, Qt.DirectConnection)
-            self.normal = {name: self.window.property(name) for name in ("finalX", "finalY", "finalW", "finalH")}
-            self.normal_client = client(self.window)
+            if args.first_direction == "restore":
+                if not self.window.property("uiMaximized") or not self.window.property("restoreGeometryValid"):
+                    raise RuntimeError("Cold restore requires a persisted maximized source and saved normal rectangle")
+                self.normal = {"final" + axis: self.window.property("restoreFinal" + axis) for axis in "XYWH"}
+                # Query only the source's settled padding before the command;
+                # do not lay out or render the restored target in advance.
+                area = self.window.screen().availableGeometry()
+                pad = min(round(self.window.property("glowPadding")),
+                          max(0, (area.width() - self.normal["finalW"]) // 2),
+                          max(0, (area.height() - self.normal["finalH"]) // 2))
+                dpr = self.window.devicePixelRatio()
+                self.normal_client = [round((self.normal["finalX"] - pad) * dpr),
+                    round((self.normal["finalY"] - pad) * dpr),
+                    round((self.normal["finalW"] + 2 * pad) * dpr),
+                    round((self.normal["finalH"] + 2 * pad) * dpr)]
+            else:
+                self.normal = {name: self.window.property(name) for name in ("finalX", "finalY", "finalW", "finalH")}
+                self.normal_client = client(self.window)
             if args.qt_layout_polish:
                 for item in self.window.findChildren(QQuickItem):
                     class_name = item.metaObject().className()
@@ -343,8 +460,9 @@ class PixelTracker:
 
         def on_render(self):
             request = self.capture_request
-            if request is None:
+            if request is None or self.finished or self.completion_pending:
                 return
+            self.capture_in_progress = True
             self.capture_request = None
             result = dict(request)
             result["renderCallback"] = time.perf_counter()
@@ -362,12 +480,22 @@ class PixelTracker:
                     frame = dll.cspm_gpu_capture(int(native), ctypes.byref(width), ctypes.byref(height))
                     if not frame:
                         raise RuntimeError(native_error())
+                    # Own the frame immediately, including errors during
+                    # endExternalCommands and undelivered queued notifications.
+                    self.frames.append(frame)
                     result.update(frame=frame, size=[width.value, height.value], gpuOnly=True)
                 finally:
                     self.window.endExternalCommands()
             except Exception as exc:
                 result["error"] = str(exc)
             result["captureFinished"] = time.perf_counter()
+            if args.render_target_import and request["kind"] == "target" and not result.get("error"):
+                try:
+                    import_render_target(result, self.host, self.target_client,
+                        dll.cspm_comp_set_target_frame, native_error)
+                except Exception as exc:
+                    result["error"] = str(exc)
+            self.capture_in_progress = False
             self.capture_signal.ready.emit(result)
 
         def record(self, name, **data):
@@ -465,7 +593,8 @@ class PixelTracker:
             if self.completed >= args.cycles:
                 self.complete()
                 return
-            kind = "maximize" if self.completed % 2 == 0 else "restore"
+            maximize = (self.completed % 2 == 0) == (args.first_direction == "maximize")
+            kind = "maximize" if maximize else "restore"
             self.current = {"kind": kind, "command": time.perf_counter(), "sourceClient": client(self.window)}
             self.tracker.command("native-" + kind)
             self.record("command", kind=kind)
@@ -506,14 +635,14 @@ class PixelTracker:
         @guarded
         def captured(self, result):
             if self.finished:
-                if result.get("frame"):
-                    dll.cspm_gpu_release(result["frame"])
+                return
+            if self.completion_pending:
+                self.complete()
                 return
             self.record("gpu-capture", **{key: value for key, value in result.items() if key != "frame"})
             if result.get("error"):
                 self.fail("native texture access", result["error"])
                 return
-            self.frames.append(result["frame"])
             if result["kind"] == "target":
                 self.finish_target_profile()
                 self.qt_target_capture_pending = False
@@ -572,10 +701,16 @@ class PixelTracker:
                     self.record("physical-target-plan-mismatch", planned=self.target_client, actual=result["client"])
                     self.fail("physical-pixel mapping", "Actual target native client differs from predetermined endpoint")
                     return
-                if not dll.cspm_comp_set_target_frame(self.host, result["frame"]):
+                imported = result.get("targetImported") if args.render_target_import else dll.cspm_comp_set_target_frame(self.host, result["frame"])
+                if not imported:
+                    if args.render_target_import:
+                        self.record("target-render-import-rejected", started=result.get("targetImportStarted"),
+                            finished=result.get("targetImportFinished"))
                     self.fail("target readiness", native_error(self.host))
                     return
-                self.record("target-gpu-composition-committed", elapsedMs=dll.cspm_comp_elapsed_ms(self.host))
+                self.record("target-gpu-composition-committed", elapsedMs=dll.cspm_comp_elapsed_ms(self.host),
+                    importThread="render" if args.render_target_import else "GUI",
+                    importStarted=result.get("targetImportStarted"), importFinished=result.get("targetImportFinished"))
                 if args.prepared_target:
                     self.start_native()
                 else:
@@ -696,7 +831,15 @@ class PixelTracker:
         def complete(self):
             if self.finished:
                 return
+            if self.capture_in_progress:
+                if not self.completion_pending:
+                    self.completion_pending = True
+                    QTimer.singleShot(10, self.complete)
+                else:
+                    QTimer.singleShot(10, self.complete)
+                return
             self.finished = True
+            self.qt_target_capture_pending = False
             self.capture_request = None
             if self.profile_armed:
                 try:

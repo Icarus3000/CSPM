@@ -14,6 +14,7 @@ import sys
 
 import argparse
 import time
+from target_layout_fanout import _body_bounds
 parser = argparse.ArgumentParser(description="Outside-sandbox desktop timing fixture on disposable data; no screenshots are saved.")
 parser.add_argument('--audit-label', default='window_responsiveness_' + time.strftime('%Y%m%d_%H%M%S'))
 parser.add_argument('--compare', action='store_true', help='Alternate the earlier preparation order and the early-motion path for 20 toggles.')
@@ -52,6 +53,13 @@ def replace_once(text, before, after):
 
 shell_path = MIRROR/'src/qml/DetachedShellWindow.qml'
 shell = shell_path.read_text(encoding='utf-8')
+# Keep the experimental capture function byte-for-byte intact while the
+# production-only observer adds its strict one-match hooks below.
+experimental_start = shell.index('    function captureCleanRoomTransitionSurface(')
+_, experimental_end = _body_bounds(shell, 'DetachedShellWindow', 'captureCleanRoomTransitionSurface')
+experimental_capture = shell[experimental_start:experimental_end + 1]
+experimental_marker = '    // CSPM_DIAGNOSTIC_EXPERIMENTAL_CAPTURE_BOUNDARY'
+shell = replace_once(shell, experimental_capture, experimental_marker)
 shell = replace_once(shell, '    function toggleWindowMaximize() {', '''
     property var responsivenessProbeEvents: []
     property var responsivenessProbeRuns: []
@@ -200,6 +208,7 @@ if args.endpoint_hold_ms:
         present_connect+'\n                responsivenessEndpointHoldTimer.revealAction = function() {')
     shell = replace_once(shell, '                surface.expectLiveHandoff();\n            });',
         '                surface.expectLiveHandoff();\n                };\n                responsivenessEndpointHoldTimer.restart();\n            });')
+shell = replace_once(shell, experimental_marker, experimental_capture)
 shell_path.write_text(shell, encoding='utf-8')
 
 surface_path = MIRROR/'src/qml/WindowTransitionSurface.qml'

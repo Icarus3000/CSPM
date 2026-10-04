@@ -646,3 +646,115 @@ HTML/PDF check, packaging, installation or user acceptance is established.
 Production remains the default and the installed application remains unchanged.
 **Decision:** retain the coherent experimental general repairs and GPU bridge,
 but reject complete-candidate qualification. **Not yet accepted by Cory.**
+
+## Continued cold investigation — native import timing and broader regressions
+
+The resumed fixtures retain the 350 ms native clock, 240 ms transfer deadline,
+zero diagnostic endpoint hold, the same existing workspace and production
+fallback. The evidence below comes from the new ignored root-run result files;
+all corresponding protected-original hash checks remain unchanged. Source/DLL
+provenance and sanitized stage chains are recorded separately in the aggregate
+report. Prior failures above remain valid under their saved configurations.
+
+The original **627.83 ms** repair run's full API chain is accounted for:
+81.61 ms native-start-to-geometry entry (including the recorded 80.99 ms
+intentional GUI delay), 212.05 ms commit, 0.015 ms capture-request dispatch,
+269.15 ms request-to-render callback, 5.04 ms export and 59.96 ms queued GUI
+delivery. The apparent post-commit gap is therefore not all rendering.
+**STILL UNKNOWN:** that run has no Qt-stage timers, so its 269.15 ms cannot be
+split exactly among scheduling, polish, synchronization and rendering. Later
+Qt-stage runs measure those composites under their own saved configurations;
+they do not retroactively establish the old run's internal attribution.
+
+**PROVEN BY MEASUREMENT:** `native_gpu_resume_cold_stages_20261003_run1`
+reaches the target GUI callback **290.28 ms** after native start and fails.
+Commit consumes 121.79 ms; the export callback begins at 211.38 ms, occupies
+15.79 ms, then waits 63.11 ms for GUI delivery. Qt reports 26 ms polish,
+30 ms synchronization, 43 ms render and 1 ms swap. Export occurs within render;
+its duration must not be added twice. This establishes queued GUI delivery as
+a material avoidable readiness dependency in this run, while actual GPU
+execution and physical presentation remain separately unmeasured.
+
+**SUPPORTED BY OBSERVATION:** the diagnostic `--render-target-import` path
+imports the immutable GPU target into the typed native bridge from its existing
+render callback before queued GUI result handling. It does not relax the native
+deadline or create another workspace. The GUI still receives result/lifecycle
+information afterward. Moving import earlier removes an unnecessary delivery
+dependency; it does not eliminate geometry, polish, rendering or synchronization.
+
+**PROVEN BY MEASUREMENT:** the first Productivity maximize accepts its target
+at **205.66 ms** after native start, preceding GUI delivery at 244.19 ms.
+That direction completes; its following restore import is **280.00 ms** and
+is rejected, leaving one completed direction out of six requested. A separate
+cold restore is worse: **228.46 ms commit**, including **169 ms metrics
+publication**; export finishes at **389.45 ms** and the GUI observes the target
+at **495.86 ms**. Native import also rejects it. These results disprove treating
+the earlier queued-delivery repair as sufficient for the populated report in
+both directions. Restore's responsive publication remains a concrete residual
+cost, and native resource work can still push target readiness beyond deadline.
+
+Broader cold diagnostic outcomes retain their workspace and geometry scope:
+
+| Fixture | Native target import after start | Outcome |
+| --- | --- | --- |
+| Small Time Entry, four directions | 217.74 / 183.23 / 191.93 / 164.14 ms | Four complete; physical pixels unmeasured |
+| Large Home, maximize/restore | 145.32 / 112.13 ms | Two complete; physical pixels unmeasured |
+| Client Directory with desktop pixels | 345.59 ms | Late target; source differs by 835,856 pixels |
+| Small Time Entry with desktop pixels and foreground source placement | 272.66 ms | Late target; source differs by 410,316 pixels |
+| Existing invoice-preview WebEngine surface | 135.45 / 177.39 ms | Two complete; HTML load observed, physical pixels unmeasured |
+
+**PROVEN BY MEASUREMENT:** supported cold transfer can meet the fixed deadline
+on several representative surfaces without a configured endpoint hold. The
+table/pixel runs still fail and are not discarded. Explicit foreground placement
+before source capture does not rescue the Time Entry comparison or deadline.
+The source mismatch cause remains **STILL UNKNOWN**; neither changing fixture
+visibility nor assuming collector interference constitutes a proved repair.
+
+The first WebEngine attempt fails in fixture JavaScript before transitions
+because its diagnostic invoice-view reference is unavailable. The corrected
+second attempt uses the existing preview surface, observes actual Qt WebEngine
+HTML readiness and completes two directions. This is outside-sandbox HTML/runtime
+evidence, **not PDF export validation**, frozen/live pixel identity, uninterrupted
+desktop motion or installed-package acceptance. A native readiness deadline pass
+and HTML-load success do not prove displayed framebuffer fidelity.
+
+### Residual repaired fanout and lifecycle result
+
+**PROVEN BY MEASUREMENT — diagnostic counter scope:** the repair-on,
+restore-first, two-direction layout-only fanout fixture observes **no
+GaussianBlur rebuild rows** in either cycle using the copied Qt instrumentation.
+It pairs **112/111 polish calls**, with **22/21 repeat passes** beyond unique
+objects and approximately **46.7/36.6 ms observed own-time totals** after nested
+spans are removed. These message-delivery spans retain Python/GIL/debug overhead.
+Hidden Matter Wizard and Client Profile layouts still participate, alongside
+visible report/form layouts. Responsive helper evaluations remain numerous,
+but measured helper bodies consume only a few milliseconds; their evaluation
+counts cannot be relabelled as independent binding cost.
+
+**WORKING HYPOTHESIS:** further general reductions should target demonstrated
+hidden layout participation and responsive publication cascades, with visibility
+catch-up and accurate visible target layout proved before broadening the repair.
+The residual evidence does not establish a safe additional layout exclusion,
+the complete implicit-size invalidation chain or a qualifying cold restore fix.
+Freezing visible metrics or moving visible reflow beyond handoff remains rejected.
+
+The second lifecycle attempt is a preserved **before-launch fixture failure**:
+its source-presented instrumentation anchor also matches twice. After contextual
+anchors are repaired, lifecycle run3 selects the **production transition engine
+with the experimental layout repair enabled**, completes four primary toggles
+plus three lifecycle transitions and reports no functional regression failures
+or handoff watchdog timeout. It preserves the workspace and saved normal bounds
+through moved restore, taskbar return from normal and maximized states, and close.
+Seven transitions have timing observations. This validates the repair with the
+production fallback's functional lifecycle; it does not validate the native
+experimental engine's lifecycle, physical continuity or mixed-DPI acceptance.
+
+Focused selector, metrics-gate, control and transition checks are retained; final
+validation totals and governed lint/build/privacy results are reported separately
+by the root. This appended evidence review itself uses sandbox-safe file/JSON
+inspection only. Root desktop/Qt/WebEngine trials run outside sandbox on isolated
+data. **STILL UNKNOWN:** repeatable populated-report cold restore readiness,
+source-pixel mismatch cause, complete no-hold target/live fidelity and input
+release, cross-workspace perceptual continuity and Cory's installed acceptance.
+No package or installation is justified by these mixed results. Production remains
+the safe default. **Not yet accepted by Cory.**
