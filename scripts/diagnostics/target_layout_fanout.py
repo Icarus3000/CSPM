@@ -14,22 +14,33 @@ import re
 import shutil
 
 
-VARIANTS = ("counts", "atomic-metrics", "hidden-controls", "dormant-shadows", "hidden-layout", "hidden-fonts")
+CURRENT_VARIANTS = ("counts", "publication-costs", "hidden-font-scalars")
+VARIANTS = CURRENT_VARIANTS + ("atomic-metrics", "hidden-controls", "dormant-shadows", "hidden-layout", "hidden-fonts")
 TRACE_JS = '''.pragma library
 var enabled = false
 var stage = "idle"
 var rows = ({})
-function begin() { rows = ({}); stage = "begin"; enabled = true }
+var stack = []
+var watched = []
+function begin() { rows = ({}); stack = []; stage = "begin"; enabled = true }
 function enter(name, visible) {
     if (!enabled) return null
-    return {key: stage + ":" + name + ":" + (visible ? "visible" : "hidden"), at: Date.now()}
+    var token = {key: stage + ":" + name + ":" + (visible ? "visible" : "hidden"),
+        at: Date.now(), childMs: 0}
+    stack.push(token)
+    return token
 }
 function leave(token) {
     if (!token) return
-    var row = rows[token.key] || {count: 0, helperMs: 0}
+    var elapsed = Date.now() - token.at
+    var row = rows[token.key] || {count: 0, helperMs: 0, exclusiveMs: 0, maximumMs: 0}
     row.count += 1
-    row.helperMs += Date.now() - token.at
+    row.helperMs += elapsed
+    row.exclusiveMs += Math.max(0, elapsed - token.childMs)
+    row.maximumMs = Math.max(row.maximumMs, elapsed)
     rows[token.key] = row
+    stack.pop()
+    if (stack.length) stack[stack.length - 1].childMs += elapsed
 }
 function value(name, result, visible) {
     leave(enter(name, visible))
@@ -44,7 +55,83 @@ function owner(item) {
     }
     return names.join("/")
 }
+function notification(name, item, value) {
+    if (!enabled) return
+    var key = stage + ":" + name + "/" + String(item) + "/" + owner(item) + ":" + (item.visible ? "visible" : "hidden")
+    var row = rows[key] || {count: 0, helperMs: 0, exclusiveMs: 0, maximumMs: 0,
+        minimumValue: value, maximumValue: value}
+    row.count += 1
+    row.minimumValue = Math.min(row.minimumValue, value)
+    row.maximumValue = Math.max(row.maximumValue, value)
+    rows[key] = row
+}
+function watchTree(item) {
+    if (!item || watched.indexOf(item) >= 0) return
+    watched.push(item)
+    if (item.fontChanged && item.font && typeof item.font.pixelSize === "number") {
+        item.fontChanged.connect(function() { notification("Item.font", item, item.font.pixelSize) })
+    }
+    if (item.implicitHeightChanged) {
+        item.implicitHeightChanged.connect(function() { notification("Item.implicitHeight", item, item.implicitHeight) })
+    }
+    if (item.implicitWidthChanged) {
+        item.implicitWidthChanged.connect(function() { notification("Item.implicitWidth", item, item.implicitWidth) })
+    }
+    var children = item.children || []
+    for (var index = 0; index < children.length; ++index) watchTree(children[index])
+}
 '''
+
+HIDDEN_SCALAR_JS = '''.pragma library
+var held = new WeakMap()
+function scalar(owner, key, value, enabled) {
+    if (!enabled || !owner || typeof owner.visible !== "boolean") return value
+    var values = held.get(owner)
+    if (!values) { values = ({}); held.set(owner, values) }
+    if (!owner.visible && Object.prototype.hasOwnProperty.call(values, key)) return values[key]
+    values[key] = value
+    return value
+}
+'''
+
+
+def _hold_metric_fonts(source: str) -> tuple[str, int]:
+    """Wrap complete font expressions; leave constants and unrelated fields intact."""
+    edits = []
+    for match in re.finditer(r"font\.pixelSize:\s*", source):
+        start = match.end()
+        end, depth, quote = start, 0, None
+        while end < len(source):
+            char = source[end]
+            if quote:
+                if char == "\\":
+                    end += 1
+                elif char == quote:
+                    quote = None
+            elif char in ("'", '"', "`"):
+                quote = char
+            elif char in "([":
+                depth += 1
+            elif char in ")]":
+                depth -= 1
+            elif depth == 0 and char in ";}":
+                break
+            elif depth == 0 and char == "\n":
+                rest = source[end + 1:]
+                following = re.match(r"\s*(?:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\s*:|[{}]|(?:readonly )?property\b)", rest)
+                if following:
+                    break
+            end += 1
+        expression = source[start:end].rstrip()
+        if "root." not in expression:
+            continue
+        if not expression or "//" in expression or "{" in expression:
+            raise ValueError("Unsupported hidden-font scalar expression")
+        replacement = 'HiddenScalars.scalar(this, "font.pixelSize", (' + expression + '), root.layoutRepairEnabled)'
+        edits.append((start, start + len(expression), replacement))
+    for start, end, replacement in reversed(edits):
+        source = source[:start] + replacement + source[end:]
+    return source, len(edits)
 
 
 def _replace_once(source: str, old: str, new: str, label: str) -> str:
@@ -133,12 +220,12 @@ def instrument_mirror(mirror: Path, variant: str, collect_counts: bool = True) -
         if not path.resolve().is_relative_to(mirror):
             raise ValueError("A fanout target resolves outside the disposable mirror")
         source = path.read_text(encoding="utf-8")
-        if variant != "counts" and ("layoutMetricsSnapshot" in source or "layoutMetricsGate" in source):
+        if variant not in CURRENT_VARIANTS and ("layoutMetricsSnapshot" in source or "layoutMetricsGate" in source):
             raise ValueError(f"Historical isolation variant {variant} requires the pre-repair source: {relative}")
         prefix = "../" if "/" in relative else ""
         source = _replace_once(source, "import QtQuick\n", 'import QtQuick\nimport "' + prefix + 'FanoutTrace.js" as FanoutTrace\n', relative + ".import")
         component = path.stem
-        if collect_counts:
+        if collect_counts and variant not in ("publication-costs", "hidden-font-scalars"):
             source = _wrap_helpers(source, component, names)
         if relative == "DetachedShellWindow.qml":
             if collect_counts:
@@ -151,8 +238,12 @@ def instrument_mirror(mirror: Path, variant: str, collect_counts: bool = True) -
             source = _replace_once(source, 'if (!cleanRoomNativeProfileEnabled) return;',
                                     'if (!cleanRoomNativeProfileEnabled) return;\n        FanoutTrace.stage = name;', "Shell.profileStage")
             source = _replace_once(source, "    id: mainWin\n", "    id: mainWin\n"
-                "    function cleanRoomFanoutBegin() { FanoutTrace.begin(); }\n"
+                "    function cleanRoomFanoutBegin() { FanoutTrace.begin(); "
+                + ("FanoutTrace.watchTree(mainWin.contentItem); " if variant in ("publication-costs", "hidden-font-scalars") else "")
+                + "}\n"
                 "    function cleanRoomFanoutFinish() { return FanoutTrace.finish(); }\n", "Shell.root")
+            if variant in ("publication-costs", "hidden-font-scalars"):
+                source = _wrap_helpers(source, component, ("computeUiMetrics",))
             if variant == "atomic-metrics":
                 source = _replace_once(source, "property var uiMetrics: (function() {",
                     "property bool cleanRoomMetricsSuspended: false\n"
@@ -191,6 +282,41 @@ def instrument_mirror(mirror: Path, variant: str, collect_counts: bool = True) -
             if not replacements:
                 raise ValueError(f"Unavailable dormant-shadows target: {relative}")
         changed["src/qml/" + relative] = source
+    if variant in ("publication-costs", "hidden-font-scalars"):
+        # Time the synchronous property publication, including downstream
+        # control text/implicit-size propagation. Identity and scalar copying
+        # remain the retained implementation; ownership exists only here.
+        relative = "components/LayoutMetricsGate.qml"
+        source = (qml / relative).read_text(encoding="utf-8")
+        source = _replace_once(source, "import QtQml\n", 'import QtQml\nimport "../FanoutTrace.js" as FanoutTrace\n', relative + ".import")
+        source = _replace_once(source, "    id: gate\n", "    id: gate\n    property var diagnosticOwner: null\n", relative + ".owner")
+        source = _replace_once(source, "        snapshot = next\n", "        var publicationToken = FanoutTrace.enter(\"Gate.snapshotPublication/\" + FanoutTrace.owner(diagnosticOwner), active)\n"
+            "        try { snapshot = next } finally { FanoutTrace.leave(publicationToken) }\n", relative + ".publication")
+        start, end = _body_bounds(source, "LayoutMetricsGate", "publish")
+        source = source[:start] + "\n        var gateToken = FanoutTrace.enter(\"Gate.publish/\" + FanoutTrace.owner(diagnosticOwner), active)\n        try {" + source[start:end] + "\n        } finally { FanoutTrace.leave(gateToken) }\n    " + source[end:]
+        changed["src/qml/" + relative] = source
+        for component in ("ModernTextField", "ModernComboBox", "PillButton"):
+            relative = "src/qml/components/" + component + ".qml"
+            changed[relative] = _replace_once(changed[relative], "        id: layoutMetricsGate\n",
+                "        id: layoutMetricsGate\n        diagnosticOwner: control\n", component + ".gateOwner")
+    if variant == "hidden-font-scalars":
+        changed["src/qml/HiddenScalars.js"] = HIDDEN_SCALAR_JS
+        paths = [qml / "views/PlaceholderSubmenuView.qml", *sorted((qml / "views/placeholder").glob("*.qml"))]
+        wrapped = 0
+        for path in paths:
+            relative = str(path.relative_to(mirror)).replace("\\", "/")
+            source = changed.get(relative, path.read_text(encoding="utf-8"))
+            patched, count = _hold_metric_fonts(source)
+            if not count:
+                continue
+            prefix = "../" if path.parent.name == "views" else "../../"
+            patched = _replace_once(patched, "import QtQuick\n", 'import QtQuick\nimport "' + prefix + 'HiddenScalars.js" as HiddenScalars\n', relative + ".hiddenScalars")
+            if path.name == "PlaceholderSubmenuView.qml":
+                patched = _replace_once(patched, "    property var metrics\n", "    property var metrics\n    readonly property bool layoutRepairEnabled: typeof transitionExperiment !== \"undefined\" && transitionExperiment.layoutRepair\n", "Placeholder.layoutRepair")
+            changed[relative] = patched
+            wrapped += count
+        if not wrapped:
+            raise ValueError("No responsive font scalar bindings are available")
     if collect_counts:
         path = qml / "views/PlaceholderSubmenuView.qml"
         source = changed["src/qml/views/PlaceholderSubmenuView.qml"]

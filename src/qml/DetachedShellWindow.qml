@@ -467,7 +467,8 @@ Window {
             && !mainWin.isMinimizing
             && !mainWin.isRestoringFromMinimize
             && !mainWin.userMoveInProgress
-            && !mainWin.userResizeInProgress) {
+            && !mainWin.userResizeInProgress
+            && !mainWin.layoutMetricsCommitInProgress) {
             mainWin.updateCanvasGeometry();
         }
     }
@@ -3466,6 +3467,12 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 updateTargetScreenFromFinalCenter();
             }
             refreshActiveVisibleRect();
+            // The saved normal rectangle owns its own settled perimeter. A
+            // cold maximized launch still carries its startup padding here;
+            // derive the target padding before publishing its host or canvas.
+            if (layoutRepairEnabled) {
+                glowPadding = settledPaddingPx(finalW, finalH);
+            }
             applyHostEnvelopeForTarget();
             updateCanvasGeometry();
             if (!uiMaximized) {

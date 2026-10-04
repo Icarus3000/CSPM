@@ -1,5 +1,30 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-04: Authorized Continuity Checkpoint Preservation
+
+- [x] Recover branch/HEAD/upstream/live remote at `93de109`, all ten tracked edits and seven new files, empty index, unchanged worktrees/stashes and no owned fixture process. Review every edit; retain all 33 failed/control runs.
+- [x] Revalidate 268 focused sandbox-safe tests with ignored Y:-based basetemp, diagnostic Python compilation, governed QML lint (existing warnings), MSVC `/W4` native/shader build and ABI/null rejection. Protected workbooks/settings and installed executable match preserved hashes.
+- [x] Losslessly compact the public physical aggregate under the existing 4 MiB privacy scanner bound; decoded JSON is identical and the original formatting is retained locally.
+- [ ] Continue measured corner/margin ownership and matched restore publication investigations; complete cold candidate and Cory acceptance remain open.
+
+
+## 2026-10-04: Fresh Physical Observer And Restore Padding Continuation
+
+- [x] Recover the exact `93de109` experimental worktree, live matching remote, all six unstaged edits and three new files, untouched worktrees/stashes, later October 4 failed/completed evidence and protected installed hash. Preserve every earlier failure; no restart, branch, commit, package or production change.
+- [x] Complete a bounded asynchronous desktop gate using actual DXGI `AcquireNextFrame` sequence and `LastPresentTime`. Reject cached, pointer-only, reused, pre-commit, wrong-state/crop and absent-witness observations. Distinguish new deliveries with identical pixels. A version-sensitive process-local adapter observes the supported DXGI frame-info fields; no installed dependency changes or runtime observer dependency.
+- [x] Add an optional native same-swapchain revision/phase witness outside both complete client rectangles. Require its sampled pixels, bracketed Win32 state and a raster timestamp newer than the relevant API boundary. Remove fixed endpoint/live observation waits from fresh qualification; no configured endpoint hold or prepared target. Preserve occluded-marker/setup failures.
+- [x] Finish the opt-in general restore correction: derive settled padding before host/canvas adoption and complete metrics publication; suppress the intermediate padding-triggered canvas update during that commit. Exercise actual geometry across restored sizes, DPI descriptors, negative origins and monitor clipping. Ordinary production launches retain their behavior.
+- [x] Outside-sandbox cold Time Entry completes four directions and Home two: each source-only native presentation and target/live comparison is exact with fresh evidence, correct restored rectangles and measured input restoration. All target imports meet the unchanged 240 ms deadline. Their initial normal-window overlap still differs at sixteen rounded-corner pixels; both complete-candidate gates fail.
+- [x] Fresh Client Directory source-only control is exact; deliberate native removal reproduces 835,856 differences, as Time Entry removal reproduces 410,316. These localize the earlier large wrong-state failure pattern without retroactively validating old captures. A separate cold Directory run completes maximize with exact target/live pixels, then misses restore readiness; its normal source has an additional 84-pixel right-margin difference.
+- [x] Reassess populated Productivity in both directions with correct restored padding. Instrumented maximize/restore metrics publication is 63/119 ms; target export finishes 237.16/280.23 ms after the GUI native-start notification and native import rejects both. The correction does not establish both-direction readiness. Retain quiet runs rejected for missing desktop witness separately.
+- [x] Validate the existing invoice-preview Chromium HTML load on disposable data and retain physical source diagnostics/limitations. Preserve unsuccessful foreground, geometry and single-instance fixture attempts; no PDF or installed WebEngine fidelity claim.
+- [x] Sandbox-safe validation: 268 focused tests, Python compilation, governed scoped QML lint (existing warnings), MSVC `/W4` native/shader build, diagnostic ABI/null rejection and whitespace checks. Actual desktop/Qt/Chromium runs execute outside sandbox; portable aggregate checks are safe JSON/hash/privacy inspection.
+- [ ] Complete candidate remains rejected: sixteen corner pixels during overlap, observed right-margin residuals, populated restore readiness and continuous no-pause motion are not resolved. Do not run conditional complete qualification, install, or advance to another visual state machine. Cory's real-app P0 acceptance remains open.
+
+A final repeat encountered `OSError: [Errno 28] No space left on device` while writing fixtures to the Windows system temporary drive: 254 tests passed and 14 fixture setups errored. That raw log is retained. The identical 268-test selection passed in 16.44 seconds with a new ignored worktree-local `--basetemp`, without deleting any files or changing test/application behavior.
+
+Evidence: `docs/CLEANROOM_PHYSICAL_QUALIFICATION_2026-10-04.md` and `docs/CLEANROOM_PHYSICAL_QUALIFICATION_RESULTS_2026-10-04.json`. Raw failed runs and private disposable logs/workbooks stay ignored locally. Production and installed executable remain unchanged; all earlier uncommitted work is retained.
+
 ## 2026-10-03: Recovered Target-Layout Fanout Repair
 
 - [x] Recover the exact `e15dbcf` worktree, seven unstaged edits and five new files, live experimental remote, worktrees and untouched stashes. Recover unrecorded later Qt-stage, HomeGrid, atomic-publication, repeated-layout and pixel evidence before further experimentation.

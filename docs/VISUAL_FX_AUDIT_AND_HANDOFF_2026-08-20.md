@@ -2,6 +2,10 @@
 
 Status: Active user-directed priority as of 2026-08-20.
 
+## Experimental continuation — 2026-10-04
+
+The existing clean-room branch remains separate from production. The preserved observer and restore-padding repairs now use bounded fresh DXGI raster evidence, bracketed window state and an optional sampled same-swapchain witness outside both client rectangles. Cold Time Entry and Home have exact tested native-source/target-live endpoints; their sixteen initial overlap corner pixels remain failures. Directory/invoice residuals are localized to right transparent margins, and populated Productivity still misses target readiness despite correct restored padding. The complete candidate remains rejected. Read `docs/CLEANROOM_PHYSICAL_QUALIFICATION_2026-10-04.md` and the latest task/implementation ledger. No installation, duration/watchdog change or move to another visual state machine; Cory's P0 real-app acceptance stays open.
+
 ## Latest continuation point — 2026-10-02
 
 **Latest authorized correction:** the user permits fixing the intermittent restore nudge and previously requests release publication/recompilation. Native framebuffer capture and actual Windows client geometry preserve the physical pixel grid through direct shader endpoints, while accepted header mapping/early movement and all gates/watchdog remain. Both GPU regressions pass, including 18 exact handoffs across three screens and monitor boundaries; forty safe tests pass. Final populated-app comparisons pass at both DPIs. Both executables are rebuilt and the complete package is installed at `C:/Programs/CSPM`. Candidate/installed startup, four title-bar toggles each and actual packaged WebEngine rendering pass; all 4,377 runtime files and 168 source/bundled QML files match, with workbook/settings hashes unchanged. Fix/release `6c72200` is pushed and the full remote SHA independently verified; this documentation follow-up records publication. Read `docs/RESTORE_PIXEL_ALIGNMENT_FIX_2026-10-02.md` and the latest ledger. Do not advance from P0; real-user installed acceptance remains open.

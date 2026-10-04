@@ -1,13 +1,15 @@
 """Safe checks for disposable profiling edits; no GUI or WebEngine runtime."""
 import hashlib
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts/diagnostics"))
-from target_layout_fanout import (TRACE_JS, VARIANTS, _wrap_helpers,
+from target_layout_fanout import (CURRENT_VARIANTS, HIDDEN_SCALAR_JS, TRACE_JS, VARIANTS, _hold_metric_fonts, _wrap_helpers,
                                   instrument_mirror, instrument_qt_blur)
 
 
@@ -40,6 +42,8 @@ def mirror(tmp_path):
                 "        if (!cleanRoomNativeProfileEnabled) return;\n"
                 "    }\n", 1)
         destination.write_text(source, encoding="utf-8")
+    source = ROOT / "src/qml/components/LayoutMetricsGate.qml"
+    (tree / "src/qml/components/LayoutMetricsGate.qml").write_bytes(source.read_bytes())
     return tree
 
 
@@ -59,7 +63,7 @@ def test_current_counts_instrument_every_target_and_leave_originals_unchanged(mi
                       for relative in TARGETS}
 
 
-@pytest.mark.parametrize("variant", [variant for variant in VARIANTS if variant != "counts"])
+@pytest.mark.parametrize("variant", [variant for variant in VARIANTS if variant not in CURRENT_VARIANTS])
 def test_historical_variants_reject_retained_repair_without_any_writes(mirror, variant):
     before = hashes(mirror)
     with pytest.raises(ValueError, match="requires the pre-repair source"):
@@ -82,6 +86,101 @@ def test_fresh_mirror_required_for_repeated_instrumentation(mirror):
     with pytest.raises(ValueError, match="fresh disposable mirror"):
         instrument_mirror(mirror, "counts")
     assert hashes(mirror) == before
+
+
+def test_publication_costs_time_setter_propagation_and_keep_helpers_unmodified(mirror):
+    changed = instrument_mirror(mirror, "publication-costs")
+    gate = changed["src/qml/components/LayoutMetricsGate.qml"]
+    assert 'try { snapshot = next } finally { FanoutTrace.leave(publicationToken) }' in gate
+    assert 'finally { FanoutTrace.leave(gateToken) }' in gate
+    assert 'FanoutTrace.watchTree(mainWin.contentItem)' in changed["src/qml/DetachedShellWindow.qml"]
+    assert 'FanoutTrace.enter("DetachedShellWindow.computeUiMetrics"' in changed["src/qml/DetachedShellWindow.qml"]
+    assert 'FanoutTrace.enter("DetachedShellWindow.ratioToPixels"' not in changed["src/qml/DetachedShellWindow.qml"]
+    for component in ("ModernTextField", "ModernComboBox", "PillButton"):
+        source = changed["src/qml/components/" + component + ".qml"]
+        assert 'diagnosticOwner: control' in source
+        assert 'FanoutTrace.enter("' + component + '.ratioPx"' not in source
+
+
+def test_missing_gate_publication_fails_before_any_mirror_write(mirror):
+    path = mirror / "src/qml/components/LayoutMetricsGate.qml"
+    path.write_text(path.read_text(encoding="utf-8").replace("snapshot = next", "snapshot = null"), encoding="utf-8")
+    before = hashes(mirror)
+    with pytest.raises(ValueError, match="publication"):
+        instrument_mirror(mirror, "publication-costs")
+    assert hashes(mirror) == before
+
+
+def test_instrumented_gate_preserves_visibility_catchup_and_measures_publication(mirror):
+    from PySide6.QtCore import QCoreApplication, QUrl
+    from PySide6.QtQml import QQmlComponent, QQmlEngine
+
+    instrument_mirror(mirror, "publication-costs")
+    path = mirror / "src/qml/components/LayoutMetricsGate.qml"
+    path.write_text(path.read_text(encoding="utf-8").replace("    id: gate\n", "    id: gate\n"
+        "    function diagnosticBegin() { FanoutTrace.begin() }\n"
+        "    function diagnosticFinish() { return FanoutTrace.finish() }\n"), encoding="utf-8")
+    application = QCoreApplication.instance() or QCoreApplication([])
+    engine = QQmlEngine()
+    component = QQmlComponent(engine, QUrl.fromLocalFile(str(path)))
+    assert component.isReady(), component.errorString()
+    gate = component.create()
+    assert gate is not None, component.errorString()
+    engine.globalObject().setProperty("gate", engine.newQObject(gate))
+    result = engine.evaluate("gate.diagnosticBegin(); gate.inputMetrics = {contentW: 1100, contentH: 760};"
+        "gate.active = true; gate.active = false; gate.inputMetrics = {contentW: 1920, contentH: 1040};"
+        "var held = gate.snapshot.contentW; gate.active = true;"
+        "var current = gate.snapshot.contentW; var recorded = gate.diagnosticFinish();"
+        "[held, current, gate.revision];")
+    assert not result.isError(), result.toString()
+    assert result.toVariant() == [1100, 1920, 2]
+    rows = engine.globalObject().property("recorded").toVariant()
+    assert rows["begin:Gate.snapshotPublication/:visible"]["count"] == 2
+    assert rows["begin:Gate.publish/:hidden"]["count"] == 3
+    assert rows["begin:Gate.publish/:visible"]["count"] == 2
+    assert all(row["exclusiveMs"] <= row["helperMs"] for row in rows.values())
+    gate.deleteLater()
+    application.processEvents()
+
+
+def test_tree_observer_sees_actual_hidden_font_and_implicit_notifications():
+    environment = os.environ.copy()
+    environment.update(QT_QPA_PLATFORM="offscreen", QSG_RHI_BACKEND="software")
+    result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--watch-probe"],
+        cwd=ROOT, env=environment, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "No-window observer checks passed" in result.stdout
+
+
+def test_hidden_font_scalar_isolation_preserves_full_multiline_and_inline_expressions(mirror):
+    changed = instrument_mirror(mirror, "hidden-font-scalars")
+    assert changed["src/qml/HiddenScalars.js"] == HIDDEN_SCALAR_JS
+    assert 'HiddenScalars.scalar(this, "font.pixelSize"' in changed["src/qml/views/PlaceholderSubmenuView.qml"]
+    source = '''Text { font.pixelSize: root.ratioPx(0.1, 9); font.weight: Font.Bold }
+Text {
+    font.pixelSize: root.isProMode
+        ? 12
+        : root.ratioPx(
+            0.1,
+            root.metricFloor("body", 9))
+    font.weight: Font.Bold
+}
+Text { font.pixelSize: 15 }
+'''
+    wrapped, count = _hold_metric_fonts(source)
+    assert count == 2
+    assert '), root.layoutRepairEnabled); font.weight: Font.Bold }' in wrapped
+    assert 'root.metricFloor("body", 9))), root.layoutRepairEnabled)' in wrapped
+    assert 'Text { font.pixelSize: 15 }' in wrapped
+
+
+def test_actual_hidden_font_scalar_retains_layout_and_catches_up_synchronously():
+    environment = os.environ.copy()
+    environment.update(QT_QPA_PLATFORM="offscreen", QSG_RHI_BACKEND="software")
+    result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--scalar-probe"],
+        cwd=ROOT, env=environment, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "No-window scalar catchup checks passed" in result.stdout
 
 
 def test_helpers_skip_quoted_and_commented_braces_and_preserve_following_source():
@@ -171,3 +270,105 @@ def test_qt_copy_requires_matching_trace_before_writing(mirror):
     with pytest.raises(ValueError, match="matching mirror trace"):
         instrument_qt_blur(mirror)
     assert not (mirror / "imports").exists()
+
+
+def run_watch_probe():
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtQml import QQmlComponent, QQmlEngine
+
+    application = QGuiApplication([])
+    engine = QQmlEngine()
+    component = QQmlComponent(engine)
+    component.setData(b'''import QtQuick
+Item {
+    property int requestedFont: 12
+    property bool pageVisible: false
+    Item {
+        visible: parent.pageVisible
+        Text { text: "Synthetic label"; font.pixelSize: parent.parent.requestedFont }
+    }
+}''', QUrl("file:///no_window_observer.qml"))
+    assert component.isReady(), component.errorString()
+    item = component.create()
+    assert item is not None, component.errorString()
+    engine.globalObject().setProperty("item", engine.newQObject(item))
+    trace_body = "\n".join(TRACE_JS.splitlines()[1:])
+    result = engine.evaluate("var trace = (function() {" + trace_body
+        + "return {begin:begin, watchTree:watchTree, finish:finish};})();"
+        "trace.begin(); trace.watchTree(item); trace.watchTree(item);"
+        "item.requestedFont = 21; var rows = trace.finish();")
+    assert not result.isError(), result.toString()
+    rows = engine.globalObject().property("rows").toVariant()
+    font_rows = [row for key, row in rows.items() if ":Item.font/" in key and key.endswith(":hidden")]
+    assert len(font_rows) == 1, rows
+    assert font_rows[0]["count"] == 1  # Duplicate watch does not connect twice.
+    assert font_rows[0]["minimumValue"] == font_rows[0]["maximumValue"] == 21
+    assert any(":Item.implicitHeight/" in key and key.endswith(":hidden") for key in rows), rows
+    item.deleteLater()
+    application.processEvents()
+    print("No-window observer checks passed")
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["--watch-probe"]:
+    run_watch_probe()
+
+
+def run_scalar_probe():
+    from tempfile import TemporaryDirectory
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtQml import QQmlComponent, QQmlEngine
+
+    application = QGuiApplication([])
+    engine = QQmlEngine()
+    with TemporaryDirectory() as temporary:
+        path = Path(temporary)
+        (path / "HiddenScalars.js").write_text(HIDDEN_SCALAR_JS, encoding="utf-8")
+        component = QQmlComponent(engine)
+        component.setData(b'''import QtQuick
+import "HiddenScalars.js" as HiddenScalars
+Item {
+    id: fixture
+    property int requestedFont: 12
+    property bool pageVisible: true
+    property bool repair: true
+    property real pageOpacity: 1
+    property alias actualFont: label.font.pixelSize
+    property alias preservedText: label.text
+    Item {
+        visible: fixture.pageVisible
+        opacity: fixture.pageOpacity
+        Text {
+            id: label
+            text: "Preserved draft"
+            font.pixelSize: HiddenScalars.scalar(this, "font.pixelSize", fixture.requestedFont, fixture.repair)
+        }
+    }
+}''', QUrl.fromLocalFile(str(path / "no_window_scalar.qml")))
+        assert component.isReady(), component.errorString()
+        item = component.create()
+        assert item is not None, component.errorString()
+        assert item.property("actualFont") == 12
+        item.setProperty("pageVisible", False)
+        item.setProperty("requestedFont", 21)
+        assert item.property("actualFont") == 12
+        item.setProperty("pageVisible", True)
+        assert item.property("actualFont") == 21  # No event processing before catchup.
+        item.setProperty("requestedFont", 24)
+        assert item.property("actualFont") == 24
+        item.setProperty("pageOpacity", 0)
+        item.setProperty("requestedFont", 27)
+        assert item.property("actualFont") == 27  # Target layout remains live at opacity zero.
+        item.setProperty("pageVisible", False)
+        item.setProperty("repair", False)
+        item.setProperty("requestedFont", 30)
+        assert item.property("actualFont") == 30
+        assert item.property("preservedText") == "Preserved draft"
+        item.deleteLater()
+        application.processEvents()
+    print("No-window scalar catchup checks passed")
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["--scalar-probe"]:
+    run_scalar_probe()

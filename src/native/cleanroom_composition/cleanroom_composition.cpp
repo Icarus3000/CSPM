@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cstdint>
 #include <deque>
 #include <functional>
 #include <future>
@@ -53,12 +54,50 @@ struct Pixels {
 };
 struct Constants {
     float currentRect[4],sourceRect[4],targetRect[4],sizes[4],motion[4];
+    float witnessRect[4],witnessColor[4];
 };
-static_assert(sizeof(Constants)==80,"HLSL constant-buffer layout");
+static_assert(sizeof(Constants)==112,"HLSL constant-buffer layout");
+// Additive diagnostic ABI. QPC seconds describe API boundaries, not scanout.
+// A caller initializes version/byteSize before requesting a consistent snapshot.
+struct Observation {
+    uint32_t version=1,byteSize=208;
+    uint64_t sequence=0;
+    uint32_t submittedPresentId=0,lastPresentHRESULT=0;
+    double lastPresentBeginSeconds=0,lastPresentReturnSeconds=0;
+    double sourceCommitBeginSeconds=0,sourceCommitReturnSeconds=0;
+    double sourceWaitBeginSeconds=0,sourceWaitReturnSeconds=0;
+    double sourceShowBeginSeconds=0,sourceShowReturnSeconds=0;
+    double targetImportBeginSeconds=0,targetReadySeconds=0;
+    double endpointPresentReturnSeconds=0;
+    double hostHideBeginSeconds=0,hostHideReturnSeconds=0;
+    double lastFrameElapsedSeconds=0,lastFrameMotion=0,lastFrameContent=0;
+    float currentRect[4]{};
+    uint32_t sourceWidth=0,sourceHeight=0,targetWidth=0,targetHeight=0;
+    uint32_t sourceFormat=0,targetFormat=0;
+    int32_t hostLeft=0,hostTop=0,hostWidth=0,hostHeight=0;
+};
+static_assert(sizeof(Observation)==208,"Diagnostic observation ABI layout");
+struct PresentObservation {
+    uint32_t version=1,byteSize=80;
+    uint64_t sequence=0;
+    uint32_t submittedPresentId=0,presentHRESULT=0;
+    double presentBeginSeconds=0,presentReturnSeconds=0,elapsedSeconds=0,motion=0,content=0;
+    float currentRect[4]{};
+};
+static_assert(sizeof(PresentObservation)==80,"Diagnostic Present row ABI layout");
+struct PresentTrace {
+    uint32_t version=1,byteSize=10264,rowByteSize=80,count=0;
+    uint64_t totalFrames=0;
+    PresentObservation rows[128]{};
+};
+static_assert(sizeof(PresentTrace)==10264,"Diagnostic Present trace ABI layout");
 struct Host {
     HWND hwnd=nullptr;
     std::thread worker;
-    std::mutex queueMutex,errorMutex;
+    std::mutex queueMutex,errorMutex,observationMutex;
+    Observation observation;
+    PresentObservation presentRows[128]{};
+    uint64_t totalPresentRows=0;
     std::deque<std::function<void()>> queue;
     std::string error;
     std::atomic<unsigned> flags{0};
@@ -82,7 +121,15 @@ struct Host {
     float targetX=0,targetY=0,targetW=0,targetH=0,header=0,rightWidth=0;
     std::atomic<double> startSeconds{0},duration{0};
     double blendStart=0;
+    // Optional qualification witness, wholly outside both client rectangles.
+    // It shares the actual swapchain Present with the sampled representation.
+    float witnessX=0,witnessY=0;
+    uint32_t witnessRevision=0;
     bool apartment=false;
+    template<class F> void observe(F writer) {
+        std::lock_guard<std::mutex> lock(observationMutex);
+        writer(observation); ++observation.sequence;
+    }
     void fail(const std::string& message) {
         std::lock_guard<std::mutex> lock(errorMutex); error=message; flags.fetch_or(16);
     }
@@ -109,7 +156,7 @@ Texture2D oldFrame : register(t0);
 Texture2D newFrame : register(t1);
 SamplerState linearClamp : register(s0);
 cbuffer Motion : register(b0) {
-    float4 currentRect,sourceRect,targetRect,sizes,motion;
+    float4 currentRect,sourceRect,targetRect,sizes,motion,witnessRect,witnessColor;
 };
 float4 vertex(uint id:SV_VertexID):SV_Position {
     float2 xy=float2((id<<1)&2,id&2);
@@ -135,6 +182,8 @@ float2 mapped(float2 local,float2 imageSize) {
     return pixel/imageSize;
 }
 float4 pixel(float4 pos:SV_Position):SV_Target {
+    if(witnessRect.z>0&&all(pos.xy>=witnessRect.xy)&&all(pos.xy<witnessRect.xy+witnessRect.zw))
+        return witnessColor;
     float2 local=pos.xy-currentRect.xy;
     if(any(local<0)||any(local>=currentRect.zw)) return 0;
     // Endpoints use integer physical texels: no filtering, opacity stacking,
@@ -189,6 +238,14 @@ void render(Host& h,bool initial=false) {
     c.sizes[2]=float(h.destination.view ? h.destination.width : h.source.width);
     c.sizes[3]=float(h.destination.view ? h.destination.height : h.source.height);
     c.motion[0]=h.header; c.motion[1]=h.rightWidth; c.motion[2]=float(p); c.motion[3]=float(content);
+    if(h.witnessRevision) {
+        c.witnessRect[0]=h.witnessX; c.witnessRect[1]=h.witnessY;
+        c.witnessRect[2]=8; c.witnessRect[3]=8;
+        c.witnessColor[0]=float(h.witnessRevision&255)/255;
+        c.witnessColor[1]=float((h.witnessRevision>>8)&255)/255;
+        c.witnessColor[2]=float(initial ? 1 : (p>=1&&content>=1 ? 3 : 2))/255;
+        c.witnessColor[3]=1;
+    }
     h.context->UpdateSubresource(h.constants.Get(),0,nullptr,&c,0,0);
     ComPtr<ID3D11Texture2D> buffer;
     check(h.swapchain->GetBuffer(0,__uuidof(ID3D11Texture2D),&buffer),"Swapchain.GetBuffer");
@@ -206,11 +263,32 @@ void render(Host& h,bool initial=false) {
     h.context->PSSetShaderResources(0,2,inputs); h.context->Draw(3,0);
     ID3D11ShaderResourceView* empty[]={nullptr,nullptr}; h.context->PSSetShaderResources(0,2,empty);
     h.context->OMSetRenderTargets(0,nullptr,nullptr);
-    check(h.swapchain->Present(1,0),"Present GPU-only premultiplied frame");
+    const double presentBegin=nowSeconds();
+    const HRESULT presentResult=h.swapchain->Present(1,0);
+    const double presentReturn=nowSeconds();
     UINT submitted=0;
     if(SUCCEEDED(h.swapchain->GetLastPresentCount(&submitted))) h.submittedCount=submitted;
+    h.observe([&](Observation& observation) {
+        observation.lastPresentBeginSeconds=presentBegin;
+        observation.lastPresentReturnSeconds=presentReturn;
+        observation.lastPresentHRESULT=uint32_t(presentResult);
+        observation.submittedPresentId=submitted;
+        observation.lastFrameElapsedSeconds=elapsed;
+        observation.lastFrameMotion=p; observation.lastFrameContent=content;
+        memcpy(observation.currentRect,c.currentRect,sizeof(c.currentRect));
+        auto& row=h.presentRows[h.totalPresentRows%128];
+        row.sequence=++h.totalPresentRows; row.submittedPresentId=submitted;
+        row.presentHRESULT=uint32_t(presentResult);
+        row.presentBeginSeconds=presentBegin; row.presentReturnSeconds=presentReturn;
+        row.elapsedSeconds=elapsed; row.motion=p; row.content=content;
+        memcpy(row.currentRect,c.currentRect,sizeof(c.currentRect));
+    });
+    check(presentResult,"Present GPU-only premultiplied frame");
     if(!initial && elapsed>=duration) {
         h.endpointSubmitted=true; h.endpointCount=submitted;
+        h.observe([&](Observation& observation) {
+            observation.endpointPresentReturnSeconds=presentReturn;
+        });
         if(h.destination.view && !(h.flags.load()&16)) h.flags.fetch_or(4);
     }
     statistics(h);
@@ -249,6 +327,10 @@ void initialize(Host& h,IDXGIAdapter* adapter,int left,int top,int width,int hei
         left,top,width,height,nullptr,nullptr,wc.hInstance,&h);
     if(!h.hwnd) throw std::runtime_error("CreateWindowExW failed");
     h.hostWidth=width; h.hostHeight=height;
+    h.observe([&](Observation& observation) {
+        observation.hostLeft=left; observation.hostTop=top;
+        observation.hostWidth=width; observation.hostHeight=height;
+    });
     D3D_FEATURE_LEVEL feature;
     check(D3D11CreateDevice(adapter,D3D_DRIVER_TYPE_UNKNOWN,nullptr,D3D11_CREATE_DEVICE_BGRA_SUPPORT,
         nullptr,0,D3D11_SDK_VERSION,&h.gpu,&feature,&h.context),"D3D11CreateDevice(same adapter)");
@@ -387,6 +469,24 @@ EXPORT void* cspm_comp_create_from_frame(void* frame,int left,int top,int width,
         return h.release();
     } catch(const std::exception& ex) { lastError=ex.what(); return nullptr; }
 }
+static void validateWitnessOutside(const Host& h,float x,float y,float width,float height) {
+    if(h.witnessRevision && h.witnessX<x+width && h.witnessX+8>x &&
+       h.witnessY<y+height && h.witnessY+8>y)
+        throw std::runtime_error("Qualification witness must remain outside client pixels");
+}
+EXPORT int cspm_comp_set_observer_witness(void* pointer,int x,int y,unsigned revision) {
+    if(!pointer) return 0; auto& h=*static_cast<Host*>(pointer);
+    return h.call([&h,x,y,revision] {
+        if(!revision || revision>65535 || x<0 || y<0 || x+8>h.hostWidth || y+8>h.hostHeight ||
+           (h.flags.load()&(2|16)))
+            throw std::runtime_error("Invalid diagnostic witness or already running clock");
+        h.witnessX=float(x); h.witnessY=float(y); h.witnessRevision=revision;
+        if(h.source.view) {
+            validateWitnessOutside(h,h.sourceX,h.sourceY,h.sourceW,h.sourceH);
+            render(h,true);
+        }
+    });
+}
 EXPORT int cspm_comp_set_source_frame(void* pointer,void* frame,float x,float y,float width,float height,
                                      float header,float rightFixedWidth) {
     if(!pointer || !frame) return 0; auto& h=*static_cast<Host*>(pointer);
@@ -394,6 +494,7 @@ EXPORT int cspm_comp_set_source_frame(void* pointer,void* frame,float x,float y,
     return h.call([&h,retained,x,y,width,height,header,rightFixedWidth] {
         if(h.flags.load()&(1|16)) throw std::runtime_error("Source cannot be uploaded twice or after failure");
         validateRect(h,x,y,width,height);
+        validateWitnessOutside(h,x,y,width,height);
         if(width!=retained->desc.Width || height!=retained->desc.Height)
             throw std::runtime_error("Source physical endpoint dimensions differ from GPU frame");
         if(!std::isfinite(header)||!std::isfinite(rightFixedWidth)||header<0||header>=height||
@@ -401,12 +502,36 @@ EXPORT int cspm_comp_set_source_frame(void* pointer,void* frame,float x,float y,
             throw std::runtime_error("Invalid fixed-pixel header/control geometry");
         h.sourceX=h.targetX=x; h.sourceY=h.targetY=y; h.sourceW=h.targetW=width; h.sourceH=h.targetH=height;
         h.header=header; h.rightWidth=rightFixedWidth; h.source=copyPixels(h,*retained);
+        h.observe([&](Observation& observation) {
+            observation.sourceWidth=retained->desc.Width; observation.sourceHeight=retained->desc.Height;
+            observation.sourceFormat=uint32_t(retained->desc.Format);
+        });
         render(h,true);
-        check(h.compositor->Commit(),"Commit source GPU swapchain");
-        check(h.compositor->WaitForCommitCompletion(),"Source commit processed");
+        const double commitBegin=nowSeconds();
+        const HRESULT commitResult=h.compositor->Commit();
+        const double commitReturn=nowSeconds();
+        h.observe([&](Observation& observation) {
+            observation.sourceCommitBeginSeconds=commitBegin; observation.sourceCommitReturnSeconds=commitReturn;
+        });
+        check(commitResult,"Commit source GPU swapchain");
+        const double waitBegin=nowSeconds();
+        const HRESULT waitResult=h.compositor->WaitForCommitCompletion();
+        const double waitReturn=nowSeconds();
+        h.observe([&](Observation& observation) {
+            observation.sourceWaitBeginSeconds=waitBegin; observation.sourceWaitReturnSeconds=waitReturn;
+        });
+        check(waitResult,"Source commit processed");
         if(h.flags.load()&16) throw std::runtime_error("Source preparation already failed");
-        if(!SetWindowPos(h.hwnd,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW))
+        const double showBegin=nowSeconds();
+        const BOOL showed=SetWindowPos(h.hwnd,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+        const double showReturn=nowSeconds();
+        h.observe([&](Observation& observation) {
+            observation.sourceShowBeginSeconds=showBegin; observation.sourceShowReturnSeconds=showReturn;
+        });
+        if(!showed)
             throw std::runtime_error("Show source composition host failed");
+        if(h.witnessRevision && !SetWindowPos(h.hwnd,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+            throw std::runtime_error("Diagnostic witness host z-order unavailable");
         h.flags.fetch_or(1); // Native submission/commit processing; scanout requires physical probe.
     });
 }
@@ -418,6 +543,7 @@ EXPORT int cspm_comp_start(void* pointer,float x,float y,float width,float heigh
         if(!(flags&1)||(flags&(2|16))||durationMs<100||durationMs>1000||blendStartMs>=durationMs)
             throw std::runtime_error("Invalid independent motion clock request");
         validateRect(h,x,y,width,height);
+        validateWitnessOutside(h,x,y,width,height);
         if(h.destination.view && (width!=h.destination.width || height!=h.destination.height))
             throw std::runtime_error("Prepared target GPU frame differs from physical endpoint dimensions");
         h.targetX=x; h.targetY=y; h.targetW=width; h.targetH=height;
@@ -430,6 +556,12 @@ EXPORT int cspm_comp_set_target_frame(void* pointer,void* frame) {
     if(!pointer || !frame) return 0; auto& h=*static_cast<Host*>(pointer);
     auto retained=std::make_shared<Frame>(*static_cast<Frame*>(frame));
     return h.call([&h,retained] {
+        const double importBegin=nowSeconds();
+        h.observe([&](Observation& observation) {
+            observation.targetImportBeginSeconds=importBegin;
+            observation.targetWidth=retained->desc.Width; observation.targetHeight=retained->desc.Height;
+            observation.targetFormat=uint32_t(retained->desc.Format);
+        });
         const auto flags=h.flags.load();
         if(!(flags&1)||(flags&16)||h.destination.view)
             throw std::runtime_error("Target requires source, accepts one GPU frame, and rejects failed transactions");
@@ -442,6 +574,8 @@ EXPORT int cspm_comp_set_target_frame(void* pointer,void* frame) {
         if(running && nowSeconds()-h.startSeconds.load()>=h.blendStart)
             throw std::runtime_error("GPU target transfer exceeded fixed content-transfer deadline");
         h.destination=std::move(destination); h.flags.fetch_or(8);
+        const double ready=nowSeconds();
+        h.observe([&](Observation& observation) { observation.targetReadySeconds=ready; });
     });
 }
 EXPORT unsigned cspm_comp_status(void* pointer) { return pointer ? static_cast<Host*>(pointer)->flags.load() : 16; }
@@ -451,6 +585,28 @@ EXPORT int cspm_comp_presentation(void* pointer,unsigned* submitted,unsigned* di
     *submitted=h.submittedCount.load(); *displayed=h.displayedCount.load();
     *statisticsHRESULT=h.statisticsResult.load(); return 1;
 }
+EXPORT int cspm_comp_observation(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(Observation)) return 0;
+    auto* result=static_cast<Observation*>(output);
+    if(result->version!=1 || result->byteSize!=sizeof(Observation)) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    std::lock_guard<std::mutex> lock(h.observationMutex);
+    memcpy(result,&h.observation,sizeof(Observation)); return 1;
+}
+EXPORT int cspm_comp_present_trace(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(PresentTrace)) return 0;
+    auto* result=static_cast<PresentTrace*>(output);
+    if(result->version!=1 || result->byteSize!=sizeof(PresentTrace) ||
+       result->rowByteSize!=sizeof(PresentObservation)) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    std::lock_guard<std::mutex> lock(h.observationMutex);
+    result->count=unsigned(std::min(h.totalPresentRows,uint64_t(128)));
+    result->totalFrames=h.totalPresentRows;
+    const auto first=h.totalPresentRows>128 ? h.totalPresentRows%128 : 0;
+    for(unsigned i=0;i<result->count;++i) result->rows[i]=h.presentRows[(first+i)%128];
+    for(unsigned i=result->count;i<128;++i) result->rows[i]=PresentObservation{};
+    return 1;
+}
 EXPORT double cspm_comp_elapsed_ms(void* pointer) {
     if(!pointer) return 0; const double begin=static_cast<Host*>(pointer)->startSeconds.load();
     return begin ? (nowSeconds()-begin)*1000 : 0;
@@ -458,11 +614,27 @@ EXPORT double cspm_comp_elapsed_ms(void* pointer) {
 EXPORT uintptr_t cspm_comp_hwnd(void* pointer) { return pointer ? uintptr_t(static_cast<Host*>(pointer)->hwnd) : 0; }
 EXPORT int cspm_comp_finish(void* pointer) {
     if(!pointer) return 0; auto& h=*static_cast<Host*>(pointer);
-    return h.call([&h] { KillTimer(h.hwnd,1); ShowWindow(h.hwnd,SW_HIDE); });
+    return h.call([&h] {
+        KillTimer(h.hwnd,1);
+        const double hideBegin=nowSeconds(); ShowWindow(h.hwnd,SW_HIDE);
+        const double hideReturn=nowSeconds();
+        h.observe([&](Observation& observation) {
+            observation.hostHideBeginSeconds=hideBegin; observation.hostHideReturnSeconds=hideReturn;
+        });
+    });
 }
 EXPORT void cspm_comp_destroy(void* pointer) {
     if(!pointer) return; auto* h=static_cast<Host*>(pointer);
-    h->call([h] { KillTimer(h->hwnd,1); ShowWindow(h->hwnd,SW_HIDE); });
+    h->call([h] {
+        KillTimer(h->hwnd,1);
+        const double hideBegin=nowSeconds(); ShowWindow(h->hwnd,SW_HIDE);
+        const double hideReturn=nowSeconds();
+        h->observe([&](Observation& observation) {
+            if(!observation.hostHideBeginSeconds) {
+                observation.hostHideBeginSeconds=hideBegin; observation.hostHideReturnSeconds=hideReturn;
+            }
+        });
+    });
     if(!PostMessageW(h->hwnd,WM_APP+2,0,0)) h->fail("Native destruction PostMessageW failed");
     if(h->worker.joinable()) {
         if(WaitForSingleObject(h->worker.native_handle(),3000)!=WAIT_OBJECT_0) {

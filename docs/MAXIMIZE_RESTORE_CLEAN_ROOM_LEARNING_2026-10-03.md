@@ -1,5 +1,14 @@
 # Clean-room maximize/restore learning record
 
+## Authorized continuity preservation — 2026-10-04
+
+**PROVEN BY MEASUREMENT:** continuity recovers local/live remote `93de109`, all ten tracked edits and seven new files, with 268 safe focused tests passing on Y:, diagnostic compilation, governed lint (existing warnings), native/shader `/W4` build and ABI/null rejection. The complete 33-run aggregate conserves raw hashes and every pixel/fresh-observation result; lossless JSON compaction fits the unchanged privacy scanner limit.
+
+**SUPPORTED BY OBSERVATION:** all existing changes are coherent; no incomplete function or owned fixture process is found. Worktrees/stashes and protected original files remain intact.
+
+**STILL UNKNOWN:** rounded-corner texture-alpha ownership, narrow live-only margin contribution, repeatable populated restore readiness and actual input-event acceptance. Desktop alpha cannot establish texture alpha. Hidden responsive raw font/implicit-size notifications bypass shared-control metrics gates in retained traces, but their causal contribution to restore asymmetry still needs a matched control. No candidate is qualified or installed; not yet accepted by Cory.
+
+
 This experiment belongs to `experiment/clean-room-fluid-maximize-restore`,
 based on `ad72d59160eb510dc842d0c6978967cb793fba49`. Production remains the
 default and is preserved in the original checkout and installed package.
@@ -758,3 +767,21 @@ source-pixel mismatch cause, complete no-hold target/live fidelity and input
 release, cross-workspace perceptual continuity and Cory's installed acceptance.
 No package or installation is justified by these mixed results. Production remains
 the safe default. **Not yet accepted by Cory.**
+
+## Fresh-observer and restore-padding continuation — 2026-10-04
+
+Recovery preserves `93de109`, every uncommitted edit and all later failed controls. Supported DXGI acquisition/frame-info observation now separates `LastPresentTime` from pointer time, advances a capture-session generation and refuses cache reuse. Bounded event-loop gates bracket HWND/client/state and require a newer raster plus an exact native same-swapchain revision witness outside both clients. A delivered image with unchanged client pixels is valid; a repeated cached array is not. No private image is retained, and no observer dependency is added to production.
+
+**PROVEN BY MEASUREMENT:** fresh source-only Time Entry/Directory controls are exact after hiding the live source. Deliberate native-host removal reproduces the earlier 410,316/835,856 difference counts respectively. The old failures remain failures; these new controls localize their wrong-presentation pattern rather than certifying their historical frame identity. Initial source overlap changes exactly sixteen pixels at four rounded content corners. A double composition of partial-alpha corners is a working explanation, not an accepted platform tolerance.
+
+**PROVEN BY MEASUREMENT:** the opt-in target commit derives normal settled padding before host/canvas adoption and metrics publication; its incidental padding callback no longer publishes an old host canvas during the hold. Actual geometry checks cover normal sizes, negative origins, DPI descriptors and clipped margins. Cold Time Entry completes four directions and large Home two, with exact complete-client source-native and target-live comparisons, fresh witness/state evidence, correct restore geometry and saved input enabled state. Their unchanged 240 ms transfer deadline passes; overlap corner differences still reject each complete candidate. Fresh observation adds diagnostic time and does not certify continuous movement or a threefold speed gain.
+
+**PROVEN BY MEASUREMENT:** the cold Directory run completes maximize with exact target/live pixels but has an 84-pixel source residual in local right margin `[1111,644,1122,654]`, then rejects restore readiness. Existing-preview WebEngine loads benign HTML. Its fresh source controls have exact header/body pixels but 64/54 differing margin pixels, localized to `[1111,548,1122,557]` / `[1111,550,1122,557]`; those full-client comparisons fail. The later cursor observation is stationary on another monitor, so that sample does not support a pointer inside the mismatch. Transparent-backdrop/margin causality remains unknown. No evidence is cropped or forgiven.
+
+**PROVEN BY MEASUREMENT — instrumented CPU boundaries:** Productivity maximize/restore commit is 119.28/157.12 ms, metrics publication 63/119 ms, Qt polish 26/40 ms, composite sync 28/26 ms and render 66/74 ms. Native export is inside render. Export finishes 237.16/280.23 ms after the GUI native-start notification, with rejected import returns at 246.60/303.92 ms. Correct padding therefore does not establish both-direction readiness. These runs are not a matched causal comparison with the earlier 389.45 ms cold restore. Later quiet runs rejected for absent observable witness do not measure readiness; retain them separately.
+
+All failed observer/geometry/activation, deferred region-analysis and single-instance attempts remain local evidence. The first four-direction Time Entry run's analysis/cleanup failure is retained; later fixtures separate source/target regions, contain analysis exceptions and reject an entry exit without a diagnostic owner. Native source/target/live equality is distinct from overlap, deadline, input timing, first physical movement and scanout.
+
+Validation: **268 sandbox-safe focused checks**, Python compilation, governed QML lint with existing warnings, MSVC `/W4` native/shader compilation, ABI/null rejection and whitespace checks pass. Root's actual desktop/Qt/Chromium runs execute **outside sandbox** on disposable profiles; protected originals and installed main hash remain unchanged. No PDF, installed-package rebuild/smoke, complete lifecycle/mixed-DPI or Cory acceptance is claimed. Full sanitized histograms, bounds, regions, color/alignment diagnostics and provenance are in `CLEANROOM_PHYSICAL_QUALIFICATION_RESULTS_2026-10-04.json` and the accompanying report.
+
+**Decision:** observer/padding repair and remaining pixel localization are complete for this scoped continuation. Conditional complete cold qualification is not entered while the sixteen overlap pixels, margin residuals and populated restore readiness fail. Production stays the default and no installation or another visual state machine follows. **Not yet accepted by Cory.**
