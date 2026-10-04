@@ -102,6 +102,48 @@ def test_publication_costs_time_setter_propagation_and_keep_helpers_unmodified(m
         assert 'FanoutTrace.enter("' + component + '.ratioPx"' not in source
 
 
+@pytest.mark.parametrize("variant", ["counts", "publication-costs"])
+def test_quiet_variants_skip_tree_discovery_and_publication_instrumentation(mirror, variant):
+    changed = instrument_mirror(mirror, variant, collect_counts=False)
+    shell = changed["src/qml/DetachedShellWindow.qml"]
+    assert "FanoutTrace.watchTree" not in shell
+    assert "FanoutTrace.stage = name" not in shell
+    assert "FanoutTrace.enter(" not in shell
+    assert "FanoutTrace.value(" not in shell
+    assert "src/qml/components/LayoutMetricsGate.qml" not in changed
+    for component in ("ModernTextField", "ModernComboBox", "PillButton"):
+        assert "diagnosticOwner" not in changed["src/qml/components/" + component + ".qml"]
+    placeholder = changed["src/qml/views/PlaceholderSubmenuView.qml"]
+    assert "FanoutTrace.value(" not in placeholder
+    assert "FanoutTrace.enter(" not in placeholder
+    assert "src/qml/components/ProductivityReportPanel.qml" not in changed
+    assert "function fontPixelSize(" in placeholder
+    assert "root.fontPixelSize(this," in placeholder
+
+
+@pytest.mark.parametrize("variant", ["counts", "publication-costs"])
+def test_actual_quiet_hooks_do_not_touch_the_tree_or_enable_counters(mirror, variant):
+    from PySide6.QtCore import QCoreApplication
+    from PySide6.QtQml import QJSEngine
+
+    changed = instrument_mirror(mirror, variant, collect_counts=False)
+    shell = changed["src/qml/DetachedShellWindow.qml"]
+    hooks = "\n".join(line.strip() for line in shell.splitlines()
+                      if line.strip().startswith("function cleanRoomFanout"))
+    application = QCoreApplication.instance() or QCoreApplication([])
+    engine = QJSEngine()
+    result = engine.evaluate("var touched = 0; var FanoutTrace = {"
+        "begin: function() { ++touched; throw new Error('counter start'); },"
+        "finish: function() { ++touched; throw new Error('counter finish'); },"
+        "watchTree: function() { ++touched; throw new Error('tree discovery'); }};"
+        "var mainWin = {get contentItem() { ++touched; throw new Error('tree access'); }};"
+        + hooks + "\ncleanRoomFanoutBegin(); var rows = cleanRoomFanoutFinish();"
+        "[touched, Object.keys(rows).length];")
+    assert not result.isError(), result.toString()
+    assert result.toVariant() == [0, 0]
+    application.processEvents()
+
+
 def test_missing_gate_publication_fails_before_any_mirror_write(mirror):
     path = mirror / "src/qml/components/LayoutMetricsGate.qml"
     path.write_text(path.read_text(encoding="utf-8").replace("snapshot = next", "snapshot = null"), encoding="utf-8")
@@ -152,10 +194,14 @@ def test_tree_observer_sees_actual_hidden_font_and_implicit_notifications():
     assert "No-window observer checks passed" in result.stdout
 
 
-def test_hidden_font_scalar_isolation_preserves_full_multiline_and_inline_expressions(mirror):
-    changed = instrument_mirror(mirror, "hidden-font-scalars")
-    assert changed["src/qml/HiddenScalars.js"] == HIDDEN_SCALAR_JS
-    assert 'HiddenScalars.scalar(this, "font.pixelSize"' in changed["src/qml/views/PlaceholderSubmenuView.qml"]
+def test_hidden_font_isolation_refuses_to_wrap_the_retained_runtime_repair(mirror):
+    before = hashes(mirror)
+    with pytest.raises(ValueError, match="requires source without the retained font metrics repair"):
+        instrument_mirror(mirror, "hidden-font-scalars")
+    assert hashes(mirror) == before
+
+
+def test_hidden_font_scalar_isolation_preserves_full_multiline_and_inline_expressions():
     source = '''Text { font.pixelSize: root.ratioPx(0.1, 9); font.weight: Font.Bold }
 Text {
     font.pixelSize: root.isProMode

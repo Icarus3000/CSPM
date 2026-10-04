@@ -52,6 +52,21 @@ struct Pixels {
     ComPtr<ID3D11ShaderResourceView> view;
     UINT width=0,height=0;
 };
+bool probeCoordinatesValid(const int* xy,unsigned count,unsigned width,unsigned height,
+                           int offsetX,int offsetY,unsigned hostWidth,unsigned hostHeight) {
+    if(!xy || !count || count>64 || offsetX<0 || offsetY<0) return false;
+    for(unsigned i=0;i<count;++i) {
+        const int x=xy[2*i],y=xy[2*i+1];
+        if(x<0 || y<0 || unsigned(x)>=width || unsigned(y)>=height ||
+           uint64_t(x)+unsigned(offsetX)>=hostWidth || uint64_t(y)+unsigned(offsetY)>=hostHeight)
+            return false;
+    }
+    return true;
+}
+struct ProbePixels {
+    int xy[128]{};
+    unsigned char source[256]{},submitted[256]{};
+};
 struct Constants {
     float currentRect[4],sourceRect[4],targetRect[4],sizes[4],motion[4];
     float witnessRect[4],witnessColor[4];
@@ -107,6 +122,9 @@ struct Host {
     ComPtr<IDCompositionTarget> target;
     ComPtr<IDCompositionVisual> root;
     ComPtr<IDXGISwapChain1> swapchain;
+    // Retain the exact last submitted allocation, rather than asking a flip
+    // chain for its next backbuffer. Only the stopped diagnostic samples it.
+    ComPtr<ID3D11Texture2D> lastSubmittedTexture;
     HANDLE frameReady=nullptr;
     std::atomic<unsigned> submittedCount{0},displayedCount{0},statisticsResult{0};
     UINT endpointCount=0;
@@ -126,6 +144,7 @@ struct Host {
     float witnessX=0,witnessY=0;
     uint32_t witnessRevision=0;
     bool apartment=false;
+    bool deferredSourceVisibility=false;
     template<class F> void observe(F writer) {
         std::lock_guard<std::mutex> lock(observationMutex);
         writer(observation); ++observation.sequence;
@@ -284,6 +303,7 @@ void render(Host& h,bool initial=false) {
         memcpy(row.currentRect,c.currentRect,sizeof(c.currentRect));
     });
     check(presentResult,"Present GPU-only premultiplied frame");
+    h.lastSubmittedTexture=buffer;
     if(!initial && elapsed>=duration) {
         h.endpointSubmitted=true; h.endpointCount=submitted;
         h.observe([&](Observation& observation) {
@@ -412,9 +432,58 @@ void validateRect(const Host& h,float x,float y,float width,float height) {
     if(x!=std::floor(x)||y!=std::floor(y)||width!=std::floor(width)||height!=std::floor(height))
         throw std::runtime_error("Endpoint frame rectangles must use integral physical pixels");
 }
+void probeTexels(Host& h,ID3D11Texture2D* texture,const int* xy,unsigned count,
+                 int offsetX,int offsetY,unsigned char* bgra) {
+    D3D11_TEXTURE2D_DESC desc{}; texture->GetDesc(&desc);
+    if(desc.Format!=DXGI_FORMAT_B8G8R8A8_UNORM && desc.Format!=DXGI_FORMAT_R8G8B8A8_UNORM)
+        throw std::runtime_error("Diagnostic texel format unsupported");
+    desc.Width=desc.Height=desc.MipLevels=desc.ArraySize=1;
+    desc.SampleDesc.Count=1; desc.SampleDesc.Quality=0;
+    desc.Usage=D3D11_USAGE_STAGING; desc.BindFlags=desc.MiscFlags=0;
+    desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+    ComPtr<ID3D11Texture2D> staging;
+    check(h.gpu->CreateTexture2D(&desc,nullptr,&staging),"Create one-texel diagnostic staging");
+    for(unsigned i=0;i<count;++i) {
+        const UINT x=UINT(xy[2*i]+offsetX),y=UINT(xy[2*i+1]+offsetY);
+        D3D11_BOX box{x,y,0,x+1,y+1,1};
+        h.context->CopySubresourceRegion(staging.Get(),0,0,0,0,texture,0,&box);
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        check(h.context->Map(staging.Get(),0,D3D11_MAP_READ,0,&mapped),"Map diagnostic texel only");
+        const auto bytes=static_cast<const unsigned char*>(mapped.pData);
+        bgra[4*i]=bytes[desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM ? 2 : 0];
+        bgra[4*i+1]=bytes[1];
+        bgra[4*i+2]=bytes[desc.Format==DXGI_FORMAT_R8G8B8A8_UNORM ? 0 : 2];
+        bgra[4*i+3]=bytes[3];
+        h.context->Unmap(staging.Get(),0);
+    }
+}
 }
 
 EXPORT unsigned cspm_comp_abi_version() { return 1; }
+// Measurement-only small readback; never supplies any presentation pixels and
+// never runs on a motion clock. Caller storage is not captured by queued work.
+EXPORT int cspm_comp_probe_pixels(void* pointer,const int* xy,unsigned count,
+                                  unsigned char* sourceBGRA,unsigned char* submittedBGRA) {
+    if(!pointer || !xy || !sourceBGRA || !submittedBGRA || !count || count>64) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    auto samples=std::make_shared<ProbePixels>();
+    memcpy(samples->xy,xy,count*2*sizeof(int));
+    const int result=h.call([&h,samples,count] {
+        if((h.flags.load()&(2|16)) || !h.source.texture || !h.lastSubmittedTexture)
+            throw std::runtime_error("Diagnostic samples require a stopped source presentation");
+        if(!probeCoordinatesValid(samples->xy,count,h.source.width,h.source.height,
+                int(h.sourceX),int(h.sourceY),unsigned(h.hostWidth),unsigned(h.hostHeight)))
+            throw std::runtime_error("Diagnostic texel coordinates exceed source or submitted extent");
+        probeTexels(h,h.source.texture.Get(),samples->xy,count,0,0,samples->source);
+        probeTexels(h,h.lastSubmittedTexture.Get(),samples->xy,count,
+            int(h.sourceX),int(h.sourceY),samples->submitted);
+    });
+    if(result) {
+        memcpy(sourceBGRA,samples->source,count*4);
+        memcpy(submittedBGRA,samples->submitted,count*4);
+    }
+    return result;
+}
 EXPORT void* cspm_gpu_capture(void* nativeContext,unsigned* width,unsigned* height) {
     try {
         if(!nativeContext || !width || !height) throw std::runtime_error("GPU capture arguments are null");
@@ -469,6 +538,58 @@ EXPORT void* cspm_comp_create_from_frame(void* frame,int left,int top,int width,
         return h.release();
     } catch(const std::exception& ex) { lastError=ex.what(); return nullptr; }
 }
+// Diagnostic opt-in: prepare the complete GPU source while its HWND is hidden.
+// The GUI owner then transfers native visibility in one window-position batch.
+EXPORT int cspm_comp_defer_source_visibility(void* pointer) {
+    if(!pointer) return 0; auto& h=*static_cast<Host*>(pointer);
+    return h.call([&h] {
+        if(h.flags.load()) throw std::runtime_error("Source visibility policy must precede source preparation");
+        h.deferredSourceVisibility=true;
+    });
+}
+EXPORT int cspm_comp_transfer_source_visibility(void* pointer,uintptr_t livePointer) {
+    if(!pointer || !livePointer) return 0; auto& h=*static_cast<Host*>(pointer);
+    const auto rejected=[&h](const char* reason,bool nativeFailure=false) {
+        char detail[256];
+        if(nativeFailure) sprintf_s(detail,"%s: Win32 error %lu",reason,GetLastError());
+        else sprintf_s(detail,"%s",reason);
+        h.fail(detail); return 0;
+    };
+    const HWND live=reinterpret_cast<HWND>(livePointer);
+    DWORD process=0;
+    const DWORD guiThread=GetWindowThreadProcessId(live,&process);
+    if(!h.deferredSourceVisibility || !(h.flags.load()&1) || (h.flags.load()&(2|16)) ||
+       process!=GetCurrentProcessId() || guiThread!=GetCurrentThreadId() ||
+       !IsWindowVisible(live) || IsWindowVisible(h.hwnd) || GetParent(live)!=GetParent(h.hwnd))
+        return rejected("Source visibility transfer requires owned GUI thread, same parent and stopped prepared state");
+    const double began=nowSeconds();
+    HDWP batch=BeginDeferWindowPos(2);
+    if(!batch) return rejected("Begin source visibility batch failed",true);
+    batch=DeferWindowPos(batch,live,nullptr,0,0,0,0,
+        SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_HIDEWINDOW);
+    if(!batch) return rejected("Defer live source hide failed",true);
+    batch=DeferWindowPos(batch,h.hwnd,HWND_TOP,0,0,0,0,
+        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+    if(!batch) return rejected("Defer native source reveal failed",true);
+    if(!EndDeferWindowPos(batch)) return rejected("End source visibility batch failed",true);
+    const double ended=nowSeconds();
+    h.observe([&](Observation& observation) {
+        observation.sourceShowBeginSeconds=began; observation.sourceShowReturnSeconds=ended;
+    });
+    if(IsWindowVisible(live) || !IsWindowVisible(h.hwnd))
+        return rejected("Source visibility batch returned without the requested ownership state");
+    return 1;
+}
+EXPORT int cspm_comp_raise_source_visibility(void* pointer) {
+    if(!pointer) return 0; auto& h=*static_cast<Host*>(pointer);
+    return h.call([&h] {
+        const auto flags=h.flags.load();
+        if(!(flags&1) || (flags&(2|16)) || !IsWindowVisible(h.hwnd))
+            throw std::runtime_error("Source ordering requires a visible stopped prepared host");
+        if(!SetWindowPos(h.hwnd,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+            throw std::runtime_error("Stopped source host z-order unavailable");
+    });
+}
 static void validateWitnessOutside(const Host& h,float x,float y,float width,float height) {
     if(h.witnessRevision && h.witnessX<x+width && h.witnessX+8>x &&
        h.witnessY<y+height && h.witnessY+8>y)
@@ -522,6 +643,15 @@ EXPORT int cspm_comp_set_source_frame(void* pointer,void* frame,float x,float y,
         });
         check(waitResult,"Source commit processed");
         if(h.flags.load()&16) throw std::runtime_error("Source preparation already failed");
+        if(h.deferredSourceVisibility) {
+            // Establish the topmost group while still hidden. The subsequent
+            // two-window batch uses the measured HWND_TOP source ordering.
+            if(!SetWindowPos(h.hwnd,HWND_TOPMOST,0,0,0,0,
+                    SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+                throw std::runtime_error("Hidden source host ordering unavailable");
+            h.flags.fetch_or(1); // Prepared while hidden; separate batch owns visibility.
+            return;
+        }
         const double showBegin=nowSeconds();
         const BOOL showed=SetWindowPos(h.hwnd,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
         const double showReturn=nowSeconds();

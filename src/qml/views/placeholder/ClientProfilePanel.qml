@@ -250,7 +250,7 @@ Rectangle {
 
             text: String(root.profileLookupMessage || "Select and load a client profile.")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
             elide: Text.ElideRight
         }
 
@@ -320,7 +320,7 @@ Rectangle {
 
                                         text: String(leftCard.entry && leftCard.entry.label ? leftCard.entry.label : "")
                                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+                                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))))
                                         font.weight: Font.DemiBold
                                         wrapMode: Text.NoWrap
                                         elide: Text.ElideRight
@@ -333,7 +333,7 @@ Rectangle {
                                         elide: Text.ElideNone
                                         Layout.fillWidth: true
                                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
+                                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))))
                                         wrapMode: Text.Wrap
                                     }
                                 }
@@ -371,7 +371,7 @@ Rectangle {
 
                                         text: String(rightCard.entry && rightCard.entry.label ? rightCard.entry.label : "")
                                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+                                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))))
                                         font.weight: Font.DemiBold
                                         wrapMode: Text.NoWrap
                                         elide: Text.ElideRight
@@ -384,7 +384,7 @@ Rectangle {
                                         elide: Text.ElideNone
                                         Layout.fillWidth: true
                                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
+                                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))))
                                         wrapMode: Text.Wrap
                                     }
                                 }
@@ -415,7 +415,7 @@ Rectangle {
                         Text {
                             text: "Related Matters"
                             font.bold: true
-                            font.pixelSize: root.ratioPx(0.0125, 12.5)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0125, 12.5)))
                             color: root.appStyle === "Professional" ? root.proInk : root._text
                         }
                         Item { Layout.fillWidth: true }
@@ -435,7 +435,7 @@ Rectangle {
                     Text {
                         text: "Matters found: " + String(clientProfilePanel.relatedMatters.length)
                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.9, root.metricFloor("fontFloorLabelPx", 8))
+                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.9, root.metricFloor("fontFloorLabelPx", 8))))
                     }
 
                     Rectangle {
@@ -476,14 +476,14 @@ Rectangle {
                                         Text {
                                             text: String(modelData.matterNumber || "[no number]")
                                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.60)
-                                            font.pixelSize: root.ratioPx(0.009, root.metricFloor("fontFloorLabelPx", 8))
+                                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.009, root.metricFloor("fontFloorLabelPx", 8))))
                                             font.bold: true
                                         }
                                         Item { Layout.fillWidth: true }
                                         Text {
                                             text: String(modelData.role || "Client")
                                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.8)
-                                            font.pixelSize: root.ratioPx(0.0085, root.metricFloor("fontFloorLabelPx", 8))
+                                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0085, root.metricFloor("fontFloorLabelPx", 8))))
                                             font.bold: true
                                         }
                                     }
@@ -494,7 +494,7 @@ Rectangle {
                                             Layout.fillWidth: true
                                             text: String(modelData.displayName || modelData.matterName || "")
                                             color: root.appStyle === "Professional" ? root.proInk : root._text
-                                            font.pixelSize: root.ratioPx(0.011, 11)
+                                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.011, 11)))
                                             elide: Text.ElideRight
                                         }
                                         Text {
@@ -502,7 +502,7 @@ Rectangle {
                                             color: modelData.status === "Open" || modelData.status === "Active"
                                                 ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
                                                 : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.5)
-                                            font.pixelSize: root.ratioPx(0.0095, root.metricFloor("fontFloorLabelPx", 8))
+                                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0095, root.metricFloor("fontFloorLabelPx", 8))))
                                         }
                                     }
                                 }
@@ -520,7 +520,7 @@ Rectangle {
                     Text {
                         text: "Tip: Double-click a matter to open its Matter Profile 360."
                         color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.5)
-                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.8, root.metricFloor("fontFloorLabelPx", 8))
+                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.8, root.metricFloor("fontFloorLabelPx", 8))))
                         elide: Text.ElideRight
                     }
                 }

@@ -468,3 +468,260 @@ def composition_windows():
     if not user.EnumWindows(callback, 0):
         raise ctypes.WinError(ctypes.get_last_error())
     return hosts
+
+
+def composition_probe_coordinates(live, overlap, native, regions, corner_radius_px):
+    """Choose at most 64 source texels in recorded corners/margins only.
+
+    Interior private content is never sampled. Changed coordinates explain a
+    failure; the complete array comparison remains the qualification gate.
+    """
+    live, overlap, native = map(_pixels, (live, overlap, native))
+    if live.shape != overlap.shape or live.shape != native.shape:
+        raise ValueError("Composition controls require matching complete client arrays")
+    if not isinstance(corner_radius_px, int) or not 0 <= corner_radius_px <= 128:
+        raise ValueError("Measured corner radius must be an integer from 0 to 128")
+    content = [box for name in ("header", "clientBody", "border") for box in regions.get(name, [])]
+    if not content:
+        raise ValueError("Composition controls require observed content regions")
+    left, top = min(box[0] for box in content), min(box[1] for box in content)
+    right, bottom = max(box[2] for box in content), max(box[3] for box in content)
+    radius = min(corner_radius_px + 1, (right-left)//2, (bottom-top)//2)
+    zones = {"cornerTL": [[left, top, left+radius, top+radius]],
+        "cornerTR": [[right-radius, top, right, top+radius]],
+        "cornerBL": [[left, bottom-radius, left+radius, bottom]],
+        "cornerBR": [[right-radius, bottom-radius, right, bottom]],
+        "clientMargin": regions.get("shadowAndMargin", [])}
+    changed = np.any(live != overlap, axis=2) | np.any(live != native, axis=2)
+    coordinates, labels, summaries = [], [], {}
+    height, width = live.shape[:2]
+    for label, boxes in zones.items():
+        mask = np.zeros((height, width), dtype=bool)
+        for box in boxes:
+            x0, y0, x1, y1 = _physical_rectangle(box, label="Composition probe region")
+            if not 0 <= x0 <= x1 <= width or not 0 <= y0 <= y1 <= height:
+                raise ValueError("Composition probe region exceeds complete client")
+            mask[y0:y1, x0:x1] = True
+        yy, xx = np.nonzero(changed & mask)
+        available = list(zip(xx.tolist(), yy.tolist()))
+        budget = 24 if label == "clientMargin" else 4
+        selected = [available[index] for index in np.unique(np.linspace(
+            0, len(available)-1, min(budget, len(available))).astype(int))] if available else []
+        # Keep curved-edge controls when equality leaves no changed pixels to
+        # select. Reflect four radius-relative fringe locations at each corner;
+        # these are diagnostic samples, never an equality mask.
+        fringe = []
+        curved_radius = min(corner_radius_px, radius-1)
+        if label != "clientMargin" and curved_radius > 1:
+            diagonal = max(1, round((1-np.sqrt(.5))*curved_radius))
+            offsets = [(0, max(0, curved_radius-2)),
+                       (max(0, curved_radius-2), 0),
+                       (diagonal-1, diagonal), (diagonal, diagonal-1)]
+            for dx, dy in offsets:
+                fringe.append((left+dx if label.endswith("L") else right-1-dx,
+                    top+dy if label.startswith("cornerT") else bottom-1-dy))
+        # Four location controls per corner and eight fixed margin controls.
+        guards = []
+        for x0, y0, x1, y1 in boxes:
+            if x0 < x1 and y0 < y1:
+                guards.extend(((x0, y0), (x1-1, y0), (x0, y1-1), (x1-1, y1-1)))
+        if label == "clientMargin":
+            guards = guards[:8]
+        selected = list(dict.fromkeys(selected + fringe + guards))
+        if label != "clientMargin":
+            selected = selected[:8]
+        sampled_changed = sum(bool(changed[y, x]) for x, y in selected)
+        summaries[label] = {"rectanglesLTRB": boxes, "differentPixels": len(available),
+            "sampledChangedPixels": sampled_changed,
+            "unsampledChangedPixels": len(available)-sampled_changed, "sampleCount": len(selected)}
+        coordinates.extend(selected)
+        labels.extend([label] * len(selected))
+    if not coordinates or len(coordinates) > 64:
+        raise ValueError("Composition probe requires between 1 and 64 bounded texels")
+    return coordinates, labels, summaries
+
+
+def probe_gpu_composition(dll, host, coordinates):
+    """Return tiny diagnostic-only GPU samples in RAM, never presentation input."""
+    if not host or not hasattr(dll, "cspm_comp_probe_pixels"):
+        raise RuntimeError("Stopped-clock GPU composition probe is unavailable")
+    if not 1 <= len(coordinates) <= 64:
+        raise ValueError("GPU composition probe requires 1 to 64 texels")
+    parsed = []
+    for coordinate in coordinates:
+        if len(coordinate) != 2 or any(not isinstance(v, int) or isinstance(v, bool)
+                                     or v < 0 or v > 2147483647 for v in coordinate):
+            raise ValueError("GPU probe coordinates must be nonnegative integer texels")
+        parsed.extend(coordinate)
+    xy = (ctypes.c_int * len(parsed))(*parsed)
+    source = (ctypes.c_ubyte * (len(coordinates)*4))()
+    submitted = (ctypes.c_ubyte * (len(coordinates)*4))()
+    function = dll.cspm_comp_probe_pixels
+    function.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int), ctypes.c_uint,
+                        ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_ubyte)]
+    function.restype = ctypes.c_int
+    if not function(host, xy, len(coordinates), source, submitted):
+        raise RuntimeError("Stopped-clock GPU composition probe rejected bounded texels")
+    return (np.ctypeslib.as_array(source).reshape(-1, 4).copy(),
+            np.ctypeslib.as_array(submitted).reshape(-1, 4).copy())
+
+
+def composition_analysis(live, overlap, native, backdrop, coordinates, labels,
+                         source_bgra, submitted_bgra, region_membership=None, *, single_owner=False):
+    """Sanitized causal models; no raw samples escape or relax exact equality."""
+    live, overlap, native, backdrop = map(_pixels, (live, overlap, native, backdrop))
+    if any(array.shape != live.shape for array in (overlap, native, backdrop)):
+        raise ValueError("Composition arrays require the same complete client extent")
+    source, submitted = np.asarray(source_bgra), np.asarray(submitted_bgra)
+    if (source.dtype != np.uint8 or submitted.dtype != np.uint8
+            or source.shape != (len(coordinates), 4) or submitted.shape != source.shape
+            or len(labels) != len(coordinates) or not 1 <= len(coordinates) <= 64):
+        raise ValueError("Composition samples require 1 to 64 matching BGRA texels")
+    xy = np.asarray(coordinates)
+    if xy.shape != (len(coordinates), 2) or not np.issubdtype(xy.dtype, np.integer):
+        raise ValueError("Composition sample coordinates must be integer XY texels")
+    if np.any(xy < 0) or np.any(xy[:, 0] >= live.shape[1]) or np.any(xy[:, 1] >= live.shape[0]):
+        raise ValueError("Composition samples exceed the complete client extent")
+    x, y = xy[:, 0], xy[:, 1]
+    l, o, n, b = [array[y, x, :3].astype(np.float64) for array in (live, overlap, native, backdrop)]
+    s, p = source[:, :3].astype(np.float64), submitted[:, :3].astype(np.float64)
+    sa, pa = source[:, 3:4].astype(np.float64)/255, submitted[:, 3:4].astype(np.float64)/255
+    def score(predicted, observed):
+        predicted = np.clip(np.rint(predicted), 0, 255)
+        delta = np.abs(predicted-observed)
+        return {"differentSamples": int(np.any(delta != 0, axis=1).sum()),
+            "maxChannelDifference": float(delta.max()), "meanChannelDifference": float(delta.mean())}
+    def decode(encoded):
+        value = encoded/255
+        return np.where(value <= .04045, value/12.92, ((value+.055)/1.055)**2.4)
+    def encode(linear):
+        value = np.clip(linear, 0, 1)
+        return 255*np.where(value <= .0031308, value*12.92, 1.055*value**(1/2.4)-.055)
+    straight = np.divide(p, pa, out=np.zeros_like(p), where=pa != 0)
+    linear_native = encode(decode(straight)*pa + (1-pa)*decode(b))
+    masked_live = s+(1-sa)*b
+    membership = (region_membership or {}).get("included")
+    if membership is not None:
+        if len(membership) != len(coordinates) or any(type(value) is not bool for value in membership):
+            raise ValueError("Region membership must match every sampled texel")
+        masked_live = np.where(np.asarray(membership)[:, None], masked_live, b)
+    result = {"sampleCount": len(coordinates),
+        "ownershipMode": "single-owner transfer" if single_owner else "live/native overlap",
+        "sourceSubmittedDifferentSamples": int(np.any(source != submitted, axis=1).sum()),
+        "sourceAlphaHistogram": np.bincount(source[:, 3], minlength=256).tolist(),
+        "submittedAlphaHistogram": np.bincount(submitted[:, 3], minlength=256).tolist(),
+        "sourcePremultipliedViolations": int(np.any(s > source[:, 3:4], axis=1).sum()),
+        "submittedPremultipliedViolations": int(np.any(p > submitted[:, 3:4], axis=1).sum()),
+        "models": {"sourcePremultipliedOverBackdropToLive": score(s+(1-sa)*b, l),
+            "sourcePremultipliedWithNativeRegionToLive": score(masked_live, l),
+            "submittedPremultipliedOverBackdropToNative": score(p+(1-pa)*b, n),
+            "submittedPremultipliedOverLiveToOverlap": score(p+(1-pa)*l, o),
+            "submittedPremultipliedOverBackdropToTransfer": score(p+(1-pa)*b, o),
+            "submittedStraightAlphaOverBackdropToNative": score(p*pa+(1-pa)*b, n),
+            "submittedSRGBLinearCompositionToNative": score(linear_native, n)},
+        "regions": {}, "regionMembership": region_membership,
+        "scope": "Stopped-clock diagnostic texel readback and encoded-BGR composition hypotheses; no raw colors retained; complete-client equality is independent"}
+    for label in sorted(set(labels)):
+        selected = np.array([value == label for value in labels])
+        result["regions"][label] = {"sampleCount": int(selected.sum()),
+            "sourcePartialAlphaSamples": int(np.count_nonzero((source[selected, 3] > 0) & (source[selected, 3] < 255))),
+            "sourceAlphaRange": [int(source[selected, 3].min()), int(source[selected, 3].max())],
+            "sourceChannelMeansBGRA": source[selected].mean(axis=0).tolist(),
+            "submittedChannelMeansBGRA": submitted[selected].mean(axis=0).tolist(),
+            "liveOverlapDifferentSamples": int(np.any(l[selected] != o[selected], axis=1).sum()),
+            "liveNativeDifferentSamples": int(np.any(l[selected] != n[selected], axis=1).sum()),
+            "nativeBackdropDifferentSamples": int(np.any(n[selected] != b[selected], axis=1).sum()),
+            "sourceSubmittedDifferentSamples": int(np.any(source[selected] != submitted[selected], axis=1).sum()),
+            "singleLayerNativeModel": score((p+(1-pa)*b)[selected], n[selected]),
+            "doubleLayerOverlapModel": score((p+(1-pa)*l)[selected], o[selected])}
+    return result
+
+
+def window_region_membership(hwnd, coordinates):
+    """Measure the live native region at bounded client-local sample points."""
+    if not 1 <= len(coordinates) <= 64:
+        raise ValueError("Region membership requires 1 to 64 bounded points")
+    state = window_observation(hwnd)
+    user, gdi = ctypes.WinDLL("user32", use_last_error=True), ctypes.WinDLL("gdi32", use_last_error=True)
+    gdi.CreateRectRgn.argtypes, gdi.CreateRectRgn.restype = [ctypes.c_int]*4, wintypes.HANDLE
+    user.GetWindowRgn.argtypes = [wintypes.HWND, wintypes.HANDLE]
+    gdi.PtInRegion.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_int]
+    gdi.DeleteObject.argtypes = [wintypes.HANDLE]
+    region = gdi.CreateRectRgn(0, 0, 0, 0)
+    if not region:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        kind = user.GetWindowRgn(hwnd, region)
+        ox, oy = state["clientOffsetInWindowXY"]
+        values = [bool(gdi.PtInRegion(region, x+ox, y+oy)) for x, y in coordinates] if kind else None
+        return {"nativeRegionType": kind, "included": values,
+            "scope": "Live HWND region membership at sampled client-local texels; default region unspecified"}
+    finally:
+        gdi.DeleteObject(region)
+
+
+class ControlledBackdrop:
+    """Task-owned opaque Win32 source-control background, with native WndProc."""
+    bgra = (83, 61, 37, 255)
+
+    def __init__(self, rectangle, behind_hwnd):
+        x, y, width, height = _physical_rectangle(rectangle, label="Controlled backdrop", positive_extent=True)
+        self.hwnd = None
+        self.user = ctypes.WinDLL("user32", use_last_error=True)
+        self.gdi = ctypes.WinDLL("gdi32", use_last_error=True)
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetModuleHandleW.argtypes, kernel.GetModuleHandleW.restype = [wintypes.LPCWSTR], wintypes.HINSTANCE
+        self.instance = kernel.GetModuleHandleW(None)
+        self.class_name = "CSPMControlledBackdrop_" + str(os.getpid()) + "_" + str(id(self))
+        class WNDCLASS(ctypes.Structure):
+            _fields_ = [("style", wintypes.UINT), ("lpfnWndProc", ctypes.c_void_p),
+                ("cbClsExtra", ctypes.c_int), ("cbWndExtra", ctypes.c_int),
+                ("hInstance", wintypes.HINSTANCE), ("hIcon", wintypes.HICON),
+                ("hCursor", wintypes.HANDLE), ("hbrBackground", wintypes.HANDLE),
+                ("lpszMenuName", wintypes.LPCWSTR), ("lpszClassName", wintypes.LPCWSTR)]
+        self.gdi.CreateSolidBrush.argtypes, self.gdi.CreateSolidBrush.restype = [wintypes.DWORD], wintypes.HANDLE
+        self.gdi.DeleteObject.argtypes = [wintypes.HANDLE]
+        self.user.RegisterClassW.argtypes, self.user.RegisterClassW.restype = [ctypes.POINTER(WNDCLASS)], wintypes.ATOM
+        self.user.UnregisterClassW.argtypes = [wintypes.LPCWSTR, wintypes.HINSTANCE]
+        self.user.DestroyWindow.argtypes = [wintypes.HWND]
+        self.user.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR,
+            wintypes.DWORD, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, ctypes.c_void_p]
+        self.user.CreateWindowExW.restype = wintypes.HWND
+        self.user.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        self.user.RedrawWindow.argtypes = [wintypes.HWND, ctypes.c_void_p, wintypes.HANDLE, wintypes.UINT]
+        blue, green, red, _ = self.bgra
+        self.brush = self.gdi.CreateSolidBrush(red | green << 8 | blue << 16)
+        self.registered = False
+        try:
+            if not self.brush:
+                raise ctypes.WinError(ctypes.get_last_error())
+            definition = WNDCLASS(lpfnWndProc=ctypes.cast(self.user.DefWindowProcW, ctypes.c_void_p).value,
+                hInstance=self.instance, hbrBackground=self.brush, lpszClassName=self.class_name)
+            if not self.user.RegisterClassW(ctypes.byref(definition)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            self.registered = True
+            # No activation, taskbar presence or input ownership. No user data.
+            self.hwnd = self.user.CreateWindowExW(0x080000A8, self.class_name, "", 0x80000000,
+                x, y, width, height, None, None, self.instance, None)
+            if not self.hwnd or not self.user.SetWindowPos(self.hwnd, behind_hwnd, x, y, width, height, 0x50):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not self.user.RedrawWindow(self.hwnd, None, None, 0x185):
+                raise ctypes.WinError(ctypes.get_last_error())
+        except Exception:
+            self.close()
+            raise
+
+    def close(self):
+        if self.hwnd:
+            if not self.user.DestroyWindow(self.hwnd):
+                raise ctypes.WinError(ctypes.get_last_error())
+            self.hwnd = None
+        if self.registered:
+            if not self.user.UnregisterClassW(self.class_name, self.instance):
+                raise ctypes.WinError(ctypes.get_last_error())
+            self.registered = False
+        if self.brush:
+            self.gdi.DeleteObject(self.brush)
+            self.brush = None

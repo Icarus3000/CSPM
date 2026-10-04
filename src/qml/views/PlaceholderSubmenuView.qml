@@ -8,6 +8,7 @@ import "../components"
 import "../standards"
 import "../standards/SubwindowStyle.js" as SubwindowStyle
 import "../standards/SemanticTheme.js" as SemanticTheme
+import "../standards/HiddenFontMetrics.js" as HiddenFontMetrics
 import "./placeholder"
 import "./corporate"
 
@@ -16,6 +17,8 @@ Item {
 
     property var t
     property var metrics
+    readonly property bool layoutRepairEnabled: typeof transitionExperiment !== "undefined"
+        && transitionExperiment.layoutRepair
     property var windowRef
     property var appRef: ((typeof app !== "undefined") && app !== null) ? app : null
     property alias transactionMasterView: transactionMasterLoader.item
@@ -272,6 +275,10 @@ Item {
     function ratioPx(ratio, minPx) {
         var floorPx = (typeof minPx === "number") ? minPx : 1
         return Math.max(floorPx, Math.round(areaUnit() * ratio))
+    }
+
+    function fontPixelSize(owner, value) {
+        return HiddenFontMetrics.pixelSize(owner, value, root.layoutRepairEnabled)
     }
 
     function ratioPxW(ratio, minPx) {
@@ -3815,9 +3822,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                     text: root.titleText
                     color: root.isProMode ? root.proInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.96)
                     font.family: visualRules.textFontFamily
-                    font.pixelSize: root.isProMode
+                    font.pixelSize: root.fontPixelSize(this, (root.isProMode
                         ? visualRules.proSectionTitleFontPx
-                        : root.ratioPx(root.scaleRatios.headerSubtitleFontPct * 1.03, root.metricFloor("fontFloorLabelPx", 10))
+                        : root.ratioPx(root.scaleRatios.headerSubtitleFontPct * 1.03, root.metricFloor("fontFloorLabelPx", 10))))
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
@@ -3827,9 +3834,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                     text: "Pathway map"
                     color: root.isProMode ? root.proMutedInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.70)
                     font.family: visualRules.textFontFamily
-                    font.pixelSize: root.isProMode
+                    font.pixelSize: root.fontPixelSize(this, (root.isProMode
                         ? visualRules.proCaptionFontPx
-                        : root.ratioPx(root.scaleRatios.hintFontPct * 0.88, root.metricFloor("fontFloorLabelPx", 8))
+                        : root.ratioPx(root.scaleRatios.hintFontPct * 0.88, root.metricFloor("fontFloorLabelPx", 8))))
                     elide: Text.ElideRight
                 }
 
@@ -3875,7 +3882,7 @@ Behavior on border.color {
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.90)
                                 horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
-                                font.pixelSize: root.ratioPx(0.0090, root.metricFloor("fontFloorLabelPx", 7))
+                                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0090, root.metricFloor("fontFloorLabelPx", 7))))
                                 minimumPixelSize: Math.max(6, root.readableMinFontPx() - 2)
                                 fontSizeMode: Text.Fit
                                 font.weight: Font.DemiBold
@@ -3960,9 +3967,9 @@ Behavior on border.color {
                                         : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.93)
                                     elide: Text.ElideRight
                                     font.family: visualRules.textFontFamily
-                                    font.pixelSize: root.isProMode
+                                    font.pixelSize: root.fontPixelSize(this, (root.isProMode
                                         ? visualRules.proLabelFontPx
-                                        : root.ratioPx(0.0120, root.metricFloor("fontFloorLabelPx", 9))
+                                        : root.ratioPx(0.0120, root.metricFloor("fontFloorLabelPx", 9))))
                                     fontSizeMode: Text.Fit
                                     minimumPixelSize: Math.max(7, root.readableMinFontPx() - 1)
                                     font.weight: navRow.current ? Font.DemiBold : Font.Medium
@@ -4036,9 +4043,9 @@ Behavior on border.color {
                             }
                             color: root.isProMode ? root.proInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.98)
                             font.family: visualRules.textFontFamily
-                            font.pixelSize: root.isProMode
+                            font.pixelSize: root.fontPixelSize(this, (root.isProMode
                                 ? visualRules.proWorkspaceTitleFontPx
-                                : Math.max(14, Math.min(28, root.ratioPxH(0.024, 18)))
+                                : Math.max(14, Math.min(28, root.ratioPxH(0.024, 18)))))
                             fontSizeMode: Text.Fit
                             minimumPixelSize: root.isProMode ? 12 : 10
                             maximumLineCount: 1
@@ -4052,7 +4059,7 @@ Behavior on border.color {
                             text: root.summaryLineA()
                             color: root.isProMode ? root.proMutedInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.74)
                             font.family: visualRules.textFontFamily
-                            font.pixelSize: root.isProMode
+                            font.pixelSize: root.fontPixelSize(this, (root.isProMode
                                 ? visualRules.proWorkspaceSubtitleFontPx
                                 : Math.max(
                                     6,
@@ -4060,7 +4067,7 @@ Behavior on border.color {
                                         root.ratioPxH(0.014, 10),
                                         Math.floor(Math.max(10, headerTitleText.fontInfo.pixelSize) * 0.54)
                                     )
-                                )
+                                )))
                             maximumLineCount: 1
                             wrapMode: Text.NoWrap
                             elide: Text.ElideRight
@@ -4096,9 +4103,9 @@ Behavior on border.color {
                                 text: root.summaryHeadline()
                                 color: root.isProMode ? root.proInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
                                 font.family: visualRules.textFontFamily
-                                font.pixelSize: root.isProMode
+                                font.pixelSize: root.fontPixelSize(this, (root.isProMode
                                     ? visualRules.proLabelFontPx
-                                    : Math.max(9, Math.min(22, root.ratioPxH(0.018, 12)))
+                                    : Math.max(9, Math.min(22, root.ratioPxH(0.018, 12)))))
                                 fontSizeMode: Text.Fit
                                 minimumPixelSize: 8
                                 font.weight: Font.DemiBold
@@ -4113,9 +4120,9 @@ Behavior on border.color {
                                 visible: false
                                 color: root.isProMode ? root.proMutedInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.72)
                                 font.family: visualRules.textFontFamily
-                                font.pixelSize: root.isProMode
+                                font.pixelSize: root.fontPixelSize(this, (root.isProMode
                                     ? visualRules.proCaptionFontPx
-                                    : Math.max(8, Math.min(22, root.ratioPxH(0.016, 9)))
+                                    : Math.max(8, Math.min(22, root.ratioPxH(0.016, 9)))))
                                 horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
                                 maximumLineCount: 1
@@ -4837,7 +4844,7 @@ Behavior on border.color {
                         Text {
                             text: "Core Profile"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.013, 13)))
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -4991,7 +4998,7 @@ Behavior on border.color {
                         Text {
                             text: "Contact Information"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.013, 13)))
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5107,7 +5114,7 @@ Behavior on border.color {
                         Text {
                             text: "Location"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.013, 13)))
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5190,7 +5197,7 @@ Behavior on border.color {
                         Text {
                             text: "Billing & Compliance"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.013, 13)))
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5295,7 +5302,7 @@ Behavior on border.color {
                         Text {
                             text: "Engagement Details"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.013, 13)))
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5361,7 +5368,7 @@ Behavior on border.color {
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.ratioPxH(0.064, 56)
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))))
                             wrapMode: Text.Wrap
                             placeholderText: "Conflict notes"
                             placeholderTextColor: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.50)
@@ -5384,7 +5391,7 @@ Behavior on border.color {
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.ratioPxH(0.074, 64)
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))))
                             wrapMode: Text.Wrap
                             placeholderText: "Client notes"
                             placeholderTextColor: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.50)
@@ -5475,7 +5482,7 @@ Behavior on border.color {
                         contentItem: Text {
                             text: matterJointRetainerCheck.text
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))))
                             font.weight: Font.Medium
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
@@ -5505,7 +5512,7 @@ Behavior on border.color {
                             Layout.fillWidth: true
                             text: "Matter parties"
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))))
                             font.weight: Font.DemiBold
                         }
 
@@ -5574,7 +5581,7 @@ Behavior on border.color {
                                         Layout.fillWidth: true
                                         text: String(matterPartyRow.modelData.clientName || "")
                                         color: root._text
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                                         elide: Text.ElideRight
                                     }
 
@@ -5707,10 +5714,10 @@ Behavior on border.color {
                                 ? "Selected agreement will be attached when you save this matter."
                                 : "Attach the signed retainer or engagement agreement for this matter."
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
-                            font.pixelSize: root.ratioPx(
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(
                                 root.scaleRatios.descFontPct * 0.90,
                                 root.metricFloor("fontFloorLabelPx", 8)
-                            )
+                            )))
                             wrapMode: Text.Wrap
                         }
                     }
@@ -6053,7 +6060,7 @@ Behavior on border.color {
                             Text {
                                 text: "Financial status"
                                 color: root._text
-                                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 10))
+                                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 10))))
                                 font.weight: Font.DemiBold
                             }
 
@@ -6076,7 +6083,7 @@ Behavior on border.color {
                             visible: root.matterFinancialSummaryLoading
                             text: "Loading unbilled WIP and unpaid invoices…"
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.68)
-                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                         }
 
                         Text {
@@ -6087,7 +6094,7 @@ Behavior on border.color {
                                 ? String(root.matterFinancialSummary.message)
                                 : "Financial status will load after this matter is saved."
                             color: Qt.rgba(0.90, 0.45, 0.25, 0.96)
-                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                             wrapMode: Text.WordWrap
                         }
 
@@ -6104,7 +6111,7 @@ Behavior on border.color {
                                 color: Number(root.matterFinancialSummary.unbilledWipCount || 0) > 0
                                     ? Qt.rgba(0.86, 0.55, 0.14, 0.98)
                                     : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
-                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))))
                                 font.weight: Font.DemiBold
                             }
 
@@ -6117,7 +6124,7 @@ Behavior on border.color {
                                 color: Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
                                     ? Qt.rgba(0.80, 0.24, 0.20, 0.98)
                                     : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
-                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))))
                                 font.weight: Font.DemiBold
                             }
                         }
@@ -6128,7 +6135,7 @@ Behavior on border.color {
                                 && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) === 0
                             text: "No unpaid invoices are linked to this matter."
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.68)
-                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                         }
 
                         Column {
@@ -6161,7 +6168,7 @@ Behavior on border.color {
                                             + " · Amount due " + root.matterFinancialMoney(modelData.balanceDue)
                                             + " — open in Invoice Directory"
                                         color: root._accent
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                                         font.underline: invoiceLinkMouse.containsMouse
                                         elide: Text.ElideRight
                                     }
@@ -6212,7 +6219,7 @@ Behavior on border.color {
                         ? root.ratioPxH(0.094, 72)
                         : 140
                     color: root._text
-                    font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))))
                     wrapMode: Text.Wrap
                     placeholderText: root.activeIsNewMatterWizard()
                         ? "Matter notes"
@@ -6377,7 +6384,7 @@ Behavior on border.color {
                         ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.92)
                         : Qt.rgba(0.98, 0.42, 0.42, 0.96)
                     wrapMode: Text.WordWrap
-                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                 }
                     }
                 }
@@ -6416,10 +6423,10 @@ Behavior on border.color {
                 Layout.fillWidth: true
                 text: "Add Matter Type"
                 color: root._text
-                font.pixelSize: root.ratioPx(
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(
                     root.scaleRatios.headerTitleFontPct * 0.62,
                     root.metricFloor("fontFloorBodyPx", 10)
-                )
+                )))
                 font.weight: Font.DemiBold
             }
 
@@ -6429,7 +6436,7 @@ Behavior on border.color {
                     + String(root.matterTypeAddPracticeArea || "the selected practice area")
                     + " after the app restarts."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.82)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                 wrapMode: Text.WordWrap
             }
 
@@ -6451,7 +6458,7 @@ Behavior on border.color {
                 visible: String(root.matterTypeAddMessage || "").length > 0
                 text: root.matterTypeAddMessage
                 color: Qt.rgba(0.98, 0.42, 0.42, 0.96)
-                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                 wrapMode: Text.WordWrap
             }
 
@@ -6514,10 +6521,10 @@ Behavior on border.color {
                 Layout.fillWidth: true
                 text: "Discard unsaved matter changes?"
                 color: root._text
-                font.pixelSize: root.ratioPx(
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(
                     root.scaleRatios.headerTitleFontPct * 0.62,
                     root.metricFloor("fontFloorBodyPx", 10)
-                )
+                )))
                 font.weight: Font.DemiBold
                 wrapMode: Text.WordWrap
             }
@@ -6526,7 +6533,7 @@ Behavior on border.color {
                 Layout.fillWidth: true
                 text: "The Matter Name and Display Name will remain unchanged until you choose Save Matter & Return."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.86)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                 wrapMode: Text.WordWrap
             }
 
@@ -6594,10 +6601,10 @@ Behavior on border.color {
                 Layout.fillWidth: true
                 text: "Check Phone/Email Formatting"
                 color: root._text
-                font.pixelSize: root.ratioPx(
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(
                     root.scaleRatios.headerTitleFontPct * 0.62,
                     root.metricFloor("fontFloorBodyPx", 10)
-                )
+                )))
                 font.weight: Font.DemiBold
                 wrapMode: Text.WordWrap
             }
@@ -6606,7 +6613,7 @@ Behavior on border.color {
                 Layout.fillWidth: true
                 text: "The following entries look invalid. Save anyway, or review and fix them first."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.86)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                 wrapMode: Text.WordWrap
             }
 
@@ -6629,7 +6636,7 @@ Behavior on border.color {
                         width: parent ? parent.width : implicitWidth
                         text: String(root.clientSaveValidationSummary || "")
                         color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.95)
-                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))))
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -6749,7 +6756,7 @@ Behavior on border.color {
                 Layout.fillWidth: true
                 text: "Archive matter"
                 color: root._text
-                font.pixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))))
                 font.weight: Font.DemiBold
             }
 
@@ -6759,7 +6766,7 @@ Behavior on border.color {
                 text: "Archive " + (root.selectedMatterName || root.selectedMatterId || "this matter")
                     + "? It will be removed from active worklists. Nothing is deleted. New time, fee, and client-disbursement entries will require CSPM's protected re-open flow and a separate final save confirmation."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))))
             }
 
             Text {
@@ -6768,7 +6775,7 @@ Behavior on border.color {
                 text: archiveMatterConfirmPopup.blockerMessage
                 color: "#b42318"
                 wrapMode: Text.WordWrap
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))))
                 font.weight: Font.DemiBold
             }
 
@@ -6833,7 +6840,7 @@ Behavior on border.color {
                 Layout.fillWidth: true
                 text: "WARNING: DELETE MATTER"
                 color: "#d32f2f"
-                font.pixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))))
                 font.weight: Font.DemiBold
             }
 
@@ -6842,7 +6849,7 @@ Behavior on border.color {
                 wrapMode: Text.WordWrap
                 text: "Deleting a matter is DESTRUCTIVE and IRREVERSIBLE. You will permanently lose all associated data. Use a non-active status instead whenever possible. Deletion is blocked when this matter has active unbilled WIP or unpaid invoices.\n\nAre you absolutely sure you want to permanently delete this matter?"
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))))
             }
 
             Text {
@@ -6851,7 +6858,7 @@ Behavior on border.color {
                 text: deleteMatterConfirmPopup.blockerMessage
                 color: "#d32f2f"
                 wrapMode: Text.WordWrap
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))))
                 font.weight: Font.DemiBold
             }
 

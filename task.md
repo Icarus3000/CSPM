@@ -1,5 +1,19 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-04: Measured Source Ownership And Cold Readiness
+
+- [x] Create/push/verify early bounded checkpoint `11abc48b6a15a8058accdb21a8d817841292e3cd`; preserve every recovered edit, worktree, stash and historical failure.
+- [x] Prove local premultiplied corner stacking with bounded stopped-clock source/submitted texels and exact complete-client desktop controls. Add an opt-in prepared-source visibility batch and comparisons before/after live resume; retain all earlier missing-client and witness failures.
+- [x] Localize margin dependence without masking pixels. Matched cold Directory still fails 73 restored margin pixels at `[1111,607,1122,617]`; the general cause/repair remains open.
+- [x] Retain all 88 responsive font expressions behind the existing general layout opt-in. Matched publication medians restore/maximize fall from 52.5/58.5 to 32/26 ms; ordinary launches bypass the hidden font hold and models remain live. Remove counter/tree work from quiet profiles.
+- [x] Measure real owned-QML F24 press/release acceptance separately from input guard state. Add failure quarantine scoped to the disposable window/key and retain late input failures.
+- [x] Outside sandbox, execute same-source/DLL cold Time Entry four directions and Home/Productivity/Directory/invoice two each with fresh physical endpoints and input witnesses. Directory pixel gate and five-repeat Productivity input gate fail. Latest repeat observes four exact endpoint directions but only three accepted inputs.
+- [x] Preserve 21 new runs (162 fresh passes/two rejects, 135 comparisons), alongside all 33 historical runs; publish sanitized provenance, counts, regions, composition models and relative timing without private captures/logs.
+- [x] Sandbox-safe 405 tests pass with Y:-based basetemp, diagnostic compilation, governed QML lint (existing warnings), native `/W4`/null/coordinate contract, aggregate conservation/privacy and whitespace checks. Retain the broader pre-existing motion-settings collection failure separately.
+- [ ] Complete cold candidate is not qualified. Resolve Directory margin equality and repeated QML input delivery, then verify uninterrupted ownership/motion, repeated readiness, physical mixed-DPI, WebEngine/PDF, lifecycle/reduced motion and Cory's P0 acceptance before packaging.
+
+Evidence: `docs/CLEANROOM_OWNERSHIP_READINESS_2026-10-04.md` and its aggregate JSON. Production/default installation is unchanged; no package/install/merge or new visual state machine. All task-owned temporary/build output stays on Y:, without deleting/moving C: files.
+
 ## 2026-10-04: Authorized Continuity Checkpoint Preservation
 
 - [x] Recover branch/HEAD/upstream/live remote at `93de109`, all ten tracked edits and seven new files, empty index, unchanged worktrees/stashes and no owned fixture process. Review every edit; retain all 33 failed/control runs.

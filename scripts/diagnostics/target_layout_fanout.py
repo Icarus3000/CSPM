@@ -205,6 +205,9 @@ def instrument_mirror(mirror: Path, variant: str, collect_counts: bool = True) -
         raise ValueError("A supported fanout variant is required")
     mirror = _validate_mirror(mirror)
     qml = mirror / "src/qml"
+    if variant == "hidden-font-scalars" and "function fontPixelSize(" in (
+            qml / "views/PlaceholderSubmenuView.qml").read_text(encoding="utf-8"):
+        raise ValueError("Hidden-font scalar isolation requires source without the retained font metrics repair")
     if (qml / "FanoutTrace.js").exists():
         raise ValueError("Fanout instrumentation requires a fresh disposable mirror")
     changed = {"src/qml/FanoutTrace.js": TRACE_JS}
@@ -235,14 +238,18 @@ def instrument_mirror(mirror: Path, variant: str, collect_counts: bool = True) -
                 else:
                     source = _replace_once(source, "property var uiMetrics: (function() {",
                         'property var uiMetrics: (function() {\n        FanoutTrace.value("Shell.uiMetricsPublication", 0, true);', "Shell.uiMetricsPublication")
-            source = _replace_once(source, 'if (!cleanRoomNativeProfileEnabled) return;',
-                                    'if (!cleanRoomNativeProfileEnabled) return;\n        FanoutTrace.stage = name;', "Shell.profileStage")
+            if collect_counts:
+                source = _replace_once(source, 'if (!cleanRoomNativeProfileEnabled) return;',
+                                        'if (!cleanRoomNativeProfileEnabled) return;\n        FanoutTrace.stage = name;', "Shell.profileStage")
             source = _replace_once(source, "    id: mainWin\n", "    id: mainWin\n"
-                "    function cleanRoomFanoutBegin() { FanoutTrace.begin(); "
-                + ("FanoutTrace.watchTree(mainWin.contentItem); " if variant in ("publication-costs", "hidden-font-scalars") else "")
+                "    function cleanRoomFanoutBegin() { "
+                + ("FanoutTrace.begin(); " if collect_counts else "")
+                + ("FanoutTrace.watchTree(mainWin.contentItem); " if collect_counts and variant in ("publication-costs", "hidden-font-scalars") else "")
                 + "}\n"
-                "    function cleanRoomFanoutFinish() { return FanoutTrace.finish(); }\n", "Shell.root")
-            if variant in ("publication-costs", "hidden-font-scalars"):
+                "    function cleanRoomFanoutFinish() { return "
+                + ("FanoutTrace.finish()" if collect_counts else "({})")
+                + "; }\n", "Shell.root")
+            if collect_counts and variant in ("publication-costs", "hidden-font-scalars"):
                 source = _wrap_helpers(source, component, ("computeUiMetrics",))
             if variant == "atomic-metrics":
                 source = _replace_once(source, "property var uiMetrics: (function() {",
@@ -282,7 +289,7 @@ def instrument_mirror(mirror: Path, variant: str, collect_counts: bool = True) -
             if not replacements:
                 raise ValueError(f"Unavailable dormant-shadows target: {relative}")
         changed["src/qml/" + relative] = source
-    if variant in ("publication-costs", "hidden-font-scalars"):
+    if collect_counts and variant in ("publication-costs", "hidden-font-scalars"):
         # Time the synchronous property publication, including downstream
         # control text/implicit-size propagation. Identity and scalar copying
         # remain the retained implementation; ownership exists only here.

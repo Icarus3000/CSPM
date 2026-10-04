@@ -170,8 +170,18 @@ def main():
         help="Source-only causal control without input-state changes; cannot qualify input restoration")
     parser.add_argument("--source-markers", action="store_true",
         help="Source-only marker-overlay control, independent of the external motion collector")
+    parser.add_argument("--controlled-backdrop", action="store_true",
+        help="Source-only opaque owned backdrop to isolate desktop composition")
+    parser.add_argument("--probe-composition", action="store_true",
+        help="Source-only diagnostic GPU texels at recorded corners/margins; no presentation readback")
+    parser.add_argument("--input-witness", action="store_true",
+        help="Cold-motion posted F24 acceptance in an owned disposable QML control after unlocking")
+    parser.add_argument("--single-owner-source", action="store_true",
+        help="Diagnostic GUI-thread source visibility transfer in one native deferred-position batch")
     parser.add_argument("--restored-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"), default=(1100, 760))
     args = parser.parse_args()
+    if args.single_owner_source:
+        args.physical_diagnostics = args.endpoint_pixels = args.keep_visible = True
     if args.endpoint_pixels:
         args.physical_diagnostics = True
     if args.physical_diagnostics or args.source_observation_only:
@@ -183,6 +193,12 @@ def main():
         parser.error("unlocked input is a source-only diagnostic control")
     if args.source_markers and not args.source_observation_only:
         parser.error("independent marker injection is a source-only diagnostic control")
+    if (args.controlled_backdrop or args.probe_composition) and not args.source_observation_only:
+        parser.error("backdrop and GPU composition probes are stopped-clock source-only controls")
+    if args.input_witness and (args.source_observation_only or args.capture_only or args.layout_only or args.prepared_target):
+        parser.error("input witness requires a complete cold native motion transaction")
+    if args.single_owner_source and (args.prepared_target or args.capture_only or args.layout_only):
+        parser.error("single-owner source requires cold native motion or source-only observation")
     if args.fanout_variant and not args.profile_boundaries:
         parser.error("fanout variants require disposable boundary profiling")
     if args.fanout_quiet and not args.fanout_variant:
@@ -210,6 +226,7 @@ def main():
         "scripts/diagnostics/window_transition_probe.py",
         "scripts/diagnostics/native_presentation_observer.py",
         "scripts/diagnostics/source_pixel_analysis.py",
+        "scripts/diagnostics/input_restoration_witness.py",
         "scripts/build_cleanroom_native.ps1",
         "src/native/cleanroom_composition/cleanroom_composition.cpp",
         "src/python/main.py",
@@ -220,6 +237,15 @@ def main():
         "src/qml/components/ModernComboBox.qml",
         "src/qml/components/PillButton.qml",
         "src/qml/views/HomeGrid.qml",
+        "src/qml/standards/HiddenFontMetrics.js",
+        "src/qml/views/PlaceholderSubmenuView.qml",
+        "src/qml/views/placeholder/ClientDirectoryPanel.qml",
+        "src/qml/views/placeholder/ClientProfilePanel.qml",
+        "src/qml/views/placeholder/ClientWizardPanel.qml",
+        "src/qml/views/placeholder/GlobalSearchPanel.qml",
+        "src/qml/views/placeholder/MatterDirectoryPanel.qml",
+        "src/qml/views/placeholder/MatterProfilePanel.qml",
+        "src/qml/views/placeholder/MatterWizardPanel.qml",
     )
     source_provenance = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
         for name in provenance_paths}
@@ -340,6 +366,8 @@ class PixelTracker:
     user.IsWindowEnabled.argtypes = [wintypes.HWND]
     user.IsWindowEnabled.restype = wintypes.BOOL
     user.EnableWindow.argtypes = [wintypes.HWND, wintypes.BOOL]
+    user.IsWindowVisible.argtypes, user.IsWindowVisible.restype = [wintypes.HWND], wintypes.BOOL
+    user.ShowWindow.argtypes, user.ShowWindow.restype = [wintypes.HWND, ctypes.c_int], wintypes.BOOL
     def client(window):
         rect, origin = wintypes.RECT(), wintypes.POINT()
         hwnd = int(window.winId())
@@ -376,6 +404,7 @@ class PixelTracker:
             self.completed = 0
             self.desktop_camera = None
             self.source_desktop = None
+            self.source_before_resume = None
             self.target_desktop = None
             self.pixel_pairs = []
             self.pixel_regions = {}
@@ -384,10 +413,18 @@ class PixelTracker:
             self.sensor_items = []
             self.snapshot_observations = {}
             self.input_was_enabled = None
+            self.input_release_seconds = None
+            self.input_witness = None
             self.desktop_observer = DesktopFrameObserver()
             self.observation_pending = None
             self.witness_rect = None
             self.witness_revision = 0
+            self.controlled_backdrop = None
+            self.composition_probe = None
+            self.diagnostic_texel_readbacks = 0
+            self.live_visibility_transferred = False
+            self.source_foreground_before_transfer = False
+            self.source_active_before_transfer = False
             self.boundary_rows = []
             self.fanout_rows = []
             self.qt_timing_rows = []
@@ -522,6 +559,13 @@ Item {
                     self.window_observation = window_observation
                     self.analyze_pixels = compare_pixels
                     self.physical_regions = physical_regions
+                if args.controlled_backdrop:
+                    from source_pixel_analysis import ControlledBackdrop
+                    rectangle = client(self.window)
+                    self.controlled_backdrop = ControlledBackdrop(rectangle, int(self.window.winId()))
+                    self.record("controlled-backdrop-created", clientXYWH=rectangle,
+                        hwnd=int(self.controlled_backdrop.hwnd), opaque=True,
+                        scope="Task-owned known constant color behind source; source-only causal control")
             super().begin_cycles()
 
         def create_probe_marker(self, code, name):
@@ -700,10 +744,6 @@ Item {
             self.record("command", kind=kind, sourceClient=self.current["sourceClient"])
             if args.physical_diagnostics or args.source_observation_only:
                 self.witness_rect = None
-                # WebEngine may have changed focus after initial setup. This
-                # is fixture placement before sampling, never target warming.
-                self.window.requestActivate()
-                user.SetForegroundWindow(int(self.window.winId()))
                 self.state_observation("source-request")
                 foreground = self.window_observation(int(self.window.winId())).get("foregroundHwnd")
                 issued = time.perf_counter()
@@ -717,10 +757,22 @@ Item {
 
         def source_reference_observed(self, pixels):
             self.source_desktop = pixels
-            if not args.source_unlocked:
+            if args.single_owner_source:
+                source_state = self.window_observation(int(self.window.winId()))
+                self.source_foreground_before_transfer = bool(source_state.get("foreground"))
+                self.source_active_before_transfer = bool(self.window.isActive())
+                self.record("source-activation-before-input-lock", sourceForeground=self.source_foreground_before_transfer,
+                    sourceQtActive=self.source_active_before_transfer,
+                    nativeInputEnabled=source_state.get("nativeInputEnabled"),
+                    qmlInteractive=self.evaluate("_probeWindow.mainContentRef.isInteractive").toBool(),
+                    scope="Saved observed source ownership before EnableWindow/input guard can change activation")
+            if not args.source_unlocked and not args.single_owner_source:
                 self.lock_input()
-            else:
+            elif args.source_unlocked:
                 self.record("source-unlocked-control", scope="No input-state change; cannot qualify input restoration")
+            else:
+                self.record("source-capture-before-input-lock",
+                    scope="Preserve pre-command visual state in an immutable GPU source; guard activates immediately before the prepared hide/show batch")
             self.request_capture("source")
 
         def lock_input(self):
@@ -740,8 +792,10 @@ Item {
             self.record("input-restore-issued")
             self.evaluate("_probeWindow.professionalWindowTransitionActive = false")
             user.EnableWindow(int(self.window.winId()), self.input_was_enabled)
+            self.input_release_seconds = time.perf_counter()
             self.record("input-restored", nativeEnabled=bool(user.IsWindowEnabled(int(self.window.winId()))),
-                qmlInteractive=self.evaluate("_probeWindow.mainContentRef.isInteractive").toBool())
+                qmlInteractive=self.evaluate("_probeWindow.mainContentRef.isInteractive").toBool(),
+                inputReleaseSeconds=self.input_release_seconds)
             if bool(user.IsWindowEnabled(int(self.window.winId()))) != self.input_was_enabled:
                 context["failures"].append("native input enabled state did not return to its saved value")
             self.input_was_enabled = None
@@ -760,6 +814,8 @@ Item {
                 "native": native}
             if self.host and hasattr(dll, "cspm_comp_hwnd"):
                 state["transition"] = self.window_observation(dll.cspm_comp_hwnd(self.host))
+            if self.controlled_backdrop is not None:
+                state["backdrop"] = self.window_observation(int(self.controlled_backdrop.hwnd))
             if self.webengine_probe is not None:
                 state["webengine"] = {"htmlReady": bool(self.webengine_probe.property("ready")),
                     "failed": bool(self.webengine_probe.property("failed"))}
@@ -971,6 +1027,8 @@ Item {
                 if not self.host:
                     self.fail("DirectComposition presentation", native_error())
                     return
+                if args.single_owner_source:
+                    self.defer_source_visibility()
                 if args.physical_diagnostics or args.source_observation_only:
                     self.configure_witness(physical, physical if args.source_observation_only else target)
                 header = self.evaluate("_probeWindow.mainContentRef.professionalTransitionHeaderMetrics()").toVariant()
@@ -984,6 +1042,9 @@ Item {
                     return
                 self.record("source-composition-committed", source=physical, target=target, envelope=self.envelope)
                 self.state_observation("source-commit")
+                if args.single_owner_source:
+                    self.transfer_source_visibility(physical)
+                    return
                 if args.physical_diagnostics or args.source_observation_only:
                     native = native_observation(dll, self.host)
                     self.observe_desktop(physical, "source-overlap",
@@ -1012,11 +1073,103 @@ Item {
                 else:
                     self.poll_native()
 
+        def defer_source_visibility(self):
+            if any(not hasattr(dll, name) for name in ("cspm_comp_defer_source_visibility",
+                    "cspm_comp_transfer_source_visibility", "cspm_comp_raise_source_visibility")):
+                raise RuntimeError("Single-owner source requires all native visibility-transfer/ordering exports")
+            function = dll.cspm_comp_defer_source_visibility
+            function.argtypes, function.restype = [ctypes.c_void_p], ctypes.c_int
+            if not function(self.host):
+                raise RuntimeError("Deferred native source visibility rejected: " + native_error(self.host))
+            self.record("source-visibility-deferred", scope="Complete GPU source prepared while transition HWND remains hidden")
+
+        def resume_live_host_hidden(self):
+            hwnd = int(self.window.winId())
+            self.window.setOpacity(0)
+            self.window.show()
+            if not user.IsWindowVisible(hwnd):
+                user.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE, same task-owned HWND only.
+            if int(self.window.winId()) != hwnd or not user.IsWindowVisible(hwnd):
+                raise RuntimeError("Hidden-opacity live rendering could not resume on the owned original HWND")
+            self.live_visibility_transferred = False
+
+        def transfer_source_visibility(self, physical):
+            self.state_observation("source-before-single-owner-transfer")
+            source_state = self.window_observation(int(self.window.winId()))
+            self.record("source-activation-before-transfer", sourceForeground=bool(source_state.get("foreground")),
+                sourceQtActive=bool(self.window.isActive()),
+                savedForegroundBeforeInputLock=self.source_foreground_before_transfer,
+                savedQtActiveBeforeInputLock=self.source_active_before_transfer,
+                scope="Current observed ownership and saved source ownership; only a previously foreground source can request activation on reveal")
+            geometry = [self.window.property("final" + axis) for axis in "XYWH"]
+            hwnd = int(self.window.winId())
+            function = dll.cspm_comp_transfer_source_visibility
+            function.argtypes, function.restype = [ctypes.c_void_p, ctypes.c_size_t], ctypes.c_int
+            self.live_visibility_transferred = True  # Cleanup must recover even a partial API failure.
+            if not args.source_unlocked:
+                # The prepared native image already owns the pre-guard pixels.
+                # No event-loop boundary separates visual input-state changes
+                # from hiding live and revealing native in the visibility batch.
+                self.lock_input()
+            began = time.perf_counter()
+            if not function(self.host, hwnd):
+                raise RuntimeError("Single-owner source visibility transfer rejected: " + native_error(self.host))
+            ended = time.perf_counter()
+            self.record("source-single-owner-transfer-issued", apiBeginSeconds=began,
+                apiReturnSeconds=ended, scope="GUI-thread Begin/Defer/EndDeferWindowPos hide-live/show-native batch; desktop proof follows")
+            self.single_owner_source_geometry = geometry
+            native = native_observation(dll, self.host)
+            self.observe_desktop(physical, "source-transfer-before-resume",
+                max(ended, native["sourceShowReturnSeconds"], native["lastPresentReturnSeconds"]),
+                {"live.visible": False, "qtOpacity": 1.0, "transition.visible": True,
+                 "live.clientXYWH": physical}, self.after_source_transfer_observed, phase=1)
+
+        @guarded
+        def after_source_transfer_observed(self, pixels):
+            self.source_before_resume = pixels
+            self.compare_pixels("source-live-to-transfer-before-resume-pixels", self.source_desktop, pixels)
+            physical = self.current["sourceClient"]
+            self.resume_live_host_hidden()
+            if client(self.window) != physical or [self.window.property("final" + axis) for axis in "XYWH"] != self.single_owner_source_geometry:
+                raise RuntimeError("Single-owner source transfer changed the saved source geometry")
+            self.raise_source_visibility()
+            self.witness_revision += 1
+            self.refresh_witness()
+            native = native_observation(dll, self.host)
+            self.observe_desktop(physical, "source-transfer",
+                max(self.source_reorder_return_seconds, native["lastPresentReturnSeconds"]),
+                {"qtOpacity": 0.0, "transition.visible": True, "live.clientXYWH": physical},
+                self.after_source_coverage, phase=1)
+
+        def raise_source_visibility(self):
+            status = dll.cspm_comp_status(self.host)
+            if not status & 1 or status & (2 | 16):
+                raise RuntimeError("Source ordering requires a prepared stopped native source")
+            hwnd = dll.cspm_comp_hwnd(self.host)
+            observed = self.window_observation(hwnd)
+            if observed.get("processId") != os.getpid() or not observed.get("visible"):
+                raise RuntimeError("Source ordering requires this process's visible native host")
+            began = time.perf_counter()
+            function = dll.cspm_comp_raise_source_visibility
+            function.argtypes, function.restype = [ctypes.c_void_p], ctypes.c_int
+            accepted = bool(function(self.host))
+            api = "native owner-thread HWND_TOP source ordering"
+            if not accepted:
+                raise RuntimeError("Stopped native source ordering failed: " + native_error(self.host))
+            self.source_reorder_return_seconds = time.perf_counter()
+            self.record("source-visibility-reordered", api=api, apiBeginSeconds=began,
+                apiReturnSeconds=self.source_reorder_return_seconds,
+                scope="Existing HWND_TOP/no-move/no-size/no-activation policy; sampled representation remains mandatory")
+            self.state_observation("source-after-visibility-reorder")
+
         @guarded
         def after_source_coverage(self, pixels=None):
             if args.physical_diagnostics or args.source_observation_only:
                 self.source_overlap = pixels
-                self.compare_pixels("source-live-to-overlap-pixels", self.source_desktop, self.source_overlap)
+                self.compare_pixels("source-live-to-transfer-pixels" if args.single_owner_source
+                    else "source-live-to-overlap-pixels", self.source_desktop, self.source_overlap)
+                if args.single_owner_source and self.source_before_resume is not None:
+                    self.compare_pixels("source-transfer-to-resumed-pixels", self.source_before_resume, pixels)
             self.window.setOpacity(0)
             if args.physical_diagnostics or args.source_observation_only:
                 self.witness_revision += 1
@@ -1035,6 +1188,23 @@ Item {
             self.compare_pixels("source-live-to-gpu-pixels", self.source_desktop,
                 self.source_native_desktop)
             if args.source_observation_only:
+                if args.probe_composition:
+                    from source_pixel_analysis import (composition_probe_coordinates,
+                        probe_gpu_composition, window_region_membership)
+                    radius = round(self.evaluate("_probeWindow.shellVisualCornerRadiusPx()").toNumber()
+                        * self.window.devicePixelRatio())
+                    coordinates, labels, summaries = composition_probe_coordinates(
+                        self.source_desktop, self.source_overlap, self.source_native_desktop,
+                        self.pixel_regions[self.completed], radius)
+                    began = time.perf_counter()
+                    source, submitted = probe_gpu_composition(dll, self.host, coordinates)
+                    membership = window_region_membership(int(self.window.winId()), coordinates)
+                    self.diagnostic_texel_readbacks += len(coordinates) * 2
+                    self.composition_probe = (coordinates, labels, source, submitted, membership)
+                    self.record("composition-probe-collected", sampleCount=len(coordinates),
+                        sampleCoordinatesXY=coordinates, sampledRegions=summaries,
+                        regionMembership=membership, elapsedMs=(time.perf_counter()-began)*1000,
+                        scope="Measurement-only tiny stopped-clock GPU readback; raw pixels retained in RAM only")
                 if not dll.cspm_comp_finish(self.host):
                     self.fail("source visibility control", native_error(self.host))
                     return
@@ -1055,6 +1225,23 @@ Item {
         @guarded
         def source_removal_observation(self, removed):
             self.compare_pixels("source-gpu-to-native-removed-pixels", self.source_native_desktop, removed)
+            if args.controlled_backdrop:
+                import numpy as np
+                different = int(np.count_nonzero(np.any(removed != np.array(
+                    self.controlled_backdrop.bgra, dtype=np.uint8), axis=2)))
+                self.record("controlled-backdrop-verification", status="PASS" if different == 0 else "FAIL",
+                    differentPixels=different, pixels=int(removed.shape[0]*removed.shape[1]),
+                    scope="Fresh complete-client removal observation versus owned opaque constant backdrop")
+                if different:
+                    context["failures"].append("controlled backdrop was not exact after both source hosts stopped contributing")
+            if self.composition_probe is not None:
+                from source_pixel_analysis import composition_analysis
+                coordinates, labels, source, submitted, membership = self.composition_probe
+                self.record("composition-probe-analysis", **composition_analysis(
+                    self.source_desktop, self.source_overlap, self.source_native_desktop, removed,
+                    coordinates, labels, source, submitted, membership,
+                    single_owner=args.single_owner_source))
+                self.composition_probe = None
             self.completed += 1
             self.complete()
 
@@ -1135,6 +1322,8 @@ Item {
                 self.window.frameSwapped.connect(self.live_host_frame, Qt.QueuedConnection)
             self.window.setOpacity(1)
             self.record("live-host-revealed")
+            if args.single_owner_source:
+                self.restore_source_activation("live-host-revealed")
             self.window.update()
             if args.physical_diagnostics:
                 QTimer.singleShot(750, self.live_host_deadline)
@@ -1189,6 +1378,92 @@ Item {
             if client(self.window) != self.target_client:
                 context["failures"].append("Input restoration changed the qualified target client geometry")
             self.state_observation("input-restored")
+            if args.single_owner_source:
+                self.restore_source_activation("input-restored")
+            if args.input_witness:
+                self.begin_input_witness()
+                return
+            self.completed += 1
+            QTimer.singleShot(200, self.step)
+
+        def restore_source_activation(self, boundary):
+            if not self.source_foreground_before_transfer:
+                self.record("source-activation-not-requested", boundary=boundary,
+                    scope="Source did not own foreground before transfer; other application focus remains untouched")
+                return
+            if boundary == "input-restored":
+                # EnableWindow can leave native keyboard focus cleared while
+                # this source still owns foreground. Restore only its own GUI
+                # thread HWND, after unlock; never retry desktop activation.
+                if self.window is None or not isValid(self.window):
+                    self.record("source-focus-not-requested", boundary=boundary,
+                        scope="Released source window is unavailable; no native focus change")
+                    return
+                hwnd = int(self.window.winId())
+                observed = self.window_observation(hwnd)
+                user.GetForegroundWindow.argtypes, user.GetForegroundWindow.restype = [], wintypes.HWND
+                user.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+                user.GetWindowThreadProcessId.restype = wintypes.DWORD
+                kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel.GetCurrentThreadId.argtypes, kernel.GetCurrentThreadId.restype = [], wintypes.DWORD
+                process_id = wintypes.DWORD()
+                owner_thread = int(user.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id)))
+                current_thread = int(kernel.GetCurrentThreadId())
+                foreground = int(user.GetForegroundWindow() or 0)
+                enabled = bool(user.IsWindowEnabled(hwnd))
+                permitted = (hwnd > 0
+                    and observed.get("foregroundHwnd") == hwnd and foreground == hwnd
+                    and process_id.value == os.getpid() and owner_thread != 0
+                    and owner_thread == current_thread and enabled
+                    and self.input_was_enabled is None)
+                if not permitted:
+                    self.record("source-focus-not-requested", boundary=boundary,
+                        observedForegroundHwnd=foreground, nativeEnabled=enabled,
+                        ownerThreadId=owner_thread, currentThreadId=current_thread,
+                        scope="No focus change unless the released, enabled source still owns foreground on its GUI thread")
+                    return
+                user.GetFocus.argtypes, user.GetFocus.restype = [], wintypes.HWND
+                user.SetFocus.argtypes, user.SetFocus.restype = [wintypes.HWND], wintypes.HWND
+                before = int(user.GetFocus() or 0)
+                previous = int(user.SetFocus(hwnd) or 0)
+                after = int(user.GetFocus() or 0)
+                self.record("source-focus-restoration", boundary=boundary,
+                    focusBeforeHwnd=before, apiPreviousFocusHwnd=previous,
+                    focusAfterHwnd=after, nativeFocusOwned=after == hwnd,
+                    observedForegroundHwnd=int(user.GetForegroundWindow() or 0),
+                    nativeEnabled=bool(user.IsWindowEnabled(hwnd)),
+                    ownerThreadId=owner_thread, currentThreadId=current_thread,
+                    qtActive=bool(self.window.isActive()),
+                    scope="One guarded GUI-thread SetFocus after native unlock; API focus, Qt activation and accepted F24 delivery remain separate observations")
+                return
+            self.window.requestActivate()
+            accepted = bool(user.SetForegroundWindow(int(self.window.winId())))
+            observed = self.window_observation(int(self.window.winId()))
+            self.record("source-activation-restoration", boundary=boundary, apiAccepted=accepted,
+                observedForeground=observed.get("foreground"), observedForegroundHwnd=observed.get("foregroundHwnd"),
+                qtActive=bool(self.window.isActive()), scope="Activation API outcome and Win32 state; input acceptance and physical desktop are independently gated")
+
+        def begin_input_witness(self):
+            from input_restoration_witness import InputRestorationWitness
+            if self.input_witness is not None or self.input_release_seconds is None:
+                raise RuntimeError("Input witness requires a released transaction and no pending witness")
+            owner = self.evaluate("_probeWindow.mainContentRef").toQObject()
+            if owner is None:
+                raise RuntimeError("Disposable input witness interaction owner is unavailable")
+            self.input_witness = InputRestorationWitness(self.window, self.engine, owner,
+                disposable=True, record=self.record, finished=self.input_witness_finished)
+            self.input_witness.start()
+
+        @guarded
+        def input_witness_finished(self, result):
+            self.input_witness = None
+            accepted = result.get("acceptedSeconds")
+            self.record("input-restoration-acceptance", **result,
+                commandToAcceptedMs=(accepted-self.current["command"])*1000 if accepted is not None else None,
+                inputReleaseToAcceptedMs=(accepted-self.input_release_seconds)*1000 if accepted is not None else None)
+            if result.get("status") != "PASS":
+                self.fail("input restoration", str(result.get("reason", "Acceptance witness failed")))
+                return
             self.completed += 1
             QTimer.singleShot(200, self.step)
 
@@ -1214,6 +1489,9 @@ Item {
                 return
             self.finished = True
             self.observation_pending = None
+            if self.input_witness is not None:
+                pending_witness, self.input_witness = self.input_witness, None
+                pending_witness.cancel()
             if self.live_handoff_connected:
                 self.window.frameSwapped.disconnect(self.live_host_frame)
                 self.live_handoff_connected = False
@@ -1231,6 +1509,10 @@ Item {
                         "cycle": self.profile_cycle, "t": time.perf_counter(), "error": str(exc)})
             if self.window is not None and isValid(self.window):
                 self.window.setOpacity(1)
+                if self.live_visibility_transferred:
+                    self.window.show()
+                    user.ShowWindow(int(self.window.winId()), 4)
+                    self.live_visibility_transferred = False
                 self.unlock_input()
             if self.host:
                 self.record("native-present-history", **native_present_trace(dll, self.host))
@@ -1239,6 +1521,14 @@ Item {
             for frame in self.frames:
                 dll.cspm_gpu_release(frame)
             self.frames.clear()
+            self.composition_probe = None
+            if self.controlled_backdrop is not None:
+                try:
+                    self.controlled_backdrop.close()
+                    self.controlled_backdrop = None
+                    self.record("controlled-backdrop-closed", scope="Only the task-owned backdrop HWND/class/brush")
+                except Exception as exc:
+                    context["failures"].append("controlled backdrop cleanup: " + str(exc))
             for cycle, name, old, new in self.pixel_pairs:
                 regions = self.target_pixel_regions if name == "gpu-to-live-target-pixels" else self.pixel_regions
                 try:
@@ -1299,7 +1589,8 @@ Item {
                 "completedCycles": self.completed, "failures": context["failures"],
                 "measurementScope": "GPU transfer and native status; physical geometry needs separate collector analysis",
                 "coldCandidateQualification": "NOT QUALIFYING" if args.prepared_target or args.capture_only or args.layout_only or args.source_observation_only else "FAIL" if context["failures"] else "REQUIRES ALL PHYSICAL GATES",
-                "presentationCpuReadbacks": 0, "presentationCpuUploads": 0}
+                "presentationCpuReadbacks": 0, "presentationCpuUploads": 0,
+                "diagnosticTexelReadbacks": self.diagnostic_texel_readbacks}
             (audit / "native_gpu_spike.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
             if args.profile_boundaries and not self.buffered_output_written:
                 self.buffered_output_written = True

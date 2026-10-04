@@ -189,7 +189,7 @@ Rectangle {
             Text {
                 text: "Matter Command Center"
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))))
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
             }
@@ -197,7 +197,7 @@ Rectangle {
             Text {
                 text: "Premium quick action: open a clean Time Docket Entry prefilled for this matter."
                 color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
@@ -258,8 +258,8 @@ Rectangle {
                 text: "Retainer / engagement agreement: "
                     + root.filenameFromPath(savedAgreementRow.documentPath)
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct,
-                    root.metricFloor("fontFloorBodyPx", 10))
+                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct,
+                    root.metricFloor("fontFloorBodyPx", 10))))
                 elide: Text.ElideMiddle
             }
 
@@ -301,7 +301,7 @@ Rectangle {
                     Text {
                         text: "WIP & unpaid invoices"
                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))
+                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))))
                         font.weight: Font.DemiBold
                     }
 
@@ -324,7 +324,7 @@ Rectangle {
                     visible: root.matterFinancialSummaryLoading
                     text: "Loading unbilled WIP and unpaid invoices…"
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
                 }
 
                 Text {
@@ -335,7 +335,7 @@ Rectangle {
                         ? String(root.matterFinancialSummary.message)
                         : "Load a matter to see WIP and unpaid invoices."
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
                     wrapMode: Text.WordWrap
                 }
 
@@ -350,7 +350,7 @@ Rectangle {
                             + " item(s) · " + root.matterFinancialMoney(root.matterFinancialSummary.unbilledWipAmount)
                         color: Number(root.matterFinancialSummary.unbilledWipCount || 0) > 0
                             ? "#b36a1d" : SemanticTheme.inkMuted(root.t, root.appStyle)
-                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
+                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))))
                         font.weight: Font.DemiBold
                     }
 
@@ -361,7 +361,7 @@ Rectangle {
                             + " · " + root.matterFinancialMoney(root.matterFinancialSummary.unpaidInvoiceAmount)
                         color: Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
                             ? "#bd312c" : SemanticTheme.inkMuted(root.t, root.appStyle)
-                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
+                        font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))))
                         font.weight: Font.DemiBold
                     }
                 }
@@ -372,7 +372,7 @@ Rectangle {
                         && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) === 0
                     text: "No unpaid invoices are linked to this matter."
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
                 }
 
                 Column {
@@ -405,7 +405,7 @@ Rectangle {
                                     + " · Amount due " + root.matterFinancialMoney(modelData.balanceDue)
                                     + " — open in Invoice Directory"
                                 color: SemanticTheme.accentPrimary(root.t, root.appStyle)
-                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                                font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
                                 font.underline: unpaidInvoiceMouse.containsMouse
                                 elide: Text.ElideRight
                             }
@@ -428,7 +428,7 @@ Rectangle {
 
             text: String(root.matterProfileLookupMessage || "Select and load a matter profile.")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
             elide: Text.ElideRight
         }
 
@@ -496,7 +496,7 @@ Rectangle {
 
                                     text: String(matterLeftCard.entry && matterLeftCard.entry.label ? matterLeftCard.entry.label : "")
                                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+                                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))))
                                     font.weight: Font.DemiBold
                                     wrapMode: Text.NoWrap
                                     elide: Text.ElideRight
@@ -512,7 +512,7 @@ Rectangle {
 
                                     text: String(matterLeftCard.entry && matterLeftCard.entry.value ? matterLeftCard.entry.value : "[blank]")
                                     color: (matterLeftCard.entry && matterLeftCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                    font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
+                                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))))
                                     font.underline: (matterLeftCard.entry && matterLeftCard.entry.label === "Client" && text !== "[blank]")
                                     wrapMode: Text.WordWrap
                                 }
@@ -563,7 +563,7 @@ Rectangle {
 
                                     text: String(matterRightCard.entry && matterRightCard.entry.label ? matterRightCard.entry.label : "")
                                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+                                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))))
                                     font.weight: Font.DemiBold
                                     wrapMode: Text.NoWrap
                                     elide: Text.ElideRight
@@ -579,7 +579,7 @@ Rectangle {
 
                                     text: String(matterRightCard.entry && matterRightCard.entry.value ? matterRightCard.entry.value : "[blank]")
                                     color: (matterRightCard.entry && matterRightCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                    font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
+                                    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))))
                                     font.underline: (matterRightCard.entry && matterRightCard.entry.label === "Client" && text !== "[blank]")
                                     wrapMode: Text.WordWrap
                                 }
