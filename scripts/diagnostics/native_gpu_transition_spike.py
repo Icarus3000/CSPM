@@ -178,6 +178,8 @@ def main():
         help="Cold-motion posted F24 acceptance in an owned disposable QML control after unlocking")
     parser.add_argument("--input-trace", action="store_true",
         help="Passive bounded owned-window native/Qt input and activation trace; requires input witness")
+    parser.add_argument("--activation-profile", action="store_true",
+        help="Disposable owned activation notify/icon CPU spans; requires input trace and adds dispatch overhead")
     parser.add_argument("--single-owner-source", action="store_true",
         help="Diagnostic GUI-thread source visibility transfer in one native deferred-position batch")
     parser.add_argument("--intrinsic-only", action="store_true",
@@ -223,6 +225,8 @@ def main():
         parser.error("input witness requires a complete cold native motion transaction")
     if args.input_trace and not args.input_witness:
         parser.error("input trace requires the independent input witness")
+    if args.activation_profile and not args.input_trace:
+        parser.error("activation profiling requires the passive input trace")
     if args.single_owner_source and (args.prepared_target or args.capture_only or args.layout_only):
         parser.error("single-owner source requires cold native motion or source-only observation")
     if args.fanout_variant and not args.profile_boundaries:
@@ -254,6 +258,7 @@ def main():
         "scripts/diagnostics/source_pixel_analysis.py",
         "scripts/diagnostics/input_restoration_witness.py",
         "scripts/diagnostics/input_delivery_trace.py",
+        "scripts/diagnostics/activation_cost_profile.py",
         "scripts/build_cleanroom_native.ps1",
         "src/native/cleanroom_composition/cleanroom_composition.cpp",
         "src/python/main.py",
@@ -443,6 +448,7 @@ class PixelTracker:
             self.input_release_seconds = None
             self.input_witness = None
             self.input_trace = None
+            self.activation_profile = None
             self.desktop_observer = DesktopFrameObserver()
             self.observation_pending = None
             self.witness_rect = None
@@ -602,6 +608,10 @@ Item {
                 from input_delivery_trace import InputDeliveryTrace
                 self.input_trace = InputDeliveryTrace(self.window, disposable=True)
                 self.input_trace.start()
+                if args.activation_profile:
+                    from activation_cost_profile import ActivationCostProfile
+                    self.activation_profile = ActivationCostProfile(self.window,
+                        disposable=True, adapter=self.input_trace.adapter).start(entry)
             super().begin_cycles()
 
         def create_probe_marker(self, code, name):
@@ -1691,6 +1701,12 @@ Item {
             QTimer.singleShot(2000, self.quit)
 
         def write_results(self):
+            if self.activation_profile is not None:
+                profile, self.activation_profile = self.activation_profile, None
+                evidence = profile.stop()
+                self.record("activation-cost-profile", **evidence)
+                if evidence["status"] != "COMPLETE":
+                    context["failures"].append("disposable activation cost profile incomplete")
             if self.input_trace is not None:
                 trace, self.input_trace = self.input_trace, None
                 evidence = trace.stop()
@@ -1729,7 +1745,18 @@ Item {
                     print(json.dumps(row), flush=True)
 
     entry._capture_startup_launch_context = lambda: {"screenIndex": 0, "cursorX": 900, "cursorY": 500}
-    entry.QApplication = NativeSpike
+    if args.activation_profile:
+        class ActivationSpike(NativeSpike):
+            # Only this explicit diagnostic adds Python dispatch on all events.
+            # The profile measures owned FocusIn/WindowActivate; other events
+            # keep the same base result and are unmeasured.
+            def notify(self, watched, event):
+                dispatch = lambda: super(ActivationSpike, self).notify(watched, event)
+                profile = getattr(self, "activation_profile", None)
+                return profile.notify(watched, event, dispatch) if profile is not None else dispatch()
+        entry.QApplication = ActivationSpike
+    else:
+        entry.QApplication = NativeSpike
     if args.qt_render_timings or args.qt_layout_polish:
         original_qt_handler = entry._qt_message_handler
         def qt_stage_handler(mode, context, message):

@@ -1,5 +1,28 @@
 # Implementation History
 
+## 2026-10-05: Explicit Disposable Activation Profiler
+
+First-error preservation/recovery checkpoint `a254b60112c85182a676b96e8435f12d2c92be39`
+is pushed and live-remote verified. The subsequently recovered collector-free
+Time Entry cold restore fails the unchanged target deadline before input; it does
+not supply a collector-overhead ratio or input-restoration result.
+
+`activation_cost_profile.py` measures bounded owned FocusIn/WindowActivate notify
+spans and ordinary icon callback spans in RAM. The native diagnostic enables a
+separate QApplication subclass only with explicit `--activation-profile` and its
+required passive input trace. Ordinary runs avoid this Python notify override.
+No input or activation operation is added, no Qt virtual method is monkeypatched,
+and fixture-local ordinary hooks are restored before writing results. Twelve
+profile tests include real isolated QCoreApplication dispatch without a window;
+the integrated activation/trace/witness/observer selection passes 122 tests.
+
+A prior virtual-filter monkeypatch probe crashed its isolated safe test and was
+removed before any desktop measurement. Its ignored failure log is retained.
+The current implementation uses ordinary callback hooks only. Safe compilation
+and native `/W4`/no-window contracts are separate from outside-sandbox desktop
+measurement. Y:-based storage and the unchanged installed-production hash remain
+governed; no package/install or acceptance claim is made.
+
 ## 2026-10-04: Later Committed Worker Ordering And Failure Attribution
 
 Exact recovery finds a clean experimental worktree at local/upstream/live remote

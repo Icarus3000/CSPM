@@ -1,5 +1,12 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-05: Bounded Activation Dispatch Measurement
+
+- [x] Preserve first native error/rejected worker-entry diagnostics in pushed and live-verified `a254b60` before further desktop controls.
+- [x] Add explicit disposable `--activation-profile` notify/ordinary-icon spans. Validate 122 focused tests, including isolated Qt dispatch without any HWND/WebEngine and restoration of ordinary Python hooks; no Qt virtual method is patched.
+- [x] Retain collector-free Time Entry cold restore failure; original fixed readiness error remains visible and no input witness is reached.
+- [ ] Compare matched current-source/DLL activation and physical controls; preserve absent/late evidence and qualify only complete gates. No candidate packaging or production change.
+
 ## 2026-10-04: Later Worker Ordering Recovery And Activation Localization
 
 - [x] Recover clean local/upstream/live remote `19e6bb4`, including the later `99cfb3e` native source-band and worker-order checkpoints; preserve all worktrees, four stashes and ignored report constructors. No task-owned process remains from the preceding runs.
