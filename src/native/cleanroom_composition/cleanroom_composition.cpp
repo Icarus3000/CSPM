@@ -166,7 +166,11 @@ struct Host {
         writer(observation); ++observation.sequence;
     }
     void fail(const std::string& message) {
-        std::lock_guard<std::mutex> lock(errorMutex); error=message; flags.fetch_or(16);
+        std::lock_guard<std::mutex> lock(errorMutex);
+        // Rejected follow-up commands must retain the failure that ended the
+        // transaction, rather than replace it with a generic failed-state error.
+        if(!(flags.load()&16)) error=message;
+        flags.fetch_or(16);
     }
     template<class F> int call(F function) {
         auto promise=std::make_shared<std::promise<int>>(); auto future=promise->get_future();

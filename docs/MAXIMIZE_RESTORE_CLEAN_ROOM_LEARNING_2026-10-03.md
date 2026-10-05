@@ -1,5 +1,34 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-04: Later Worker Ordering And Activation Cost Localization
+
+**PROVEN BY MEASUREMENT:** exact continuity recovers clean local/upstream/live
+remote `19e6bb4`, including the already preserved `99cfb3e` source-band correction.
+Worker ordering has independent fresh source-witness and complete-client equality
+in the retained Directory/Productivity controls. Their subsequent target failures
+do not undo source proof or supply a restored-margin measurement. The 73-pixel
+Directory margin failure remains open.
+
+**PROVEN BY MEASUREMENT:** the retained worker Time Entry run completes four
+directions, 28 fresh gates and four QML-accepted F24 pairs. Post-to-native-ingress
+delay is 382.5/391.3/454.4/423.7 ms. **SUPPORTED BY OBSERVATION:** synchronous Qt
+activation processing occupies most of the preceding GUI gap. **STILL UNKNOWN:**
+its exact handler cost, causal collector overhead and repeated populated input
+reliability. The earlier failed fifth pair remains a failure.
+
+**DISPROVEN:** Directory's 199 ms rejected native-setter API span is demonstrated
+GPU-copy time. Native submission stops after 43.7 ms and the setter rejects an
+already failed transaction; the original worker error was overwritten. First
+native-error retention and rejection-time worker observations now preserve that
+missing distinction. No clock/deadline is extended. **STILL UNKNOWN:** frame-slot
+wait, pre-Present driver work or native scheduling cause until the new evidence
+is observed.
+
+Current diagnostic changes are bounded and experimental. Full cold qualification,
+gapless ownership/motion, physical mixed DPI, reduced motion/native lifecycle,
+WebEngine/PDF and installed populated-app acceptance remain open. Production is
+unchanged. **Not yet accepted by Cory.**
+
 ## 2026-10-04: Preserved Repeat And Separate Input/Readiness Controls
 
 Checkpoint `50234e6` preserves the complete recovered source-ordering and failed-input cleanup work. The new preserved physical Productivity repeat again has five exact complete-client source/target directions and thirty fresh passes, yet only four accepted F24 pairs. Guard release and native focus alone therefore cannot qualify repeated input. The fifth failure is retained, including delayed-key quarantine and deterministic witness cleanup.

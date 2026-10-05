@@ -3,6 +3,17 @@
 #include <cassert>
 #include <climits>
 int main() {
+    Host failedHost;
+    failedHost.flags.store(1|2);
+    const char* firstFailure="Native DXGI presentation slot missed bounded 100 ms readiness";
+    failedHost.fail(firstFailure);
+    assert(failedHost.flags.load()==(1|2|16));
+    // Exercise a rejected follow-up without creating any window or GPU device.
+    assert(cspm_comp_transfer_source_visibility(&failedHost,1)==0);
+    assert(failedHost.flags.load()==(1|2|16));
+    char retainedFailure[256]{};
+    assert(cspm_comp_error(&failedHost,retainedFailure,sizeof(retainedFailure))==strlen(firstFailure));
+    assert(strcmp(retainedFailure,firstFailure)==0);
     assert(sourceVisibilityBand(true)==HWND_TOPMOST);
     assert(sourceVisibilityBand(false)==HWND_NOTOPMOST);
     assert(sourceVisibilityBandMatches(WS_EX_TOPMOST|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,true));

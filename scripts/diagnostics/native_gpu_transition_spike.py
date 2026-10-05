@@ -1099,10 +1099,7 @@ Item {
                     return
                 imported = result.get("targetImported") if args.render_target_import else dll.cspm_comp_set_target_frame(self.host, result["frame"])
                 if not imported:
-                    if args.render_target_import:
-                        self.record("target-render-import-rejected", started=result.get("targetImportStarted"),
-                            finished=result.get("targetImportFinished"))
-                    self.fail("target readiness", native_error(self.host))
+                    self.record_target_import_rejection(result)
                     return
                 self.record("target-gpu-composition-committed", elapsedMs=dll.cspm_comp_elapsed_ms(self.host),
                     importThread="render" if args.render_target_import else "GUI",
@@ -1111,6 +1108,20 @@ Item {
                     self.start_native()
                 else:
                     self.poll_native()
+
+        def record_target_import_rejection(self, result):
+            # The native worker may already have failed before this queued
+            # setter executes. Preserve its first error and recorded worker
+            # entry; the caller's API span is not a GPU-copy measurement.
+            reason = native_error(self.host)
+            try:
+                observation = native_observation(dll, self.host)
+            except Exception:
+                observation = {"available": False}
+            self.record("target-render-import-rejected", started=result.get("targetImportStarted"),
+                finished=result.get("targetImportFinished"), native=observation, nativeError=reason,
+                scope="Caller API boundaries and later native worker observation; recorded targetImportBeginSeconds identifies worker entry, not GPU copy or scanout")
+            self.fail("target readiness", reason)
 
         def defer_source_visibility(self):
             if any(not hasattr(dll, name) for name in ("cspm_comp_defer_source_visibility",
@@ -1212,7 +1223,7 @@ Item {
             self.source_reorder_return_seconds = time.perf_counter()
             self.record("source-visibility-reordered", api=api, apiBeginSeconds=began,
                 apiReturnSeconds=self.source_reorder_return_seconds,
-                scope="Existing HWND_TOP/no-move/no-size/no-activation policy; sampled representation remains mandatory")
+                scope="Saved source HWND_TOPMOST/HWND_NOTOPMOST band; no move, size or activation; sampled representation remains mandatory")
             self.state_observation("source-after-visibility-reorder")
 
         @guarded

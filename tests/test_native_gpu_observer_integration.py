@@ -66,7 +66,7 @@ def harness():
              "restore_source_activation", "source_reference_observed", "after_source_transfer_observed",
              "raise_source_visibility", "endpoint_observed", "live_host_frame", "live_host_deadline",
              "handoff", "handoff_compare", "analyze_endpoint_frame", "finish_handoff",
-             "accepted_input_pixels_observed", "poll_native"}
+             "accepted_input_pixels_observed", "poll_native", "record_target_import_rejection"}
     methods = [copy.deepcopy(node) for node in classes[0].body
                if isinstance(node, ast.FunctionDef) and node.name in names]
     assert {method.name for method in methods} == names
@@ -107,6 +107,29 @@ def harness():
         setattr(app, name, MethodType(namespace[name], app))
     return SimpleNamespace(app=app, timer=timer, context=context, actions=actions,
                            records=records, dll=native, args=options, namespace=namespace)
+
+
+def test_rejected_target_retains_native_worker_entry_and_original_failure(harness):
+    observation = {"targetImportBeginSeconds": 10.9, "lastPresentReturnSeconds": 10.4}
+    harness.namespace["native_observation"] = lambda dll, host: dict(observation)
+    harness.namespace["native_error"] = lambda host: "First presentation slot failure"
+    harness.app.record_target_import_rejection({"targetImportStarted": 10.7, "targetImportFinished": 11.0})
+    record = harness.records[-1]
+    assert record["event"] == "target-render-import-rejected"
+    assert (record["started"], record["finished"]) == (10.7, 11.0)
+    assert record["native"] == observation
+    assert record["nativeError"] == "First presentation slot failure"
+    assert harness.context["failures"] == ["target readiness: First presentation slot failure"]
+
+
+def test_rejected_target_snapshot_failure_does_not_hide_original_failure(harness):
+    def unavailable(dll, host):
+        raise RuntimeError("Observation unavailable")
+    harness.namespace["native_observation"] = unavailable
+    harness.namespace["native_error"] = lambda host: "First target failure"
+    harness.app.record_target_import_rejection({})
+    assert harness.records[-1]["native"] == {"available": False}
+    assert harness.context["failures"] == ["target readiness: First target failure"]
 
 
 @pytest.mark.parametrize("source_size,target_size", [((16, 12), (6, 4)), ((6, 4), (16, 12))])

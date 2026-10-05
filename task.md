@@ -1,5 +1,13 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-04: Later Worker Ordering Recovery And Activation Localization
+
+- [x] Recover clean local/upstream/live remote `19e6bb4`, including the later `99cfb3e` native source-band and worker-order checkpoints; preserve all worktrees, four stashes and ignored report constructors. No task-owned process remains from the preceding runs.
+- [x] Recover fresh complete-source proof after worker ordering, and the four-direction Time Entry input trace. Preserve each readiness failure, the earlier fifth-pair failure and all nonzero margin evidence.
+- [x] Preserve the first native failure through rejected follow-up calls and record rejected-target worker-entry/API boundaries separately; no ABI, motion or readiness deadline change.
+- [ ] Bound the synchronous Qt activation cost, then perform matched collector-free/physical input and cold-readiness controls on the same source/DLL.
+- [ ] Resolve Directory's complete-client target-margin equality and qualify uninterrupted motion, reduced motion, native lifecycle, mixed DPI and WebEngine before packaging. Cory's P0 real-app acceptance remains open.
+
 ## 2026-10-04: Exact-State Resume And Lifecycle Localization
 
 - [x] Recover and review all eighteen tracked/eight untracked edits, both ignored report constructors and later evidence; preserve four stashes and existing worktrees; push and verify checkpoint `50234e6` without force.

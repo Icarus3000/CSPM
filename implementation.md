@@ -1,5 +1,36 @@
 # Implementation History
 
+## 2026-10-04: Later Committed Worker Ordering And Failure Attribution
+
+Exact recovery finds a clean experimental worktree at local/upstream/live remote
+`19e6bb4b1c132c2af112044d1e1cdd3f36c1da74`, two checkpoints newer than the preceding
+ledger. The existing source-band correction is `99cfb3e`; worker-thread source
+ordering is `19e6bb4`. Neither is reconstructed or repeated. Existing worktrees,
+four stashes, private failed results and complete ignored report constructors are
+retained. No owned CSPM/test/compiler process is present on recovery.
+
+Recovered worker-order Directory/Productivity controls have four fresh source
+observations and exact full maximized-client pixels each, followed by separate
+target-readiness failures. The later Time Entry run completes four directions,
+28 fresh observations and four accepted F24 pairs. Its posted-pair to native
+ingress delay is 382.5/391.3/454.4/423.7 ms; observed Qt activation/event processing
+spans most of that delay. A retained populated five-repeat still fails its fifth
+pair. No collector overhead or activation root cause is established yet.
+
+`Host::fail` now preserves the original native failure after a rejected follow-up
+instead of replacing it with a generic target error. The diagnostic separately
+records the caller's rejected import span and the native worker entry snapshot.
+Neither is described as GPU-copy cost or physical presentation. Static native
+contracts verify first-error retention without constructing a HWND/device; no ABI,
+shader, motion, endpoint hold or target deadline changes. Production remains the
+safe default, no package is installed, and the Directory margin and complete
+candidate acceptance gates remain open.
+
+The first current safe-test attempt used a venv missing the retained pixel
+dependencies and failed collection. Its log is preserved. Subsequent checks use
+the existing Y:-based pixel dependency tree without installing or changing any
+environment. Every task-owned temp/cache/build/test/log remains on Y:.
+
 ## 2026-10-04: Exact-State Recovery And Bounded Lifecycle Diagnostics
 
 Recovered local/upstream/live remote `11abc48`, eighteen modified tracked and eight untracked files, all four stashes and the existing worktrees. Reviewed and preserved the complete recovery as pushed checkpoint `50234e6`. Both ignored report-draft scripts are complete run-specific constructors whose 21 results were already published; retain them locally and do not rerun the non-idempotent publisher.
