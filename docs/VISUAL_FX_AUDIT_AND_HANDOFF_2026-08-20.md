@@ -4,6 +4,16 @@ Status: Active user-directed priority as of 2026-08-20.
 
 ## Experimental continuation — 2026-10-04
 
+October 5 continuation recovers the later committed worker-order source proof and
+preserves first native failure attribution. Bounded disposable profiling locates
+340–420 ms inclusive Qt activation dispatch in a completed four-direction Time
+Entry run. A general process-local icon-filter repair is under matched testing:
+QWindow-only icon work, no permanently inert splash filter, unchanged Qt palette
+delivery and startup input callbacks. Cold readiness, Directory target margins,
+repeated populated input, uninterrupted motion and lifecycle gates remain open.
+No package/install/default change or move to another visual state machine. Read
+the latest task/implementation and lifecycle-localization evidence.
+
 The existing clean-room branch remains separate from production. The preserved observer and restore-padding repairs now use bounded fresh DXGI raster evidence, bracketed window state and an optional sampled same-swapchain witness outside both client rectangles. Cold Time Entry and Home have exact tested native-source/target-live endpoints; their sixteen initial overlap corner pixels remain failures. Directory/invoice residuals are localized to right transparent margins, and populated Productivity still misses target readiness despite correct restored padding. The complete candidate remains rejected. Read `docs/CLEANROOM_PHYSICAL_QUALIFICATION_2026-10-04.md` and the latest task/implementation ledger. No installation, duration/watchdog change or move to another visual state machine; Cory's P0 real-app acceptance stays open.
 
 ## Latest continuation point — 2026-10-02

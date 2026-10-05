@@ -180,6 +180,8 @@ def main():
         help="Passive bounded owned-window native/Qt input and activation trace; requires input witness")
     parser.add_argument("--activation-profile", action="store_true",
         help="Disposable owned activation notify/icon CPU spans; requires input trace and adds dispatch overhead")
+    parser.add_argument("--activation-repair", action="store_true",
+        help="Opt into general window-icon activation filter scoping; ordinary app startup remains unchanged")
     parser.add_argument("--single-owner-source", action="store_true",
         help="Diagnostic GUI-thread source visibility transfer in one native deferred-position batch")
     parser.add_argument("--intrinsic-only", action="store_true",
@@ -340,6 +342,7 @@ def main():
     os.environ["CSPM_MACHINE_ID_FILE"] = str(audit / "disposable_profile/machine_id.json")
     os.environ["CSPM_EXPERIMENTAL_TRANSITION"] = "production"
     os.environ["CSPM_EXPERIMENTAL_LAYOUT_REPAIR"] = "1" if args.layout_repair else "0"
+    os.environ["CSPM_EXPERIMENTAL_ACTIVATION_REPAIR"] = "1" if args.activation_repair else "0"
     if args.qt_render_timings:
         os.environ["QSG_RENDER_TIMING"] = "1"
     probe = root / "scripts/diagnostics/window_transition_probe.py"

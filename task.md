@@ -5,6 +5,8 @@
 - [x] Preserve first native error/rejected worker-entry diagnostics in pushed and live-verified `a254b60` before further desktop controls.
 - [x] Add explicit disposable `--activation-profile` notify/ordinary-icon spans. Validate 122 focused tests, including isolated Qt dispatch without any HWND/WebEngine and restoration of ordinary Python hooks; no Qt virtual method is patched.
 - [x] Retain collector-free Time Entry cold restore failure; original fixed readiness error remains visible and no input witness is reached.
+- [x] Outside sandbox, profile four cold Time Entry directions: 28 fresh observations, 24 exact complete-client comparisons and four QML pairs; root WindowActivate dispatch spans 340–420 ms. Synthetic real Qt controls prove application filters receive recursive hidden-item activation events while palette/event behavior remains intact.
+- [x] Add opt-in general QWindow-only icon handling and omit the inert global splash filter. Default startup and ongoing input callbacks remain intact; focused Qt source/helper tests pass. Retain two unrelated startup QML source-contract failures whose QML inputs are unchanged.
 - [ ] Compare matched current-source/DLL activation and physical controls; preserve absent/late evidence and qualify only complete gates. No candidate packaging or production change.
 
 ## 2026-10-04: Later Worker Ordering Recovery And Activation Localization

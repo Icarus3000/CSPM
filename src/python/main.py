@@ -69,7 +69,7 @@ from PySide6.QtCore import (
     QUrl,
     qInstallMessageHandler,
 )
-from PySide6.QtGui import QCursor, QIcon
+from PySide6.QtGui import QCursor, QIcon, QWindow
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget
 from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QLinearGradient, QRadialGradient, QPen
 from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QTimer, QVariantAnimation, Property, QEasingCurve
@@ -1049,6 +1049,7 @@ class _AppIconSync(QObject):
         self._app = app
         self._icon = icon
         self._pending_apply = False
+        self._window_events_only = _env_flag("CSPM_EXPERIMENTAL_ACTIVATION_REPAIR", False)
 
     def apply_all(self) -> None:
         self._pending_apply = False
@@ -1075,6 +1076,11 @@ class _AppIconSync(QObject):
         QTimer.singleShot(0, self.apply_all)
 
     def eventFilter(self, watched: QObject, event: Any) -> bool:
+        # Qt Quick forwards activation through every Item, including hidden
+        # workspaces. The optional repair keeps those Qt/palette events intact
+        # while restricting icon discovery/application to actual windows.
+        if self._window_events_only and not isinstance(watched, QWindow):
+            return False
         try:
             if event is not None and event.type() in _APP_ICON_SYNC_EVENT_TYPES:
                 _apply_app_icon_to_window(watched, self._icon)
@@ -2320,14 +2326,15 @@ def main() -> None:
                     native_splash_signal_bound = True
             except Exception as exc:
                 _report_nonfatal_startup_failure("nativeSplash.bindBootstrapFallback", exc)
-        from PySide6.QtGui import QKeyEvent
-        class GlobalSplashSkipFilter(QObject):
-            def eventFilter(self, watched: QObject, event: Any) -> bool:
-                return False
+        if not _env_flag("CSPM_EXPERIMENTAL_ACTIVATION_REPAIR", False):
+            from PySide6.QtGui import QKeyEvent
+            class GlobalSplashSkipFilter(QObject):
+                def eventFilter(self, watched: QObject, event: Any) -> bool:
+                    return False
 
-        _splash_skip_filter = GlobalSplashSkipFilter(app)
-        app.installEventFilter(_splash_skip_filter)
-        app._splash_skip_filter = _splash_skip_filter # type: ignore[attr-defined]
+            _splash_skip_filter = GlobalSplashSkipFilter(app)
+            app.installEventFilter(_splash_skip_filter)
+            app._splash_skip_filter = _splash_skip_filter # type: ignore[attr-defined]
 
     def _resolve_hook_target_window():
         nonlocal root

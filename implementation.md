@@ -23,6 +23,22 @@ and native `/W4`/no-window contracts are separate from outside-sandbox desktop
 measurement. Y:-based storage and the unchanged installed-production hash remain
 governed; no package/install or acceptance claim is made.
 
+Outside-sandbox explicit Time Entry profiling completes four directions, 28 fresh
+gates, 24 exact complete-client comparisons and four accepted input pairs. Owned
+WindowActivate notify spans 347.705/340.358/411.410/420.463 ms; own-window icon
+applications span only 1.293/1.086/1.253/2.502 ms. This measures inclusive dispatch,
+with Python notify profiling overhead, rather than pure Qt or collector cost.
+
+Synthetic same-tree Qt controls establish recursive activation filter calls and
+unchanged descendant/palette delivery. `CSPM_EXPERIMENTAL_ACTIVATION_REPAIR=1`
+now restricts icon work to QWindow and omits the permanently inert splash filter.
+The existing StartupInputProbe and its ongoing callback remain untouched.
+Fourteen new actual-helper/tree contracts and 76 focused profile/trace/input
+checks pass. A separate startup selection retains two failures against unchanged
+BootstrapRoot/DetachedShellWindow QML source; they are not presented as a pass or
+repaired as part of maximize/restore. Matched physical/intrinsic evidence for the
+repair is still required before any performance or qualification claim.
+
 ## 2026-10-04: Later Committed Worker Ordering And Failure Attribution
 
 Exact recovery finds a clean experimental worktree at local/upstream/live remote
