@@ -2,6 +2,32 @@
 
 ## 2026-10-08: Finalized Evidence Recovered Before Probe Correction
 
+### Measured submitted-surface correction
+
+**PROVEN BY MEASUREMENT:** retaining the D3D11 flip-chain buffer interface across
+Present does not preserve its submitted allocation. Baseline synthetic markers
+differ at 99/135 source and 39/45 endpoint samples. Opt-in GPU-only copies before
+stopped-source/endpoint Present repair that probe; independent CPU-formula tests
+pass 270 source and 90 endpoint BGRA/RGBA samples. Coordinates remain top-left
+physical texels, with explicit host origins, subresource 0, RowPitch, swizzle and
+opaque host/frame/resource/Present/witness revisions. No normal-motion readback
+or copy, shader/alpha change, duration change or relaxed pixel gate is added.
+
+**PROVEN BY MEASUREMENT:** the new maximize-first cold Directory run has exact
+complete-client source and target/live comparisons before/after accepted input,
+fourteen fresh passes and two QML pairs. Verified sampled target/submitted/live
+texels match. **STILL UNKNOWN:** the historical 63-margin-pixel cause; zero new
+differences do not retroactively validate the earlier failing run. Cold restore-
+first controls retain a readiness failure and two pre-motion source-band-check
+failures. Those failures do not establish the expected/actual bands at the API
+boundary or a foreground-related cause.
+
+Current code passes 523 safe tests/one window-test deselection, compilation and
+native `/W4`/contract/ABI-null checks. Native marker/Qt/DXGI evidence is outside
+sandbox; no new installed/WebEngine e2e, continuous-motion or complete-candidate
+claim. Full new evidence is in `CLEANROOM_SUBMITTED_PROBE_QUALIFICATION_2026-10-08.md`
+and its JSON. Checkpoint this coherent probe result before further qualification.
+
 **PROVEN BY MEASUREMENT:** the final retained Directory JSON completes both
 directions with fourteen fresh passes and two accepted QML input pairs. Its
 63-pixel restored-margin difference remains before and after input; maximized

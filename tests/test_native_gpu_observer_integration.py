@@ -9,6 +9,7 @@ import copy
 import ctypes
 from ctypes import wintypes
 import hashlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -73,7 +74,7 @@ def harness():
     for method in methods:
         method.decorator_list = []
     namespace = {"args": options, "dll": native, "QTimer": timer, "context": context,
-        "ctypes": ctypes, "wintypes": wintypes, "os": os, "hashlib": hashlib,
+        "ctypes": ctypes, "wintypes": wintypes, "os": os, "hashlib": hashlib, "json": json,
         "time": SimpleNamespace(perf_counter=lambda: 10.25), "isValid": lambda window: True,
         "native_error": lambda host: "synthetic native rejection",
         "native_present_trace": lambda dll, host: {"scope": "synthetic no-runtime trace"},
@@ -101,7 +102,7 @@ def harness():
         unlock_input=lambda: actions.append(("unlock-input",)),
         quit=lambda: actions.append(("quit",)),
         evaluate=lambda command: actions.append(("evaluate", command)),
-        record=lambda event, **values: records.append({"event": event, **values}),
+        record=lambda event, **values: records.append({"event": event, "cycle": 0, **values}),
         fail=lambda category, error: context["failures"].append(category + ": " + error))
     for name in names:
         setattr(app, name, MethodType(namespace[name], app))
@@ -794,10 +795,18 @@ def test_intrinsic_status_failure_cannot_be_treated_as_a_ready_endpoint(harness)
     assert harness.timer.calls == []
 
 
-def test_endpoint_probe_preserves_complete_target_comparison_and_native_ownership_until_analysis(harness, monkeypatch):
+def test_endpoint_probe_preserves_complete_target_comparison_and_native_ownership_until_analysis(harness, monkeypatch, tmp_path):
     app = harness.app
     harness.args.probe_endpoint = True
-    app.current, app.target_client = {"command": 9.0}, [100, 100, 6, 4]
+    app.current, app.target_client = {"command": 9.0, "sourceClient": [100,100,6,4]}, [100, 100, 6, 4]
+    app.envelope, app.witness_revision = [90,90,26,24], 7
+    app.rows = harness.records
+    app.rows.extend([{"event": "gpu-capture", "cycle": 0, "kind": kind,
+        "frameIdentity": {"revision": revision}} for kind, revision in (("source",201),("target",202))])
+    app.rows.append({"event": "physical-target-regions", "cycle": 0, "contentXYWH": app.target_client})
+    app.snapshot_observations["target-live"] = {"frame": {"outputDesktopXYWH": [0,0,1920,1080]}}
+    app.window_observation = lambda hwnd: {"windowXYWH": app.target_client}
+    harness.namespace["audit"] = tmp_path
     native_pixels = np.zeros((4, 6, 4), np.uint8)
     live_pixels = native_pixels.copy()
     live_pixels[3, 5, 0] = 1
@@ -822,24 +831,121 @@ def test_endpoint_probe_preserves_complete_target_comparison_and_native_ownershi
         attempts.append("native")
         return np.zeros((1, 4), np.uint8), np.zeros((1, 4), np.uint8)
     def live_probe(dll, host, frame, coordinates):
-        assert host == 101 and frame == 303
+        assert host == 101 and frame in (201,303)
         attempts.append("live")
         return np.array([[1, 0, 0, 0]], np.uint8)
     monkeypatch.setitem(sys.modules, "source_pixel_analysis", SimpleNamespace(
         composition_probe_coordinates=coordinates, probe_gpu_endpoint_composition=native_probe,
         probe_gpu_live_frame=live_probe, endpoint_composition_analysis=lambda *args: {"differentSamples": 1}))
+    import submitted_surface_contract
+    identity = {"witnessRevision": 7, "sourceFrameRevision": 201, "targetFrameRevision": 202,
+        "hostLeft": 90, "hostTop": 90, "hostWidth": 26, "hostHeight": 24,
+        "sourceLeft": 10, "sourceTop": 10, "sourceWidth": 6, "sourceHeight": 4,
+        "targetLeft": 10, "targetTop": 10, "targetWidth": 6, "targetHeight": 4}
+    monkeypatch.setattr(submitted_surface_contract, "probe_identity", lambda *args, **kw: dict(identity))
+    monkeypatch.setattr(submitted_surface_contract, "frame_identity", lambda *args: {"revision":303,"width":6,"height":4})
     app.evaluate = lambda command: SimpleNamespace(toNumber=lambda: 3)
     app.finish_handoff = lambda: harness.actions.append(("finish-after-probe",))
     app.analyze_endpoint_frame({"client": app.target_client, "size": [6, 4], "frame": 303})
-    assert attempts == ["native", "live"] and app.diagnostic_texel_readbacks == 3
+    assert attempts == ["native", "live", "live"] and app.diagnostic_texel_readbacks == 4
     assert app.endpoint_diagnostic_pixels is None and harness.actions[-1] == ("finish-after-probe",)
     evidence = next(row for row in harness.records if row["event"] == "endpoint-composition-analysis")
     assert evidence["differentSamples"] == 1 and "Diagnostic only" in evidence["timingQualification"]
+    assert evidence["submittedIdentity"] == identity
+    assert evidence["coordinateContract"]["samples"][0]["submittedSurfaceTexelXY"] == [15,13]
+    import json
+    private = json.loads((tmp_path/"endpoint_probe_private_cycle0.json").read_text())
+    assert private["sourceSampleIndices"] == [0] and private["liveRGBA"] == [[0,0,1,0]]
     app.evaluate = lambda command: harness.actions.append(("evaluate", command))
     app.complete()
     comparison = next(row for row in harness.records if row["event"] == "physical-pixel-analysis")
     assert comparison["pixels"] == 24 and comparison["differentPixels"] == 1
     assert harness.context["failures"] == ["gpu-to-live-target-pixels: physical pixels differ"]
+
+
+def endpoint_identity_harness(harness, monkeypatch, tmp_path):
+    """A stopped synthetic endpoint whose sampling never creates a window."""
+    import submitted_surface_contract
+    app = harness.app
+    app.current = {"command": 9.0, "sourceClient": [100, 100, 6, 4]}
+    app.target_client, app.envelope = [100, 100, 6, 4], [90, 90, 26, 24]
+    app.witness_revision = 7
+    app.rows = harness.records
+    app.rows.extend([{"event": "gpu-capture", "cycle": 0, "kind": kind,
+        "frameIdentity": {"revision": revision}} for kind, revision in (("source",201), ("target",202))])
+    app.rows.append({"event": "physical-target-regions", "cycle": 0, "contentXYWH": app.target_client})
+    app.snapshot_observations["target-live"] = {"frame": {"outputDesktopXYWH": [0,0,1920,1080]}}
+    app.window_observation = lambda hwnd: {"windowXYWH": app.target_client}
+    app.target_desktop = np.zeros((4, 6, 4), np.uint8)
+    app.endpoint_diagnostic_pixels = app.target_desktop.copy()
+    app.target_pixel_regions[0] = {"clientMargin": [[5, 0, 6, 4]]}
+    app.evaluate = lambda command: SimpleNamespace(toNumber=lambda: 3)
+    app.finish_handoff = lambda: pytest.fail("Rejected identity cannot finish handoff")
+    harness.namespace["audit"] = tmp_path
+    attempts = []
+    def native_probe(*args):
+        attempts.append("submitted-readback")
+        return np.zeros((1,4), np.uint8), np.zeros((1,4), np.uint8)
+    def frame_probe(*args):
+        attempts.append("frame-readback")
+        return np.zeros((1,4), np.uint8)
+    monkeypatch.setitem(sys.modules, "source_pixel_analysis", SimpleNamespace(
+        composition_probe_coordinates=lambda *args: ([(5,3)], ["clientMargin"], {}),
+        probe_gpu_endpoint_composition=native_probe, probe_gpu_live_frame=frame_probe,
+        endpoint_composition_analysis=lambda *args: pytest.fail("Rejected revision cannot publish analysis")))
+    identity = dict(witnessRevision=7, sourceFrameRevision=201, targetFrameRevision=202,
+        snapshotRevision=8, hostGeneration=9, snapshotResourceIdentity=10,
+        hostLeft=90, hostTop=90, hostWidth=26, hostHeight=24,
+        sourceLeft=10, sourceTop=10, sourceWidth=6, sourceHeight=4,
+        targetLeft=10, targetTop=10, targetWidth=6, targetHeight=4)
+    exported = dict(revision=303, width=6, height=4)
+    monkeypatch.setattr(submitted_surface_contract, "probe_identity", lambda *args, **kw: dict(identity))
+    monkeypatch.setattr(submitted_surface_contract, "frame_identity", lambda *args: dict(exported))
+    return identity, exported, attempts
+
+
+@pytest.mark.parametrize("changes", [dict(witnessRevision=6), dict(sourceFrameRevision=199),
+    dict(targetFrameRevision=200), dict(hostLeft=91), dict(hostTop=91),
+    dict(hostWidth=25), dict(hostHeight=23), dict(sourceLeft=11), dict(sourceTop=11),
+    dict(sourceWidth=5), dict(sourceHeight=3), dict(targetLeft=11), dict(targetTop=11),
+    dict(targetWidth=5), dict(targetHeight=3)])
+def test_endpoint_identity_must_match_the_transaction_before_any_pixel_readback(harness, monkeypatch, tmp_path, changes):
+    identity, _, attempts = endpoint_identity_harness(harness, monkeypatch, tmp_path)
+    identity.update(changes)
+    with pytest.raises(RuntimeError, match="transaction"):
+        harness.app.analyze_endpoint_frame({"client": harness.app.target_client, "size": [6,4], "frame": 303})
+    assert attempts == [] and harness.app.diagnostic_texel_readbacks == 0
+    assert not list(tmp_path.iterdir())
+    assert harness.app.host == 101 and harness.app.frames == [201,202]
+
+
+@pytest.mark.parametrize("changes", [dict(revision=201), dict(revision=202), dict(width=5), dict(height=3)])
+def test_later_live_identity_cannot_alias_source_target_or_a_different_frame_extent(harness, monkeypatch, tmp_path, changes):
+    _, exported, attempts = endpoint_identity_harness(harness, monkeypatch, tmp_path)
+    exported.update(changes)
+    with pytest.raises(RuntimeError, match="transaction"):
+        harness.app.analyze_endpoint_frame({"client": harness.app.target_client, "size": [6,4], "frame": 303})
+    assert attempts == [] and not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("changed_field", ["snapshotRevision", "hostGeneration",
+    "sourceFrameRevision", "targetFrameRevision", "witnessRevision", "snapshotResourceIdentity"])
+def test_endpoint_revision_is_bracketed_and_changes_during_readback_never_publish_evidence(harness, monkeypatch, tmp_path, changed_field):
+    import submitted_surface_contract
+    identity, _, attempts = endpoint_identity_harness(harness, monkeypatch, tmp_path)
+    calls = []
+    def observed_identity(*args, **kwargs):
+        calls.append("identity")
+        return dict(identity) if len(calls) == 1 else {**identity, changed_field: identity[changed_field]+1}
+    monkeypatch.setattr(submitted_surface_contract, "probe_identity", observed_identity)
+    with pytest.raises(RuntimeError, match="revision changed"):
+        harness.app.analyze_endpoint_frame({"client": harness.app.target_client, "size": [6,4], "frame": 303})
+    assert calls == ["identity", "identity"]
+    assert attempts == ["submitted-readback", "frame-readback", "frame-readback"]
+    assert harness.app.diagnostic_texel_readbacks == 0
+    assert not any(row["event"] == "endpoint-composition-analysis" for row in harness.records)
+    assert not list(tmp_path.iterdir())
+    assert harness.app.host == 101 and harness.app.frames == [201,202]
 
 
 def test_post_input_observation_starts_after_accepted_pair_without_advancing_cycle(harness):

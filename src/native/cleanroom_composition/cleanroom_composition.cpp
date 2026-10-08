@@ -41,16 +41,19 @@ double nowSeconds() {
 double flow(double p) {
     p=std::clamp(p,0.,1.); return p*p*p*p*(35.+p*(-84.+p*(70.-20.*p)));
 }
+std::atomic<uint64_t> nextFrameIdentity{0},nextResourceIdentity{0},nextHostGeneration{0};
 struct Frame {
     ComPtr<ID3D11Texture2D> texture;
     ComPtr<IDXGIKeyedMutex> mutex;
     D3D11_TEXTURE2D_DESC desc{};
     HANDLE sharedHandle=nullptr;
+    uint64_t revision=++nextFrameIdentity;
 };
 struct Pixels {
     ComPtr<ID3D11Texture2D> texture;
     ComPtr<ID3D11ShaderResourceView> view;
     UINT width=0,height=0;
+    uint64_t frameRevision=0,resourceIdentity=0;
 };
 bool probeCoordinatesValid(const int* xy,unsigned count,unsigned width,unsigned height,
                            int offsetX,int offsetY,unsigned hostWidth,unsigned hostHeight) {
@@ -80,6 +83,28 @@ struct ProbePixels {
     int xy[128]{};
     unsigned char source[256]{},submitted[256]{};
 };
+// Additive diagnostic identities contain monotonic opaque IDs, never pointers.
+// Orientation 1 is top-left; sampled subresource is always mip/array slice 0.
+struct FrameIdentity {
+    uint32_t version=1,byteSize=48;
+    uint64_t revision=0;
+    uint32_t width=0,height=0,format=0,mipLevels=0,arraySize=0,sampleCount=0;
+    uint32_t subresource=0,orientation=1;
+};
+static_assert(sizeof(FrameIdentity)==48,"Diagnostic frame identity ABI layout");
+struct ProbeIdentity {
+    uint32_t version=1,byteSize=200;
+    uint64_t hostGeneration=0,snapshotRevision=0,sourceFrameRevision=0,targetFrameRevision=0;
+    uint32_t submittedPresentId=0,phase=0,witnessRevision=0,subresource=0;
+    double snapshotQueuedSeconds=0,presentBeginSeconds=0,presentReturnSeconds=0,motion=0,content=0;
+    int32_t hostLeft=0,hostTop=0,hostWidth=0,hostHeight=0;
+    int32_t sourceLeft=0,sourceTop=0,sourceWidth=0,sourceHeight=0;
+    int32_t targetLeft=0,targetTop=0,targetWidth=0,targetHeight=0;
+    uint32_t sourceFormat=0,targetFormat=0,snapshotFormat=0,snapshotWidth=0,snapshotHeight=0;
+    uint32_t snapshotEnabled=0,orientation=1,premultiplied=1;
+    uint64_t sourceResourceIdentity=0,targetResourceIdentity=0,snapshotResourceIdentity=0;
+};
+static_assert(sizeof(ProbeIdentity)==200,"Diagnostic submitted identity ABI layout");
 struct Constants {
     float currentRect[4],sourceRect[4],targetRect[4],sizes[4],motion[4];
     float witnessRect[4],witnessColor[4];
@@ -119,11 +144,19 @@ struct PresentTrace {
     PresentObservation rows[128]{};
 };
 static_assert(sizeof(PresentTrace)==10264,"Diagnostic Present trace ABI layout");
+bool probeIdentityMatches(const ProbeIdentity& identity,unsigned phase,const Observation& observation) {
+    return identity.snapshotEnabled && identity.hostGeneration && identity.snapshotRevision &&
+        identity.snapshotResourceIdentity && identity.phase==phase && identity.subresource==0 &&
+        identity.orientation==1 && identity.submittedPresentId==observation.submittedPresentId &&
+        identity.presentReturnSeconds==observation.lastPresentReturnSeconds &&
+        identity.motion==observation.lastFrameMotion && identity.content==observation.lastFrameContent;
+}
 struct Host {
     HWND hwnd=nullptr;
     std::thread worker;
     std::mutex queueMutex,errorMutex,observationMutex;
     Observation observation;
+    ProbeIdentity probeIdentity;
     PresentObservation presentRows[128]{};
     uint64_t totalPresentRows=0;
     std::deque<std::function<void()>> queue;
@@ -135,9 +168,12 @@ struct Host {
     ComPtr<IDCompositionTarget> target;
     ComPtr<IDCompositionVisual> root;
     ComPtr<IDXGISwapChain1> swapchain;
-    // Retain the exact last submitted allocation, rather than asking a flip
-    // chain for its next backbuffer. Only the stopped diagnostic samples it.
+    // D3D11 rotates flip-chain storage behind retained GetBuffer(0) interfaces.
+    // An opt-in owned GPU copy before Present preserves only stopped source
+    // and complete endpoint submissions. Intermediate motion has no copy.
     ComPtr<ID3D11Texture2D> lastSubmittedTexture;
+    bool probeSnapshotEnabled=false;
+    uint64_t generation=++nextHostGeneration,snapshotRevision=0,snapshotResourceIdentity=0;
     HANDLE frameReady=nullptr;
     std::atomic<unsigned> submittedCount{0},displayedCount{0},statisticsResult{0};
     UINT endpointCount=0;
@@ -302,6 +338,10 @@ void render(Host& h,bool initial=false) {
     h.context->PSSetShaderResources(0,2,inputs); h.context->Draw(3,0);
     ID3D11ShaderResourceView* empty[]={nullptr,nullptr}; h.context->PSSetShaderResources(0,2,empty);
     h.context->OMSetRenderTargets(0,nullptr,nullptr);
+    const bool copyStoppedProbe=h.probeSnapshotEnabled &&
+        (initial || (elapsed>=duration && p==1. && content==1. && h.destination.view));
+    const double snapshotQueued=copyStoppedProbe ? nowSeconds() : 0;
+    if(copyStoppedProbe) h.context->CopyResource(h.lastSubmittedTexture.Get(),buffer.Get());
     const double presentBegin=nowSeconds();
     const HRESULT presentResult=h.swapchain->Present(1,0);
     const double presentReturn=nowSeconds();
@@ -321,9 +361,32 @@ void render(Host& h,bool initial=false) {
         row.presentBeginSeconds=presentBegin; row.presentReturnSeconds=presentReturn;
         row.elapsedSeconds=elapsed; row.motion=p; row.content=content;
         memcpy(row.currentRect,c.currentRect,sizeof(c.currentRect));
+        if(copyStoppedProbe && SUCCEEDED(presentResult)) {
+            auto& identity=h.probeIdentity;
+            identity.hostGeneration=h.generation; identity.snapshotRevision=++h.snapshotRevision;
+            identity.sourceFrameRevision=h.source.frameRevision;
+            identity.targetFrameRevision=h.destination.frameRevision;
+            identity.submittedPresentId=submitted; identity.phase=initial ? 1u : 3u;
+            identity.witnessRevision=h.witnessRevision;
+            identity.snapshotQueuedSeconds=snapshotQueued;
+            identity.presentBeginSeconds=presentBegin; identity.presentReturnSeconds=presentReturn;
+            identity.motion=p; identity.content=content;
+            identity.hostLeft=observation.hostLeft; identity.hostTop=observation.hostTop;
+            identity.hostWidth=h.hostWidth; identity.hostHeight=h.hostHeight;
+            identity.sourceLeft=int(h.sourceX); identity.sourceTop=int(h.sourceY);
+            identity.sourceWidth=int(h.source.width); identity.sourceHeight=int(h.source.height);
+            identity.targetLeft=int(h.targetX); identity.targetTop=int(h.targetY);
+            identity.targetWidth=int(h.destination.width); identity.targetHeight=int(h.destination.height);
+            identity.sourceFormat=observation.sourceFormat; identity.targetFormat=observation.targetFormat;
+            identity.snapshotFormat=DXGI_FORMAT_B8G8R8A8_UNORM;
+            identity.snapshotWidth=unsigned(h.hostWidth); identity.snapshotHeight=unsigned(h.hostHeight);
+            identity.snapshotEnabled=1;
+            identity.sourceResourceIdentity=h.source.resourceIdentity;
+            identity.targetResourceIdentity=h.destination.resourceIdentity;
+            identity.snapshotResourceIdentity=h.snapshotResourceIdentity;
+        }
     });
     check(presentResult,"Present GPU-only premultiplied frame");
-    h.lastSubmittedTexture=buffer;
     if(!initial && elapsed>=duration) {
         h.endpointSubmitted=true; h.endpointCount=submitted;
         h.observe([&](Observation& observation) {
@@ -413,6 +476,7 @@ void initialize(Host& h,IDXGIAdapter* adapter,int left,int top,int width,int hei
 void releaseResources(Host& h) {
     if(h.context) { h.context->ClearState(); h.context->Flush(); }
     h.root.Reset(); h.target.Reset(); h.source=Pixels{}; h.destination=Pixels{};
+    h.lastSubmittedTexture.Reset();
     h.vertexShader.Reset(); h.pixelShader.Reset(); h.constants.Reset(); h.sampler.Reset();
     if(h.frameReady) { CloseHandle(h.frameReady); h.frameReady=nullptr; }
     h.swapchain.Reset(); h.compositor.Reset(); h.context.Reset(); h.gpu.Reset();
@@ -436,6 +500,7 @@ Pixels copyPixels(Host& h,Frame& frame) {
         auto desc=frame.desc; desc.Usage=D3D11_USAGE_DEFAULT; desc.CPUAccessFlags=0;
         desc.BindFlags=D3D11_BIND_SHADER_RESOURCE; desc.MiscFlags=0;
         pixels.width=desc.Width; pixels.height=desc.Height;
+        pixels.frameRevision=frame.revision; pixels.resourceIdentity=++nextResourceIdentity;
         check(h.gpu->CreateTexture2D(&desc,nullptr,&pixels.texture),"Create native owned GPU frame");
         // CopyResource copies identical extents; no atlas offset/destination
         // subrectangle remains to exceed the resource bounds.
@@ -451,6 +516,20 @@ void validateRect(const Host& h,float x,float y,float width,float height) {
         throw std::runtime_error("Physical frame rectangle exceeds fixed composition host bounds");
     if(x!=std::floor(x)||y!=std::floor(y)||width!=std::floor(width)||height!=std::floor(height))
         throw std::runtime_error("Endpoint frame rectangles must use integral physical pixels");
+}
+void enableProbeSnapshot(Host& h) {
+    if(h.flags.load() || h.source.texture || h.probeSnapshotEnabled)
+        throw std::runtime_error("Submitted probe snapshot must be enabled once before source preparation");
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width=UINT(h.hostWidth); desc.Height=UINT(h.hostHeight);
+    desc.MipLevels=desc.ArraySize=1; desc.Format=DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count=1; desc.Usage=D3D11_USAGE_DEFAULT;
+    check(h.gpu->CreateTexture2D(&desc,nullptr,&h.lastSubmittedTexture),"Create stopped submitted GPU snapshot");
+    h.snapshotResourceIdentity=++nextResourceIdentity; h.probeSnapshotEnabled=true;
+    h.observe([&](Observation&) {
+        h.probeIdentity.hostGeneration=h.generation;
+        h.probeIdentity.snapshotEnabled=1;
+    });
 }
 void probeTexels(Host& h,ID3D11Texture2D* texture,const int* xy,unsigned count,
                  int offsetX,int offsetY,unsigned char* bgra) {
@@ -480,6 +559,31 @@ void probeTexels(Host& h,ID3D11Texture2D* texture,const int* xy,unsigned count,
 }
 
 EXPORT unsigned cspm_comp_abi_version() { return 1; }
+EXPORT int cspm_comp_enable_probe_snapshot(void* pointer) {
+    if(!pointer) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    return h.call([&h] { enableProbeSnapshot(h); });
+}
+EXPORT int cspm_comp_probe_identity(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(ProbeIdentity)) return 0;
+    auto* result=static_cast<ProbeIdentity*>(output);
+    if(result->version!=1 || result->byteSize!=sizeof(ProbeIdentity)) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    std::lock_guard<std::mutex> lock(h.observationMutex);
+    memcpy(result,&h.probeIdentity,sizeof(ProbeIdentity)); return 1;
+}
+EXPORT int cspm_gpu_frame_identity(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(FrameIdentity)) return 0;
+    auto* result=static_cast<FrameIdentity*>(output);
+    if(result->version!=1 || result->byteSize!=sizeof(FrameIdentity)) return 0;
+    const auto& frame=*static_cast<Frame*>(pointer);
+    result->revision=frame.revision;
+    result->width=frame.desc.Width; result->height=frame.desc.Height;
+    result->format=uint32_t(frame.desc.Format); result->mipLevels=frame.desc.MipLevels;
+    result->arraySize=frame.desc.ArraySize; result->sampleCount=frame.desc.SampleDesc.Count;
+    result->subresource=0; result->orientation=1;
+    return 1;
+}
 // Measurement-only small readback; never supplies any presentation pixels and
 // never runs on a motion clock. Caller storage is not captured by queued work.
 EXPORT int cspm_comp_probe_pixels(void* pointer,const int* xy,unsigned count,
@@ -489,7 +593,8 @@ EXPORT int cspm_comp_probe_pixels(void* pointer,const int* xy,unsigned count,
     auto samples=std::make_shared<ProbePixels>();
     memcpy(samples->xy,xy,count*2*sizeof(int));
     const int result=h.call([&h,samples,count] {
-        if((h.flags.load()&(2|16)) || !h.source.texture || !h.lastSubmittedTexture)
+        if((h.flags.load()&(2|16)) || !h.source.texture || !h.lastSubmittedTexture ||
+           !probeIdentityMatches(h.probeIdentity,1,h.observation))
             throw std::runtime_error("Diagnostic samples require a stopped source presentation");
         if(!probeCoordinatesValid(samples->xy,count,h.source.width,h.source.height,
                 int(h.sourceX),int(h.sourceY),unsigned(h.hostWidth),unsigned(h.hostHeight)))
@@ -515,7 +620,8 @@ EXPORT int cspm_comp_probe_endpoint_pixels(void* pointer,const int* xy,unsigned 
     memcpy(samples->xy,xy,count*2*sizeof(int));
     const int result=h.call([&h,samples,count] {
         if(!probeEndpointStateValid(h.flags.load(),h.endpointSubmitted,bool(h.destination.texture),
-                bool(h.lastSubmittedTexture),h.observation.lastFrameMotion,h.observation.lastFrameContent))
+                bool(h.lastSubmittedTexture),h.observation.lastFrameMotion,h.observation.lastFrameContent) ||
+           !probeIdentityMatches(h.probeIdentity,3,h.observation))
             throw std::runtime_error("Diagnostic target samples require a stopped complete endpoint");
         if(!probeCoordinatesValid(samples->xy,count,h.destination.width,h.destination.height,
                 int(h.targetX),int(h.targetY),unsigned(h.hostWidth),unsigned(h.hostHeight)))
@@ -530,8 +636,10 @@ EXPORT int cspm_comp_probe_endpoint_pixels(void* pointer,const int* xy,unsigned 
     }
     return result;
 }
-// A separately exported live Qt frame is retained and copied to a diagnostic
-// allocation on this host's GPU worker. It never becomes presentation input.
+// A separately exported original-source or later-live Qt frame is retained
+// and copied to a diagnostic allocation on this host's GPU worker. Samples
+// use that immutable frame's own extent, independently of the target extent.
+// The caller verifies live-target extent equality; this never presents input.
 EXPORT int cspm_comp_probe_frame_pixels(void* pointer,void* frame,const int* xy,unsigned count,
                                         unsigned char* frameBGRA) {
     if(!pointer || !frame || !xy || !frameBGRA || !count || count>64) return 0;
@@ -541,12 +649,12 @@ EXPORT int cspm_comp_probe_frame_pixels(void* pointer,void* frame,const int* xy,
     memcpy(samples->xy,xy,count*2*sizeof(int));
     const int result=h.call([&h,retained,samples,count] {
         if(!probeEndpointStateValid(h.flags.load(),h.endpointSubmitted,bool(h.destination.texture),
-                bool(h.lastSubmittedTexture),h.observation.lastFrameMotion,h.observation.lastFrameContent))
-            throw std::runtime_error("Diagnostic live-frame samples require a stopped complete endpoint");
-        if(retained->desc.Width!=h.destination.width || retained->desc.Height!=h.destination.height ||
-           !probeCoordinatesValid(samples->xy,count,retained->desc.Width,retained->desc.Height,
+                bool(h.lastSubmittedTexture),h.observation.lastFrameMotion,h.observation.lastFrameContent) ||
+           !probeIdentityMatches(h.probeIdentity,3,h.observation))
+            throw std::runtime_error("Diagnostic exported-frame samples require a stopped complete endpoint");
+        if(!probeCoordinatesValid(samples->xy,count,retained->desc.Width,retained->desc.Height,
                 0,0,retained->desc.Width,retained->desc.Height))
-            throw std::runtime_error("Diagnostic live frame differs from the complete target extent");
+            throw std::runtime_error("Diagnostic exported-frame texels exceed their own immutable extent");
         const Pixels copied=copyPixels(h,*retained);
         probeTexels(h,copied.texture.Get(),samples->xy,count,0,0,samples->source);
     });

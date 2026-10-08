@@ -258,6 +258,7 @@ def main():
         "scripts/diagnostics/window_transition_probe.py",
         "scripts/diagnostics/native_presentation_observer.py",
         "scripts/diagnostics/source_pixel_analysis.py",
+        "scripts/diagnostics/submitted_surface_contract.py",
         "scripts/diagnostics/input_restoration_witness.py",
         "scripts/diagnostics/input_delivery_trace.py",
         "scripts/diagnostics/activation_cost_profile.py",
@@ -676,6 +677,9 @@ Item {
                     # endExternalCommands and undelivered queued notifications.
                     self.frames.append(frame)
                     result.update(frame=frame, size=[width.value, height.value], gpuOnly=True)
+                    if args.probe_endpoint or args.probe_composition:
+                        from submitted_surface_contract import frame_identity
+                        result["frameIdentity"] = frame_identity(dll, frame)
                 finally:
                     self.window.endExternalCommands()
             except Exception as exc:
@@ -1079,6 +1083,9 @@ Item {
                 if not self.host:
                     self.fail("DirectComposition presentation", native_error())
                     return
+                if args.probe_endpoint or args.probe_composition:
+                    from submitted_surface_contract import enable_probe_snapshot
+                    enable_probe_snapshot(dll, self.host)
                 if args.single_owner_source:
                     self.defer_source_visibility()
                 if args.physical_diagnostics or args.source_observation_only:
@@ -1274,11 +1281,16 @@ Item {
                         self.source_desktop, self.source_overlap, self.source_native_desktop,
                         self.pixel_regions[self.completed], radius)
                     began = time.perf_counter()
+                    from submitted_surface_contract import probe_identity
+                    identity = probe_identity(dll, self.host, phase=1)
                     source, submitted = probe_gpu_composition(dll, self.host, coordinates)
+                    if identity != probe_identity(dll, self.host, phase=1):
+                        raise RuntimeError("Submitted source revision changed during stopped sampling")
                     membership = window_region_membership(int(self.window.winId()), coordinates)
                     self.diagnostic_texel_readbacks += len(coordinates) * 2
                     self.composition_probe = (coordinates, labels, source, submitted, membership)
                     self.record("composition-probe-collected", sampleCount=len(coordinates),
+                        submittedIdentity=identity,
                         sampleCoordinatesXY=coordinates, sampledRegions=summaries,
                         regionMembership=membership, elapsedMs=(time.perf_counter()-began)*1000,
                         scope="Measurement-only tiny stopped-clock GPU readback; raw pixels retained in RAM only")
@@ -1462,14 +1474,74 @@ Item {
                 self.endpoint_diagnostic_pixels, self.endpoint_diagnostic_pixels,
                 self.target_pixel_regions[self.completed], radius)
             began = time.perf_counter()
+            from submitted_surface_contract import probe_identity, frame_identity, coordinate_contract
+            identity = probe_identity(dll, self.host, phase=3)
+            exported = frame_identity(dll, result["frame"])
+            capture_rows = [row for row in self.rows if row["cycle"] == self.completed
+                and row["event"] == "gpu-capture" and row.get("frameIdentity")]
+            captured_source = next(row["frameIdentity"] for row in capture_rows if row["kind"] == "source")
+            captured_target = next(row["frameIdentity"] for row in capture_rows if row["kind"] == "target")
+            if (identity["witnessRevision"] != self.witness_revision
+                    or identity["sourceFrameRevision"] != captured_source["revision"]
+                    or identity["targetFrameRevision"] != captured_target["revision"]
+                    or identity["targetFrameRevision"] == exported["revision"]
+                    or identity["sourceFrameRevision"] == exported["revision"]
+                    or [identity["sourceLeft"]+identity["hostLeft"], identity["sourceTop"]+identity["hostTop"],
+                        identity["sourceWidth"], identity["sourceHeight"]] != self.current["sourceClient"]
+                    or [exported["width"], exported["height"]] != result["size"]
+                    or [identity["hostLeft"], identity["hostTop"], identity["hostWidth"], identity["hostHeight"]] != self.envelope
+                    or [identity["targetLeft"]+identity["hostLeft"], identity["targetTop"]+identity["hostTop"],
+                        identity["targetWidth"], identity["targetHeight"]] != self.target_client):
+                raise RuntimeError("Endpoint probe generation/frame/geometry identity differs from the transaction")
+            state = self.window_observation(int(self.window.winId()))
+            geometry_row = next(row for row in self.rows if row["cycle"] == self.completed
+                and row["event"] == "physical-target-regions")
+            evidence = self.snapshot_observations["target-live"]
+            mapping = coordinate_contract(coordinates, client_xywh=self.target_client,
+                window_xywh=state["windowXYWH"], output_xywh=evidence["frame"]["outputDesktopXYWH"],
+                host_xywh=self.envelope, content_xywh=geometry_row["contentXYWH"],
+                dpr=self.window.devicePixelRatio(), framebuffer_wh=result["size"])
             target, submitted = probe_gpu_endpoint_composition(dll, self.host, coordinates)
             live = probe_gpu_live_frame(dll, self.host, result["frame"], coordinates)
+            source_coordinates, source_indices = [], []
+            source_client = self.current["sourceClient"]
+            for index, point in enumerate(mapping["samples"]):
+                x, y = point["desktopPhysicalXY"]
+                source_xy = [x-source_client[0], y-source_client[1]]
+                point["sourceTextureTexelXY"] = source_xy if (0 <= source_xy[0] < source_client[2]
+                    and 0 <= source_xy[1] < source_client[3]) else None
+                point["targetTextureTexelXY"] = point["laterLiveTextureTexelXY"] = list(coordinates[index])
+                if point["sourceTextureTexelXY"] is not None:
+                    source_indices.append(index)
+                    source_coordinates.append(tuple(source_xy))
+            source = (probe_gpu_live_frame(dll, self.host, self.frames[0], source_coordinates)
+                if source_coordinates else None)
+            if identity != probe_identity(dll, self.host, phase=3):
+                raise RuntimeError("Submitted endpoint revision changed during stopped sampling")
+            self.diagnostic_texel_readbacks += len(source_coordinates)
             self.diagnostic_texel_readbacks += 3 * len(coordinates)
             analysis = endpoint_composition_analysis(self.target_desktop,
                 self.endpoint_diagnostic_pixels, coordinates, labels, target, submitted, live)
             self.record("endpoint-composition-analysis", **analysis, sampledRegions=summaries,
+                submittedIdentity=identity, sourceFrameIdentity=captured_source,
+                targetFrameIdentity=captured_target, liveFrameIdentity=exported,
+                coordinateContract=mapping,
                 probeMs=(time.perf_counter()-began)*1000,
                 timingQualification="Diagnostic only; stopped endpoint readbacks add explicit overhead")
+            # User-requested bounded RGBA evidence stays in the ignored fixture
+            # directory. No image/frame or private sample values enter public reports.
+            rgba = lambda values: values[:, [2,1,0,3]].tolist()
+            private = {"submittedIdentity": identity, "sourceFrameIdentity": captured_source,
+                "targetFrameIdentity": captured_target, "liveFrameIdentity": exported,
+                "coordinateContract": mapping, "sourceSampleIndices": source_indices,
+                "sourceRGBA": rgba(source) if source is not None else [],
+                "submittedRGBA": rgba(submitted), "targetRGBA": rgba(target), "liveRGBA": rgba(live),
+                "endpointDesktopBGR": [self.target_desktop[y,x,:3].tolist() for x,y in coordinates],
+                "liveDesktopBGR": [self.endpoint_diagnostic_pixels[y,x,:3].tolist() for x,y in coordinates],
+                "sampledAtSeconds": time.perf_counter(),
+                "scope": "Private bounded texels; desktop BGR has no texture alpha, GPU arrays converted to premultiplied RGBA; no images retained"}
+            (audit / ("endpoint_probe_private_cycle"+str(self.completed)+".json")).write_text(
+                json.dumps(private, indent=2), encoding="utf-8")
             self.endpoint_diagnostic_pixels = None
             self.finish_handoff()
 

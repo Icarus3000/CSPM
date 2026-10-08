@@ -56,7 +56,7 @@ acquires key 1 with a 40 ms bound, and copies into a native-owned shader texture
 The keyed mutex governs cross-device rendering access. Flush submits commands;
 it does not prove CPU-observable GPU completion or physical presentation.
 The native immediate context orders its copy before sampling and presenting.
-Only an 80-byte geometry/clock constant buffer is updated from CPU per frame.
+Only a 112-byte geometry/clock/witness constant buffer is updated from CPU per frame.
 The source/target pixel data remains on GPU throughout the bridge.
 Both RGBA8 and BGRA8 are accepted; MSAA/array/mipmap/other formats are explicit
 capability failures. CPU call duration measures submission, not scanout.
@@ -245,3 +245,100 @@ overlap limits and source hashes are recorded in
 `docs/CLEANROOM_TARGET_READINESS_DECOMPOSITION_2026-10-03.json`; interpretation
 and remaining restore/layout costs are in the clean-room learning record.
 **Candidate not qualified; no package/install/default change or user acceptance.**
+
+## Submitted-surface identity continuation, 2026-10-08
+
+The preceding retained `GetBuffer(0)` COM pointer was not an immutable submitted
+allocation. Microsoft documents that Direct3D 10/11 changes backbuffer identities
+after flip-model Present. A persistent interface can therefore address different
+storage after submission. This accounts for diagnostic submitted samples that
+disagreed even when independently observed desktop endpoints were exact.
+See the [Microsoft DXGI backbuffer identity contract](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/d3d10-graphics-programming-guide-dxgi#care-and-feeding-of-the-swap-chain).
+This establishes a probe error, not the cause of the retained Directory desktop
+margin discrepancy; the latter still requires fresh complete-client measurement.
+
+The additive diagnostic APIs below retain ABI version 1. Call
+`cspm_comp_enable_probe_snapshot` exactly once before source preparation when
+requesting source/endpoint probes. Ordinary runs allocate no diagnostic snapshot.
+An enabled host copies its exact drawn swapchain buffer into an owned GPU
+allocation **before Present**, only for stopped source and complete endpoint
+frames. Intermediate moving frames perform no diagnostic copy. No CPU readback
+is added to the motion clock. A stopped bounded probe maps at most 64 one-texel
+staging resources; it never feeds presentation. Finish/hide preserves the owned
+endpoint snapshot until native resource cleanup.
+
+```c
+int cspm_comp_enable_probe_snapshot(void *host);
+int cspm_gpu_frame_identity(void *frame, void *output, unsigned capacity);
+int cspm_comp_probe_identity(void *host, void *output, unsigned capacity);
+int cspm_comp_probe_pixels(void *host, const int *xy, unsigned count,
+                           unsigned char *sourceBGRA, unsigned char *submittedBGRA);
+int cspm_comp_probe_endpoint_pixels(void *host, const int *xy, unsigned count,
+                                    unsigned char *targetBGRA, unsigned char *submittedBGRA);
+int cspm_comp_probe_frame_pixels(void *host, void *frame, const int *xy,
+                                 unsigned count, unsigned char *frameBGRA);
+```
+
+Initialize identity output `version=1` and `byteSize` before each call. On the
+Windows x64 ABI, `FrameIdentity` is 48 bytes, in this order: `uint32_t version,
+byteSize`; `uint64_t revision`; `uint32_t width,height,format,mipLevels,arraySize,
+sampleCount,subresource,orientation`. Frame revision survives queued COM retention.
+
+`ProbeIdentity` is 200 bytes, in this order: `uint32_t version,byteSize`;
+`uint64_t hostGeneration,snapshotRevision,sourceFrameRevision,targetFrameRevision`;
+`uint32_t submittedPresentId,phase,witnessRevision,subresource`;
+`double snapshotQueuedSeconds,presentBeginSeconds,presentReturnSeconds,motion,content`;
+`int32_t hostLeft,hostTop,hostWidth,hostHeight,sourceLeft,sourceTop,sourceWidth,
+sourceHeight,targetLeft,targetTop,targetWidth,targetHeight`;
+`uint32_t sourceFormat,targetFormat,snapshotFormat,snapshotWidth,snapshotHeight,
+snapshotEnabled,orientation,premultiplied`;
+`uint64_t sourceResourceIdentity,targetResourceIdentity,snapshotResourceIdentity`.
+The resource identities are monotonic opaque IDs, not addresses. Phase 1 is source,
+phase 3 is complete target; the witness revision is the same value drawn in the
+presentation swapchain. Identity matches the last successful Present ID/QPC
+boundary and submitted motion/content sample. A source snapshot remains unchanged
+through motion but cannot be sampled as the current source once the clock starts.
+A completed target requires the exact `motion=content=1` endpoint.
+
+Probe coordinates are nonnegative, integral physical framebuffer/client pixels.
+Right/bottom are exclusive. Source/target texture coordinates use no offset;
+submitted coordinates add the corresponding integral source/target host-relative
+origin. Subresource is mip/array slice 0 and orientation 1 is top-left. D3D rows
+are not inverted. The one-texel staging read consumes its first four bytes,
+so padded RowPitch does not imply a coordinate adjustment. RGBA8 input is reordered
+to BGRA output; UNORM premultiplied channel values are returned without compositing
+or unpremultiplication. The independent original-source/later-live exported frame
+probe validates against that immutable frame's own extent. Its caller separately
+requires later-live dimensions to equal the complete target extent.
+
+`tests/native_cleanroom_submission_marker.cpp` is a real D3D11/DirectComposition
+synthetic GPU control, separate from safe no-window checks. It authors coordinate
+and revision markers at all four corners, four edge midpoints, centre and 36 points
+in the Directory band (`x=1111..1122`, `y=646,650,655`), using source offset `(12,14)`
+and target offset `(40,50)`. Returned source and submitted texels are independently
+checked against the CPU-authored formula. It checks BGRA8 and RGBA8, alpha values
+0/85/170/255, revision/Present/phase metadata, no intermediate snapshot rewrite,
+stale identity rejection and retention after hide. This is a shader/probe identity
+test, not a desktop scanout or real-app qualification.
+
+The preserved pre-repair BGRA-only control differs at 99/135 source and 39/45
+endpoint samples. The initial repaired BGRA control is exact at 135/135 and 45/45;
+the strengthened CPU-formula/two-format control is exact at 270/270 source and
+90/90 endpoint samples. Both actual one-texel staging row pitches are 64 bytes.
+All synthetic artifacts remain ignored under
+`outputs/cleanroom_resume_20261004/probe_identity_20261008`. SHA-256 provenance:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Current native source | `3630819DC29DBDC440C850A4547669A7FEB1A5BFF0F47D353FB9E8D101678C6E` |
+| Diagnostic DLL (`cspm_cleanroom_probe_identity_20261008.dll`) | `1E185A8B7F35AEB62748425830E4A8775D0441D9E6228015D41B2BD61CD5E1DA` |
+| Baseline marker result | `51C7857D8E5B62EAFA7ACEC0395279B4A413681DFBFF77BC22E32CEF1E62C0E0` |
+| Initial repaired marker result | `DECCE9E021E58F5C8DC800509248D2CF8F9A9BB64BFCBB2B6567ACD11B8BA0B1` |
+| Two-format CPU-formula marker result | `A58F14D99B6917F052AB8E196FF0B49D6297CE501DB250A80513B8C1C0A31BC0` |
+
+MSVC `/W4` native/shader build, the no-window native contract executable, additive
+ABI/null-export rejection and whitespace checks pass. These are sandbox-safe
+checks without Qt/WebEngine. The synthetic marker GPU executable ran outside
+sandbox with a hidden nonactivating test HWND and no private content. Root owns
+fresh Directory/Qt/desktop evidence; this subtask adds no WebEngine startup/PDF,
+installed-package, complete cold qualification or Cory acceptance claim.

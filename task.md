@@ -5,7 +5,10 @@
 - [x] Recover local/upstream/live remote `947cc828`, five tracked edits and four new files; retain every worktree, four stashes, failed run and ignored constructor. No owned stale fixture needs termination.
 - [x] Recover the finalized Directory result and matched activation comparison omitted by the stale aggregates. Preserve 63 margin pixels, all raw-result hashes and exact input/clock scope in `docs/CLEANROOM_PROBE_CONTRACT_RECOVERY_2026-10-08.md` and its JSON.
 - [x] Revalidate recovered code with 411 sandbox-safe tests and diagnostic compilation (one window-constructing test deselected); protected installed EXE remains unchanged.
-- [ ] Prove immutable submitted-surface coordinates/revisions, then recheck Directory without forgiving margin pixels. Checkpoint the coherent probe result before dependent populated-readiness/complete qualification. No package/install or P0 acceptance yet.
+- [x] Prove the submitted probe's retained flip-buffer reference was wrong with synthetic markers; replace it with opt-in GPU copies before stopped-source/endpoint Present, keyed to host/frame/resource/Present revisions. CPU-authored BGRA/RGBA markers pass all 270 source and 90 endpoint samples; normal motion has no diagnostic copy.
+- [x] Add exact physical/client/logical/framebuffer/host coordinate evidence and version/size/stale-revision rejection. Current-source validation passes 523 safe tests (one real-window test deselected), diagnostic compilation, native `/W4` build/contracts/ABI-null and whitespace/privacy review.
+- [x] Fresh maximize-first Directory completes both directions: fourteen fresh passes, twelve exact complete-client comparisons, both QML F24 pairs and exact sampled target/submitted/live texels. Retain historical 63 pixels, a new readiness failure and two pre-motion band-check failures separately; the margin cause is not yet attributed.
+- [ ] After the probe checkpoint, recheck populated Productivity readiness and resolve the measured source-band/input/continuous-motion/lifecycle gates before complete qualification. No package/install or P0 acceptance yet.
 
 ## 2026-10-05: Bounded Activation Dispatch Measurement
 

@@ -19,8 +19,33 @@ No new WebEngine or desktop claim belongs to this recovery milestone. All task
 storage stays on Y:, worktrees/stashes remain intact and no stale owned process
 needs termination. Installed EXE remains SHA256
 `8D461B679B4D578CFB6BE6DE259AB2E183E62A6D9F1EB944A69527BEFC8C0FA3`.
-Probe identity, Directory margins and subsequent complete qualification remain
-active work; no package/install/default or real-user acceptance change.
+The submitted probe was retaining a `GetBuffer(0)` COM pointer after flip-model
+Present; independent synthetic markers prove it did not preserve submitted
+storage. Opt-in stopped-source/endpoint GPU copies now precede Present and retain
+opaque host/resource/frame/Present identities. Native ordinary motion has no
+diagnostic copy. CPU-authored BGRA/RGBA markers independently pass all 270 source
+and 90 endpoint samples, including corners, edges, centre, narrow margin,
+transparency and host offsets. Frame/identity structs are additive 48/200-byte
+diagnostic ABI; base ABI remains 1. Python maps top-left physical texels without
+logical rerounding/cropping and rejects wrong/stale/unsupported identities.
+
+New maximize-first Directory completes both cold directions, fourteen fresh
+gates, twelve exact complete-client comparisons, two QML input pairs and exact
+sampled target/submitted/live texels. Historical 63 pixels are retained and their
+cause remains unknown because no shader/padding/alpha change explains them.
+New cold restore-first controls retain one readiness failure and two source-band
+check failures before motion. The latter have no expected/actual band snapshot
+at the failing API boundary, so pre-lock foreground correlation is not a cause.
+
+Current-source validation: 523 sandbox-safe tests pass with one real-window
+test deselected; changed diagnostics compile, native `/W4` shader/build and
+no-window contract/ABI-null checks pass. A new verified DLL has native-source
+and build-script hashes bracketed across compilation. Native synthetic GPU and
+actual disposable Qt/DXGI measurements are outside sandbox; no new WebEngine
+e2e belongs to this checkpoint. Details are in
+`docs/CLEANROOM_SUBMITTED_PROBE_QUALIFICATION_2026-10-08.md` and its JSON.
+Complete qualification remains open; no package/install/default or acceptance
+change. All private bounded texels and prior failed evidence remain ignored on Y:.
 
 ## 2026-10-05: Explicit Disposable Activation Profiler
 
