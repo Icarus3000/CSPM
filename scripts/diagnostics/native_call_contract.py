@@ -20,6 +20,8 @@ CALL_NAMES = dict(enumerate((
     "PostMessageW(command)", "future::wait_for(command)", "PostMessageW(destroy)",
     "WaitForSingleObject(destroy)", "ShowWindow(hide-host)", "SetTimer",
     "ValidateSourceBand",
+    "CreateWindowExW(hidden-host)", "ValidateCreatedHost", "future::wait_for(initialization)",
+    "DestroyWindow(host)", "CloseHandle(frame-latency)", "ValidateCreationSource",
 ), 1))
 PHASE_NAMES = {1: "preparation", 2: "source-transfer", 3: "motion", 4: "target", 5: "cleanup"}
 WAIT_STATES = {0: "unprobed", 1: "signaled-or-consumed", 2: "timeout", 3: "failed", 4: "abandoned", 5: "other"}
@@ -59,6 +61,122 @@ class NativeCallTrace(ctypes.Structure):
     _fields_ += [(name, ctypes.c_uint64) for name in ("totalRows", "droppedRows")]
     _fields_ += [("enabled", ctypes.c_uint32), ("hasFirstFailure", ctypes.c_uint32)]
     _fields_ += [("firstFailure", NativeCallRow), ("rows", NativeCallRow * 256)]
+
+
+class NativeCreationRow(ctypes.Structure):
+    _fields_ = [("phase", ctypes.c_uint32), ("flags", ctypes.c_uint32),
+                ("qpc", ctypes.c_uint64), ("seconds", ctypes.c_double)]
+    _fields_ += [("native", NativeWindowState), ("live", NativeWindowState)]
+    _fields_ += [(name, ctypes.c_uint64) for name in (
+        "nativeParent", "nativePrevious", "nativeNext", "nativeMonitor",
+        "liveParent", "livePrevious", "liveNext", "liveMonitor")]
+
+
+class NativeCreationObservation(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_uint32) for name in ("version", "byteSize", "rowByteSize", "count")]
+    _fields_ += [(name, ctypes.c_uint64) for name in ("hostGeneration", "frameRevision", "qpcFrequency")]
+    _fields_ += [(name, ctypes.c_uint32) for name in (
+        "enabled", "strategy", "expectedTopmost", "requestedStyle", "requestedExStyle", "sourceValidated",
+        "creationAccepted", "initializationAccepted", "cleanupCompleted", "hostRetained", "failureStage", "reserved")]
+    _fields_ += [("createBeginQpc", ctypes.c_uint64), ("createReturnQpc", ctypes.c_uint64),
+                ("createResult", ctypes.c_uint32), ("createWin32Error", ctypes.c_uint32),
+                ("rows", NativeCreationRow * 12)]
+
+
+CREATION_PHASE_NAMES = {1: "owned-source-entry", 2: "immediate-hidden-creation", 3: "initialization-ready",
+    4: "source-attached", 5: "source-commit-return", 6: "source-commit-processed",
+    7: "native-visible-live-hidden", 8: "finished-hidden", 9: "resources-released",
+    10: "visible-source-ordered-within-band"}
+
+
+def _decode_creation(value):
+    if (value.version != 1 or value.byteSize != 4816 or value.rowByteSize != 392
+            or value.enabled != 1 or not value.hostGeneration or not value.qpcFrequency
+            or not 1 <= value.count <= 12 or value.strategy > 1 or value.reserved
+            or value.failureStage not in (0, 1, 2, 3)
+            or any(getattr(value, field) > 1 for field in ("expectedTopmost", "sourceValidated",
+                "creationAccepted", "initializationAccepted", "cleanupCompleted", "hostRetained", "createResult"))):
+        raise RuntimeError("Native creation evidence ABI, bounds or measurement is invalid")
+    if (value.creationAccepted != value.createResult
+            or (bool(value.createBeginQpc) != bool(value.createReturnQpc))
+            or value.createReturnQpc < value.createBeginQpc
+            or (value.creationAccepted and not value.createBeginQpc)
+            or (value.sourceValidated and not value.frameRevision)
+            or (value.initializationAccepted and (not value.creationAccepted or not value.sourceValidated))):
+        raise RuntimeError("Native creation result, timing or source identity is incompatible")
+    rows, previous = [], 0
+    for row in value.rows[:value.count]:
+        if (row.phase not in CREATION_PHASE_NAMES or not row.qpc or row.qpc < previous
+                or not math.isfinite(row.seconds) or row.seconds <= 0
+                or abs(row.seconds - row.qpc / value.qpcFrequency) > max(1e-7, 2 / value.qpcFrequency)):
+            raise RuntimeError("Native creation snapshot phase or timestamps are invalid")
+        previous = row.qpc
+        evidence = {name: _window_evidence(getattr(row, name)) if kind is NativeWindowState else getattr(row, name)
+                    for name, kind in NativeCreationRow._fields_}
+        evidence["phaseName"] = CREATION_PHASE_NAMES[row.phase]
+        rows.append(evidence)
+    if rows[0]["phase"] != 1:
+        raise RuntimeError("Native creation source-entry evidence is missing")
+    created = next((row for row in rows if row["phase"] == 2), None)
+    if value.creationAccepted and (created is None or not created["native"]["valid"]):
+        raise RuntimeError("Native creation success lacks an immediate native snapshot")
+    result = {name: getattr(value, name) for name, _ in NativeCreationObservation._fields_ if name != "rows"}
+    result.update(rows=rows, strategyName="create-in-source-band" if value.strategy else "promote-later",
+        createElapsedMs=(value.createReturnQpc - value.createBeginQpc) * 1000 / value.qpcFrequency,
+        createLastErrorMeaningful=bool(value.createBeginQpc and not value.createResult),
+        physicalPresentationProven=False,
+        scope="Bounded owned-source creation/lifecycle metadata; window visibility and band do not prove desktop pixels")
+    return result
+
+
+def source_creation_evidence(dll, host):
+    if not host or not hasattr(dll, "cspm_comp_source_creation_observation"):
+        raise RuntimeError("Native creation observation unavailable")
+    value = NativeCreationObservation()
+    value.version, value.byteSize, value.rowByteSize = 1, 4816, 392
+    function = dll.cspm_comp_source_creation_observation
+    function.argtypes, function.restype = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint], ctypes.c_int
+    if function(host, ctypes.byref(value), ctypes.sizeof(value)) != 1:
+        raise RuntimeError("Native creation observation rejected")
+    return _decode_creation(value)
+
+
+def create_observed_native_host(dll, frame, live_hwnd, envelope, created_source_band):
+    """Retain returned ownership and the first native error even if evidence fails."""
+    if (not hasattr(dll, "cspm_comp_create_from_frame_observed") or not hasattr(dll, "cspm_comp_error")
+            or not isinstance(created_source_band, bool) or len(envelope) != 4
+            or any(isinstance(number, bool) or not isinstance(number, int) or not -(1 << 31) <= number < (1 << 31)
+                   for number in envelope)
+            or ctypes.sizeof(NativeCreationObservation) != 4816 or ctypes.sizeof(NativeCreationRow) != 392
+            or ctypes.sizeof(NativeCallTrace) != 230312):
+        raise RuntimeError("Native observed creation input or ABI unavailable")
+    creation, trace = NativeCreationObservation(), NativeCallTrace()
+    creation.version, creation.byteSize, creation.rowByteSize = 1, 4816, 392
+    trace.version, trace.byteSize, trace.rowByteSize = 1, 230312, 896
+    function = dll.cspm_comp_create_from_frame_observed
+    function.argtypes = [ctypes.c_void_p, ctypes.c_size_t] + [ctypes.c_int] * 4 + [ctypes.c_uint,
+        ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint]
+    function.restype = ctypes.c_void_p
+    host = function(frame, live_hwnd, *envelope, int(created_source_band), ctypes.byref(creation),
+                    ctypes.sizeof(creation), ctypes.byref(trace), ctypes.sizeof(trace))
+    native_error = None
+    if not host:
+        # This is the first native call after creation. Do not retry creation,
+        # query a null host, or substitute a later metadata rejection.
+        error = dll.cspm_comp_error
+        error.argtypes, error.restype = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint], ctypes.c_uint
+        buffer = ctypes.create_string_buffer(2048)
+        error(None, buffer, len(buffer))
+        native_error = buffer.value.decode("utf-8", errors="replace")
+    result = dict(host=host, nativeError=native_error, creation=None, evidence=None, evidenceError=None)
+    failures = []
+    for name, value, decode in (("creation", creation, _decode_creation), ("evidence", trace, _decode_trace)):
+        try:
+            result[name] = decode(value)
+        except Exception as error:
+            failures.append(name + ": " + type(error).__name__ + ": " + str(error))
+    result["evidenceError"] = "; ".join(failures) if failures else None
+    return result
 
 
 def enable_native_call_trace(dll, host):
@@ -102,7 +220,7 @@ def _result_evidence(row):
     else:
         if row.waitStateAfter:
             raise RuntimeError("Non-wait call contains a probed wait state")
-        if row.call == 22:
+        if row.call in (22, 30):
             if row.result > 2:
                 raise RuntimeError("Native future completion result is incompatible")
             kind, failed, meaning = "future status", row.result != 0, ("ready", "timeout", "deferred")[row.result]

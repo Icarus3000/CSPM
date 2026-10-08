@@ -68,7 +68,7 @@ def harness():
              "raise_source_visibility", "endpoint_observed", "live_host_frame", "live_host_deadline",
              "handoff", "handoff_compare", "analyze_endpoint_frame", "finish_handoff",
              "accepted_input_pixels_observed", "poll_native", "record_target_import_rejection",
-             "record_native_calls", "destroy_native_host"}
+             "record_native_calls", "destroy_native_host", "create_native_host", "record_native_creation"}
     methods = [copy.deepcopy(node) for node in classes[0].body
                if isinstance(node, ast.FunctionDef) and node.name in names]
     assert {method.name for method in methods} == names
@@ -138,6 +138,68 @@ def test_native_call_evidence_is_opt_in(harness):
     harness.app.record_native_calls("failure-cleanup")
     assert not harness.records
     assert not harness.context["failures"]
+
+
+@pytest.mark.parametrize("created", [False, True])
+def test_observed_creation_records_both_strategies_before_preparation(harness, monkeypatch, created):
+    harness.args.native_call_trace = True
+    harness.args.native_created_source_band = created
+    harness.app.envelope = [10, 20, 300, 200]
+    calls = []
+    def create(dll, frame, live, envelope, strategy):
+        calls.append((dll, frame, live, envelope, strategy))
+        return {"host": 303, "nativeError": None, "creation": {"phase": "hidden-ready"},
+                "evidence": {"rows": [{"callName": "CreateWindowExW", "result": 1}]}}
+    monkeypatch.setitem(sys.modules, "native_call_contract", SimpleNamespace(create_observed_native_host=create))
+    assert harness.app.create_native_host(202)
+    assert harness.app.host == 303
+    assert calls == [(harness.dll, 202, 123, [10, 20, 300, 200], created)]
+    assert [row["event"] for row in harness.records] == [
+        "native-host-created", "native-host-creation-state", "native-call-history"]
+    assert harness.records[0]["createdSourceBand"] is created
+    assert harness.records[-1]["boundary"] == "creation"
+    assert not harness.context["failures"]
+
+
+def test_rejected_creation_preserves_original_error_and_cleanup_evidence(harness, monkeypatch):
+    harness.args.native_call_trace = True
+    harness.app.envelope = [10, 20, 300, 200]
+    monkeypatch.setitem(sys.modules, "native_call_contract", SimpleNamespace(
+        create_observed_native_host=lambda *args: {"host": None,
+            "nativeError": "Hidden creation band rejected", "creation": {"cleanup": True},
+            "evidence": {"rows": [{"callName": "DestroyWindow", "result": 1}]},
+            "evidenceError": "invalid optional metadata"}))
+    assert not harness.app.create_native_host(202)
+    assert harness.app.host is None
+    assert harness.records[0]["nativeError"] == "Hidden creation band rejected"
+    assert harness.records[-1]["rows"][0]["callName"] == "DestroyWindow"
+    assert harness.context["failures"][0] == "DirectComposition presentation: Hidden creation band rejected"
+    assert harness.context["failures"][1] == "requested native creation evidence invalid: invalid optional metadata"
+
+
+def test_accepted_creation_with_bad_metadata_keeps_host_for_single_cleanup(harness, monkeypatch):
+    harness.args.native_call_trace = True
+    harness.app.envelope = [10, 20, 300, 200]
+    monkeypatch.setitem(sys.modules, "native_call_contract", SimpleNamespace(
+        create_observed_native_host=lambda *args: {"host": 303, "nativeError": None,
+            "creation": None, "evidence": None, "evidenceError": "invalid creation ABI"},
+        destroy_native_call_evidence=lambda dll, host: (
+            dll.cspm_comp_destroy(host) or {"hostDestroyed": True, "hostRetained": False, "evidence": None})))
+    assert not harness.app.create_native_host(202)
+    assert harness.app.host == 303
+    harness.app.destroy_native_host("rejected-creation-metadata")
+    harness.app.destroy_native_host("repeat-cleanup")
+    assert harness.actions.count(("destroy-host", 303)) == 1
+    assert harness.app.host is None
+
+
+def test_ordinary_creation_keeps_default_export_without_observation(harness):
+    harness.app.envelope = [10, 20, 300, 200]
+    harness.dll.cspm_comp_create_from_frame = lambda *args: harness.actions.append(("create-default", args)) or 303
+    assert harness.app.create_native_host(202)
+    assert harness.app.host == 303
+    assert harness.actions == [("create-default", (202, 10, 20, 300, 200))]
+    assert [row["event"] for row in harness.records] == ["native-host-created"]
 
 
 def test_requested_native_call_evidence_retained_before_host_destruction(harness, monkeypatch):

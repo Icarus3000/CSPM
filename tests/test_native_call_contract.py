@@ -93,6 +93,112 @@ def test_exact_cross_language_abi(kind, size, offsets):
     assert {name: getattr(kind, name).offset for name in offsets} == offsets
 
 
+def make_creation(strategy=1, accepted=True):
+    value = MODULE.NativeCreationObservation()
+    value.version, value.byteSize, value.rowByteSize, value.count = 1, 4816, 392, 3 if accepted else 2
+    value.enabled, value.strategy, value.expectedTopmost = 1, strategy, 1
+    value.hostGeneration, value.frameRevision, value.qpcFrequency = 21, 22, 10000000
+    value.sourceValidated = 1
+    value.creationAccepted = value.createResult = value.initializationAccepted = int(accepted)
+    value.failureStage, value.cleanupCompleted = (0, 0) if accepted else (2, 1)
+    value.createBeginQpc, value.createReturnQpc, value.createWin32Error = 100000000, 100010000, 5
+    value.requestedStyle, value.requestedExStyle = 0x80000000, 0x082000A0 | (8 if strategy else 0)
+    for index, row in enumerate(value.rows[:value.count]):
+        row.phase, row.qpc, row.seconds = index + 1, 99999900 + index * 20000, 9.99999 + index * .002
+        row.live = make_row().liveBefore
+        row.live.owner, row.live.visible, row.live.exstyle = 0, 1, 0x80008
+        if index and accepted:
+            row.native = make_row().nativeBefore
+            row.native.owner, row.native.visible, row.native.exstyle = 0, 0, value.requestedExStyle
+            row.nativeParent, row.nativePrevious, row.nativeNext, row.nativeMonitor = 0, 2001, 2002, 2003
+    return value
+
+
+@pytest.mark.parametrize("kind,size,offsets", [
+    (MODULE.NativeCreationRow, 392, dict(phase=0, flags=4, qpc=8, seconds=16,
+        native=24, live=176, nativeParent=328, nativeMonitor=352, liveParent=360, liveMonitor=384)),
+    (MODULE.NativeCreationObservation, 4816, dict(version=0, count=12, hostGeneration=16,
+        frameRevision=24, qpcFrequency=32, enabled=40, strategy=44, requestedExStyle=56,
+        sourceValidated=60, failureStage=80, createBeginQpc=88, createResult=104, rows=112)),
+])
+def test_creation_observation_exact_additive_abi(kind, size, offsets):
+    assert ctypes.sizeof(kind) == size
+    assert {name: getattr(kind, name).offset for name in offsets} == offsets
+
+
+class ObservedCreateFunction:
+    def __init__(self, creation, trace, host, events):
+        self.creation, self.trace, self.host, self.events, self.calls = creation, trace, host, events, []
+
+    def __call__(self, frame, live, left, top, width, height, strategy, creation_pointer, creation_size,
+                 trace_pointer, trace_size):
+        self.events.append("create")
+        self.calls.append((frame, live, (left, top, width, height), strategy, creation_size, trace_size))
+        ctypes.memmove(creation_pointer, ctypes.byref(self.creation), ctypes.sizeof(self.creation))
+        ctypes.memmove(trace_pointer, ctypes.byref(self.trace), ctypes.sizeof(self.trace))
+        return self.host
+
+
+def observed_dll(creation=None, host=999):
+    events = []
+    _, _, trace = make_dll([])
+    function = ObservedCreateFunction(make_creation() if creation is None else creation, trace, host, events)
+    def error(pointer, buffer, capacity):
+        events.append("first-error")
+        assert pointer is None
+        ctypes.memmove(buffer, b"original hidden creation failure\0", 33)
+        return 32
+    # Attributes must be assignable for ctypes-like error function configuration.
+    dll = SimpleNamespace(cspm_comp_create_from_frame_observed=function, cspm_comp_error=error)
+    return dll, function, events
+
+
+@pytest.mark.parametrize("strategy", [False, True])
+def test_observed_create_both_paths_use_same_owned_source_input_and_bounded_outputs(strategy):
+    dll, function, events = observed_dll(make_creation(int(strategy)))
+    result = MODULE.create_observed_native_host(dll, 444, 555, (-1920, 0, 1920, 1080), strategy)
+    assert result["host"] == 999 and result["nativeError"] is None and result["evidenceError"] is None
+    assert function.calls == [(444, 555, (-1920, 0, 1920, 1080), int(strategy), 4816, 230312)]
+    assert events == ["create"]
+    assert result["creation"]["rows"][1]["nativePrevious"] == 2001
+    assert result["creation"]["rows"][1]["native"]["visible"] == 0
+    assert result["creation"]["physicalPresentationProven"] is False
+
+
+def test_null_creation_captures_first_native_error_and_preserves_cleanup_before_decoding(monkeypatch):
+    dll, function, events = observed_dll(make_creation(accepted=False), host=None)
+    original = MODULE._decode_creation
+    def decode(value):
+        events.append("decode")
+        return original(value)
+    monkeypatch.setattr(MODULE, "_decode_creation", decode)
+    result = MODULE.create_observed_native_host(dll, 444, 555, (0, 0, 1920, 1080), True)
+    assert result["host"] is None and result["nativeError"] == "original hidden creation failure"
+    assert events == ["create", "first-error", "decode"]
+    assert result["creation"]["cleanupCompleted"] == 1 and result["evidenceError"] is None
+
+
+def test_successful_creation_with_rejected_metadata_retains_host_for_exactly_once_caller_cleanup():
+    creation = make_creation()
+    creation.byteSize = 4815
+    dll, function, events = observed_dll(creation)
+    result = MODULE.create_observed_native_host(dll, 444, 555, (0, 0, 1920, 1080), True)
+    assert result["host"] == 999 and result["nativeError"] is None
+    assert result["creation"] is None and result["evidence"] is not None
+    assert "creation: RuntimeError" in result["evidenceError"] and events == ["create"]
+
+
+@pytest.mark.parametrize("field,changed", [("version", 2), ("count", 13), ("count", 0),
+    ("enabled", 0), ("strategy", 2), ("hostGeneration", 0), ("qpcFrequency", 0),
+    ("createReturnQpc", 99999999), ("createResult", 0), ("sourceValidated", 0),
+    ("reserved", 1), ("frameRevision", 0), ("failureStage", 4)])
+def test_creation_metadata_rejects_unmeasured_or_contradictory_evidence(field, changed):
+    creation = make_creation()
+    setattr(creation, field, changed)
+    with pytest.raises(RuntimeError):
+        MODULE._decode_creation(creation)
+
+
 def test_complete_local_raw_evidence_has_no_physical_presentation_claim_or_error_inference():
     dll, function, _ = make_dll([make_row(lastErrorApplicable=1, win32Error=5,
         adapterIdentity=100, deviceIdentity=101, swapchainIdentity=102, waitIdentity=103,
@@ -157,7 +263,7 @@ def test_failed_bool_or_normalized_pointer_preserves_win32_error_and_first_failu
 
 
 @pytest.mark.parametrize("field,value", [("version", 2), ("byteSize", 895),
-    ("call", 0), ("call", 28), ("phase", 0), ("phase", 6), ("sequence", 0),
+    ("call", 0), ("call", 34), ("phase", 0), ("phase", 6), ("sequence", 0),
     ("currentThread", 0), ("hostGeneration", 0), ("expectedHostGeneration", 20),
     ("qpcFrequency", 0), ("startQpc", 0), ("returnQpc", 99999999),
     ("beginSeconds", float("nan")), ("returnSeconds", float("inf")),

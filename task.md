@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-08: Created Source Band Checkpoint
+
+- [x] Recover exact local/upstream/live remote `65fc1e7`, all uncommitted work, preserved controls, four stashes and worktrees. Preserve previous evidence and production baselines.
+- [x] Add explicit source-band creation and opt-in pre-initialization creation/API telemetry; validate hidden style/visibility/authority after creation, attachment and commit. Keep the ordinary default export, source/target geometry and 350/240/100 ms contracts unchanged.
+- [x] Measure matched final-DLL SDK controls: direct creation passes ordinary/topmost with and without the guard; late topmost promotion rejects before motion. Preserve pure Win32 variability, setup failures and physical witness rejection separately.
+- [x] Correct stopped visible-host placement with one nonactivating within-band `HWND_TOP` call. Guarded/unlocked populated passive source controls each pass five fresh observations, four exact full-client comparisons and safe cleanup.
+- [x] Validate 784 sandbox-safe cases, one real-window deselection, thirteen privacy-scanner tests, native/shader/control builds, no-window ABI contract, compilation and no source drift. Preserve sanitized evidence in `docs/CLEANROOM_CREATED_SOURCE_BAND_2026-10-08.md` and JSON.
+- [ ] Retest moving target import and exact 100 ms presentation-slot result; then complete repeated populated cold/input/WebEngine/reduced-motion/lifecycle/DPI gates. Package only after complete qualification; production/default/data and Cory's P0 acceptance remain unchanged.
+
 ## 2026-10-08: Native Return/Wait Investigation Continuation
 
 - [x] Recover clean local/upstream/live remote `2b4dae7fe880eedf4708b761c029894da4265a71`, all worktrees/four stashes, ignored helpers and preserved failed runs. Verify worker DLL/build hashes and the 29 startup source snapshots; historical desktop-time HEAD is unrecorded, while normalized source maps to the checkpoint.

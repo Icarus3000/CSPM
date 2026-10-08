@@ -1,5 +1,37 @@
 # Implementation History
 
+## 2026-10-08: Created Source Band And Immediate Native Evidence
+
+Recovered `65fc1e7` and preserved the interrupted create-band source success.
+The explicit diagnostic candidate creates the hidden host from the visible GUI
+source's observed ordinary/topmost policy. Additive 392/4816-byte creation
+evidence and the existing 152/896/230312-byte call ABI capture construction,
+source identity, immediate returns/errors, attachment, commit and visibility.
+Default initialization remains ordinary; no production shell or fallback changes.
+
+Matched final-DLL SDK pairs pass direct creation in both policies, guarded and
+unguarded. Late topmost promotion rejects at stage 10. Pure Win32 promotion
+also passes in a later run, so no universal platform prohibition is claimed.
+A created host initially passed native state but failed the physical witness
+behind the taskbar. One nonactivating visible `HWND_TOP` placement within the
+verified group resolves that stopped-source gate; hidden preparation preserves
+`SWP_NOZORDER` and all observed band checks remain strict.
+
+Guarded/unlocked populated passive source controls each pass five fresh
+observations, four exact 1,920 × 1,040 client comparisons, the deliberate
+removal control and deletion. Final DLL SHA-256 is
+`35c914560112a009ec8fdce1459e5f77dd10b41acb1ec2b0ae41124ba4d9f709`.
+The report in `docs/CLEANROOM_CREATED_SOURCE_BAND_2026-10-08.md` and JSON
+retains all failed attempts, build rejection and sanitized provenance.
+
+Sandbox-safe validation passes 784 tests with one real-window deselection,
+thirteen privacy tests, compilation, whitespace, native/shader `/W4` builds
+and the no-window C++ ABI contract. Outside-sandbox Win32/D3D11/populated Qt
+source controls pass as stated; new WebEngine rendering and moving qualification
+remain pending. The 350 ms motion, 240 ms target transfer and 100 ms frame slot
+remain fixed. Production EXE/settings/workbooks match this session's baseline;
+package/install and Cory's installed P0 acceptance remain gated.
+
 ## 2026-10-08: Native Return/Wait Evidence Contract
 
 Continuation recovers clean branch/upstream/live remote `2b4dae7`. Preserved

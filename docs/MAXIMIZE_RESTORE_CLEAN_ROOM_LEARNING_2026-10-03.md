@@ -1,5 +1,27 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-08: Created Band Measured Before Motion
+
+**PROVEN BY MEASUREMENT:** the final matched D3D11 DLL passes both source
+policies when the host is created in the observed band, with and without input
+guarding. Late topmost promotion still rejects at stage 10 before motion.
+The refreshed pure Win32 control also accepts late promotion; this is variable
+observed behavior, not proof of a documented general restriction.
+
+Creating in-band alone initially left the visible host behind the taskbar and
+failed the physical witness. One nonactivating `HWND_TOP` placement within the
+already verified group resolves that stopped-source problem. Guarded and unlocked
+populated passive controls each pass five fresh frames, four exact complete
+1,920 × 1,040 client comparisons, removal negative control and cleanup.
+Creation/attachment/commit/visibility states are now measured from initialization.
+
+**STILL UNKNOWN:** moving presentation-slot reliability, both cold deadlines,
+continuous motion, repeated accepted input, WebEngine and full lifecycle/DPI
+qualification. Keep 350/240/100 ms unchanged. Current safe checks pass 784 tests
+(one real-window deselection), thirteen privacy tests and native no-window/build
+contracts. The detailed report preserves prior and current failures and hashes.
+Production remains unchanged. **Not yet accepted by Cory.**
+
 ## 2026-10-08: Exact Native Call/Wait Contract
 
 **PROVEN BY SOURCE INSPECTION:** the separate 100 ms gate is a single worker's

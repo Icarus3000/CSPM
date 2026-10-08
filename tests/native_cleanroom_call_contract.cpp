@@ -3,6 +3,17 @@
 #include <cassert>
 int main() {
     assert(cspm_comp_abi_version()==1);
+    assert(cspm_comp_create_from_frame_with_source_band(nullptr,0,0,0,100,100)==nullptr);
+    assert(sizeof(NativeCreationObservation)==4816 && sizeof(NativeCreationRow)==392);
+    auto creation=std::make_unique<NativeCreationObservation>();
+    auto creationCalls=std::make_unique<NativeCallTrace>();
+    assert(cspm_comp_create_from_frame_observed(nullptr,0,0,0,100,100,1,
+        creation.get(),sizeof(*creation),creationCalls.get(),sizeof(*creationCalls))==nullptr);
+    assert(creation->enabled==1 && creation->count==1 && !creation->creationAccepted);
+    assert(creation->failureStage==1 && !creation->hostRetained);
+    assert(cspm_comp_create_from_frame_observed(nullptr,0,0,0,100,100,2,
+        creation.get(),sizeof(*creation),creationCalls.get(),sizeof(*creationCalls))==nullptr);
+    assert(cspm_comp_source_creation_observation(nullptr,creation.get(),sizeof(*creation))==0);
     assert(sizeof(NativeWindowState)==152 && sizeof(NativeCallRow)==896 && sizeof(NativeCallTrace)==230312);
     assert(nativeWaitState(WAIT_OBJECT_0)==1);
     assert(nativeWaitState(WAIT_TIMEOUT)==2);

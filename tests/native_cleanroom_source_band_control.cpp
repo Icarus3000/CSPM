@@ -27,6 +27,9 @@ struct Api {
     decltype(&cspm_comp_set_native_trace_live) traceLive;
     decltype(&cspm_comp_native_call_trace) nativeCalls;
     decltype(&cspm_comp_destroy_with_native_call_trace) destroyTrace;
+    decltype(&cspm_comp_create_from_frame_with_source_band) createWithBand;
+    decltype(&cspm_comp_create_from_frame_observed) createObserved;
+    decltype(&cspm_comp_source_creation_observation) creationState;
     explicit Api(HMODULE library) :
         capture(entry<decltype(capture)>(library,"cspm_gpu_capture")),
         release(entry<decltype(release)>(library,"cspm_gpu_release")),
@@ -44,7 +47,10 @@ struct Api {
         nativeTrace(reinterpret_cast<decltype(nativeTrace)>(GetProcAddress(library,"cspm_comp_enable_native_call_trace"))),
         traceLive(reinterpret_cast<decltype(traceLive)>(GetProcAddress(library,"cspm_comp_set_native_trace_live"))),
         nativeCalls(reinterpret_cast<decltype(nativeCalls)>(GetProcAddress(library,"cspm_comp_native_call_trace"))),
-        destroyTrace(reinterpret_cast<decltype(destroyTrace)>(GetProcAddress(library,"cspm_comp_destroy_with_native_call_trace"))) {}
+        destroyTrace(reinterpret_cast<decltype(destroyTrace)>(GetProcAddress(library,"cspm_comp_destroy_with_native_call_trace"))),
+        createWithBand(reinterpret_cast<decltype(createWithBand)>(GetProcAddress(library,"cspm_comp_create_from_frame_with_source_band"))),
+        createObserved(reinterpret_cast<decltype(createObserved)>(GetProcAddress(library,"cspm_comp_create_from_frame_observed"))),
+        creationState(reinterpret_cast<decltype(creationState)>(GetProcAddress(library,"cspm_comp_source_creation_observation"))) {}
 };
 LRESULT CALLBACK liveProcedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_NCHITTEST) return HTTRANSPARENT;
@@ -63,6 +69,7 @@ struct Outcome {
     uint32_t setupResult=0,setupWin32Error=0,setupStyleBefore=0,setupStyleAfter=0;
     double setupBeginSeconds=0,setupReturnSeconds=0;
     std::unique_ptr<NativeCallTrace> calls;
+    std::unique_ptr<NativeCreationObservation> creation;
     SourceTransferObservation observation;
     SourceWindowPosTrace positions;
 };
@@ -75,12 +82,24 @@ void saveNativeTrace(const std::wstring& prefix,bool topmost,const NativeCallTra
     const int closed=fclose(file);
     if(written!=sizeof(trace) || closed) throw std::runtime_error("Write native trace output failed");
 }
-Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstring& outputPrefix,bool guard) {
+void saveCreation(const std::wstring& prefix,bool topmost,const NativeCreationObservation& value) {
+    if(prefix.empty()) return;
+    const auto path=prefix+(topmost ? L"_topmost_creation.bin" : L"_ordinary_creation.bin");
+    FILE* file=nullptr;
+    if(_wfopen_s(&file,path.c_str(),L"wb") || !file) throw std::runtime_error("Open creation trace failed");
+    const size_t written=fwrite(&value,1,sizeof(value),file);
+    const int closed=fclose(file);
+    if(written!=sizeof(value) || closed) throw std::runtime_error("Write creation trace failed");
+}
+Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstring& outputPrefix,bool guard,bool createdLiveBand,bool createdNativeBand) {
     constexpr unsigned width=96,height=72;
     HWND live=nullptr; void* frame=nullptr; void* host=nullptr;
     Outcome result;
     auto cleanup=[&] {
         if(host) {
+            if(result.creation && api.creationState &&
+                    !api.creationState(host,result.creation.get(),sizeof(NativeCreationObservation)))
+                throw std::runtime_error("Synthetic creation lifecycle evidence unavailable");
             if(result.traceEnabled && api.destroyTrace) {
                 result.destroyStatus=unsigned(api.destroyTrace(host,result.calls.get(),sizeof(NativeCallTrace)));
                 if(!result.destroyStatus) throw std::runtime_error("Synthetic traced destruction ABI rejected before mutation");
@@ -91,8 +110,9 @@ Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstrin
                 api.destroy(host);
             }
             host=nullptr;
-            if(result.traceEnabled) saveNativeTrace(outputPrefix,topmost,*result.calls);
         }
+        if(result.calls) saveNativeTrace(outputPrefix,topmost,*result.calls);
+        if(result.creation) saveCreation(outputPrefix,topmost,*result.creation);
         if(frame) { api.release(frame); frame=nullptr; }
         if(live) { DestroyWindow(live); live=nullptr; }
     };
@@ -101,7 +121,9 @@ Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstrin
         if(!GetMonitorInfoW(MonitorFromPoint(POINT{0,0},MONITOR_DEFAULTTOPRIMARY),&monitor))
             throw std::runtime_error("Synthetic monitor bounds unavailable");
         const int left=monitor.rcWork.left+64,top=monitor.rcWork.top+64;
-        live=CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP|WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE,
+        const DWORD liveStyle=WS_EX_NOREDIRECTIONBITMAP|WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|
+            (createdLiveBand && topmost ? WS_EX_TOPMOST : 0);
+        live=CreateWindowExW(liveStyle,
             L"CSPMSyntheticSourceBandLive",L"CSPM synthetic band control",WS_POPUP,
             left+12,top+12,width,height,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
         if(!live) throw std::runtime_error("Create synthetic live HWND failed");
@@ -150,7 +172,7 @@ Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstrin
         result.setupStyleBefore=uint32_t(GetWindowLongPtrW(live,GWL_EXSTYLE));
         result.setupBeginSeconds=nowSeconds();
         const BOOL setupResult=SetWindowPos(live,topmost ? HWND_TOPMOST : HWND_NOTOPMOST,0,0,0,0,
-                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW|(createdLiveBand ? SWP_NOZORDER : 0));
         const DWORD setupError=GetLastError();
         result.setupReturnSeconds=nowSeconds();
         result.setupResult=setupResult!=FALSE; result.setupWin32Error=setupError;
@@ -162,9 +184,21 @@ Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstrin
             cleanup(); result.cleanupForegroundUnchanged=GetForegroundWindow()==initialForeground;
             return result; // Preserve a rejected setup as a complete outcome; no native transfer is attempted.
         }
-        host=api.create(frame,left,top,120,96);
-        if(!host) throw std::runtime_error("Create synthetic native source failed");
-        if(api.nativeTrace) {
+        if(api.createObserved) {
+            result.calls=std::make_unique<NativeCallTrace>();
+            result.creation=std::make_unique<NativeCreationObservation>();
+            host=api.createObserved(frame,uintptr_t(live),left,top,120,96,createdNativeBand ? 1u : 0u,
+                result.creation.get(),sizeof(NativeCreationObservation),result.calls.get(),sizeof(NativeCallTrace));
+            result.traceEnabled=host!=nullptr;
+        } else if(createdNativeBand) {
+            if(!api.createWithBand) throw std::runtime_error("Created native source band export unavailable");
+            host=api.createWithBand(frame,uintptr_t(live),left,top,120,96);
+        } else host=api.create(frame,left,top,120,96);
+        if(!host) {
+            cleanup(); result.cleanupForegroundUnchanged=GetForegroundWindow()==initialForeground;
+            return result;
+        }
+        if(api.nativeTrace && !result.traceEnabled) {
             if(!api.traceLive || !api.nativeCalls) throw std::runtime_error("Incomplete native trace capability");
             result.calls=std::make_unique<NativeCallTrace>();
             if(!api.nativeTrace(host) || !api.traceLive(host,uintptr_t(live)))
@@ -206,15 +240,21 @@ Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstrin
 int wmain(int argc,wchar_t** argv) {
     HMODULE library=nullptr;
     try {
-        if(argc<2 || argc>4) throw std::runtime_error("Pass DLL path, optional Y-based output prefix and optional --guard");
+        if(argc<2 || argc>6) throw std::runtime_error("Pass DLL path, optional Y-based output prefix and owned source-band controls");
         std::wstring outputPrefix;
         if(argc>=3) {
             outputPrefix=std::filesystem::absolute(argv[2]).lexically_normal().wstring();
             if(outputPrefix.size()<3 || (outputPrefix[0]!=L'Y' && outputPrefix[0]!=L'y') || outputPrefix[1]!=L':')
                 throw std::runtime_error("Native trace output must remain on Y:");
         }
-        const bool guard=argc==4 && std::wstring(argv[3])==L"--guard";
-        if(argc==4 && !guard) throw std::runtime_error("Only --guard is supported as the fourth argument");
+        bool guard=false,createdLiveBand=false,createdNativeBand=false;
+        for(int index=3;index<argc;++index) {
+            const std::wstring option=argv[index];
+            if(option==L"--guard" && !guard) guard=true;
+            else if(option==L"--created-live-band" && !createdLiveBand) createdLiveBand=true;
+            else if(option==L"--created-native-band" && !createdNativeBand) createdNativeBand=true;
+            else throw std::runtime_error("Unknown or duplicate source-band control option");
+        }
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         const HWND initialForeground=GetForegroundWindow();
         if(!initialForeground) throw std::runtime_error("Interactive initial foreground is unavailable");
@@ -225,9 +265,10 @@ int wmain(int argc,wchar_t** argv) {
         library=LoadLibraryW(argv[1]);
         if(!library) throw std::runtime_error("Load diagnostic DLL failed");
         Api api(library); bool passed=true;
-        printf("{\"scope\":\"real SDK-only synthetic GPU source and transfer; no desktop pixel observer/Qt/WebEngine\",\"noPrivateContent\":true,\"policies\":[");
+        printf("{\"scope\":\"real SDK-only synthetic GPU source and transfer; no desktop pixel observer/Qt/WebEngine\",\"noPrivateContent\":true,\"createdLiveBand\":%s,\"createdNativeBand\":%s,\"guardRequested\":%s,\"policies\":[",
+            createdLiveBand ? "true" : "false",createdNativeBand ? "true" : "false",guard ? "true" : "false");
         for(unsigned policy=0;policy<2;++policy) {
-            const Outcome result=runPolicy(api,policy!=0,initialForeground,outputPrefix,guard);
+            const Outcome result=runPolicy(api,policy!=0,initialForeground,outputPrefix,guard,createdLiveBand,createdNativeBand);
             if(policy) printf(",");
             printf("{\"topmostPolicy\":%s,\"accepted\":%s,\"stage\":%u,\"foregroundFalse\":%s,\"foregroundUnchanged\":%s,\"cleanupForegroundUnchanged\":%s,\"liveHidden\":%s,\"nativeVisible\":%s,\"bandMatches\":%s,\"markerSamples\":%u,\"markerMismatchCount\":%u,\"liveStyleEntry\":%u,\"liveStyleExit\":%u,\"nativeStyleEntry\":%u,\"nativeStyleExit\":%u,\"liveForegroundEntry\":%u,\"liveForegroundExit\":%u,\"sameProcess\":%u,\"sameParent\":%u,\"liveThreadOwned\":%u,\"nativeThreadOwned\":%u,\"expectedTopmost\":%u,\"windowPositions\":[",
                 policy ? "true" : "false",result.accepted ? "true" : "false",result.observation.stage,

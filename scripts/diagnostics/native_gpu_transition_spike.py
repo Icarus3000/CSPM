@@ -191,6 +191,8 @@ def main():
         help="Passive bounded owned native window-band transfer evidence; requires single-owner source")
     parser.add_argument("--native-call-trace", action="store_true",
         help="Bounded native API/wait results and revision/state evidence; does not change wait deadlines")
+    parser.add_argument("--native-created-source-band", action="store_true",
+        help="Create the hidden native HWND in the band sampled from the owned live source")
     parser.add_argument("--intrinsic-only", action="store_true",
         help="Matched source ownership/readiness/input control without any desktop collector; physical gates stay unmeasured")
     parser.add_argument("--probe-endpoint", action="store_true",
@@ -201,6 +203,8 @@ def main():
     args = parser.parse_args()
     if args.source_transfer_trace and not args.single_owner_source:
         parser.error("source transfer trace requires single-owner source ownership")
+    if args.native_created_source_band and not args.single_owner_source:
+        parser.error("created native source band requires single-owner visibility ownership")
     if args.intrinsic_only and (not args.single_owner_source or args.physical_diagnostics
             or args.endpoint_pixels or args.pixels or args.source_observation_only
             or args.controlled_backdrop or args.probe_composition or args.probe_endpoint
@@ -1109,14 +1113,8 @@ Item {
                 right = max(physical[0] + physical[2], target[0] + target[2]) + 32
                 bottom = max(physical[1] + physical[3], target[1] + target[3]) + 32
                 self.envelope = [left, top, right - left, bottom - top]
-                self.host = dll.cspm_comp_create_from_frame(result["frame"], *self.envelope)
-                if not self.host:
-                    self.fail("DirectComposition presentation", native_error())
+                if not self.create_native_host(result["frame"]):
                     return
-                if args.native_call_trace:
-                    from native_call_contract import enable_native_call_trace, set_native_trace_live
-                    enable_native_call_trace(dll, self.host)
-                    set_native_trace_live(dll, self.host, int(self.window.winId()))
                 if args.probe_endpoint or args.probe_composition:
                     from submitted_surface_contract import enable_probe_snapshot
                     enable_probe_snapshot(dll, self.host)
@@ -1137,6 +1135,7 @@ Item {
                     self.fail("DirectComposition presentation", native_error(self.host))
                     return
                 self.record("source-composition-committed", source=physical, target=target, envelope=self.envelope)
+                self.record_native_creation("source-commit")
                 self.state_observation("source-commit")
                 if args.single_owner_source:
                     self.transfer_source_visibility(physical)
@@ -1165,6 +1164,47 @@ Item {
                     self.start_native()
                 else:
                     self.poll_native()
+
+        def create_native_host(self, frame):
+            """Retain creation evidence and pointer ownership before preparation."""
+            begin = time.perf_counter()
+            created_band = bool(getattr(args, "native_created_source_band", False))
+            result = None
+            if getattr(args, "native_call_trace", False):
+                from native_call_contract import create_observed_native_host
+                result = create_observed_native_host(dll, frame, int(self.window.winId()),
+                    self.envelope, created_band)
+                # Assign ownership even if optional metadata validation failed.
+                self.host = result["host"]
+                error = result.get("nativeError")
+            else:
+                if created_band:
+                    if not hasattr(dll, "cspm_comp_create_from_frame_with_source_band"):
+                        raise RuntimeError("Created native source band export unavailable")
+                    create = dll.cspm_comp_create_from_frame_with_source_band
+                    create.argtypes = [ctypes.c_void_p, ctypes.c_size_t, *([ctypes.c_int] * 4)]
+                    create.restype = ctypes.c_void_p
+                    self.host = create(frame, int(self.window.winId()), *self.envelope)
+                else:
+                    self.host = dll.cspm_comp_create_from_frame(frame, *self.envelope)
+                error = None if self.host else native_error(None)
+            returned = time.perf_counter()
+            self.record("native-host-created", apiBeginSeconds=begin, apiReturnSeconds=returned,
+                accepted=bool(self.host), createdSourceBand=created_band, nativeError=error)
+            if result is not None:
+                if result.get("creation") is not None:
+                    self.record("native-host-creation-state", **result["creation"])
+                if result.get("evidence") is not None:
+                    self.record("native-call-history", boundary="creation", **result["evidence"])
+            if not self.host:
+                self.fail("DirectComposition presentation", error or "Native host creation rejected")
+                if result and result.get("evidenceError"):
+                    context["failures"].append("requested native creation evidence invalid: " + result["evidenceError"])
+                return False
+            if result and result.get("evidenceError"):
+                self.fail("native creation evidence", result["evidenceError"])
+                return False
+            return True
 
         def record_target_import_rejection(self, result):
             # The native worker may already have failed before this queued
@@ -1237,6 +1277,13 @@ Item {
                     self.record("source-transfer-state-unavailable", reason=type(exc).__name__)
                     if accepted:
                         raise
+            try:
+                self.record_native_creation("source-transfer")
+            except Exception as exc:
+                self.record("native-creation-evidence-unavailable", boundary="source-transfer",
+                    reason=type(exc).__name__)
+                if accepted:
+                    raise
             if not accepted:
                 raise RuntimeError("Single-owner source visibility transfer rejected: " + rejection)
             if getattr(args, "source_transfer_trace", False) and evidence.get("status") == "UNMEASURED":
@@ -1301,6 +1348,7 @@ Item {
                 apiReturnSeconds=self.source_reorder_return_seconds,
                 scope="Saved source HWND_TOPMOST/HWND_NOTOPMOST band; no move, size or activation; sampled representation remains mandatory")
             self.state_observation("source-after-visibility-reorder")
+            self.record_native_creation("source-visible-order")
 
         @guarded
         def after_source_coverage(self, pixels=None):
@@ -1733,6 +1781,13 @@ Item {
             if self.finished:
                 return
             self.fail("fixture deadline", "Populated spike exceeded 120 seconds")
+
+        def record_native_creation(self, boundary):
+            if not getattr(args, "native_call_trace", False) or not self.host:
+                return
+            from native_call_contract import source_creation_evidence
+            self.record("native-host-creation-state", boundary=boundary,
+                **source_creation_evidence(dll, self.host))
 
         def record_native_calls(self, boundary):
             if not getattr(args, "native_call_trace", False) or not self.host:

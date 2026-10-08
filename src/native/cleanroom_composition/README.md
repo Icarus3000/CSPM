@@ -531,3 +531,38 @@ same-DLL SDK comparison with an owned layered source and the input guard. No
 activation, retry, gate relaxation, native source edit or further desktop run
 belongs to this read-only diagnosis. The background full-app source-band
 condition, repeated populated readiness and complete qualification remain open.
+
+## Explicit source-band creation control, 2026-10-08
+
+`cspm_comp_create_from_frame_with_source_band` is a diagnostic opt-in. It
+validates the visible current-process GUI source and immutable frame extent,
+then creates its hidden worker HWND with the sampled `WS_EX_TOPMOST` policy.
+The ordinary `cspm_comp_create_from_frame` export retains its default behavior.
+Both windows remain independent unowned top-level windows; this does not add
+a `GW_OWNER` relationship or request foreground permission.
+
+`cspm_comp_create_from_frame_observed` accepts that same frame/live HWND and
+geometry, a strategy flag (0 historical, 1 direct creation), and caller-sized
+creation/native-trace outputs. It enables telemetry before initialization for
+both strategies. Creation rows are 392 bytes; the bounded twelve-row observation
+is 4816 bytes. Existing version-1 call/state/trace layouts are unchanged.
+`cspm_comp_source_creation_observation` only reads the retained observation.
+On null creation, capture `cspm_comp_error(nullptr)` before any later native
+call. Rejected initialization preserves outputs and safe lifetime retention.
+On accepted creation with invalid evidence, retain the host for one cleanup.
+
+The created hidden band/style/visibility/authority is checked immediately,
+after source attachment, after commit return and after commit processing.
+Hidden positioning preserves Z-order. Once visible, one nonactivating
+`HWND_TOP` placement raises within the verified group, followed by another
+observed band/visibility check. No repeated promotion is attempted.
+
+`tests/native_cleanroom_win32_band_control.cpp` provides pure Win32 GUI/worker
+A/B metadata; the D3D11 source control supports `--created-live-band`,
+`--created-native-band` and `--guard`. The populated spike requires
+`--single-owner-source` for `--native-created-source-band`. Current matched
+results, exact physical source controls, rejected attempts and binary hashes
+are in `docs/CLEANROOM_CREATED_SOURCE_BAND_2026-10-08.md` and JSON. These
+stopped controls do not qualify moving presentation-slot, target deadline,
+continuous motion, WebEngine or installed acceptance. All 350/240/100 ms gates
+remain unchanged and production remains the default.
