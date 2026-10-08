@@ -2,6 +2,7 @@
 // All uploads are deterministic synthetic markers; no Qt or private data.
 #include "../src/native/cleanroom_composition/cleanroom_composition.cpp"
 #include <vector>
+#include <filesystem>
 
 template<class T> T entry(HMODULE library,const char* name) {
     const auto address=GetProcAddress(library,name);
@@ -22,6 +23,10 @@ struct Api {
     decltype(&cspm_comp_source_windowpos_trace) windowPositions;
     decltype(&cspm_comp_hwnd) hwnd;
     decltype(&cspm_comp_destroy) destroy;
+    decltype(&cspm_comp_enable_native_call_trace) nativeTrace;
+    decltype(&cspm_comp_set_native_trace_live) traceLive;
+    decltype(&cspm_comp_native_call_trace) nativeCalls;
+    decltype(&cspm_comp_destroy_with_native_call_trace) destroyTrace;
     explicit Api(HMODULE library) :
         capture(entry<decltype(capture)>(library,"cspm_gpu_capture")),
         release(entry<decltype(release)>(library,"cspm_gpu_release")),
@@ -35,7 +40,11 @@ struct Api {
         observation(entry<decltype(observation)>(library,"cspm_comp_source_transfer_observation")),
         windowPositions(entry<decltype(windowPositions)>(library,"cspm_comp_source_windowpos_trace")),
         hwnd(entry<decltype(hwnd)>(library,"cspm_comp_hwnd")),
-        destroy(entry<decltype(destroy)>(library,"cspm_comp_destroy")) {}
+        destroy(entry<decltype(destroy)>(library,"cspm_comp_destroy")),
+        nativeTrace(reinterpret_cast<decltype(nativeTrace)>(GetProcAddress(library,"cspm_comp_enable_native_call_trace"))),
+        traceLive(reinterpret_cast<decltype(traceLive)>(GetProcAddress(library,"cspm_comp_set_native_trace_live"))),
+        nativeCalls(reinterpret_cast<decltype(nativeCalls)>(GetProcAddress(library,"cspm_comp_native_call_trace"))),
+        destroyTrace(reinterpret_cast<decltype(destroyTrace)>(GetProcAddress(library,"cspm_comp_destroy_with_native_call_trace"))) {}
 };
 LRESULT CALLBACK liveProcedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
     if(message==WM_NCHITTEST) return HTTRANSPARENT;
@@ -48,14 +57,42 @@ struct Outcome {
     bool accepted=false,foregroundUnchanged=false,liveHidden=false,nativeVisible=false,bandMatches=false;
     bool foregroundFalse=false,cleanupForegroundUnchanged=false;
     unsigned mismatches=0;
+    unsigned destroyStatus=0;
+    bool guardUsed=false,traceEnabled=false;
+    bool setupAccepted=false,setupBandMatches=false,setupForegroundUnchanged=false;
+    uint32_t setupResult=0,setupWin32Error=0,setupStyleBefore=0,setupStyleAfter=0;
+    double setupBeginSeconds=0,setupReturnSeconds=0;
+    std::unique_ptr<NativeCallTrace> calls;
     SourceTransferObservation observation;
     SourceWindowPosTrace positions;
 };
-Outcome runPolicy(Api& api,bool topmost,HWND initialForeground) {
+void saveNativeTrace(const std::wstring& prefix,bool topmost,const NativeCallTrace& trace) {
+    if(prefix.empty()) return;
+    const auto path=prefix+(topmost ? L"_topmost_native_calls.bin" : L"_ordinary_native_calls.bin");
+    FILE* file=nullptr;
+    if(_wfopen_s(&file,path.c_str(),L"wb") || !file) throw std::runtime_error("Open Y-based native trace output failed");
+    const size_t written=fwrite(&trace,1,sizeof(trace),file);
+    const int closed=fclose(file);
+    if(written!=sizeof(trace) || closed) throw std::runtime_error("Write native trace output failed");
+}
+Outcome runPolicy(Api& api,bool topmost,HWND initialForeground,const std::wstring& outputPrefix,bool guard) {
     constexpr unsigned width=96,height=72;
     HWND live=nullptr; void* frame=nullptr; void* host=nullptr;
+    Outcome result;
     auto cleanup=[&] {
-        if(host) { api.destroy(host); host=nullptr; }
+        if(host) {
+            if(result.traceEnabled && api.destroyTrace) {
+                result.destroyStatus=unsigned(api.destroyTrace(host,result.calls.get(),sizeof(NativeCallTrace)));
+                if(!result.destroyStatus) throw std::runtime_error("Synthetic traced destruction ABI rejected before mutation");
+                // A timeout retains the native host safely; do not retry it.
+            } else {
+                if(result.traceEnabled && !api.nativeCalls(host,result.calls.get(),sizeof(NativeCallTrace)))
+                    throw std::runtime_error("Synthetic native call evidence unavailable before cleanup");
+                api.destroy(host);
+            }
+            host=nullptr;
+            if(result.traceEnabled) saveNativeTrace(outputPrefix,topmost,*result.calls);
+        }
         if(frame) { api.release(frame); frame=nullptr; }
         if(live) { DestroyWindow(live); live=nullptr; }
     };
@@ -110,17 +147,38 @@ Outcome runPolicy(Api& api,bool topmost,HWND initialForeground) {
         check(swapchain->Present(1,0),"Present synthetic live markers");
         check(compositor->Commit(),"Commit synthetic live markers");
         check(compositor->WaitForCommitCompletion(),"Process synthetic live commit");
-        if(!SetWindowPos(live,topmost ? HWND_TOPMOST : HWND_NOTOPMOST,0,0,0,0,
-                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW))
-            throw std::runtime_error("Show nonactivating synthetic live source failed");
-        if(!sourceVisibilityBandMatches(GetWindowLongPtrW(live,GWL_EXSTYLE),topmost) ||
-                GetForegroundWindow()!=initialForeground || GetForegroundWindow()==live)
-            throw std::runtime_error("Synthetic source setup changed foreground or selected band");
+        result.setupStyleBefore=uint32_t(GetWindowLongPtrW(live,GWL_EXSTYLE));
+        result.setupBeginSeconds=nowSeconds();
+        const BOOL setupResult=SetWindowPos(live,topmost ? HWND_TOPMOST : HWND_NOTOPMOST,0,0,0,0,
+                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+        const DWORD setupError=GetLastError();
+        result.setupReturnSeconds=nowSeconds();
+        result.setupResult=setupResult!=FALSE; result.setupWin32Error=setupError;
+        result.setupStyleAfter=uint32_t(GetWindowLongPtrW(live,GWL_EXSTYLE));
+        result.setupBandMatches=sourceVisibilityBandMatches(result.setupStyleAfter,topmost);
+        result.setupForegroundUnchanged=GetForegroundWindow()==initialForeground && GetForegroundWindow()!=live;
+        result.setupAccepted=result.setupResult && result.setupBandMatches && result.setupForegroundUnchanged;
+        if(!result.setupAccepted) {
+            cleanup(); result.cleanupForegroundUnchanged=GetForegroundWindow()==initialForeground;
+            return result; // Preserve a rejected setup as a complete outcome; no native transfer is attempted.
+        }
         host=api.create(frame,left,top,120,96);
-        if(!host || !api.defer(host) || !api.snapshot(host) || !api.trace(host) ||
+        if(!host) throw std::runtime_error("Create synthetic native source failed");
+        if(api.nativeTrace) {
+            if(!api.traceLive || !api.nativeCalls) throw std::runtime_error("Incomplete native trace capability");
+            result.calls=std::make_unique<NativeCallTrace>();
+            if(!api.nativeTrace(host) || !api.traceLive(host,uintptr_t(live)))
+                throw std::runtime_error("Enable synthetic native call evidence failed");
+            result.traceEnabled=true;
+        }
+        if(!api.defer(host) || !api.snapshot(host) || !api.trace(host) ||
                 !api.source(host,frame,12,12,width,height,0,0))
             throw std::runtime_error("Prepare synthetic native source failed");
-        Outcome result;
+        if(guard) {
+            EnableWindow(live,FALSE); // Matched native-only equivalent of the owned input guard.
+            if(IsWindowEnabled(live)) throw std::runtime_error("Synthetic owned input guard failed");
+            result.guardUsed=true;
+        }
         result.accepted=api.transfer(host,uintptr_t(live))!=0;
         const HWND native=reinterpret_cast<HWND>(api.hwnd(host));
         result.foregroundUnchanged=GetForegroundWindow()==initialForeground;
@@ -148,7 +206,15 @@ Outcome runPolicy(Api& api,bool topmost,HWND initialForeground) {
 int wmain(int argc,wchar_t** argv) {
     HMODULE library=nullptr;
     try {
-        if(argc!=2) throw std::runtime_error("Pass exactly one diagnostic bridge DLL path");
+        if(argc<2 || argc>4) throw std::runtime_error("Pass DLL path, optional Y-based output prefix and optional --guard");
+        std::wstring outputPrefix;
+        if(argc>=3) {
+            outputPrefix=std::filesystem::absolute(argv[2]).lexically_normal().wstring();
+            if(outputPrefix.size()<3 || (outputPrefix[0]!=L'Y' && outputPrefix[0]!=L'y') || outputPrefix[1]!=L':')
+                throw std::runtime_error("Native trace output must remain on Y:");
+        }
+        const bool guard=argc==4 && std::wstring(argv[3])==L"--guard";
+        if(argc==4 && !guard) throw std::runtime_error("Only --guard is supported as the fourth argument");
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         const HWND initialForeground=GetForegroundWindow();
         if(!initialForeground) throw std::runtime_error("Interactive initial foreground is unavailable");
@@ -161,7 +227,7 @@ int wmain(int argc,wchar_t** argv) {
         Api api(library); bool passed=true;
         printf("{\"scope\":\"real SDK-only synthetic GPU source and transfer; no desktop pixel observer/Qt/WebEngine\",\"noPrivateContent\":true,\"policies\":[");
         for(unsigned policy=0;policy<2;++policy) {
-            const Outcome result=runPolicy(api,policy!=0,initialForeground);
+            const Outcome result=runPolicy(api,policy!=0,initialForeground,outputPrefix,guard);
             if(policy) printf(",");
             printf("{\"topmostPolicy\":%s,\"accepted\":%s,\"stage\":%u,\"foregroundFalse\":%s,\"foregroundUnchanged\":%s,\"cleanupForegroundUnchanged\":%s,\"liveHidden\":%s,\"nativeVisible\":%s,\"bandMatches\":%s,\"markerSamples\":%u,\"markerMismatchCount\":%u,\"liveStyleEntry\":%u,\"liveStyleExit\":%u,\"nativeStyleEntry\":%u,\"nativeStyleExit\":%u,\"liveForegroundEntry\":%u,\"liveForegroundExit\":%u,\"sameProcess\":%u,\"sameParent\":%u,\"liveThreadOwned\":%u,\"nativeThreadOwned\":%u,\"expectedTopmost\":%u,\"windowPositions\":[",
                 policy ? "true" : "false",result.accepted ? "true" : "false",result.observation.stage,
@@ -179,9 +245,20 @@ int wmain(int argc,wchar_t** argv) {
                     static_cast<unsigned long long>(row.sequence),row.phase,row.message,row.insertAfterBandBefore,
                     row.insertAfterBandAfter,row.flagsBefore,row.flagsAfter,row.styleBefore,row.styleAfter,row.visibleAfter);
             }
-            printf("]}");
+            printf("],\"setupCall\":\"SetWindowPos(live-source)\",\"setupBeginSeconds\":%.9f,\"setupReturnSeconds\":%.9f,\"setupResult\":%u,\"setupWin32Error\":%u,\"setupStyleBefore\":%u,\"setupStyleAfter\":%u,\"setupBandMatches\":%s,\"setupForegroundUnchanged\":%s,\"setupAccepted\":%s,\"guardUsed\":%s,\"nativeCallTraceEnabled\":%s,\"destroyStatus\":%u,\"nativeCallCount\":%u,\"nativeCallTotal\":%llu,\"nativeCallDropped\":%llu,\"firstFailureCall\":%u,\"firstFailureResult\":%u,\"firstFailureWin32Error\":%u}",
+                result.setupBeginSeconds,result.setupReturnSeconds,result.setupResult,result.setupWin32Error,
+                result.setupStyleBefore,result.setupStyleAfter,result.setupBandMatches ? "true" : "false",
+                result.setupForegroundUnchanged ? "true" : "false",result.setupAccepted ? "true" : "false",
+                result.guardUsed ? "true" : "false",result.traceEnabled ? "true" : "false",result.destroyStatus,
+                result.calls ? result.calls->count : 0u,
+                result.calls ? static_cast<unsigned long long>(result.calls->totalRows) : 0ull,
+                result.calls ? static_cast<unsigned long long>(result.calls->droppedRows) : 0ull,
+                result.calls && result.calls->hasFirstFailure ? result.calls->firstFailure.call : 0u,
+                result.calls && result.calls->hasFirstFailure ? result.calls->firstFailure.result : 0u,
+                result.calls && result.calls->hasFirstFailure ? result.calls->firstFailure.win32Error : 0u);
             passed=passed && result.accepted && result.foregroundFalse && result.foregroundUnchanged &&
-                result.cleanupForegroundUnchanged && result.liveHidden && result.nativeVisible && result.bandMatches && !result.mismatches;
+                result.cleanupForegroundUnchanged && result.liveHidden && result.nativeVisible && result.bandMatches && !result.mismatches &&
+                (!result.traceEnabled || result.destroyStatus==1);
         }
         printf("],\"allPoliciesPass\":%s}\n",passed ? "true" : "false");
         FreeLibrary(library); CoUninitialize(); return passed ? 0 : 2;

@@ -67,7 +67,8 @@ def harness():
              "restore_source_activation", "source_reference_observed", "after_source_transfer_observed",
              "raise_source_visibility", "endpoint_observed", "live_host_frame", "live_host_deadline",
              "handoff", "handoff_compare", "analyze_endpoint_frame", "finish_handoff",
-             "accepted_input_pixels_observed", "poll_native", "record_target_import_rejection"}
+             "accepted_input_pixels_observed", "poll_native", "record_target_import_rejection",
+             "record_native_calls", "destroy_native_host"}
     methods = [copy.deepcopy(node) for node in classes[0].body
                if isinstance(node, ast.FunctionDef) and node.name in names]
     assert {method.name for method in methods} == names
@@ -131,6 +132,72 @@ def test_rejected_target_snapshot_failure_does_not_hide_original_failure(harness
     harness.app.record_target_import_rejection({})
     assert harness.records[-1]["native"] == {"available": False}
     assert harness.context["failures"] == ["target readiness: First target failure"]
+
+
+def test_native_call_evidence_is_opt_in(harness):
+    harness.app.record_native_calls("failure-cleanup")
+    assert not harness.records
+    assert not harness.context["failures"]
+
+
+def test_requested_native_call_evidence_retained_before_host_destruction(harness, monkeypatch):
+    harness.args.native_call_trace = True
+    def evidence(dll, host):
+        assert ("destroy-host", host) not in harness.actions
+        return {"rows": [{"call": "WaitForSingleObjectEx", "result": 258}]}
+    def destroy(dll, host):
+        dll.cspm_comp_destroy(host)
+        return {"hostDestroyed": True, "hostRetained": False, "evidence": evidence(None, None)}
+    monkeypatch.setitem(sys.modules, "native_call_contract", SimpleNamespace(
+        native_call_evidence=evidence, destroy_native_call_evidence=destroy))
+    harness.context["failures"].append("DirectComposition presentation: first failure")
+    harness.app.complete()
+    record = next(row for row in harness.records if row["event"] == "native-call-history")
+    assert record["boundary"] == "failure-cleanup"
+    assert record["rows"][0]["result"] == 258
+    assert harness.context["failures"] == ["DirectComposition presentation: first failure"]
+    assert ("destroy-host", 101) in harness.actions
+
+
+def test_native_evidence_failure_preserves_original_rejection_and_cleanup(harness, monkeypatch):
+    harness.args.native_call_trace = True
+    def unavailable(dll, host):
+        raise RuntimeError("trace unavailable")
+    def destroy(dll, host):
+        dll.cspm_comp_destroy(host)
+        return {"hostDestroyed": True, "hostRetained": False, "evidence": None, "evidenceError": "RuntimeError"}
+    monkeypatch.setitem(sys.modules, "native_call_contract", SimpleNamespace(
+        native_call_evidence=unavailable, destroy_native_call_evidence=destroy))
+    harness.context["failures"].append("first native error")
+    harness.app.complete()
+    assert harness.context["failures"][0] == "first native error"
+    assert harness.context["failures"][1] == "requested native call evidence unavailable: RuntimeError"
+    assert ("destroy-host", 101) in harness.actions
+
+
+def test_native_destruction_timeout_is_retained_without_second_destroy(harness, monkeypatch):
+    harness.args.native_call_trace = True
+    monkeypatch.setitem(sys.modules, "native_call_contract", SimpleNamespace(
+        destroy_native_call_evidence=lambda dll, host: {"hostDestroyed": False, "hostRetained": True,
+            "evidence": {"rows": [{"call": "destroy wait", "result": 258}]}}))
+    harness.app.destroy_native_host("cleanup")
+    assert harness.app.host is None
+    assert not any(action[0] == "destroy-host" for action in harness.actions)
+    assert harness.context["failures"] == ["native destruction exceeded its bound; host safely retained"]
+    assert harness.records[-1]["hostRetained"] is True
+
+
+def test_bad_final_trace_after_destruction_cannot_reuse_freed_host(harness, monkeypatch):
+    harness.args.native_call_trace = True
+    def destroy(dll, host):
+        dll.cspm_comp_destroy(host)
+        return {"hostDestroyed": True, "hostRetained": False, "evidence": None, "evidenceError": "RuntimeError"}
+    monkeypatch.setitem(sys.modules, "native_call_contract", SimpleNamespace(destroy_native_call_evidence=destroy))
+    harness.app.destroy_native_host("cleanup")
+    harness.app.destroy_native_host("cleanup-again")
+    assert harness.app.host is None
+    assert harness.actions.count(("destroy-host", 101)) == 1
+    assert harness.context["failures"] == ["native destruction evidence invalid: RuntimeError"]
 
 
 @pytest.mark.parametrize("source_size,target_size", [((16, 12), (6, 4)), ((6, 4), (16, 12))])

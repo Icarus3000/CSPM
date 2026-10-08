@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 import cProfile
@@ -162,6 +163,8 @@ def main():
     parser.add_argument("--workspace", choices=WORKSPACES, default="productivity")
     parser.add_argument("--keep-visible", action="store_true",
         help="Keep the disposable source above other windows for physical pixel measurements")
+    parser.add_argument("--preserve-foreground", action="store_true",
+        help="Observe existing foreground ownership without fixture activation requests")
     parser.add_argument("--physical-diagnostics", action="store_true",
         help="Record fresh desktop acquisitions, window state and deferred spatial pixel diagnostics")
     parser.add_argument("--source-observation-only", action="store_true",
@@ -186,6 +189,8 @@ def main():
         help="Diagnostic GUI-thread source visibility transfer in one native deferred-position batch")
     parser.add_argument("--source-transfer-trace", action="store_true",
         help="Passive bounded owned native window-band transfer evidence; requires single-owner source")
+    parser.add_argument("--native-call-trace", action="store_true",
+        help="Bounded native API/wait results and revision/state evidence; does not change wait deadlines")
     parser.add_argument("--intrinsic-only", action="store_true",
         help="Matched source ownership/readiness/input control without any desktop collector; physical gates stay unmeasured")
     parser.add_argument("--probe-endpoint", action="store_true",
@@ -264,6 +269,7 @@ def main():
         "scripts/diagnostics/source_pixel_analysis.py",
         "scripts/diagnostics/submitted_surface_contract.py",
         "scripts/diagnostics/source_transfer_contract.py",
+        "scripts/diagnostics/native_call_contract.py",
         "scripts/diagnostics/input_restoration_witness.py",
         "scripts/diagnostics/input_delivery_trace.py",
         "scripts/diagnostics/activation_cost_profile.py",
@@ -289,6 +295,13 @@ def main():
     )
     source_provenance = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
         for name in provenance_paths}
+    source_git = {
+        "head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
+        "branch": subprocess.check_output(["git", "branch", "--show-current"], cwd=root, text=True).strip(),
+        "workingTreeClean": not bool(subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=normal"], cwd=root, text=True).strip()),
+        "scope": "Local Git state at fixture startup; measured source/DLL hashes remain authoritative",
+    }
     mirror = None
     mirror_provenance = {}
     if args.profile_boundaries:
@@ -402,6 +415,7 @@ class PixelTracker:
     class Captured(QObject):
         ready = Signal(object)
     user = ctypes.WinDLL("user32", use_last_error=True)
+    user.GetForegroundWindow.argtypes, user.GetForegroundWindow.restype = [], wintypes.HWND
     user.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     user.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
     user.IsWindowEnabled.argtypes = [wintypes.HWND]
@@ -540,15 +554,27 @@ Item {
                 self.record("fixture-source-z-order-begin")
                 user.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND,
                     ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, uint]
-                if not user.SetWindowPos(int(self.window.winId()), -1, 0, 0, 0, 0, 0x13):
-                    raise RuntimeError("Diagnostic source z-order unavailable")
+                position_begin = time.perf_counter()
+                positioned = bool(user.SetWindowPos(int(self.window.winId()), -1, 0, 0, 0, 0, 0x13))
+                position_error = 0 if positioned else ctypes.get_last_error()
+                position_return = time.perf_counter()
+                self.record("fixture-source-position-result", apiBeginSeconds=position_begin,
+                    apiReturnSeconds=position_return, apiAccepted=positioned, win32Error=position_error,
+                    flags=0x13, requestedTopmost=True)
+                if not positioned:
+                    raise RuntimeError("Diagnostic source z-order unavailable: Win32 error " + str(position_error))
                 self.window.update()
-                self.window.requestActivate()
-                user.SetForegroundWindow.argtypes = [wintypes.HWND]
-                user.SetForegroundWindow.restype = wintypes.BOOL
-                activated = bool(user.SetForegroundWindow(int(self.window.winId())))
-                self.record("fixture-source-activation", apiAccepted=activated,
-                    scope="Foreground is independently checked before each source comparison")
+                if args.preserve_foreground:
+                    self.record("fixture-source-activation-observed", foregroundHwnd=int(user.GetForegroundWindow() or 0),
+                        sourceForeground=int(user.GetForegroundWindow() or 0) == int(self.window.winId()),
+                        scope="No fixture requestActivate or SetForegroundWindow; startup ownership is observed")
+                else:
+                    self.window.requestActivate()
+                    user.SetForegroundWindow.argtypes = [wintypes.HWND]
+                    user.SetForegroundWindow.restype = wintypes.BOOL
+                    activated = bool(user.SetForegroundWindow(int(self.window.winId())))
+                    self.record("fixture-source-activation", apiAccepted=activated,
+                        scope="Foreground is independently checked before each source comparison")
                 self.record("fixture-source-z-order-end")
             self.capture_signal = Captured(self)
             self.capture_signal.ready.connect(self.captured, Qt.QueuedConnection)
@@ -1056,8 +1082,7 @@ Item {
                     self.window.setOpacity(1)
                     self.evaluate("_probeWindow.geometryTransitionSuppressed = false")
                     self.unlock_input()
-                    dll.cspm_comp_destroy(self.host)
-                    self.host = None
+                    self.destroy_native_host("layout-control")
                     for frame in self.frames:
                         dll.cspm_gpu_release(frame)
                     self.frames.clear()
@@ -1088,6 +1113,10 @@ Item {
                 if not self.host:
                     self.fail("DirectComposition presentation", native_error())
                     return
+                if args.native_call_trace:
+                    from native_call_contract import enable_native_call_trace, set_native_trace_live
+                    enable_native_call_trace(dll, self.host)
+                    set_native_trace_live(dll, self.host, int(self.window.winId()))
                 if args.probe_endpoint or args.probe_composition:
                     from submitted_surface_contract import enable_probe_snapshot
                     enable_probe_snapshot(dll, self.host)
@@ -1575,8 +1604,8 @@ Item {
         @guarded
         def finish_handoff(self):
             self.record("native-present-history", **native_present_trace(dll, self.host))
-            dll.cspm_comp_destroy(self.host)
-            self.host = None
+            self.record_native_calls("completed-handoff")
+            self.destroy_native_host("completed-handoff")
             for frame in self.frames:
                 dll.cspm_gpu_release(frame)
             self.frames.clear()
@@ -1705,6 +1734,51 @@ Item {
                 return
             self.fail("fixture deadline", "Populated spike exceeded 120 seconds")
 
+        def record_native_calls(self, boundary):
+            if not getattr(args, "native_call_trace", False) or not self.host:
+                return
+            try:
+                from native_call_contract import native_call_evidence
+                evidence = native_call_evidence(dll, self.host)
+            except Exception as exc:
+                self.record("native-call-evidence-unavailable", boundary=boundary,
+                    reason=type(exc).__name__)
+                context["failures"].append("requested native call evidence unavailable: " + type(exc).__name__)
+                return
+            self.record("native-call-history", boundary=boundary, **evidence)
+
+        def destroy_native_host(self, boundary):
+            if not self.host:
+                return
+            host = self.host
+            if not getattr(args, "native_call_trace", False):
+                dll.cspm_comp_destroy(host)
+                self.host = None
+                return
+            try:
+                from native_call_contract import destroy_native_call_evidence
+                result = destroy_native_call_evidence(dll, host)
+            except Exception as exc:
+                # The helper raises only before a consuming native return.
+                # Preserve legacy cleanup and reject the missing requested proof.
+                self.record("native-destruction-evidence-unavailable", boundary=boundary,
+                    reason=type(exc).__name__)
+                context["failures"].append("requested native destruction evidence unavailable: " + type(exc).__name__)
+                dll.cspm_comp_destroy(host)
+                self.host = None
+                return
+            # Both consuming returns end this fixture's pointer ownership. A
+            # timeout retains the native allocation; never retry or free it.
+            self.host = None
+            evidence = result.get("evidence")
+            if evidence is not None:
+                self.record("native-call-history", boundary=boundary + "-destruction",
+                    hostDestroyed=result["hostDestroyed"], hostRetained=result["hostRetained"], **evidence)
+            if result.get("evidenceError"):
+                context["failures"].append("native destruction evidence invalid: " + result["evidenceError"])
+            if result["hostRetained"]:
+                context["failures"].append("native destruction exceeded its bound; host safely retained")
+
         def complete(self):
             if self.finished:
                 return
@@ -1747,9 +1821,9 @@ Item {
                     self.live_visibility_transferred = False
                 self.unlock_input()
             if self.host:
+                self.record_native_calls("failure-cleanup" if context["failures"] else "fixture-cleanup")
                 self.record("native-present-history", **native_present_trace(dll, self.host))
-                dll.cspm_comp_destroy(self.host)
-                self.host = None
+                self.destroy_native_host("fixture-cleanup")
             for frame in self.frames:
                 dll.cspm_gpu_release(frame)
             self.frames.clear()
@@ -1822,7 +1896,7 @@ Item {
                     context["failures"].append("physical collector: " + str(exc))
             payload = {"configuration": vars(args), "dllHash": dll_hash,
                 "sourceProvenance": {"scope": "SHA-256 read at fixture startup, before application launch",
-                    "sources": source_provenance, "disposableMirror": mirror_provenance},
+                    "sources": source_provenance, "disposableMirror": mirror_provenance, "git": source_git},
                 "events": self.rows,
                 "profileBoundaries": sorted(self.boundary_rows, key=lambda row: row["t"]),
                 "fanoutCounts": self.fanout_rows,
@@ -1837,7 +1911,7 @@ Item {
                     if args.profile_boundaries else "not enabled"),
                 "completedCycles": self.completed, "failures": context["failures"],
                 "measurementScope": "GPU transfer and native status; physical geometry needs separate collector analysis",
-                "coldCandidateQualification": "FAIL" if context["failures"] else "NOT QUALIFYING" if args.prepared_target or args.capture_only or args.layout_only or args.source_observation_only or args.intrinsic_only or args.probe_endpoint or args.source_transfer_trace else "REQUIRES ALL PHYSICAL GATES",
+                "coldCandidateQualification": "FAIL" if context["failures"] else "NOT QUALIFYING" if args.prepared_target or args.capture_only or args.layout_only or args.source_observation_only or args.intrinsic_only or args.probe_endpoint or args.source_transfer_trace or args.native_call_trace else "REQUIRES ALL PHYSICAL GATES",
                 "presentationCpuReadbacks": 0, "presentationCpuUploads": 0,
                 "diagnosticTexelReadbacks": self.diagnostic_texel_readbacks}
             (audit / "native_gpu_spike.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

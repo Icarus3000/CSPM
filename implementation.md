@@ -1,5 +1,40 @@
 # Implementation History
 
+## 2026-10-08: Native Return/Wait Evidence Contract
+
+Continuation recovers clean branch/upstream/live remote `2b4dae7`. Preserved
+Productivity failures and native build brackets are independently checked.
+Historical desktop manifests lack contemporaneous Git HEAD; their measured
+sources match the checkpoint after newline normalization. New fixtures record
+HEAD, branch, working-tree cleanliness and exact source/DLL hashes explicitly.
+
+The 100 ms gate is the DXGI frame-latency availability wait before each native
+render. It is not target-import readiness, a revision event, DComp completion or
+physical observation. Its timeout and the 350/240 ms motion/transfer contract
+remain unchanged. Additive opt-in 152/896/230312-byte state/row/trace telemetry
+records exact call returns, immediate Win32 error, QPC intervals, resource/host
+generations, presentation/commit revisions, window/focus/thread state and metadata
+overhead. A bounded 256-row ring pins the first terminal failure separately;
+tolerated statistics failures remain visible without replacing that failure.
+
+New `native_call_contract.py` strictly validates ABI, counts, revisions, result
+semantics and identity. Final destruction evidence distinguishes an untouched
+rejection, successful delete and a safely retained timed-out host; post-delete
+metadata rejection cannot trigger another pointer use. The ordinary path has no
+trace allocation/window queries. Disposable `--preserve-foreground` skips fixture
+activation requests while keeping no-activation source positioning. This enables
+matched source-guard controls without changing Windows policy.
+
+Native/shader `/W4` build and no-window C++ contract pass. Sandbox-safe checks
+pass 760 tests with one real-window case deselected, thirteen privacy-scanner
+tests, Python compilation and whitespace checks; no source drift occurs during
+the full suite. Initial SDK desktop pairs pass ordinary-band marker/transfer
+checks but reject topmost live setup before transfer. Preserve those failed
+runs and record setup results independently before drawing a cause. Populated
+desktop controls remain pending at this milestone. No new WebEngine validation,
+package, install, production/data/default change or Cory acceptance is claimed.
+All new output stays on Y:, and historical evidence remains intact.
+
 ## 2026-10-08: Source Transfer Boundary And Current Productivity Result
 
 After pushed probe checkpoint `0fe51f2`, opt-in 192-byte source-transfer and

@@ -1,5 +1,38 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-08: Exact Native Call/Wait Contract
+
+**PROVEN BY SOURCE INSPECTION:** the separate 100 ms gate is a single worker's
+DXGI frame-latency availability wait before every render, including stopped
+source submission. It begins when that wait is invoked and precedes trajectory
+sampling. It does not wait for target import, a revision-keyed notification,
+DComp completion, a fence or desktop observation. Historical generic rejection
+still cannot be classified as WAIT_TIMEOUT because its exact return is absent.
+
+**SUPPORTED BY OBSERVATION:** source-band worker ordering passes selected full
+app runs and foreground-false SDK controls, while the Qt guarded repeat rejects.
+The fixture couples source positioning with activation unless explicitly
+suppressed. A new foreground-preserving fixture control separates that setup
+choice while retaining the actual observed foreground state.
+
+Opt-in bounded native call tracing retains QPC start/return, exact result and
+immediate GetLastError, wait/mutex state, revisions, adapter/device/swapchain
+identities, caller/GUI/worker ownership and four window-state snapshots. Metadata
+overhead is distinct from the API interval. A pinned terminal failure survives
+ring wrap and tolerable statistics failures. An additive destroy-and-copy export
+collects the final teardown wait before deletion or safe timeout retention.
+Default behavior, native motion, target deadline and slot timeout are unchanged.
+
+**STILL UNKNOWN:** the real hidden-band cause, historical wait return, current
+repeat reliability and complete cold qualification. Instrumentation itself is
+not a root-cause repair or motion-quality pass. Native/shader `/W4` build,
+no-window C++ contract, 760 safe tests (one real-window deselection), thirteen
+privacy-scanner tests, compilation and whitespace pass. New SDK pairs both
+pass ordinary-band source/transfer markers but reject topmost live setup before
+the native host exists. Exact setup-call/state recording is added to preserve
+that earlier first failing boundary. Populated pairs remain pending.
+Production stays unchanged. **Not yet accepted by Cory.**
+
 ## 2026-10-08: Owned Transfer And Productivity Continuation
 
 **PROVEN BY MEASUREMENT:** the passive original Productivity source boundary

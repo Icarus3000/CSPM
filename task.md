@@ -1,5 +1,15 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-08: Native Return/Wait Investigation Continuation
+
+- [x] Recover clean local/upstream/live remote `2b4dae7fe880eedf4708b761c029894da4265a71`, all worktrees/four stashes, ignored helpers and preserved failed runs. Verify worker DLL/build hashes and the 29 startup source snapshots; historical desktop-time HEAD is unrecorded, while normalized source maps to the checkpoint.
+- [x] Establish the unchanged 100 ms gate as DXGI frame-latency availability before each render, separate from target import and desktop observation. Add opt-in bounded native API/result/QPC/revision/window/thread telemetry, immediate GetLastError preservation, metadata-overhead reporting and a pinned first terminal failure.
+- [x] Add additive destruction-with-trace ownership outcomes: rejected untouched, completed/deleted, or bounded timeout/safely retained. Record teardown wait evidence before releasing the native allocation.
+- [x] Add a disposable foreground-preserving control and fixture-start Git state. Foreground ownership remains observed; source-band, physical pixel and input gates are unchanged.
+- [x] Validate 760 sandbox-safe tests (prior 611 baseline plus five integration and 144 native evidence cases), one explicit real-window deselection, thirteen privacy-scanner tests, Python compilation, native/shader `/W4` build and no-window C++ contract. Preserve initial synthetic setup rejections separately.
+- [ ] Checkpoint/push exact reviewed source and run matched guarded/unguarded source-only and cold populated controls. No root cause or full qualification is claimed from instrumentation alone.
+- [ ] Repair only measured native defects, then complete cold motion/input/WebEngine/reduced-motion/lifecycle/DPI qualification before package/install. Production and Cory's P0 acceptance remain unchanged.
+
 ## 2026-10-08: Owned Source Transfer And Productivity Readiness
 
 - [x] Preserve pushed probe-contract checkpoint `0fe51f2` and every historical report unchanged; inspect disposable runtime logs before continuing.

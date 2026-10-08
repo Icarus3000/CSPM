@@ -8,6 +8,7 @@
 #include <d3dcompiler.h>
 #include <dxgi1_2.h>
 #include <dxgi1_3.h>
+#include <dxgi1_4.h>
 #include <dcomp.h>
 #include <wrl/client.h>
 #include <algorithm>
@@ -25,6 +26,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
 
 using Microsoft::WRL::ComPtr;
 #define EXPORT extern "C" __declspec(dllexport)
@@ -136,6 +138,55 @@ struct SourceWindowPosTrace {
     SourceWindowPosRow rows[16]{};
 };
 static_assert(sizeof(SourceWindowPosTrace)==1048,"Diagnostic source WINDOWPOS trace ABI layout");
+// Opt-in local evidence. Window handles/thread IDs are never public identities;
+// callers must sanitize them before publishing aggregates. No wait-state probe
+// is performed: probing a DXGI availability event could consume its signal.
+enum NativeCall : uint32_t {
+    NativeFrameSlotWait=1,NativeSourceBandPosition=2,NativeBeginVisibilityBatch=3,
+    NativeDeferLiveHide=4,NativeDeferNativeShow=5,NativeEndVisibilityBatch=6,
+    NativeCompositionCommit=7,NativeCommitCompletion=8,NativeSourceShow=9,
+    NativeWitnessPosition=10,NativeAcquireSharedMutex=11,NativeReleaseSharedMutex=12,
+    NativePresent=13,NativeLastPresentCount=14,NativeFrameStatistics=15,
+    NativeGetBuffer=16,NativeOpenSharedResource=17,NativeCreateOwnedTexture=18,
+    NativeCreateOwnedView=19,NativeCreateRenderTarget=20,NativeCommandPost=21,
+    NativeCommandCompletion=22,NativeDestroyPost=23,NativeDestroyWait=24,
+    NativeHideHost=25,NativeSetTimer=26,NativeValidateSourceBand=27
+};
+struct NativeWindowState {
+    uint64_t window=0,foreground=0,focus=0,active=0,owner=0;
+    uint32_t thread=0,process=0,foregroundThread=0,foregroundProcess=0;
+    uint32_t guiFlags=0,valid=0,visible=0,iconic=0,zoomed=0,cloaked=0;
+    uint32_t cloakHRESULT=uint32_t(E_NOTIMPL),style=0,exstyle=0,queryErrors=0;
+    int32_t windowRect[4]{},clientRect[4]{},workRect[4]{};
+    uint32_t dpi=0,reserved=0;
+};
+static_assert(sizeof(NativeWindowState)==152,"Diagnostic native window state ABI layout");
+struct NativeCallRow {
+    uint32_t version=1,byteSize=896,call=0,phase=0;
+    uint64_t sequence=0,startQpc=0,returnQpc=0,qpcFrequency=0;
+    double beginSeconds=0,returnSeconds=0;
+    uint32_t result=0,win32Error=0,lastErrorApplicable=0,timeoutMs=0;
+    uint32_t waitStateBefore=0,waitStateAfter=0,alertable=0,flagsBefore=0;
+    uint32_t flagsAfter=0,currentThread=0,guiThread=0,workerThread=0;
+    uint32_t expectedPresentId=0,submittedBefore=0,submittedAfter=0,displayedBefore=0;
+    uint32_t displayedAfter=0,statisticsHRESULT=0,bufferIndex=UINT32_MAX,bufferCount=2;
+    uint64_t expectedHostGeneration=0,hostGeneration=0,expectedSourceGeneration=0,sourceGeneration=0;
+    uint64_t expectedTargetGeneration=0,targetGeneration=0,commitBefore=0,commitAfter=0;
+    uint64_t adapterIdentity=0,deviceIdentity=0,swapchainIdentity=0,waitIdentity=0;
+    uint64_t sourceResourceIdentity=0,targetResourceIdentity=0,keyedMutexKey=0;
+    uint32_t keyedMutexState=0,fenceState=0,beforeMotion=0,diagnosticOverheadUs=0;
+    NativeWindowState nativeBefore,nativeAfter,liveBefore,liveAfter;
+    int64_t adapterLuid=0;
+};
+static_assert(sizeof(NativeCallRow)==896,"Diagnostic native call row ABI layout");
+struct NativeCallTrace {
+    uint32_t version=1,byteSize=230312,rowByteSize=896,count=0;
+    uint64_t totalRows=0,droppedRows=0;
+    uint32_t enabled=0,hasFirstFailure=0;
+    NativeCallRow firstFailure;
+    NativeCallRow rows[256]{};
+};
+static_assert(sizeof(NativeCallTrace)==230312,"Diagnostic native call trace ABI layout");
 struct Constants {
     float currentRect[4],sourceRect[4],targetRect[4],sizes[4],motion[4];
     float witnessRect[4],witnessColor[4];
@@ -182,6 +233,9 @@ bool probeIdentityMatches(const ProbeIdentity& identity,unsigned phase,const Obs
         identity.presentReturnSeconds==observation.lastPresentReturnSeconds &&
         identity.motion==observation.lastFrameMotion && identity.content==observation.lastFrameContent;
 }
+struct Host;
+template<class F> auto nativeInvoke(Host& h,NativeCall operation,unsigned timeout,uint64_t expectedFrame,
+                                   uint64_t mutexKey,bool usesLastError,F function)->decltype(function());
 struct Host {
     HWND hwnd=nullptr;
     std::thread worker;
@@ -193,6 +247,19 @@ struct Host {
     bool sourceTransferTraceEnabled=false;
     std::atomic<bool> sourceTransferTraceActive{false};
     std::atomic<HWND> sourceTransferLive{nullptr};
+    std::atomic<bool> nativeCallTraceEnabled{false};
+    std::mutex nativeCallTraceMutex;
+    std::unique_ptr<NativeCallTrace> nativeCallTrace;
+    uint64_t nativeQpcFrequency=0,adapterIdentity=0,deviceIdentity=0,swapchainIdentity=0,waitIdentity=0;
+    int64_t adapterLuid=0;
+    std::atomic<uint64_t> compositionCommitRevision{0};
+    std::atomic<uint32_t> workerThreadId{0},liveGuiThreadId{0};
+    std::atomic<HWND> diagnosticLive{nullptr};
+    HWND diagnosticNative=nullptr; // Immutable after trace setup, including shutdown.
+    ComPtr<IDXGISwapChain3> diagnosticSwapchain;
+    HMODULE diagnosticDwm=nullptr;
+    using DwmAttribute=HRESULT(WINAPI*)(HWND,DWORD,PVOID,DWORD);
+    DwmAttribute diagnosticDwmAttribute=nullptr;
     PresentObservation presentRows[128]{};
     uint64_t totalPresentRows=0;
     std::deque<std::function<void()>> queue;
@@ -233,6 +300,7 @@ struct Host {
     // Published by the authorized live GUI owner before native visibility
     // transfer; the stopped worker raise consumes that same source policy.
     std::atomic<bool> sourceTopmost{false},sourceBandKnown{false};
+    ~Host() { if(diagnosticDwm) FreeLibrary(diagnosticDwm); }
     template<class F> void observe(F writer) {
         std::lock_guard<std::mutex> lock(observationMutex);
         writer(observation); ++observation.sequence;
@@ -253,15 +321,152 @@ struct Host {
               try { function(); promise->set_value(1); }
               catch(const std::exception& ex) { fail(ex.what()); promise->set_value(0); }
           }); }
-        if(!PostMessageW(hwnd,WM_APP+1,0,0)) {
+        if(!nativeInvoke(*this,NativeCommandPost,0,0,0,true,[&] { return PostMessageW(hwnd,WM_APP+1,0,0); })) {
             cancelled->store(true); fail("Native command PostMessageW failed"); return 0;
         }
-        if(future.wait_for(std::chrono::seconds(2))!=std::future_status::ready) {
+        if(nativeInvoke(*this,NativeCommandCompletion,2000,0,0,false,[&] {
+                return future.wait_for(std::chrono::seconds(2)); })!=std::future_status::ready) {
             cancelled->store(true); fail("Native command exceeded bounded 2000 ms completion"); return 0;
         }
         return future.get();
     }
 };
+void nativeWindowState(Host& h,HWND window,NativeWindowState& row) {
+    row.window=uint64_t(uintptr_t(window));
+    row.foreground=uint64_t(uintptr_t(GetForegroundWindow()));
+    DWORD foregroundProcess=0,process=0;
+    row.foregroundThread=GetWindowThreadProcessId(reinterpret_cast<HWND>(uintptr_t(row.foreground)),&foregroundProcess);
+    row.foregroundProcess=foregroundProcess;
+    if(!window || !IsWindow(window)) { row.queryErrors|=1; return; }
+    row.valid=1; row.thread=GetWindowThreadProcessId(window,&process); row.process=process;
+    row.visible=IsWindowVisible(window)!=FALSE; row.iconic=IsIconic(window)!=FALSE;
+    row.zoomed=IsZoomed(window)!=FALSE; row.owner=uint64_t(uintptr_t(GetWindow(window,GW_OWNER)));
+    row.style=uint32_t(GetWindowLongPtrW(window,GWL_STYLE));
+    row.exstyle=uint32_t(GetWindowLongPtrW(window,GWL_EXSTYLE));
+    GUITHREADINFO gui{}; gui.cbSize=sizeof(gui);
+    if(GetGUIThreadInfo(row.thread,&gui)) {
+        row.guiFlags=gui.flags; row.focus=uint64_t(uintptr_t(gui.hwndFocus));
+        row.active=uint64_t(uintptr_t(gui.hwndActive));
+    } else row.queryErrors|=2;
+    RECT rect{};
+    if(GetWindowRect(window,&rect)) memcpy(row.windowRect,&rect,sizeof(rect));
+    else row.queryErrors|=4;
+    if(GetClientRect(window,&rect)) {
+        POINT origin{rect.left,rect.top};
+        if(ClientToScreen(window,&origin)) {
+            row.clientRect[0]=origin.x; row.clientRect[1]=origin.y;
+            row.clientRect[2]=origin.x+rect.right-rect.left;
+            row.clientRect[3]=origin.y+rect.bottom-rect.top;
+        } else row.queryErrors|=8;
+    } else row.queryErrors|=8;
+    MONITORINFO monitor{}; monitor.cbSize=sizeof(monitor);
+    if(GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor))
+        memcpy(row.workRect,&monitor.rcWork,sizeof(monitor.rcWork));
+    else row.queryErrors|=16;
+    row.dpi=GetDpiForWindow(window);
+    if(h.diagnosticDwmAttribute)
+        row.cloakHRESULT=uint32_t(h.diagnosticDwmAttribute(window,14,&row.cloaked,sizeof(row.cloaked)));
+    if(FAILED(HRESULT(row.cloakHRESULT))) row.queryErrors|=32;
+}
+uint32_t nativeWaitState(DWORD result) {
+    if(result==WAIT_OBJECT_0) return 1;
+    if(result==WAIT_TIMEOUT) return 2;
+    if(result==WAIT_FAILED) return 3;
+    if(result==WAIT_ABANDONED_0) return 4;
+    return 5;
+}
+bool nativeCallFailed(uint32_t call,uint32_t result) {
+    switch(call) {
+    case NativeFrameSlotWait: case NativeDestroyWait: return result!=WAIT_OBJECT_0;
+    case NativeCommandCompletion: return result!=uint32_t(std::future_status::ready);
+    case NativeAcquireSharedMutex: return result!=uint32_t(S_OK);
+    case NativeReleaseSharedMutex: case NativeCompositionCommit: case NativeCommitCompletion:
+    case NativePresent: case NativeLastPresentCount: case NativeFrameStatistics: case NativeGetBuffer:
+    case NativeOpenSharedResource: case NativeCreateOwnedTexture: case NativeCreateOwnedView:
+    case NativeCreateRenderTarget: return FAILED(HRESULT(result));
+    case NativeHideHost: return false; // ShowWindow returns prior visibility, not success.
+    default: return result==0;
+    }
+}
+void nativeStoreCall(Host& h,NativeCallRow row) {
+    std::lock_guard<std::mutex> lock(h.nativeCallTraceMutex);
+    auto& trace=*h.nativeCallTrace;
+    row.sequence=++trace.totalRows;
+    trace.rows[(row.sequence-1)%256]=row;
+    trace.count=unsigned(std::min(trace.totalRows,uint64_t(256)));
+    trace.droppedRows=trace.totalRows-trace.count;
+    // These optional statistics failures are retained rows, not failures of
+    // the transaction (DISJOINT is expected before stable statistics exist).
+    if(!trace.hasFirstFailure && row.call!=NativeFrameStatistics && row.call!=NativeLastPresentCount &&
+       nativeCallFailed(row.call,row.result)) {
+        trace.firstFailure=row; trace.hasFirstFailure=1;
+    }
+}
+template<class F> auto nativeInvoke(Host& h,NativeCall operation,unsigned timeout,uint64_t expectedFrame,
+                                   uint64_t mutexKey,bool usesLastError,F function)->decltype(function()) {
+    if(!h.nativeCallTraceEnabled.load()) return function();
+    LARGE_INTEGER diagnosticBegin{}; QueryPerformanceCounter(&diagnosticBegin);
+    NativeCallRow row;
+    row.call=operation; row.timeoutMs=timeout; row.lastErrorApplicable=usesLastError;
+    row.flagsBefore=h.flags.load(); row.beforeMotion=!(row.flagsBefore&2);
+    row.phase=operation>=NativeDestroyPost && operation<=NativeHideHost ? 5u :
+        (operation>=NativeSourceBandPosition && operation<=NativeEndVisibilityBatch) || operation==NativeValidateSourceBand ? 2u :
+        (row.flagsBefore&2) && ((operation>=NativeAcquireSharedMutex && operation<=NativeReleaseSharedMutex) ||
+            (operation>=NativeOpenSharedResource && operation<=NativeCreateOwnedView)) ? 4u :
+        (row.flagsBefore&2) ? 3u : 1u;
+    row.currentThread=GetCurrentThreadId(); row.guiThread=h.liveGuiThreadId.load();
+    row.workerThread=h.workerThreadId.load(); row.expectedHostGeneration=row.hostGeneration=h.generation;
+    // Resources are only inspected on their owning worker. GUI dispatch rows
+    // never read source/destination COM resources while imports can mutate them.
+    if(row.currentThread==row.workerThread) {
+        row.sourceGeneration=h.source.frameRevision; row.targetGeneration=h.destination.frameRevision;
+        row.sourceResourceIdentity=h.source.resourceIdentity; row.targetResourceIdentity=h.destination.resourceIdentity;
+        if(h.diagnosticSwapchain) row.bufferIndex=h.diagnosticSwapchain->GetCurrentBackBufferIndex();
+    }
+    row.expectedSourceGeneration=row.sourceGeneration;
+    row.expectedTargetGeneration=row.targetGeneration;
+    if(expectedFrame) {
+        if(row.flagsBefore&1) row.expectedTargetGeneration=expectedFrame;
+        else row.expectedSourceGeneration=expectedFrame;
+    }
+    row.commitBefore=h.compositionCommitRevision.load(); row.keyedMutexKey=mutexKey;
+    row.adapterIdentity=h.adapterIdentity; row.deviceIdentity=h.deviceIdentity;
+    row.swapchainIdentity=h.swapchainIdentity; row.waitIdentity=h.waitIdentity; row.adapterLuid=h.adapterLuid;
+    row.submittedBefore=h.submittedCount.load();
+    row.expectedPresentId=row.submittedBefore+
+        ((operation==NativeFrameSlotWait || operation==NativeGetBuffer || operation==NativeCreateRenderTarget ||
+          operation==NativePresent || operation==NativeLastPresentCount) ? 1u : 0u);
+    row.displayedBefore=h.displayedCount.load();
+    const HWND live=h.diagnosticLive.load();
+    nativeWindowState(h,h.diagnosticNative,row.nativeBefore); nativeWindowState(h,live,row.liveBefore);
+    LARGE_INTEGER counter{}; QueryPerformanceCounter(&counter);
+    row.startQpc=uint64_t(counter.QuadPart); row.qpcFrequency=h.nativeQpcFrequency;
+    row.beginSeconds=double(row.startQpc)/double(row.qpcFrequency);
+    const auto result=function();
+    // This is the first operation after the native return. QPC, window queries,
+    // locks, formatting and throwing cannot replace the captured Win32 error.
+    const DWORD immediateError=GetLastError();
+    QueryPerformanceCounter(&counter); row.returnQpc=uint64_t(counter.QuadPart);
+    row.returnSeconds=double(row.returnQpc)/double(row.qpcFrequency);
+    if constexpr(std::is_pointer_v<decltype(result)>) row.result=result ? 1u : 0u;
+    else row.result=uint32_t(result);
+    row.win32Error=immediateError;
+    row.flagsAfter=h.flags.load(); row.submittedAfter=h.submittedCount.load();
+    row.displayedAfter=h.displayedCount.load(); row.statisticsHRESULT=h.statisticsResult.load();
+    if(operation==NativeCompositionCommit && SUCCEEDED(HRESULT(row.result))) ++h.compositionCommitRevision;
+    row.commitAfter=h.compositionCommitRevision.load();
+    if(operation==NativeFrameSlotWait || operation==NativeDestroyWait) row.waitStateAfter=nativeWaitState(row.result);
+    if(operation==NativeAcquireSharedMutex) row.keyedMutexState=row.result==S_OK ? 1u : 2u;
+    if(operation==NativeReleaseSharedMutex) row.keyedMutexState=SUCCEEDED(HRESULT(row.result)) ? 3u : 4u;
+    nativeWindowState(h,h.diagnosticNative,row.nativeAfter); nativeWindowState(h,live,row.liveAfter);
+    LARGE_INTEGER diagnosticEnd{}; QueryPerformanceCounter(&diagnosticEnd);
+    const uint64_t metadataTicks=(row.startQpc-uint64_t(diagnosticBegin.QuadPart))+
+        (uint64_t(diagnosticEnd.QuadPart)-row.returnQpc);
+    row.diagnosticOverheadUs=uint32_t(std::min(uint64_t(UINT32_MAX),metadataTicks*1000000/row.qpcFrequency));
+    nativeStoreCall(h,row);
+    SetLastError(immediateError); // Preserve existing caller failure checks too.
+    return result;
+}
 uint32_t windowOwnerRelation(HWND window,HWND live,HWND native) {
     const HWND owner=GetWindow(window,GW_OWNER);
     if(!owner) return 0;
@@ -282,6 +487,10 @@ uint32_t windowInsertBand(HWND after,HWND live) {
     return process==GetCurrentProcessId() ? 5u : 6u;
 }
 void sourceTransferEntry(Host& h,HWND live) {
+    if(h.nativeCallTraceEnabled.load()) {
+        h.diagnosticLive.store(live);
+        h.liveGuiThreadId.store(GetWindowThreadProcessId(live,nullptr));
+    }
     if(!h.sourceTransferTraceEnabled) return;
     SourceTransferObservation row;
     row.hostGeneration=h.generation; row.stage=1; row.traceEnabled=1;
@@ -322,10 +531,12 @@ void applyOwnedSourceBand(Host& h,bool expectedVisible) {
             IsWindowVisible(h.hwnd)!=FALSE,expectedVisible,owned))
         throw std::runtime_error("Source band operation requires its native owner thread and stopped prepared visibility state");
     const bool sourceTopmost=h.sourceTopmost.load();
-    if(!SetWindowPos(h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+    if(!nativeInvoke(h,NativeSourceBandPosition,0,0,0,true,[&] {
+            return SetWindowPos(h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE); }))
         throw std::runtime_error("Stopped source host z-order unavailable");
-    if(!sourceVisibilityBandMatches(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE),sourceTopmost) ||
-            (IsWindowVisible(h.hwnd)!=FALSE)!=expectedVisible)
+    if(!nativeInvoke(h,NativeValidateSourceBand,0,0,0,false,[&] {
+            return sourceVisibilityBandMatches(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE),sourceTopmost) &&
+                (IsWindowVisible(h.hwnd)!=FALSE)==expectedVisible; }))
         throw std::runtime_error("Stopped source band operation did not preserve the owned live window band and visibility");
 }
 void sourceTransferExit(Host& h,HWND live,uint32_t stage,DWORD error=0) {
@@ -406,7 +617,7 @@ float4 pixel(float4 pos:SV_Position):SV_Target {
 )HLSL";
 void statistics(Host& h) {
     DXGI_FRAME_STATISTICS stats{};
-    const HRESULT hr=h.swapchain->GetFrameStatistics(&stats);
+    const HRESULT hr=nativeInvoke(h,NativeFrameStatistics,0,0,0,false,[&] { return h.swapchain->GetFrameStatistics(&stats); });
     h.statisticsResult=unsigned(hr);
     if(SUCCEEDED(hr)) {
         h.displayedCount=stats.PresentCount;
@@ -421,7 +632,9 @@ void render(Host& h,bool initial=false) {
             KillTimer(h.hwnd,1);
         return;
     }
-    if(WaitForSingleObjectEx(h.frameReady,100,FALSE)!=WAIT_OBJECT_0)
+    const DWORD slotResult=nativeInvoke(h,NativeFrameSlotWait,100,0,0,true,[&] {
+        return WaitForSingleObjectEx(h.frameReady,100,FALSE); });
+    if(slotResult!=WAIT_OBJECT_0)
         throw std::runtime_error("Native DXGI presentation slot missed bounded 100 ms readiness");
     // Query time only after the previous frame's presentation slot is ready.
     // A delayed slot skips stale samples rather than changing the trajectory.
@@ -456,9 +669,11 @@ void render(Host& h,bool initial=false) {
     }
     h.context->UpdateSubresource(h.constants.Get(),0,nullptr,&c,0,0);
     ComPtr<ID3D11Texture2D> buffer;
-    check(h.swapchain->GetBuffer(0,__uuidof(ID3D11Texture2D),&buffer),"Swapchain.GetBuffer");
+    check(nativeInvoke(h,NativeGetBuffer,0,0,0,false,[&] {
+        return h.swapchain->GetBuffer(0,__uuidof(ID3D11Texture2D),&buffer); }),"Swapchain.GetBuffer");
     ComPtr<ID3D11RenderTargetView> view;
-    check(h.gpu->CreateRenderTargetView(buffer.Get(),nullptr,&view),"Create presentation RTV");
+    check(nativeInvoke(h,NativeCreateRenderTarget,0,0,0,false,[&] {
+        return h.gpu->CreateRenderTargetView(buffer.Get(),nullptr,&view); }),"Create presentation RTV");
     const float clear[]={0,0,0,0}; h.context->ClearRenderTargetView(view.Get(),clear);
     ID3D11RenderTargetView* renderTarget=view.Get(); h.context->OMSetRenderTargets(1,&renderTarget,nullptr);
     D3D11_VIEWPORT viewport{0,0,float(h.hostWidth),float(h.hostHeight),0,1};
@@ -476,10 +691,11 @@ void render(Host& h,bool initial=false) {
     const double snapshotQueued=copyStoppedProbe ? nowSeconds() : 0;
     if(copyStoppedProbe) h.context->CopyResource(h.lastSubmittedTexture.Get(),buffer.Get());
     const double presentBegin=nowSeconds();
-    const HRESULT presentResult=h.swapchain->Present(1,0);
+    const HRESULT presentResult=nativeInvoke(h,NativePresent,0,0,0,false,[&] { return h.swapchain->Present(1,0); });
     const double presentReturn=nowSeconds();
     UINT submitted=0;
-    if(SUCCEEDED(h.swapchain->GetLastPresentCount(&submitted))) h.submittedCount=submitted;
+    if(SUCCEEDED(nativeInvoke(h,NativeLastPresentCount,0,0,0,false,[&] {
+            return h.swapchain->GetLastPresentCount(&submitted); }))) h.submittedCount=submitted;
     h.observe([&](Observation& observation) {
         observation.lastPresentBeginSeconds=presentBegin;
         observation.lastPresentReturnSeconds=presentReturn;
@@ -562,6 +778,7 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
     return DefWindowProcW(hwnd,message,w,l);
 }
 void initialize(Host& h,IDXGIAdapter* adapter,int left,int top,int width,int height) {
+    h.workerThreadId.store(GetCurrentThreadId());
     check(CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED),"CoInitializeEx"); h.apartment=true;
     WNDCLASSW wc{}; wc.lpfnWndProc=procedure; wc.hInstance=GetModuleHandleW(nullptr);
     wc.lpszClassName=L"CSPMExperimentalDirectCompositionShader";
@@ -622,20 +839,22 @@ void releaseResources(Host& h) {
     h.vertexShader.Reset(); h.pixelShader.Reset(); h.constants.Reset(); h.sampler.Reset();
     if(h.frameReady) { CloseHandle(h.frameReady); h.frameReady=nullptr; }
     h.swapchain.Reset(); h.compositor.Reset(); h.context.Reset(); h.gpu.Reset();
+    h.diagnosticSwapchain.Reset();
     if(h.hwnd && IsWindow(h.hwnd)) DestroyWindow(h.hwnd);
     h.hwnd=nullptr;
     if(h.apartment) { CoUninitialize(); h.apartment=false; }
 }
 Pixels copyPixels(Host& h,Frame& frame) {
     ComPtr<ID3D11Texture2D> opened;
-    check(h.gpu->OpenSharedResource(frame.sharedHandle,__uuidof(ID3D11Texture2D),&opened),"OpenSharedResource");
+    check(nativeInvoke(h,NativeOpenSharedResource,0,frame.revision,0,false,[&] {
+        return h.gpu->OpenSharedResource(frame.sharedHandle,__uuidof(ID3D11Texture2D),&opened); }),"OpenSharedResource");
     D3D11_TEXTURE2D_DESC openedDesc{}; opened->GetDesc(&openedDesc);
     if(openedDesc.Width!=frame.desc.Width || openedDesc.Height!=frame.desc.Height ||
        openedDesc.Format!=frame.desc.Format || openedDesc.MipLevels!=1 || openedDesc.ArraySize!=1 ||
        openedDesc.SampleDesc.Count!=1)
         throw std::runtime_error("Shared GPU frame dimensions/format mismatch");
     ComPtr<IDXGIKeyedMutex> mutex; check(opened.As(&mutex),"Shared texture keyed mutex");
-    if(mutex->AcquireSync(1,40)!=S_OK)
+    if(nativeInvoke(h,NativeAcquireSharedMutex,40,frame.revision,1,false,[&] { return mutex->AcquireSync(1,40); })!=S_OK)
         throw std::runtime_error("GPU synchronization: shared texture AcquireSync missed 40 ms bound");
     Pixels pixels;
     try {
@@ -643,13 +862,17 @@ Pixels copyPixels(Host& h,Frame& frame) {
         desc.BindFlags=D3D11_BIND_SHADER_RESOURCE; desc.MiscFlags=0;
         pixels.width=desc.Width; pixels.height=desc.Height;
         pixels.frameRevision=frame.revision; pixels.resourceIdentity=++nextResourceIdentity;
-        check(h.gpu->CreateTexture2D(&desc,nullptr,&pixels.texture),"Create native owned GPU frame");
+        check(nativeInvoke(h,NativeCreateOwnedTexture,0,frame.revision,1,false,[&] {
+            return h.gpu->CreateTexture2D(&desc,nullptr,&pixels.texture); }),"Create native owned GPU frame");
         // CopyResource copies identical extents; no atlas offset/destination
         // subrectangle remains to exceed the resource bounds.
         h.context->CopyResource(pixels.texture.Get(),opened.Get()); h.context->Flush();
-        check(h.gpu->CreateShaderResourceView(pixels.texture.Get(),nullptr,&pixels.view),"Create GPU frame SRV");
-        check(mutex->ReleaseSync(1),"Shared texture ReleaseSync(immutable)");
-    } catch(...) { mutex->ReleaseSync(1); throw; }
+        check(nativeInvoke(h,NativeCreateOwnedView,0,frame.revision,1,false,[&] {
+            return h.gpu->CreateShaderResourceView(pixels.texture.Get(),nullptr,&pixels.view); }),"Create GPU frame SRV");
+        check(nativeInvoke(h,NativeReleaseSharedMutex,0,frame.revision,1,false,[&] {
+            return mutex->ReleaseSync(1); }),"Shared texture ReleaseSync(immutable)");
+    } catch(...) { nativeInvoke(h,NativeReleaseSharedMutex,0,frame.revision,1,false,[&] {
+        return mutex->ReleaseSync(1); }); throw; }
     return pixels;
 }
 void validateRect(const Host& h,float x,float y,float width,float height) {
@@ -701,6 +924,59 @@ void probeTexels(Host& h,ID3D11Texture2D* texture,const int* xy,unsigned count,
 }
 
 EXPORT unsigned cspm_comp_abi_version() { return 1; }
+EXPORT int cspm_comp_enable_native_call_trace(void* pointer) {
+    if(!pointer) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    return h.call([&h] {
+        if(h.flags.load() || h.source.texture || h.nativeCallTraceEnabled.load())
+            throw std::runtime_error("Native call trace must be enabled once before source preparation");
+        h.nativeCallTrace=std::make_unique<NativeCallTrace>();
+        h.nativeCallTrace->enabled=1;
+        LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency);
+        h.nativeQpcFrequency=uint64_t(frequency.QuadPart);
+        h.diagnosticNative=h.hwnd;
+        h.adapterIdentity=++nextResourceIdentity; h.deviceIdentity=++nextResourceIdentity;
+        h.swapchainIdentity=++nextResourceIdentity; h.waitIdentity=++nextResourceIdentity;
+        ComPtr<IDXGIDevice> dxgi;
+        check(h.gpu.As(&dxgi),"Diagnostic device adapter query");
+        ComPtr<IDXGIAdapter> adapter;
+        check(dxgi->GetAdapter(&adapter),"Diagnostic adapter identity");
+        DXGI_ADAPTER_DESC desc{}; check(adapter->GetDesc(&desc),"Diagnostic adapter LUID");
+        memcpy(&h.adapterLuid,&desc.AdapterLuid,sizeof(desc.AdapterLuid));
+        h.swapchain.As(&h.diagnosticSwapchain); // Unsupported index is UINT32_MAX.
+        h.diagnosticDwm=LoadLibraryW(L"dwmapi.dll");
+        if(h.diagnosticDwm)
+            h.diagnosticDwmAttribute=reinterpret_cast<Host::DwmAttribute>(
+                GetProcAddress(h.diagnosticDwm,"DwmGetWindowAttribute"));
+        h.nativeCallTraceEnabled.store(true);
+    });
+}
+EXPORT int cspm_comp_set_native_trace_live(void* pointer,uintptr_t livePointer) {
+    if(!pointer || !livePointer) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    if(!h.nativeCallTraceEnabled.load() || (h.flags.load()&(2|16))) return 0;
+    const HWND live=reinterpret_cast<HWND>(livePointer);
+    DWORD process=0; const DWORD thread=GetWindowThreadProcessId(live,&process);
+    if(!IsWindow(live) || process!=GetCurrentProcessId() || thread!=GetCurrentThreadId()) return 0;
+    h.diagnosticLive.store(live); h.liveGuiThreadId.store(thread);
+    return 1;
+}
+EXPORT int cspm_comp_native_call_trace(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(NativeCallTrace)) return 0;
+    auto* result=static_cast<NativeCallTrace*>(output);
+    if(result->version!=1 || result->byteSize!=sizeof(NativeCallTrace) ||
+       result->rowByteSize!=sizeof(NativeCallRow)) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    std::lock_guard<std::mutex> lock(h.nativeCallTraceMutex);
+    if(!h.nativeCallTraceEnabled.load() || !h.nativeCallTrace) return 0;
+    const auto& trace=*h.nativeCallTrace;
+    result->count=trace.count; result->totalRows=trace.totalRows; result->droppedRows=trace.droppedRows;
+    result->enabled=trace.enabled; result->hasFirstFailure=trace.hasFirstFailure; result->firstFailure=trace.firstFailure;
+    const auto first=trace.totalRows>256 ? trace.totalRows%256 : 0;
+    for(unsigned i=0;i<trace.count;++i) result->rows[i]=trace.rows[(first+i)%256];
+    for(unsigned i=trace.count;i<256;++i) result->rows[i]=NativeCallRow{};
+    return 1;
+}
 EXPORT int cspm_comp_enable_probe_snapshot(void* pointer) {
     if(!pointer) return 0;
     auto& h=*static_cast<Host*>(pointer);
@@ -928,20 +1204,22 @@ EXPORT int cspm_comp_transfer_source_visibility(void* pointer,uintptr_t livePoin
         return rejected("Source visibility band changed before the prepared GUI batch",11);
     const double began=nowSeconds();
     sourceTransferObserve(h,[&](SourceTransferObservation& row) { row.beginBatchSeconds=began; });
-    HDWP batch=BeginDeferWindowPos(2);
+    HDWP batch=nativeInvoke(h,NativeBeginVisibilityBatch,0,0,0,true,[&] { return BeginDeferWindowPos(2); });
     if(!batch) return rejected("Begin source visibility batch failed",3,GetLastError());
     sourceTransferObserve(h,[](SourceTransferObservation& row) { row.beginAccepted=1; });
-    batch=DeferWindowPos(batch,live,nullptr,0,0,0,0,
-        SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_HIDEWINDOW);
+    batch=nativeInvoke(h,NativeDeferLiveHide,0,0,0,true,[&] {
+        return DeferWindowPos(batch,live,nullptr,0,0,0,0,
+            SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_HIDEWINDOW); });
     if(!batch) return rejected("Defer live source hide failed",4,GetLastError());
     sourceTransferObserve(h,[](SourceTransferObservation& row) { row.liveDeferAccepted=1; });
-    batch=DeferWindowPos(batch,h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,
-        SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+    batch=nativeInvoke(h,NativeDeferNativeShow,0,0,0,true,[&] {
+        return DeferWindowPos(batch,h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,
+            SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW); });
     if(!batch) return rejected("Defer native source reveal failed",5,GetLastError());
     sourceTransferObserve(h,[](SourceTransferObservation& row) { row.nativeDeferAccepted=1; });
     const double endBegin=h.sourceTransferTraceEnabled ? nowSeconds() : 0;
     sourceTransferObserve(h,[&](SourceTransferObservation& row) { row.endBatchBeginSeconds=endBegin; });
-    const BOOL endResult=EndDeferWindowPos(batch);
+    const BOOL endResult=nativeInvoke(h,NativeEndVisibilityBatch,0,0,0,true,[&] { return EndDeferWindowPos(batch); });
     const DWORD endError=endResult ? 0 : GetLastError();
     const double ended=nowSeconds();
     sourceTransferObserve(h,[&](SourceTransferObservation& row) {
@@ -1003,14 +1281,15 @@ EXPORT int cspm_comp_set_source_frame(void* pointer,void* frame,float x,float y,
         });
         render(h,true);
         const double commitBegin=nowSeconds();
-        const HRESULT commitResult=h.compositor->Commit();
+        const HRESULT commitResult=nativeInvoke(h,NativeCompositionCommit,0,0,0,false,[&] { return h.compositor->Commit(); });
         const double commitReturn=nowSeconds();
         h.observe([&](Observation& observation) {
             observation.sourceCommitBeginSeconds=commitBegin; observation.sourceCommitReturnSeconds=commitReturn;
         });
         check(commitResult,"Commit source GPU swapchain");
         const double waitBegin=nowSeconds();
-        const HRESULT waitResult=h.compositor->WaitForCommitCompletion();
+        const HRESULT waitResult=nativeInvoke(h,NativeCommitCompletion,UINT32_MAX,0,0,false,[&] {
+            return h.compositor->WaitForCommitCompletion(); });
         const double waitReturn=nowSeconds();
         h.observe([&](Observation& observation) {
             observation.sourceWaitBeginSeconds=waitBegin; observation.sourceWaitReturnSeconds=waitReturn;
@@ -1025,14 +1304,16 @@ EXPORT int cspm_comp_set_source_frame(void* pointer,void* frame,float x,float y,
             return;
         }
         const double showBegin=nowSeconds();
-        const BOOL showed=SetWindowPos(h.hwnd,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+        const BOOL showed=nativeInvoke(h,NativeSourceShow,0,0,0,true,[&] {
+            return SetWindowPos(h.hwnd,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW); });
         const double showReturn=nowSeconds();
         h.observe([&](Observation& observation) {
             observation.sourceShowBeginSeconds=showBegin; observation.sourceShowReturnSeconds=showReturn;
         });
         if(!showed)
             throw std::runtime_error("Show source composition host failed");
-        if(h.witnessRevision && !SetWindowPos(h.hwnd,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+        if(h.witnessRevision && !nativeInvoke(h,NativeWitnessPosition,0,0,0,true,[&] {
+                return SetWindowPos(h.hwnd,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE); }))
             throw std::runtime_error("Diagnostic witness host z-order unavailable");
         h.flags.fetch_or(1); // Native submission/commit processing; scanout requires physical probe.
     });
@@ -1051,7 +1332,8 @@ EXPORT int cspm_comp_start(void* pointer,float x,float y,float width,float heigh
         h.targetX=x; h.targetY=y; h.targetW=width; h.targetH=height;
         h.duration=durationMs/1000.; h.blendStart=blendStartMs/1000.; h.startSeconds=nowSeconds();
         h.flags.fetch_or(2); render(h);
-        if(!SetTimer(h.hwnd,1,1,nullptr)) throw std::runtime_error("Native presentation timer failed");
+        if(!nativeInvoke(h,NativeSetTimer,0,0,0,true,[&] { return SetTimer(h.hwnd,1,1,nullptr); }))
+            throw std::runtime_error("Native presentation timer failed");
     });
 }
 EXPORT int cspm_comp_set_target_frame(void* pointer,void* frame) {
@@ -1118,18 +1400,19 @@ EXPORT int cspm_comp_finish(void* pointer) {
     if(!pointer) return 0; auto& h=*static_cast<Host*>(pointer);
     return h.call([&h] {
         KillTimer(h.hwnd,1);
-        const double hideBegin=nowSeconds(); ShowWindow(h.hwnd,SW_HIDE);
+        const double hideBegin=nowSeconds();
+        nativeInvoke(h,NativeHideHost,0,0,0,false,[&] { return ShowWindow(h.hwnd,SW_HIDE); });
         const double hideReturn=nowSeconds();
         h.observe([&](Observation& observation) {
             observation.hostHideBeginSeconds=hideBegin; observation.hostHideReturnSeconds=hideReturn;
         });
     });
 }
-EXPORT void cspm_comp_destroy(void* pointer) {
-    if(!pointer) return; auto* h=static_cast<Host*>(pointer);
+static int destroyHostWithTrace(Host* h,NativeCallTrace* finalTrace) {
     h->call([h] {
         KillTimer(h->hwnd,1);
-        const double hideBegin=nowSeconds(); ShowWindow(h->hwnd,SW_HIDE);
+        const double hideBegin=nowSeconds();
+        nativeInvoke(*h,NativeHideHost,0,0,0,false,[&] { return ShowWindow(h->hwnd,SW_HIDE); });
         const double hideReturn=nowSeconds();
         h->observe([&](Observation& observation) {
             if(!observation.hostHideBeginSeconds) {
@@ -1137,15 +1420,33 @@ EXPORT void cspm_comp_destroy(void* pointer) {
             }
         });
     });
-    if(!PostMessageW(h->hwnd,WM_APP+2,0,0)) h->fail("Native destruction PostMessageW failed");
+    if(!nativeInvoke(*h,NativeDestroyPost,0,0,0,true,[&] { return PostMessageW(h->hwnd,WM_APP+2,0,0); }))
+        h->fail("Native destruction PostMessageW failed");
     if(h->worker.joinable()) {
-        if(WaitForSingleObject(h->worker.native_handle(),3000)!=WAIT_OBJECT_0) {
+        if(nativeInvoke(*h,NativeDestroyWait,3000,0,0,true,[&] {
+                return WaitForSingleObject(h->worker.native_handle(),3000); })!=WAIT_OBJECT_0) {
             h->fail("Native destruction exceeded 3000 ms; retained host prevents use-after-free");
-            lastError="Native destruction exceeded 3000 ms; retained host prevents use-after-free"; return;
+            lastError="Native destruction exceeded 3000 ms; retained host prevents use-after-free";
+            if(finalTrace) cspm_comp_native_call_trace(h,finalTrace,sizeof(*finalTrace));
+            return 2; // Existing retained-host policy; callers must not retry destruction.
         }
         h->worker.join();
     }
-    delete h;
+    if(finalTrace) cspm_comp_native_call_trace(h,finalTrace,sizeof(*finalTrace));
+    delete h; return 1;
+}
+EXPORT int cspm_comp_destroy_with_native_call_trace(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(NativeCallTrace)) return 0;
+    auto* trace=static_cast<NativeCallTrace*>(output);
+    if(trace->version!=1 || trace->byteSize!=sizeof(NativeCallTrace) || trace->rowByteSize!=sizeof(NativeCallRow)) return 0;
+    auto* h=static_cast<Host*>(pointer);
+    if(!h->nativeCallTraceEnabled.load() || !h->nativeCallTrace) return 0;
+    // 0: rejected before any mutation. 1: final trace copied and host deleted.
+    // 2: final trace copied after bounded teardown timeout, host retained safely.
+    return destroyHostWithTrace(h,trace);
+}
+EXPORT void cspm_comp_destroy(void* pointer) {
+    if(pointer) destroyHostWithTrace(static_cast<Host*>(pointer),nullptr);
 }
 EXPORT unsigned cspm_comp_error(void* pointer,char* buffer,unsigned capacity) {
     std::string value;
