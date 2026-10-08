@@ -4,6 +4,60 @@
 #include <climits>
 int main() {
     Host ordinaryHost;
+    assert(!ordinaryHost.sourceTransferTraceEnabled && !ordinaryHost.sourceTransferTraceActive.load());
+    sourceTransferEntry(ordinaryHost,nullptr);
+    assert(!ordinaryHost.sourceTransferObservation.sequence && !ordinaryHost.sourceWindowPosTrace.totalRows);
+    assert(windowInsertBand(HWND_TOP,nullptr)==0);
+    assert(windowInsertBand(HWND_TOPMOST,nullptr)==1);
+    assert(windowInsertBand(HWND_NOTOPMOST,nullptr)==2);
+    assert(windowInsertBand(HWND_BOTTOM,nullptr)==3);
+    assert(cspm_comp_enable_source_transfer_trace(nullptr)==0);
+    SourceTransferObservation transfer;
+    SourceWindowPosTrace windowPositions;
+    assert(cspm_comp_source_transfer_observation(nullptr,&transfer,sizeof(transfer))==0);
+    assert(cspm_comp_source_transfer_observation(&ordinaryHost,nullptr,sizeof(transfer))==0);
+    assert(cspm_comp_source_transfer_observation(&ordinaryHost,&transfer,sizeof(transfer)-1)==0);
+    transfer.version=2;
+    assert(cspm_comp_source_transfer_observation(&ordinaryHost,&transfer,sizeof(transfer))==0);
+    transfer.version=1; transfer.byteSize=191;
+    assert(cspm_comp_source_transfer_observation(&ordinaryHost,&transfer,sizeof(transfer))==0);
+    transfer.byteSize=192;
+    assert(cspm_comp_source_transfer_observation(&ordinaryHost,&transfer,sizeof(transfer))==1);
+    assert(!transfer.traceEnabled && !transfer.stage && !transfer.sequence);
+    assert(cspm_comp_source_windowpos_trace(nullptr,&windowPositions,sizeof(windowPositions))==0);
+    assert(cspm_comp_source_windowpos_trace(&ordinaryHost,nullptr,sizeof(windowPositions))==0);
+    assert(cspm_comp_source_windowpos_trace(&ordinaryHost,&windowPositions,sizeof(windowPositions)-1)==0);
+    windowPositions.version=2;
+    assert(cspm_comp_source_windowpos_trace(&ordinaryHost,&windowPositions,sizeof(windowPositions))==0);
+    windowPositions.version=1; windowPositions.byteSize=1047;
+    assert(cspm_comp_source_windowpos_trace(&ordinaryHost,&windowPositions,sizeof(windowPositions))==0);
+    windowPositions.byteSize=1048; windowPositions.rowByteSize=63;
+    assert(cspm_comp_source_windowpos_trace(&ordinaryHost,&windowPositions,sizeof(windowPositions))==0);
+    windowPositions.rowByteSize=64;
+    assert(cspm_comp_source_windowpos_trace(&ordinaryHost,&windowPositions,sizeof(windowPositions))==1);
+    assert(!windowPositions.count && !windowPositions.totalRows);
+    // Exercise bounded storage with synthetic message data and null HWNDs.
+    // No native message is sent and no window or device is constructed.
+    Host traceHost;
+    traceHost.sourceTransferTraceEnabled=true;
+    traceHost.sourceTransferObservation.stage=8;
+    traceHost.sourceTransferObservation.expectedTopmost=1;
+    WINDOWPOS before{},after{};
+    before.hwndInsertAfter=HWND_TOPMOST; after.hwndInsertAfter=HWND_TOP;
+    for(unsigned i=0;i<20;++i) {
+        before.flags=i; after.flags=i+100;
+        sourceWindowPosObserve(traceHost,WM_WINDOWPOSCHANGING,before,after,WS_EX_TOPMOST);
+    }
+    traceHost.flags.store(16);
+    assert(cspm_comp_source_windowpos_trace(&traceHost,&windowPositions,sizeof(windowPositions))==1);
+    assert(windowPositions.count==16 && windowPositions.totalRows==20);
+    assert(windowPositions.rows[0].sequence==1 && windowPositions.rows[15].sequence==16);
+    assert(windowPositions.rows[0].flagsBefore==0 && windowPositions.rows[15].flagsBefore==15);
+    assert(windowPositions.rows[15].flagsAfter==115 && windowPositions.rows[15].phase==8);
+    assert(windowPositions.rows[0].insertAfterBandBefore==1 && windowPositions.rows[0].insertAfterBandAfter==0);
+    assert(windowPositions.rows[0].expectedTopmost==1 && !windowPositions.rows[0].reserved);
+    assert(cspm_comp_source_transfer_observation(&traceHost,&transfer,sizeof(transfer))==1);
+    assert(transfer.stage==8 && !transfer.accepted);
     assert(!ordinaryHost.probeSnapshotEnabled && !ordinaryHost.lastSubmittedTexture);
     assert(!ordinaryHost.snapshotRevision && !ordinaryHost.snapshotResourceIdentity);
     Observation observed;
@@ -80,6 +134,22 @@ int main() {
     assert(sourceVisibilityBandMatches(WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,false));
     assert(!sourceVisibilityBandMatches(WS_EX_TOPMOST,false));
     assert(!sourceVisibilityBandMatches(0,true));
+    assert(sourceBandOperationAllowed(1,true,false,false,true));
+    assert(sourceBandOperationAllowed(1,true,true,true,true));
+    assert(sourceBandOperationAllowed(1|8,true,false,false,true));
+    assert(!sourceBandOperationAllowed(0,true,false,false,true));
+    assert(!sourceBandOperationAllowed(1|2,true,false,false,true));
+    assert(!sourceBandOperationAllowed(1|16,true,false,false,true));
+    assert(!sourceBandOperationAllowed(1,false,false,false,true));
+    assert(!sourceBandOperationAllowed(1,true,false,true,true));
+    assert(!sourceBandOperationAllowed(1,true,true,false,true));
+    assert(!sourceBandOperationAllowed(1,true,false,false,false));
+    Host invalidBandHost;
+    invalidBandHost.flags=1; invalidBandHost.sourceBandKnown=true;
+    bool bandRejected=false;
+    try { applyOwnedSourceBand(invalidBandHost,false); }
+    catch(const std::runtime_error&) { bandRejected=true; }
+    assert(bandRejected); // Invalid native ownership rejects before SetWindowPos.
     const int points[]{0,0,99,79};
     assert(probeCoordinatesValid(points,2,100,80,4,6,104,86));
     assert(!probeCoordinatesValid(nullptr,2,100,80,4,6,104,86));

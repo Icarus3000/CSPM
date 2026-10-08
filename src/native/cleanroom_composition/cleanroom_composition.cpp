@@ -79,6 +79,9 @@ HWND sourceVisibilityBand(bool sourceTopmost) {
 bool sourceVisibilityBandMatches(LONG_PTR extendedStyle,bool sourceTopmost) {
     return ((extendedStyle&WS_EX_TOPMOST)!=0)==sourceTopmost;
 }
+bool sourceBandOperationAllowed(unsigned flags,bool policyKnown,bool visible,bool expectedVisible,bool nativeOwnerThread) {
+    return (flags&1) && !(flags&(2|16)) && policyKnown && visible==expectedVisible && nativeOwnerThread;
+}
 struct ProbePixels {
     int xy[128]{};
     unsigned char source[256]{},submitted[256]{};
@@ -105,6 +108,34 @@ struct ProbeIdentity {
     uint64_t sourceResourceIdentity=0,targetResourceIdentity=0,snapshotResourceIdentity=0;
 };
 static_assert(sizeof(ProbeIdentity)==200,"Diagnostic submitted identity ABI layout");
+struct SourceTransferObservation {
+    uint32_t version=1,byteSize=192;
+    uint64_t hostGeneration=0,sequence=0;
+    uint32_t stage=0,accepted=0,win32Error=0,expectedTopmost=0;
+    uint32_t currentThreadId=0,currentProcessId=0,liveThreadId=0,liveProcessId=0,nativeThreadId=0,nativeProcessId=0;
+    uint32_t sameParent=0,sameProcess=0,liveThreadOwned=0,nativeThreadOwned=0;
+    uint32_t liveForegroundEntry=0,liveForegroundExit=0,liveOwnerRelation=0,nativeOwnerRelation=0;
+    uint32_t liveStyleEntry=0,nativeStyleEntry=0,liveStyleExit=0,nativeStyleExit=0;
+    uint32_t liveVisibleEntry=0,nativeVisibleEntry=0,liveVisibleExit=0,nativeVisibleExit=0;
+    uint32_t beginAccepted=0,liveDeferAccepted=0,nativeDeferAccepted=0,endAccepted=0;
+    double entrySeconds=0,beginBatchSeconds=0,endBatchBeginSeconds=0,endBatchReturnSeconds=0,exitSeconds=0;
+    uint32_t traceEnabled=0,policySampled=0;
+};
+static_assert(sizeof(SourceTransferObservation)==192,"Diagnostic source transfer ABI layout");
+struct SourceWindowPosRow {
+    uint64_t sequence=0;
+    double timeSeconds=0;
+    uint32_t message=0,phase=0,insertAfterBandBefore=0,insertAfterBandAfter=0;
+    uint32_t flagsBefore=0,flagsAfter=0,styleBefore=0,styleAfter=0;
+    uint32_t currentThreadId=0,expectedTopmost=0,visibleAfter=0,reserved=0;
+};
+static_assert(sizeof(SourceWindowPosRow)==64,"Diagnostic source WINDOWPOS row ABI layout");
+struct SourceWindowPosTrace {
+    uint32_t version=1,byteSize=1048,rowByteSize=64,count=0;
+    uint64_t totalRows=0;
+    SourceWindowPosRow rows[16]{};
+};
+static_assert(sizeof(SourceWindowPosTrace)==1048,"Diagnostic source WINDOWPOS trace ABI layout");
 struct Constants {
     float currentRect[4],sourceRect[4],targetRect[4],sizes[4],motion[4];
     float witnessRect[4],witnessColor[4];
@@ -154,9 +185,14 @@ bool probeIdentityMatches(const ProbeIdentity& identity,unsigned phase,const Obs
 struct Host {
     HWND hwnd=nullptr;
     std::thread worker;
-    std::mutex queueMutex,errorMutex,observationMutex;
+    std::mutex queueMutex,errorMutex,observationMutex,sourceTransferMutex;
     Observation observation;
     ProbeIdentity probeIdentity;
+    SourceTransferObservation sourceTransferObservation;
+    SourceWindowPosTrace sourceWindowPosTrace;
+    bool sourceTransferTraceEnabled=false;
+    std::atomic<bool> sourceTransferTraceActive{false};
+    std::atomic<HWND> sourceTransferLive{nullptr};
     PresentObservation presentRows[128]{};
     uint64_t totalPresentRows=0;
     std::deque<std::function<void()>> queue;
@@ -226,6 +262,103 @@ struct Host {
         return future.get();
     }
 };
+uint32_t windowOwnerRelation(HWND window,HWND live,HWND native) {
+    const HWND owner=GetWindow(window,GW_OWNER);
+    if(!owner) return 0;
+    if(owner==live) return 1;
+    if(owner==native) return 2;
+    DWORD process=0;
+    if(!GetWindowThreadProcessId(owner,&process)) return 5;
+    return process==GetCurrentProcessId() ? 3u : 4u;
+}
+uint32_t windowInsertBand(HWND after,HWND live) {
+    if(after==HWND_TOP) return 0;
+    if(after==HWND_TOPMOST) return 1;
+    if(after==HWND_NOTOPMOST) return 2;
+    if(after==HWND_BOTTOM) return 3;
+    if(after==live && live) return 4;
+    DWORD process=0;
+    if(!GetWindowThreadProcessId(after,&process)) return 7;
+    return process==GetCurrentProcessId() ? 5u : 6u;
+}
+void sourceTransferEntry(Host& h,HWND live) {
+    if(!h.sourceTransferTraceEnabled) return;
+    SourceTransferObservation row;
+    row.hostGeneration=h.generation; row.stage=1; row.traceEnabled=1;
+    row.entrySeconds=nowSeconds();
+    row.currentThreadId=GetCurrentThreadId(); row.currentProcessId=GetCurrentProcessId();
+    DWORD liveProcess=0,nativeProcess=0;
+    row.liveThreadId=GetWindowThreadProcessId(live,&liveProcess);
+    row.nativeThreadId=GetWindowThreadProcessId(h.hwnd,&nativeProcess);
+    row.liveProcessId=liveProcess; row.nativeProcessId=nativeProcess;
+    row.sameParent=GetParent(live)==GetParent(h.hwnd);
+    row.sameProcess=row.liveProcessId==row.currentProcessId && row.nativeProcessId==row.currentProcessId;
+    row.liveThreadOwned=row.liveThreadId==row.currentThreadId;
+    row.nativeThreadOwned=row.nativeThreadId==row.currentThreadId;
+    row.liveForegroundEntry=GetForegroundWindow()==live;
+    row.liveOwnerRelation=windowOwnerRelation(live,live,h.hwnd);
+    row.nativeOwnerRelation=windowOwnerRelation(h.hwnd,live,h.hwnd);
+    row.liveStyleEntry=uint32_t(GetWindowLongPtrW(live,GWL_EXSTYLE));
+    row.nativeStyleEntry=uint32_t(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE));
+    row.liveVisibleEntry=IsWindowVisible(live)!=FALSE;
+    row.nativeVisibleEntry=IsWindowVisible(h.hwnd)!=FALSE;
+    {
+        std::lock_guard<std::mutex> lock(h.sourceTransferMutex);
+        row.sequence=h.sourceTransferObservation.sequence+1;
+        h.sourceTransferObservation=row; h.sourceWindowPosTrace=SourceWindowPosTrace{};
+    }
+    h.sourceTransferLive.store(live); h.sourceTransferTraceActive.store(true);
+}
+template<class F> void sourceTransferObserve(Host& h,F writer) {
+    if(!h.sourceTransferTraceEnabled) return;
+    std::lock_guard<std::mutex> lock(h.sourceTransferMutex);
+    writer(h.sourceTransferObservation); ++h.sourceTransferObservation.sequence;
+}
+void applyOwnedSourceBand(Host& h,bool expectedVisible) {
+    DWORD process=0;
+    const DWORD thread=GetWindowThreadProcessId(h.hwnd,&process);
+    const bool owned=thread==GetCurrentThreadId() && process==GetCurrentProcessId();
+    if(!sourceBandOperationAllowed(h.flags.load(),h.sourceBandKnown.load(),
+            IsWindowVisible(h.hwnd)!=FALSE,expectedVisible,owned))
+        throw std::runtime_error("Source band operation requires its native owner thread and stopped prepared visibility state");
+    const bool sourceTopmost=h.sourceTopmost.load();
+    if(!SetWindowPos(h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
+        throw std::runtime_error("Stopped source host z-order unavailable");
+    if(!sourceVisibilityBandMatches(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE),sourceTopmost) ||
+            (IsWindowVisible(h.hwnd)!=FALSE)!=expectedVisible)
+        throw std::runtime_error("Stopped source band operation did not preserve the owned live window band and visibility");
+}
+void sourceTransferExit(Host& h,HWND live,uint32_t stage,DWORD error=0) {
+    if(!h.sourceTransferTraceEnabled) return;
+    const double ended=nowSeconds();
+    const auto liveStyle=uint32_t(GetWindowLongPtrW(live,GWL_EXSTYLE));
+    const auto nativeStyle=uint32_t(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE));
+    const bool liveVisible=IsWindowVisible(live)!=FALSE,nativeVisible=IsWindowVisible(h.hwnd)!=FALSE;
+    const bool foreground=GetForegroundWindow()==live;
+    sourceTransferObserve(h,[&](SourceTransferObservation& row) {
+        row.stage=stage; row.accepted=stage==9; row.win32Error=error;
+        row.liveStyleExit=liveStyle; row.nativeStyleExit=nativeStyle;
+        row.liveVisibleExit=liveVisible; row.nativeVisibleExit=nativeVisible;
+        row.liveForegroundExit=foreground; row.exitSeconds=ended;
+    });
+}
+void sourceWindowPosObserve(Host& h,UINT message,const WINDOWPOS& before,const WINDOWPOS& after,
+                            uint32_t styleBefore) {
+    SourceWindowPosRow row;
+    row.timeSeconds=nowSeconds(); row.message=message;
+    const HWND live=h.sourceTransferLive.load();
+    row.insertAfterBandBefore=windowInsertBand(before.hwndInsertAfter,live);
+    row.insertAfterBandAfter=windowInsertBand(after.hwndInsertAfter,live);
+    row.flagsBefore=before.flags; row.flagsAfter=after.flags; row.styleBefore=styleBefore;
+    row.styleAfter=uint32_t(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE));
+    row.currentThreadId=GetCurrentThreadId(); row.visibleAfter=IsWindowVisible(h.hwnd)!=FALSE;
+    std::lock_guard<std::mutex> lock(h.sourceTransferMutex);
+    row.phase=h.sourceTransferObservation.stage;
+    row.expectedTopmost=h.sourceTransferObservation.expectedTopmost;
+    auto& trace=h.sourceWindowPosTrace; row.sequence=++trace.totalRows;
+    // Retain the first causally relevant rows; cleanup never overwrites them.
+    if(trace.count<16) trace.rows[trace.count++]=row;
+}
 const char* shader=R"HLSL(
 Texture2D oldFrame : register(t0);
 Texture2D newFrame : register(t1);
@@ -417,6 +550,15 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
         return 0;
     }
     if(message==WM_APP+2) { KillTimer(hwnd,1); DestroyWindow(hwnd); PostQuitMessage(0); return 0; }
+    if(host && host->sourceTransferTraceEnabled && host->sourceTransferTraceActive.load() &&
+       !(host->flags.load()&2) && l && (message==WM_WINDOWPOSCHANGING || message==WM_WINDOWPOSCHANGED)) {
+        const auto position=reinterpret_cast<WINDOWPOS*>(l);
+        const WINDOWPOS before=*position;
+        const auto styleBefore=uint32_t(GetWindowLongPtrW(hwnd,GWL_EXSTYLE));
+        const LRESULT result=DefWindowProcW(hwnd,message,w,l);
+        sourceWindowPosObserve(*host,message,before,*position,styleBefore);
+        return result;
+    }
     return DefWindowProcW(hwnd,message,w,l);
 }
 void initialize(Host& h,IDXGIAdapter* adapter,int left,int top,int width,int height) {
@@ -563,6 +705,35 @@ EXPORT int cspm_comp_enable_probe_snapshot(void* pointer) {
     if(!pointer) return 0;
     auto& h=*static_cast<Host*>(pointer);
     return h.call([&h] { enableProbeSnapshot(h); });
+}
+EXPORT int cspm_comp_enable_source_transfer_trace(void* pointer) {
+    if(!pointer) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    return h.call([&h] {
+        if(h.flags.load() || h.source.texture || h.sourceTransferTraceEnabled)
+            throw std::runtime_error("Source transfer trace must be enabled once before source preparation");
+        h.sourceTransferTraceEnabled=true;
+        sourceTransferObserve(h,[&](SourceTransferObservation& row) {
+            row.hostGeneration=h.generation; row.traceEnabled=1;
+        });
+    });
+}
+EXPORT int cspm_comp_source_transfer_observation(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(SourceTransferObservation)) return 0;
+    auto* result=static_cast<SourceTransferObservation*>(output);
+    if(result->version!=1 || result->byteSize!=sizeof(SourceTransferObservation)) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    std::lock_guard<std::mutex> lock(h.sourceTransferMutex);
+    memcpy(result,&h.sourceTransferObservation,sizeof(SourceTransferObservation)); return 1;
+}
+EXPORT int cspm_comp_source_windowpos_trace(void* pointer,void* output,unsigned capacity) {
+    if(!pointer || !output || capacity<sizeof(SourceWindowPosTrace)) return 0;
+    auto* result=static_cast<SourceWindowPosTrace*>(output);
+    if(result->version!=1 || result->byteSize!=sizeof(SourceWindowPosTrace) ||
+       result->rowByteSize!=sizeof(SourceWindowPosRow)) return 0;
+    auto& h=*static_cast<Host*>(pointer);
+    std::lock_guard<std::mutex> lock(h.sourceTransferMutex);
+    memcpy(result,&h.sourceWindowPosTrace,sizeof(SourceWindowPosTrace)); return 1;
 }
 EXPORT int cspm_comp_probe_identity(void* pointer,void* output,unsigned capacity) {
     if(!pointer || !output || capacity<sizeof(ProbeIdentity)) return 0;
@@ -726,52 +897,71 @@ EXPORT int cspm_comp_defer_source_visibility(void* pointer) {
 }
 EXPORT int cspm_comp_transfer_source_visibility(void* pointer,uintptr_t livePointer) {
     if(!pointer || !livePointer) return 0; auto& h=*static_cast<Host*>(pointer);
-    const auto rejected=[&h](const char* reason,bool nativeFailure=false) {
+    const HWND live=reinterpret_cast<HWND>(livePointer);
+    sourceTransferEntry(h,live);
+    const auto rejected=[&h,live](const char* reason,uint32_t stage,DWORD apiError=0) {
         char detail[256];
-        if(nativeFailure) sprintf_s(detail,"%s: Win32 error %lu",reason,GetLastError());
+        if(stage>=3 && stage<=6) sprintf_s(detail,"%s: Win32 error %lu",reason,apiError);
         else sprintf_s(detail,"%s",reason);
+        sourceTransferExit(h,live,stage,apiError);
         h.fail(detail); return 0;
     };
-    const HWND live=reinterpret_cast<HWND>(livePointer);
     DWORD process=0;
     const DWORD guiThread=GetWindowThreadProcessId(live,&process);
     if(!h.deferredSourceVisibility || !(h.flags.load()&1) || (h.flags.load()&(2|16)) ||
        process!=GetCurrentProcessId() || guiThread!=GetCurrentThreadId() ||
        !IsWindowVisible(live) || IsWindowVisible(h.hwnd) || GetParent(live)!=GetParent(h.hwnd))
-        return rejected("Source visibility transfer requires owned GUI thread, same parent and stopped prepared state");
+        return rejected("Source visibility transfer requires owned GUI thread, same parent and stopped prepared state",2);
     const bool sourceTopmost=(GetWindowLongPtrW(live,GWL_EXSTYLE)&WS_EX_TOPMOST)!=0;
     h.sourceTopmost.store(sourceTopmost); h.sourceBandKnown.store(true);
+    sourceTransferObserve(h,[&](SourceTransferObservation& row) {
+        row.expectedTopmost=sourceTopmost; row.policySampled=1;
+    });
+    // Establish the actual source band on this HWND's owner while still hidden.
+    // The GUI thread reveals it without requesting another cross-thread reorder.
+    sourceTransferObserve(h,[](SourceTransferObservation& row) { row.stage=10; });
+    if(!h.call([&h] { applyOwnedSourceBand(h,false); })) {
+        sourceTransferExit(h,live,10); return 0; // Preserve the worker's original failure.
+    }
+    sourceTransferObserve(h,[](SourceTransferObservation& row) { row.stage=1; });
+    if(!sourceVisibilityBandMatches(GetWindowLongPtrW(live,GWL_EXSTYLE),sourceTopmost))
+        return rejected("Source visibility band changed before the prepared GUI batch",11);
     const double began=nowSeconds();
+    sourceTransferObserve(h,[&](SourceTransferObservation& row) { row.beginBatchSeconds=began; });
     HDWP batch=BeginDeferWindowPos(2);
-    if(!batch) return rejected("Begin source visibility batch failed",true);
+    if(!batch) return rejected("Begin source visibility batch failed",3,GetLastError());
+    sourceTransferObserve(h,[](SourceTransferObservation& row) { row.beginAccepted=1; });
     batch=DeferWindowPos(batch,live,nullptr,0,0,0,0,
         SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_HIDEWINDOW);
-    if(!batch) return rejected("Defer live source hide failed",true);
+    if(!batch) return rejected("Defer live source hide failed",4,GetLastError());
+    sourceTransferObserve(h,[](SourceTransferObservation& row) { row.liveDeferAccepted=1; });
     batch=DeferWindowPos(batch,h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,
-        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
-    if(!batch) return rejected("Defer native source reveal failed",true);
-    if(!EndDeferWindowPos(batch)) return rejected("End source visibility batch failed",true);
+        SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+    if(!batch) return rejected("Defer native source reveal failed",5,GetLastError());
+    sourceTransferObserve(h,[](SourceTransferObservation& row) { row.nativeDeferAccepted=1; });
+    const double endBegin=h.sourceTransferTraceEnabled ? nowSeconds() : 0;
+    sourceTransferObserve(h,[&](SourceTransferObservation& row) { row.endBatchBeginSeconds=endBegin; });
+    const BOOL endResult=EndDeferWindowPos(batch);
+    const DWORD endError=endResult ? 0 : GetLastError();
     const double ended=nowSeconds();
+    sourceTransferObserve(h,[&](SourceTransferObservation& row) {
+        row.endAccepted=endResult!=FALSE; row.endBatchReturnSeconds=ended;
+    });
+    if(!endResult) return rejected("End source visibility batch failed",6,endError);
     h.observe([&](Observation& observation) {
         observation.sourceShowBeginSeconds=began; observation.sourceShowReturnSeconds=ended;
     });
     if(IsWindowVisible(live) || !IsWindowVisible(h.hwnd))
-        return rejected("Source visibility batch returned without the requested ownership state");
+        return rejected("Source visibility batch returned without the requested ownership state",7);
     if(!sourceVisibilityBandMatches(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE),sourceTopmost))
-        return rejected("Source visibility batch did not preserve the owned live window band");
+        return rejected("Source visibility batch did not preserve the owned live window band",8);
+    sourceTransferExit(h,live,9);
     return 1;
 }
 EXPORT int cspm_comp_raise_source_visibility(void* pointer) {
     if(!pointer) return 0; auto& h=*static_cast<Host*>(pointer);
     return h.call([&h] {
-        const auto flags=h.flags.load();
-        if(!(flags&1) || (flags&(2|16)) || !IsWindowVisible(h.hwnd) || !h.sourceBandKnown.load())
-            throw std::runtime_error("Source ordering requires a visible stopped prepared host");
-        const bool sourceTopmost=h.sourceTopmost.load();
-        if(!SetWindowPos(h.hwnd,sourceVisibilityBand(sourceTopmost),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE))
-            throw std::runtime_error("Stopped source host z-order unavailable");
-        if(!sourceVisibilityBandMatches(GetWindowLongPtrW(h.hwnd,GWL_EXSTYLE),sourceTopmost))
-            throw std::runtime_error("Stopped source raise did not preserve the owned live window band");
+        applyOwnedSourceBand(h,true);
     });
 }
 static void validateWitnessOutside(const Host& h,float x,float y,float width,float height) {

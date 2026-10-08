@@ -1,5 +1,51 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-08: Owned Transfer And Productivity Continuation
+
+**PROVEN BY MEASUREMENT:** the passive original Productivity source boundary
+returns success from all GUI batch calls, but does not promote the native host to
+the sampled live topmost band. It fails before motion and target layout. The
+general correction applies that policy on the hidden native owner thread and
+preserves it during the GUI visibility batch. In corrected restore-first run2,
+both source boundaries pass and restore target publication/import return is
+215.307/215.355 ms, before the unchanged 240 ms deadline. Restore's six complete
+client comparisons, forty endpoint texel comparisons and one QML F24 pair pass.
+Guard-to-QML is 439.051 ms in the instrumented fixture. The later 428 ms queued
+target notification does not mean that native target readiness missed its gate.
+
+**PROVEN BY MEASUREMENT:** following maximize imports at 165.356 ms, then fails
+the separate 100 ms presentation-slot gate. The last recorded Present returns at
+182.391 ms with motion 0.546108 and content 0; no maximize endpoint or input pass
+is claimed. The existing error covers any non-signaled wait return. **STILL
+UNKNOWN:** actual wait result and failure-time occlusion; do not relabel this as
+a target-readiness failure or extend the gate.
+
+**PROVEN BY MEASUREMENT:** the next five-toggle attempt, run3, completes zero
+directions. Hidden worker band preparation rejects at stage 10 before any GUI
+batch or motion. Live remains visible/topmost and native hidden/non-topmost.
+One changing row reports foreign-process insertion band 6 with flags `0x13`;
+no changed row follows. Foreground is false at entry/exit. This retains the
+failure of the current correction in the actual Qt/input-guard fixture.
+
+**DISPROVEN:** foreground false alone is sufficient to explain the rejected
+transfer. Baseline and worker SDK-only controls both pass topmost/non-topmost
+policies with unchanged foreground through cleanup and eighteen exact synthetic
+source/submitted samples per DLL. Baseline SDK insertion uses another owned
+process window (band 5), unlike the full-app failure (band 6). **WORKING
+HYPOTHESIS:** the full Qt/guard/Windows permission interaction matters. **STILL
+UNKNOWN:** its cause and the smallest reliable correction; correlated foreground
+state is not a causal proof. The worker change is supported for the measured
+successful restore, but is not established as repeatable qualification.
+
+Current safe validation passes 611 tests, with one real-window test deselected,
+plus Python compilation, native/shader build and native contract/ABI-null checks.
+Real disposable Qt/GPU/desktop and synthetic SDK controls execute outside sandbox;
+no new installed or WebEngine validation is claimed. The new source-transfer
+report retains every failed raw-result hash and all historical report bytes.
+Production stays unchanged, no package is installed, and Cory's P0 gate remains
+open. Next work is the hidden worker rejection and exact presentation-wait
+evidence, followed by the complete cold matrix if those gates are resolved.
+
 ## 2026-10-08: Finalized Evidence Recovered Before Probe Correction
 
 ### Measured submitted-surface correction

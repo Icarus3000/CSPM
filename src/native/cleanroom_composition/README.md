@@ -330,8 +330,8 @@ All synthetic artifacts remain ignored under
 
 | Artifact | SHA-256 |
 | --- | --- |
-| Current native source | `3630819DC29DBDC440C850A4547669A7FEB1A5BFF0F47D353FB9E8D101678C6E` |
-| Diagnostic DLL (`cspm_cleanroom_probe_identity_20261008.dll`) | `1E185A8B7F35AEB62748425830E4A8775D0441D9E6228015D41B2BD61CD5E1DA` |
+| Probe-contract native source at measurement | `3630819DC29DBDC440C850A4547669A7FEB1A5BFF0F47D353FB9E8D101678C6E` |
+| Initial probe-contract DLL (`cspm_cleanroom_probe_identity_20261008.dll`) | `1E185A8B7F35AEB62748425830E4A8775D0441D9E6228015D41B2BD61CD5E1DA` |
 | Baseline marker result | `51C7857D8E5B62EAFA7ACEC0395279B4A413681DFBFF77BC22E32CEF1E62C0E0` |
 | Initial repaired marker result | `DECCE9E021E58F5C8DC800509248D2CF8F9A9BB64BFCBB2B6567ACD11B8BA0B1` |
 | Two-format CPU-formula marker result | `A58F14D99B6917F052AB8E196FF0B49D6297CE501DB250A80513B8C1C0A31BC0` |
@@ -342,3 +342,192 @@ checks without Qt/WebEngine. The synthetic marker GPU executable ran outside
 sandbox with a hidden nonactivating test HWND and no private content. Root owns
 fresh Directory/Qt/desktop evidence; this subtask adds no WebEngine startup/PDF,
 installed-package, complete cold qualification or Cory acceptance claim.
+
+## Passive source-band transfer telemetry, 2026-10-08
+
+Later Directory and Productivity controls reject source-band verification after
+successful hide-live/show-native batching, before motion. Earlier observations
+show a topmost live source and a hidden non-topmost native host; the failed API
+boundary previously retained no expected/actual styles. Foreground and native
+owner-thread correlations do not establish the cause. The following telemetry
+fills that gap without changing batch flags, ordering, failure gates, activation,
+shaders, geometry, padding or authored motion/readiness deadlines.
+
+```c
+int cspm_comp_enable_source_transfer_trace(void *host);
+int cspm_comp_source_transfer_observation(void *host, void *output, unsigned capacity);
+int cspm_comp_source_windowpos_trace(void *host, void *output, unsigned capacity);
+```
+
+Enable explicitly once before source preparation. Previous/ordinary runs remain
+uninstrumented. The actual transfer call starts the trace, omitting initialization
+noise, and captures input-lock-complete API-entry styles, expected source band,
+process/thread relationships, owner relationships, foreground ownership and
+visibility. It records Begin/Defer/End accepted results, QPC boundaries and exact
+exit styles before preserving the unchanged rejection reason. Data remains
+readable after failure bit 16. No readback, input injection, retry, activation or
+additional presentation operation occurs.
+
+`SourceTransferObservation` has version 1 and byte size 192. Field order:
+`uint32_t version,byteSize`; `uint64_t hostGeneration,sequence`;
+`uint32_t stage,accepted,win32Error,expectedTopmost,currentThreadId,currentProcessId,
+liveThreadId,liveProcessId,nativeThreadId,nativeProcessId,sameParent,sameProcess,
+liveThreadOwned,nativeThreadOwned,liveForegroundEntry,liveForegroundExit,
+liveOwnerRelation,nativeOwnerRelation,liveStyleEntry,nativeStyleEntry,liveStyleExit,
+nativeStyleExit,liveVisibleEntry,nativeVisibleEntry,liveVisibleExit,nativeVisibleExit,
+beginAccepted,liveDeferAccepted,nativeDeferAccepted,endAccepted`;
+`double entrySeconds,beginBatchSeconds,endBatchBeginSeconds,endBatchReturnSeconds,
+exitSeconds`; `uint32_t traceEnabled,policySampled`. Thread-owned fields compare
+against the calling thread. Same-process means both windows belong to the current
+process. Owner relations are 0 none, 1 original live, 2 native host, 3 another owned
+process window, 4 another process, 5 unknown. No HWND or pointer is returned.
+
+Stage 0 means no transfer entry. Stage 1 means entered; stages 2–8 respectively
+identify validation, Begin, live Defer, native Defer, End, visibility and band
+rejection; stage 9 means accepted. Stage 10 identifies native-worker hidden band
+preparation (terminal rejection if that operation fails); stage 11 rejects a live
+band change between native preparation and batching. `policySampled=1` establishes the actual band
+read used by batching. Successful Win32 calls alone cannot establish transfer
+acceptance or observed desktop pixels. For failed batch positioning APIs,
+`win32Error` is captured immediately; state-gate rejection has no fabricated
+Win32 error. Hidden worker rejection preserves its native error string, and
+does not currently publish a separate worker SetWindowPos return/error field.
+
+`SourceWindowPosTrace` is version 1, byte size 1048, row byte size 64, with header
+`uint32_t version,byteSize,rowByteSize,count`; `uint64_t totalRows`; then 16 rows.
+Each row contains `uint64_t sequence`; `double timeSeconds`;
+`uint32_t message,phase,insertAfterBandBefore,insertAfterBandAfter,flagsBefore,
+flagsAfter,styleBefore,styleAfter,currentThreadId,expectedTopmost,visibleAfter,
+reserved`. Phase is the transfer stage at observation, and reserved is zero.
+Only the owned host's stopped `WM_WINDOWPOSCHANGING/CHANGED` messages are observed;
+the original `DefWindowProc` executes once, unchanged. First sixteen rows are
+retained, so later cleanup cannot overwrite transfer evidence; `totalRows` exposes
+truncation. Rows after API return remain observable until motion/cleanup and have
+their own QPC and terminal stage, allowing delayed ordering to be distinguished
+from immediate returned state. Insert-after bands are 0 TOP/null, 1 TOPMOST,
+2 NOTOPMOST, 3 BOTTOM, 4 original live, 5 another current-process window, 6 another
+process, 7 unknown. Pointer addresses and unrelated window identities are omitted.
+
+Telemetry native-source SHA-256 is
+`4017831FE05FBCDB651E7B619BC4BFE62F9AB51387A6AF36718B2E0D622C15F0`;
+new `cspm_cleanroom_source_transfer_trace_20261008.dll` SHA-256 is
+`B5B6D0313AAAD930910AD15EA97364C353D5FEAC2A0F606FF5355078AFB15968`.
+Source/build-script/contract hashes match before and after compilation in ignored
+`outputs/cleanroom_resume_20261004/source_transfer_trace_20261008` manifests.
+MSVC `/W4` native/shader build, the no-window native contract, ABI 1/additive export
+null rejection and whitespace checks pass. Safe contract checks use synthetic
+message data and null HWNDs; they send no Windows messages and construct no window
+or device. Root owns real transfer measurements. The band cause and complete cold
+qualification remain open; no new desktop GPU or WebEngine claim belongs to these
+safe checks.
+
+## Owned hidden-band preparation, 2026-10-08
+
+The actual passive Productivity transfer trace proves failed native promotion:
+expected band is topmost, live entry/exit style remains `0x80008`, native
+entry/exit remains `0x082000a0`, and source foreground remains false. Both Defer
+calls and End return success. The host belongs to the native worker, the live
+source to the GUI thread, and both are in the same process with the same parent.
+Native `WM_WINDOWPOSCHANGING` receives foreign-window insertion band 6 with flags
+`0x53`; `WM_WINDOWPOSCHANGED` receives band 6 with flags `0x1857`. This establishes
+the failed cross-thread request's observed result. It does not separately prove
+whether foreground permission or another Windows policy caused that rewrite.
+Raw retained evidence is
+`logs/native_gpu_source_transfer_productivity_20261008_run1/native_gpu_spike.json`;
+the prior failure and original native error remain unchanged.
+
+The general diagnostic correction samples the owned live band and applies it
+once on the native HWND's verified owner thread while the host remains hidden
+and stopped. That operation uses `SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE` and strictly
+verifies the resulting band and unchanged hidden visibility. The GUI thread
+then verifies that the live band has not changed and uses `SWP_NOZORDER` in its
+existing hide-live/show-native batch, preserving the already established band.
+The existing visible worker ordering operation reuses the same owned-thread
+helper. This adds no activation, retry, geometry motion, shader/alpha alteration
+or weaker band/visibility/pixel/witness gate. Production remains unchanged.
+
+The unchanged 192/64/1048-byte telemetry tags native hidden preparation with
+WINDOWPOS phase 10, then returns to phase 1 for the GUI batch. The actual style
+change can be bracketed by native changing/changed rows before the recorded GUI
+batch QPC boundaries. Those are observed operation boundaries, not a pure CPU or
+GPU execution duration. Source foreground entry/exit remains independently
+reported. The helper rejects unknown policy, wrong worker ownership, unexpected
+visibility, absent source preparation, running clocks and failed transactions.
+
+Corrected native-source SHA-256:
+`C49FCBC8FDCBC761380EA42F47788D5E048BFC7765597137673C3CBB7E3A19DB`.
+Unique `cspm_cleanroom_source_band_worker_20261008.dll` SHA-256:
+`03C9805C87AA82554F80E7C547FA36FF98B3154D8BD49D117C37EE740D238697`.
+Bracketing source/build-script/contract hashes match in ignored
+`outputs/cleanroom_resume_20261004/source_band_worker_20261008` manifests.
+MSVC `/W4` native/shader build, safe native contract, ABI 1/seven null-export
+checks and whitespace review pass. This native subtask ran no new GPU/window or
+WebEngine fixture. Root owns the matched cold restore, worker-band and fresh
+desktop evidence; readiness/input/continuous-motion/lifecycle and user acceptance
+remain required before qualification.
+
+The later SDK-only `tests/native_cleanroom_source_band_control.cpp` loads one
+diagnostic DLL per process, creates a task-owned visible `WS_EX_NOACTIVATE`
+source on the caller thread, and supplies CPU-authored synthetic GPU markers.
+Both non-topmost and topmost policies use the actual transfer API and native
+worker host. Baseline telemetry DLL `B5B6D031...` and corrected worker DLL
+`03C9805C...` both pass with measured source foreground entry/exit false, unchanged
+original foreground through cleanup, hidden live/visible native windows, correct
+bands and eighteen exact source/submitted coordinate pairs per DLL. The corrected
+trace shows hidden worker phase 10 followed by GUI phase 1 with `SWP_NOZORDER`.
+These outside-sandbox synthetic controls contain no private content, Qt or
+WebEngine and do not observe complete desktop pixels.
+
+The baseline also passes: its actual insertion uses another current-process
+window (band 5), whereas the retained full-app failure uses a foreign-process
+window (band 6). Foreground false alone therefore does not explain the failure.
+The synthetic source has no Qt/input guard, so the previously failing background
+full-app condition remains a separate qualification requirement. Results are
+retained in ignored
+`outputs/cleanroom_resume_20261004/foregroundfalse_band_control_20261008`:
+baseline JSON SHA-256
+`55EE53CA7C4186072BA52A809A4256E21A67AC04094555F92291AC8EE0527E4F`;
+corrected JSON SHA-256
+`7D7E285DA065395142B68FCD0831307D89377EB98C4002CCC779ED8129C69F13`.
+Both processes exit normally; their twenty-second outer watchdog is not reached.
+The native source and diagnostic DLLs remain unchanged by this control.
+
+The later real Productivity cold restore-first run 3 rejects the hidden worker
+preparation itself, with zero completed cycles. The same frozen source and DLL
+above are retained; raw JSON SHA-256 is
+`54DD99FB541F1078F283C4638B6A1D948B43EB83B899B86F4CB235862FF91CC6` at
+`logs/native_gpu_source_transfer_productivity_20261008_run3/native_gpu_spike.json`.
+Expected topmost is 1; source foreground entry/exit is 0. Live entry/exit style
+remains `0x80008`, visible; native entry/exit remains `0x082000a0`, hidden. Both
+windows have no owner, share the process and parent, and the changing message
+executes on the recorded native owner thread. The single phase-10
+`WM_WINDOWPOSCHANGING` row has foreign insertion band 6 and flags `0x13`, unchanged
+across the original `DefWindowProc`. No `WM_WINDOWPOSCHANGED` row is retained.
+`SetWindowPos` returns success, but the strict style/visibility verification fails
+with the original error, "Stopped source band operation did not preserve the
+owned live window band and visibility". The GUI visibility batch never starts:
+all Begin/Defer/End accepted fields and batch timestamps remain zero. The worker
+request is bounded by transfer entry/exit, 2.583 ms apart; that interval includes
+dispatch and checking, rather than pure Win32 execution time. Live input is
+subsequently restored by the existing failure cleanup.
+
+Run 2's earlier accepted transfers therefore do not establish a universal repair:
+both had foreground entry/exit true. Its restore completes with exact pixels and
+input, while the next maximize accepts its target at 165.356 ms but fails the
+unchanged 100 ms presentation-slot gate before a complete endpoint. That gate
+does not record the actual wait result or a failure-time native window state, so
+neither a specific wait-result code nor a source-band cause can be assigned to
+that separate failure.
+
+Microsoft's [SetWindowPos contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos)
+requires foreground permission to bring a window to the top, while separately
+defining `SWP_NOACTIVATE`. This supports investigating foreground permission but
+does not prove it caused the failed request. The successful background SDK
+controls use insertion band 5; the failed application uses band 6. The current
+sanitized enum records the predecessor's process relationship, not its topmost
+style or whether it is the foreground window. A useful next bounded measurement
+is passive predecessor-band/foreground relationship evidence, followed by a
+same-DLL SDK comparison with an owned layered source and the input guard. No
+activation, retry, gate relaxation, native source edit or further desktop run
+belongs to this read-only diagnosis. The background full-app source-band
+condition, repeated populated readiness and complete qualification remain open.

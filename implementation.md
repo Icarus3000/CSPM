@@ -1,5 +1,54 @@
 # Implementation History
 
+## 2026-10-08: Source Transfer Boundary And Current Productivity Result
+
+After pushed probe checkpoint `0fe51f2`, opt-in 192-byte source-transfer and
+bounded 64-byte WINDOWPOS rows preserve the actual expected/returned source band,
+ownership comparisons, visibility and native operation times. Python validates
+the additive contract, captures the first native error once, and cannot replace
+that rejection with a later telemetry failure. The original passive Productivity
+trace proves that successful Begin/Defer/End calls did not apply the requested
+topmost native band. It fails before motion and does not measure readiness.
+
+The smallest general diagnostic correction prepares the sampled live band on the
+hidden, stopped native HWND's owner thread, then preserves it during the existing
+GUI hide/show batch with `SWP_NOZORDER`. No activation, retry, shader, padding,
+geometry curve, production default or deadline is changed. Source SHA256 is
+`C49FCBC8FDCBC761380EA42F47788D5E048BFC7765597137673C3CBB7E3A19DB`;
+the uniquely named worker DLL SHA256 is
+`03C9805C87AA82554F80E7C547FA36FF98B3154D8BD49D117C37EE740D238697`.
+Bracketing native build manifests establish unchanged measured build inputs.
+
+Outside sandbox, corrected restore-first populated Productivity run2 completes
+restore: native target readiness/import return is 215.307/215.355 ms, within the
+unchanged 240 ms deadline. The queued GUI receipt at 428 ms is a later boundary.
+Six restore complete-client comparisons, forty target/submitted/live texel
+comparisons and a QML F24 pair pass. Guard-to-QML acceptance is 439.051 ms in this
+instrumented fixture, so no general interactivity improvement is claimed.
+Following maximize imports successfully at 165.356 ms, then rejects the separate
+100 ms presentation-slot gate. That error currently conflates non-signaled wait
+results; exact wait return and failure-time occlusion are not recorded.
+
+The subsequent five-toggle attempt run3 completes zero directions. Stage 10
+rejects hidden worker band preparation before any GUI batch: live stays visible
+and topmost, native stays hidden and non-topmost; one owner-thread changing row
+has foreign-process insertion band 6 and no changed row follows. Foreground is
+false at entry/exit. Independent SDK-only baseline and worker controls pass both
+bands with foreground false and unchanged through cleanup, and eighteen exact
+CPU-authored source/submitted samples per DLL. Foreground false alone is therefore
+not sufficient to explain the full-app failure. The Qt/guard/Windows interaction
+remains unknown; the correction is not established as reliable across repeats.
+
+Current safe validation passes 611 tests with one real-window test deselected,
+diagnostic/helper compilation, native/shader `/W4` build, native contract and
+ABI-null checks. These checks instantiate no WebEngine runtime. Actual disposable
+Qt/D3D11/desktop and synthetic SDK controls run outside sandbox; no new installed
+or invoice-preview WebEngine qualification is claimed. New report/JSON:
+`docs/CLEANROOM_SOURCE_TRANSFER_READINESS_2026-10-08.md`. Historical reports and
+failures remain unchanged, all task artifacts remain on Y:, and the installed
+production EXE is unchanged. Complete cold qualification, packaging, lifecycle
+and Cory's acceptance remain open.
+
 ## 2026-10-08: Exact Preserved-State And Final-Run Recovery
 
 Recovery confirms local/upstream/live experimental remote `947cc828`, an empty

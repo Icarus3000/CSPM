@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-08: Owned Source Transfer And Productivity Readiness
+
+- [x] Preserve pushed probe-contract checkpoint `0fe51f2` and every historical report unchanged; inspect disposable runtime logs before continuing.
+- [x] Add opt-in, bounded native source-transfer entry/exit and worker WINDOWPOS evidence. Preserve the first native failure and reject requested but unmeasured telemetry; ordinary runs do not query this metadata.
+- [x] Measure the original Productivity rejection: successful GUI batch hides live/shows native, but expected topmost native band is not applied. Retain this pre-motion failure separately from target readiness.
+- [x] Apply the owned live band on the stopped hidden native worker before the GUI visibility batch, preserving that band with `SWP_NOZORDER`. Strict ownership, visibility, pixel and deadline gates remain intact.
+- [x] Retain corrected restore-first Productivity run2: restore target publication/import return is 215.307/215.355 ms, within 240 ms; six restore complete-client comparisons, forty endpoint texel comparisons and one QML input pair pass. Following maximize imports at 165.356 ms then fails the separate 100 ms presentation-slot gate; eleven fresh passes and ten total complete-client comparisons are retained.
+- [x] Retain corrected five-toggle attempt run3: zero cycles complete; hidden worker band verification rejects at stage 10 before any GUI batch, motion, target or input. Live remains visible/topmost; native remains hidden/non-topmost. Foreground false is an observation, not an established cause.
+- [x] Run independent SDK-only background controls: baseline and worker DLLs pass both source bands, with eighteen exact synthetic source/submitted samples per DLL and unchanged foreground through cleanup. Background status alone is disproven as a sufficient cause; the full Qt/input-guard interaction remains unknown.
+- [x] Validate current code with 611 sandbox-safe tests, one real-window test deselected, Python compilation, native/shader `/W4` build, native contract/ABI-null checks and unchanged source hashes.
+- [ ] Resolve the real-app hidden band rejection and record the exact native presentation wait result without extending either deadline. Then complete repeated populated readiness/input, uninterrupted motion, WebEngine, reduced-motion and lifecycle qualification before packaging. Production remains unchanged; Cory's P0 acceptance stays open.
+
 ## 2026-10-08: Exact Probe-Contract Recovery
 
 - [x] Recover local/upstream/live remote `947cc828`, five tracked edits and four new files; retain every worktree, four stashes, failed run and ignored constructor. No owned stale fixture needs termination.

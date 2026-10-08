@@ -184,6 +184,8 @@ def main():
         help="Opt into general window-icon activation filter scoping; ordinary app startup remains unchanged")
     parser.add_argument("--single-owner-source", action="store_true",
         help="Diagnostic GUI-thread source visibility transfer in one native deferred-position batch")
+    parser.add_argument("--source-transfer-trace", action="store_true",
+        help="Passive bounded owned native window-band transfer evidence; requires single-owner source")
     parser.add_argument("--intrinsic-only", action="store_true",
         help="Matched source ownership/readiness/input control without any desktop collector; physical gates stay unmeasured")
     parser.add_argument("--probe-endpoint", action="store_true",
@@ -192,6 +194,8 @@ def main():
         help="Independent fresh complete-client comparison after actual QML input acceptance")
     parser.add_argument("--restored-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"), default=(1100, 760))
     args = parser.parse_args()
+    if args.source_transfer_trace and not args.single_owner_source:
+        parser.error("source transfer trace requires single-owner source ownership")
     if args.intrinsic_only and (not args.single_owner_source or args.physical_diagnostics
             or args.endpoint_pixels or args.pixels or args.source_observation_only
             or args.controlled_backdrop or args.probe_composition or args.probe_endpoint
@@ -259,6 +263,7 @@ def main():
         "scripts/diagnostics/native_presentation_observer.py",
         "scripts/diagnostics/source_pixel_analysis.py",
         "scripts/diagnostics/submitted_surface_contract.py",
+        "scripts/diagnostics/source_transfer_contract.py",
         "scripts/diagnostics/input_restoration_witness.py",
         "scripts/diagnostics/input_delivery_trace.py",
         "scripts/diagnostics/activation_cost_profile.py",
@@ -1086,6 +1091,9 @@ Item {
                 if args.probe_endpoint or args.probe_composition:
                     from submitted_surface_contract import enable_probe_snapshot
                     enable_probe_snapshot(dll, self.host)
+                if args.source_transfer_trace:
+                    from source_transfer_contract import enable_source_transfer_trace
+                    enable_source_transfer_trace(dll, self.host)
                 if args.single_owner_source:
                     self.defer_source_visibility()
                 if args.physical_diagnostics or args.source_observation_only:
@@ -1182,9 +1190,28 @@ Item {
                 # from hiding live and revealing native in the visibility batch.
                 self.lock_input()
             began = time.perf_counter()
-            if not function(self.host, hwnd):
-                raise RuntimeError("Single-owner source visibility transfer rejected: " + native_error(self.host))
+            accepted = bool(function(self.host, hwnd))
             ended = time.perf_counter()
+            rejection = native_error(self.host) if not accepted else None
+            if getattr(args, "source_transfer_trace", False):
+                # Preserve the first native rejection even if telemetry fails.
+                try:
+                    from source_transfer_contract import source_transfer_evidence
+                    evidence = source_transfer_evidence(dll, self.host)
+                except Exception as exc:
+                    evidence = {"status": "UNMEASURED", "reason": type(exc).__name__}
+                self.record("source-transfer-boundary", apiBeginSeconds=began,
+                    apiReturnSeconds=ended, accepted=accepted, nativeError=rejection, **evidence)
+                try:
+                    self.state_observation("source-after-single-owner-transfer")
+                except Exception as exc:
+                    self.record("source-transfer-state-unavailable", reason=type(exc).__name__)
+                    if accepted:
+                        raise
+            if not accepted:
+                raise RuntimeError("Single-owner source visibility transfer rejected: " + rejection)
+            if getattr(args, "source_transfer_trace", False) and evidence.get("status") == "UNMEASURED":
+                raise RuntimeError("Requested owned source-transfer trace was not measured")
             self.record("source-single-owner-transfer-issued", apiBeginSeconds=began,
                 apiReturnSeconds=ended, scope="GUI-thread Begin/Defer/EndDeferWindowPos hide-live/show-native batch; desktop proof follows")
             self.single_owner_source_geometry = geometry
@@ -1810,7 +1837,7 @@ Item {
                     if args.profile_boundaries else "not enabled"),
                 "completedCycles": self.completed, "failures": context["failures"],
                 "measurementScope": "GPU transfer and native status; physical geometry needs separate collector analysis",
-                "coldCandidateQualification": "FAIL" if context["failures"] else "NOT QUALIFYING" if args.prepared_target or args.capture_only or args.layout_only or args.source_observation_only or args.intrinsic_only or args.probe_endpoint else "REQUIRES ALL PHYSICAL GATES",
+                "coldCandidateQualification": "FAIL" if context["failures"] else "NOT QUALIFYING" if args.prepared_target or args.capture_only or args.layout_only or args.source_observation_only or args.intrinsic_only or args.probe_endpoint or args.source_transfer_trace else "REQUIRES ALL PHYSICAL GATES",
                 "presentationCpuReadbacks": 0, "presentationCpuUploads": 0,
                 "diagnosticTexelReadbacks": self.diagnostic_texel_readbacks}
             (audit / "native_gpu_spike.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")

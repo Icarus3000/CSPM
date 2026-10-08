@@ -383,6 +383,98 @@ def test_failed_source_ordering_cannot_claim_desktop_proof_or_start_native_clock
     assert not hasattr(app, "source_reorder_return_seconds")
 
 
+def traced_transfer_harness(harness, monkeypatch, *, accepted, metadata_failure=False, state_failure=False):
+    app, actions = harness.app, []
+    harness.args.source_transfer_trace = True
+    physical = [100, 100, 6, 4]
+    app.window.property = dict(zip(("finalX", "finalY", "finalW", "finalH"), physical)).get
+    app.window.isActive = lambda: True
+    app.window_observation = lambda hwnd: {"foreground": True}
+    def state_observation(label):
+        actions.append(("state", label))
+        if state_failure and label == "source-after-single-owner-transfer":
+            raise ValueError("synthetic state observer unavailable")
+    app.state_observation = state_observation
+    app.raise_source_visibility = lambda: actions.append(("raise-source",))
+    app.source_reorder_return_seconds = 10.3
+    app.observe_desktop = lambda *args, **kwargs: actions.append(("observe",))
+    harness.namespace["native_observation"] = lambda *args: {"sourceShowReturnSeconds": 10.1,
+        "lastPresentReturnSeconds": 10.2}
+    clock = iter((10.0, 10.25))
+    harness.namespace["time"] = SimpleNamespace(perf_counter=lambda: next(clock))
+    error_calls = []
+    def native_error(host):
+        error_calls.append(host)
+        return "first source-band rejection" if len(error_calls) == 1 else "later metadata rejection"
+    harness.namespace["native_error"] = native_error
+    def transfer(host, hwnd):
+        actions.append(("transfer", host, hwnd))
+        return int(accepted)
+    harness.dll.cspm_comp_transfer_source_visibility = FakeFunction(transfer)
+    def telemetry(dll, host):
+        actions.append(("metadata", host))
+        if metadata_failure:
+            raise RuntimeError("later telemetry ABI rejection")
+        return {"observation": {"stage": 9 if accepted else 8, "accepted": int(accepted)},
+            "messages": [], "scope": "synthetic passive boundary"}
+    monkeypatch.setitem(sys.modules, "source_transfer_contract", SimpleNamespace(source_transfer_evidence=telemetry))
+    return physical, actions, error_calls
+
+
+@pytest.mark.parametrize("metadata_failure", [False, True])
+@pytest.mark.parametrize("state_failure", [False, True])
+def test_rejected_transfer_trace_and_state_failure_cannot_mask_first_native_error_or_retry(harness, monkeypatch, metadata_failure, state_failure):
+    physical, actions, error_calls = traced_transfer_harness(harness, monkeypatch,
+        accepted=False, metadata_failure=metadata_failure, state_failure=state_failure)
+    with pytest.raises(RuntimeError, match="first source-band rejection"):
+        harness.app.transfer_source_visibility(physical)
+    boundary = next(row for row in harness.records if row["event"] == "source-transfer-boundary")
+    assert boundary["accepted"] is False and boundary["nativeError"] == "first source-band rejection"
+    assert boundary["apiBeginSeconds"] == 10.0 and boundary["apiReturnSeconds"] == 10.25
+    if metadata_failure:
+        assert boundary["status"] == "UNMEASURED" and boundary["reason"] == "RuntimeError"
+    else:
+        assert boundary["observation"]["stage"] == 8
+    assert error_calls == [101]
+    assert actions.count(("transfer", 101, 123)) == actions.count(("metadata", 101)) == 1
+    assert ("raise-source",) not in actions and ("observe",) not in actions
+    assert not any(row["event"] == "source-single-owner-transfer-issued" for row in harness.records)
+    assert bool([row for row in harness.records if row["event"] == "source-transfer-state-unavailable"]) == state_failure
+    assert harness.app.live_visibility_transferred is True  # Partial-failure cleanup retains ownership.
+
+
+def test_accepted_transfer_boundary_is_recorded_before_owner_raise_and_desktop_observation(harness, monkeypatch):
+    physical, actions, error_calls = traced_transfer_harness(harness, monkeypatch, accepted=True)
+    harness.app.transfer_source_visibility(physical)
+    assert actions == [("state", "source-before-single-owner-transfer"),
+        ("transfer", 101, 123), ("metadata", 101),
+        ("state", "source-after-single-owner-transfer"), ("raise-source",), ("observe",)]
+    events = [row["event"] for row in harness.records]
+    assert events.index("source-transfer-boundary") < events.index("source-single-owner-transfer-issued")
+    boundary = next(row for row in harness.records if row["event"] == "source-transfer-boundary")
+    assert boundary["accepted"] is True and boundary["nativeError"] is None
+    assert error_calls == []
+
+
+def test_requested_but_unmeasured_transfer_trace_fails_without_repeating_successful_transfer(harness, monkeypatch):
+    physical, actions, error_calls = traced_transfer_harness(harness, monkeypatch,
+        accepted=True, metadata_failure=True)
+    with pytest.raises(RuntimeError, match="trace was not measured"):
+        harness.app.transfer_source_visibility(physical)
+    assert actions.count(("transfer", 101, 123)) == 1 and error_calls == []
+    assert ("raise-source",) not in actions and ("observe",) not in actions
+    boundary = next(row for row in harness.records if row["event"] == "source-transfer-boundary")
+    assert boundary["accepted"] is True and boundary["status"] == "UNMEASURED"
+
+
+def test_ordinary_transfer_does_not_query_opt_in_metadata(harness, monkeypatch):
+    physical, actions, error_calls = traced_transfer_harness(harness, monkeypatch, accepted=True)
+    harness.args.source_transfer_trace = False
+    harness.app.transfer_source_visibility(physical)
+    assert ("metadata", 101) not in actions and error_calls == []
+    assert not any(row["event"] == "source-transfer-boundary" for row in harness.records)
+
+
 def test_single_owner_coverage_is_a_required_transfer_comparison_not_an_overlap(harness):
     app = harness.app
     harness.args.single_owner_source = True
