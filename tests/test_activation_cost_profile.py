@@ -15,7 +15,7 @@ from activation_cost_profile import ActivationCostProfile
 def fixture():
     window, other, now = object(), object(), [10.0]
     adapter = SimpleNamespace(owns=lambda obj: obj is window,
-        QEvent=SimpleNamespace(WindowActivate=24, FocusIn=8))
+        QEvent=SimpleNamespace(WindowActivate=24, WindowDeactivate=25, FocusIn=8, FocusOut=9))
     profile = ActivationCostProfile(window, disposable=True, clock=lambda: now[0], adapter=adapter)
     return SimpleNamespace(profile=profile, window=window, other=other, now=now,
         event=lambda kind: SimpleNamespace(type=lambda: kind))
@@ -96,6 +96,24 @@ def test_focus_in_and_dispatch_exception_are_profiled_without_changing_exception
     assert row["eventKind"] == "focus-in" and row["status"] == "RAISED"
     assert row["inclusiveMs"] == pytest.approx(20)
     assert "exception" not in row
+
+
+@pytest.mark.parametrize("kind,label", [(25,"window-deactivate"), (9,"focus-out")])
+def test_source_deactivation_dispatch_is_measured_once_without_changing_delivery(fixture, kind, label):
+    f, calls = fixture, []
+    f.profile.start()
+
+    def dispatch():
+        calls.append(kind)
+        f.now[0] += .175
+        return False
+
+    assert f.profile.notify(f.window, f.event(kind), dispatch) is False
+    result = f.profile.stop()
+    assert calls == [kind] and result["status"] == "COMPLETE"
+    assert len(result["events"]) == 1
+    row = result["events"][0]
+    assert row["eventKind"] == label and row["inclusiveMs"] == pytest.approx(175)
 
 
 def test_clock_error_and_event_conversion_are_passive_and_mark_incomplete(fixture):
@@ -235,10 +253,12 @@ def test_qcore_notify_override_and_ordinary_hooks_complete_in_isolated_no_window
         QCoreApplication.sendEvent(window, QEvent(QEvent.WindowActivate))
         QCoreApplication.sendEvent(other, QEvent(QEvent.WindowActivate))
         icon.apply_all()
+        QCoreApplication.sendEvent(window, QEvent(QEvent.WindowDeactivate))
         result = app.activation_profile.stop()
         app.activation_profile = None
         assert result["status"] == "COMPLETE", result
-        assert [row["stage"] for row in result["events"]] == ["qt-notify", "icon-apply-owned-window", "icon-apply-all", "icon-apply-owned-window"]
+        assert [row["stage"] for row in result["events"]] == ["qt-notify", "icon-apply-owned-window", "icon-apply-all", "icon-apply-owned-window", "qt-notify"]
+        assert result["events"][-1]["eventKind"] == "window-deactivate"
         assert calls == [window, other, window]
         QCoreApplication.sendEvent(window, QEvent(QEvent.WindowActivate))
         assert calls == [window, other, window, window]

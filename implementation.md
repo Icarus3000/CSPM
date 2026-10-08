@@ -1,5 +1,27 @@
 # Implementation History
 
+## 2026-10-08: Exact Preserved-State And Final-Run Recovery
+
+Recovery confirms local/upstream/live experimental remote `947cc828`, an empty
+index, five tracked edits and four new files. The recovered documentation edits
+are complete; the lifecycle artifacts and ignored aggregate are earlier complete
+snapshots missing the finalized Directory result. Preserve them byte unchanged.
+The new probe-contract recovery report/JSON records all historical hashes and
+finalizes Directory's two directions, fourteen fresh passes, twelve complete
+comparisons and two QML input pairs while retaining its 63-pixel restore failure.
+Matched profiled activation medians remain 396.979/164.097 ms and guard-to-QML
+443.968/208.094 ms, with all 27 source hashes and the measured DLL identical.
+Build-time source mapping for that old DLL is explicitly unrecorded.
+
+Recovered-code validation is sandbox-safe only: 411 tests pass, one test that
+constructs hidden windows is deselected, and both recovered diagnostics compile.
+No new WebEngine or desktop claim belongs to this recovery milestone. All task
+storage stays on Y:, worktrees/stashes remain intact and no stale owned process
+needs termination. Installed EXE remains SHA256
+`8D461B679B4D578CFB6BE6DE259AB2E183E62A6D9F1EB944A69527BEFC8C0FA3`.
+Probe identity, Directory margins and subsequent complete qualification remain
+active work; no package/install/default or real-user acceptance change.
+
 ## 2026-10-05: Explicit Disposable Activation Profiler
 
 First-error preservation/recovery checkpoint `a254b60112c85182a676b96e8435f12d2c92be39`
@@ -38,6 +60,29 @@ checks pass. A separate startup selection retains two failures against unchanged
 BootstrapRoot/DetachedShellWindow QML source; they are not presented as a pass or
 repaired as part of maximize/restore. Matched physical/intrinsic evidence for the
 repair is still required before any performance or qualification claim.
+
+The later valid current-source comparison has exactly matching 27 startup source
+hashes and DLL; only audit label and activation-repair flag differ. Both controls
+complete four directions, 28 fresh gates, 24 exact comparisons and four accepted
+QML input pairs. Within the explicitly profiled fixture, activation median falls
+396.979 to 164.097 ms and guard-to-QML acceptance median falls 443.968 to 208.094 ms.
+Notify adds Python dispatch overhead; neither is a production speed or collector
+overhead result. The first same-source flag-off readiness failure remains retained.
+
+Repaired Directory executes both directions with fourteen fresh gates and two
+QML pairs. Restore retains 63 differences in right margin `[1111,646,1122,655]`
+before and after input; body/header remain exact. Target/live GPU samples match,
+including transparent mismatch samples. Submitted-buffer probe samples disagree
+even for a desktop-exact maximized endpoint, so their identity must be independently
+verified before assigning a shader/backdrop cause. No differing pixel is forgiven.
+
+Deactivation/focus-loss spans are now measured by the same opt-in diagnostic.
+`startup_input_classification_control.py` counterbalances the actual governed
+startup probe against an AST map-lookup prototype on the same native Qt Item tree,
+preserving five labels, first capture and every ongoing callback. It is diagnostic
+only; no startup-probe production change is made. A 4001-node control observes
+60.240/40.539 ms median activation-pair classification with identical callback
+counts. It does not establish application interactivity or cold target readiness.
 
 ## 2026-10-04: Later Committed Worker Ordering And Failure Attribution
 

@@ -1,5 +1,56 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-08: Finalized Evidence Recovered Before Probe Correction
+
+**PROVEN BY MEASUREMENT:** the final retained Directory JSON completes both
+directions with fourteen fresh passes and two accepted QML input pairs. Its
+63-pixel restored-margin difference remains before and after input; maximized
+endpoint and all source transfers are exact. The stale aggregate's INCOMPLETE
+row is not the finalized result. All historical snapshots remain byte unchanged.
+
+**PROVEN BY MEASUREMENT:** the matching activation runs share all 27 source hashes
+and measured DLL. Profiled activation and guard-to-QML medians improve as already
+recorded. **STILL UNKNOWN:** production input latency, causal collector overhead,
+old DLL compile-source equivalence, submitted allocation identity and a general
+Directory-margin cause. The recovered deactivation profiler/classifier remains
+diagnostic-only; 411 safe tests pass with one real-window test deselected.
+
+The exact continuity, full relative timing/focus states, finalized raw hashes and
+honest deferred-witness-cleanup limits are preserved in
+`CLEANROOM_PROBE_CONTRACT_RECOVERY_2026-10-08.md` and its JSON. No new runtime or
+qualification claim belongs to that recovery milestone. **Not yet accepted by Cory.**
+
+## 2026-10-05: Matched Activation Repair And Persistent Transparent Margin
+
+**PROVEN BY MEASUREMENT:** two serialized Time Entry controls have identical 27
+source hashes and DLL, with only the repair flag and audit label differing. Each
+has four accepted directions, 28 fresh passes, 24 exact complete-client arrays and
+four QML-accepted input pairs. Within the profiled fixture, window-activation
+median falls 396.979 to 164.097 ms and guard-release-to-QML median falls 443.968 to
+208.094 ms. **STILL UNKNOWN:** production total speed and causal collector cost.
+The earlier same-source failed control is retained separately.
+
+**SUPPORTED BY OBSERVATION:** the general opt-in QWindow icon restriction and
+inert-filter omission reduce expensive recursive item work. Real Qt tree tests
+retain descendant activation and palette updates. No focus loop/global key input
+or startup-input callback suppression is introduced. The first-failure native
+diagnostic distinguishes actual late Qt delivery from rejected-worker queue delay.
+
+**PROVEN BY MEASUREMENT:** Directory restore still differs at 63 right-margin
+pixels, both before and after accepted input, with exact body/header and identical
+sampled target/live GPU texels. Maximized endpoint is desktop exact. Submitted
+probe samples disagree at both endpoints, so **STILL UNKNOWN:** whether the probe
+identifies immutable submitted texels and what generally causes the transparent
+margin discrepancy. Earlier 73/84/64/54 results remain failed evidence.
+
+**DISPROVEN:** the icon repair alone qualifies collector-free cold restore. Its
+repaired control still misses readiness; queued source deactivation occupies the
+target interval. A preparatory wait would move expense without proving faster
+movement. A bounded deactivation profiler and counterbalanced startup-classifier
+prototype are preserved for the next measurement; the prototype changes no
+production input behavior. Complete qualification/install and Cory acceptance
+remain open. **Not yet accepted by Cory.**
+
 ## 2026-10-04: Later Worker Ordering And Activation Cost Localization
 
 **PROVEN BY MEASUREMENT:** exact continuity recovers clean local/upstream/live

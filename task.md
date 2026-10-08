@@ -1,5 +1,12 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-08: Exact Probe-Contract Recovery
+
+- [x] Recover local/upstream/live remote `947cc828`, five tracked edits and four new files; retain every worktree, four stashes, failed run and ignored constructor. No owned stale fixture needs termination.
+- [x] Recover the finalized Directory result and matched activation comparison omitted by the stale aggregates. Preserve 63 margin pixels, all raw-result hashes and exact input/clock scope in `docs/CLEANROOM_PROBE_CONTRACT_RECOVERY_2026-10-08.md` and its JSON.
+- [x] Revalidate recovered code with 411 sandbox-safe tests and diagnostic compilation (one window-constructing test deselected); protected installed EXE remains unchanged.
+- [ ] Prove immutable submitted-surface coordinates/revisions, then recheck Directory without forgiving margin pixels. Checkpoint the coherent probe result before dependent populated-readiness/complete qualification. No package/install or P0 acceptance yet.
+
 ## 2026-10-05: Bounded Activation Dispatch Measurement
 
 - [x] Preserve first native error/rejected worker-entry diagnostics in pushed and live-verified `a254b60` before further desktop controls.
@@ -7,7 +14,10 @@
 - [x] Retain collector-free Time Entry cold restore failure; original fixed readiness error remains visible and no input witness is reached.
 - [x] Outside sandbox, profile four cold Time Entry directions: 28 fresh observations, 24 exact complete-client comparisons and four QML pairs; root WindowActivate dispatch spans 340–420 ms. Synthetic real Qt controls prove application filters receive recursive hidden-item activation events while palette/event behavior remains intact.
 - [x] Add opt-in general QWindow-only icon handling and omit the inert global splash filter. Default startup and ongoing input callbacks remain intact; focused Qt source/helper tests pass. Retain two unrelated startup QML source-contract failures whose QML inputs are unchanged.
-- [ ] Compare matched current-source/DLL activation and physical controls; preserve absent/late evidence and qualify only complete gates. No candidate packaging or production change.
+- [x] Compare current-source/DLL Time Entry controls: flag-off/on each complete four directions, 28 fresh gates, 24 exact complete-client comparisons and four input pairs. Profiled activation median falls 397.0 to 164.1 ms; guard-to-QML median falls 444.0 to 208.1 ms. Preserve the first flag-off readiness failure separately; this is scoped diagnostic evidence.
+- [x] Recheck Directory both directions with stopped endpoint diagnostics: fourteen fresh gates and two accepted input pairs; restore still fails 63 margin pixels before/after input. Sampled target/live texels match, while submitted-buffer identity remains under verification.
+- [x] Extend bounded profile to owned deactivation/focus loss and preserve the counterbalanced actual startup-input classifier prototype as diagnostic-only work.
+- [ ] Resolve complete cold readiness, Directory margins, repeated populated input and all continuous-motion/lifecycle gates before packaging. Production remains unchanged.
 
 ## 2026-10-04: Later Worker Ordering Recovery And Activation Localization
 

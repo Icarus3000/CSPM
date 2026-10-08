@@ -62,13 +62,15 @@ class ActivationCostProfile:
                 return None
             kind = event.type()
             return ("window-activate" if kind == self.adapter.QEvent.WindowActivate
-                    else "focus-in" if kind == self.adapter.QEvent.FocusIn else None)
+                    else "window-deactivate" if kind == self.adapter.QEvent.WindowDeactivate
+                    else "focus-in" if kind == self.adapter.QEvent.FocusIn
+                    else "focus-out" if kind == self.adapter.QEvent.FocusOut else None)
         except Exception:
             self.observation_errors += 1
             return None
 
     def notify(self, watched, event, dispatch):
-        """Call the real notify exactly once, bracketing only owned activation.
+        """Call the real notify once, bracketing owned activation/deactivation.
 
         Integrate at the fixture QApplication subclass, before ordinary Qt event
         dispatch. Other events and foreign windows receive unchanged dispatch.
