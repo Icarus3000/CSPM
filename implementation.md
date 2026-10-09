@@ -1,5 +1,22 @@
 # Implementation History
 
+## 2026-10-09: Development-Only Manual Native Adapter
+
+The local harness branch adds `--manual` to the existing native GPU diagnostic
+fixture and a separate `manual_native_fixture.py` adapter. Only an ignored QML
+mirror routes the ordinary guarded maximize/restore control to the existing
+native transaction. The historical private-data bootstrap is replaced with a
+fresh populated synthetic profile; file/registry/external-action guards and Qt
+storage redirection protect the ordinary installation and state. Native source,
+production selector, timings/deadlines and failure cleanup remain unchanged.
+There are no automatic cycles, collectors, prepared targets or production
+fallbacks. Terminal native rejection remains visible rather than retrying.
+
+Focused safe tests pass 197 cases; compilation and the governed bridge build
+pass. See `docs/MANUAL_NATIVE_VISUAL_HARNESS.md` for launch/review boundaries.
+Real desktop launch and Cory's five-toggle visual judgment follow final review;
+neither the manual adapter nor a visual opinion closes technical qualification.
+
 ## 2026-10-09: Preservation-Only Computer Handoff
 
 Closeout preserves the clean experimental `3c41aaf` checkpoint and the existing

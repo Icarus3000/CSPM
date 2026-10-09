@@ -126,6 +126,8 @@ def profile_shell_source(source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit-label", required=True)
+    parser.add_argument("--manual", action="store_true",
+        help="Development-only synthetic manual visual fixture; no collector or production fallback")
     parser.add_argument("--cycles", type=int, default=4)
     parser.add_argument("--gui-delay-ms", type=int, default=80)
     parser.add_argument("--duration-ms", type=int, default=350)
@@ -205,6 +207,12 @@ def main():
         help="Independent fresh complete-client comparison after actual QML input acceptance")
     parser.add_argument("--restored-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"), default=(1100, 760))
     args = parser.parse_args()
+    if args.manual:
+        from manual_native_fixture import validate_manual_options
+        try:
+            validate_manual_options(args)
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.source_transfer_trace and not args.single_owner_source:
         parser.error("source transfer trace requires single-owner source ownership")
     if args.native_created_source_band and not args.single_owner_source:
@@ -273,6 +281,7 @@ def main():
     faulthandler.dump_traceback_later(45, repeat=True, file=stack_log)
     provenance_paths = (
         "scripts/diagnostics/native_gpu_transition_spike.py",
+        "scripts/diagnostics/manual_native_fixture.py",
         "scripts/diagnostics/target_layout_fanout.py",
         "scripts/diagnostics/window_transition_probe.py",
         "scripts/diagnostics/native_presentation_observer.py",
@@ -314,13 +323,16 @@ def main():
     }
     mirror = None
     mirror_provenance = {}
-    if args.profile_boundaries:
+    if args.profile_boundaries or args.manual:
         mirror = audit / "tree"
         for name in ("src/qml", "src/assets", "assets"):
             shutil.copytree(root / name, mirror / name)
         shell_path = mirror / "src/qml/DetachedShellWindow.qml"
-        shell_path.write_text(profile_shell_source(shell_path.read_text(encoding="utf-8")),
-            encoding="utf-8")
+        if args.manual:
+            from manual_native_fixture import shell_source
+            shell_path.write_text(shell_source(shell_path.read_text(encoding="utf-8")), encoding="utf-8")
+        else:
+            shell_path.write_text(profile_shell_source(shell_path.read_text(encoding="utf-8")), encoding="utf-8")
         if args.fanout_variant:
             for name, changed_source in instrument_mirror(mirror, args.fanout_variant,
                     collect_counts=not args.fanout_quiet).items():
@@ -331,6 +343,9 @@ def main():
         mirror_provenance["src/qml/DetachedShellWindow.qml"] = hashlib.sha256(shell_path.read_bytes()).hexdigest()
     bridge_directory = (root / "outputs/native_cleanroom").resolve()
     dll_path = (bridge_directory / args.bridge_dll).resolve()
+    if args.manual:
+        from manual_native_fixture import bridge_path
+        dll_path = bridge_path(root, args.bridge_dll)
     if dll_path.parent != bridge_directory or dll_path.suffix.lower() != ".dll":
         parser.error("bridge DLL must be a filename within outputs/native_cleanroom")
     dll = ctypes.CDLL(str(dll_path))
@@ -363,8 +378,19 @@ def main():
         buffer = ctypes.create_string_buffer(1024)
         dll.cspm_comp_error(host, buffer, len(buffer))
         return buffer.value.decode("utf-8", errors="replace")
-    original = Path(os.environ["LOCALAPPDATA"]) / "CSPM"
-    protected = [original / "user_settings.json", *(original / "data" / name for name in ("CSPM.xlsm", "Dockets.xlsm"))]
+    if args.manual:
+        from manual_native_fixture import prepare_profile
+        manual_profile, manual_environment = prepare_profile(root, audit, args.restored_size)
+        protected = [manual_profile / "user_settings.json",
+            *(manual_profile / "local" / name for name in ("CSPM.xlsm", "Dockets.xlsm"))]
+        (audit / "manual_launch.json").write_text(json.dumps({
+            "configuration": vars(args), "sourceGit": source_git, "sourceProvenance": source_provenance,
+            "dllPath": str(dll_path), "dllHash": dll_hash, "environment": {k: str(v) for k, v in manual_environment.items()},
+            "disposableProfile": str(manual_profile), "externalCollectors": False,
+            "productionBootstrap": False, "qualification": "VISUAL ONLY - NOT QUALIFIED"}, indent=2), encoding="utf-8")
+    else:
+        original = Path(os.environ["LOCALAPPDATA"]) / "CSPM"
+        protected = [original / "user_settings.json", *(original / "data" / name for name in ("CSPM.xlsm", "Dockets.xlsm"))]
     hashes = lambda: {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in protected}
     before = hashes()
     (audit / "protected_hashes_start.json").write_text(json.dumps(before, indent=2), encoding="utf-8")
@@ -379,6 +405,9 @@ def main():
     source = source[:source.index("\nentry._capture_startup_launch_context = diagnostic_launch_context")]
     source = source.replace('AUDIT = ROOT / "logs/window_transition_diagnostic"', "AUDIT = Path(" + repr(str(audit)) + ")")
     source = configure_fixture_source(source, args.first_direction, args.workspace, args.restored_size)
+    if args.manual:
+        from manual_native_fixture import fixture_source
+        source = fixture_source(source, root, audit, manual_profile)
     # Disable Python per-frame instrumentation inherited from historical fixture.
     for names in ("('beforeFrameBegin','beforeSynchronizing','afterSynchronizing','beforeRendering','afterRendering','afterFrameEnd','frameSwapped')", "('xChanged','yChanged','widthChanged','heightChanged','finalXChanged','finalYChanged','finalWChanged','finalHChanged')"):
         source = source.replace("for name in " + names + ":", "for name in ():")
@@ -402,8 +431,15 @@ class PixelTracker:
         source = source.replace(marker_statement, "self.create_probe_marker(code, name)")
     sys.path.insert(0, str(probe.parent))
     context = {"__file__": str(probe), "__name__": "native_gpu_fixture"}
+    if args.manual:
+        from manual_native_fixture import install_io_guard
+        install_io_guard(root, audit)
     exec(compile(source, str(probe), "exec"), context)
     entry, base = context["entry"], context["ProbeApplication"]
+    if args.manual:
+        from manual_native_fixture import LABEL
+        entry.APP_TITLE = LABEL
+        entry.APP_MAINTAINER = "Leviathan Disposable Diagnostics"
     from PySide6.QtCore import QObject, QTimer, Qt, QUrl, Signal, QLoggingCategory
     from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent
     from PySide6.QtQuick import QSGRendererInterface, QQuickItem
@@ -466,6 +502,9 @@ class PixelTracker:
             self.started_native = None
             self.current = None
             self.finished = False
+            self.manual_ready = False
+            self.manual_busy = False
+            self.manual_requested = False
             self.completed = 0
             self.desktop_camera = None
             self.source_desktop = None
@@ -507,6 +546,13 @@ class PixelTracker:
             self.buffered_output_written = False
             super().__init__(argv)
             self.surface_timer.stop()
+            if args.manual:
+                from PySide6.QtWebEngineCore import QWebEngineProfile
+                web_profile = QWebEngineProfile.defaultProfile()
+                web_profile.setPersistentStoragePath(str(manual_profile / "webengine_storage"))
+                web_profile.setCachePath(str(manual_profile / "webengine_cache"))
+                web_profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+                web_profile.setHttpCacheType(QWebEngineProfile.MemoryHttpCache)
 
         def trace_surfaces(self):
             return
@@ -657,7 +703,17 @@ Item {
                     from activation_cost_profile import ActivationCostProfile
                     self.activation_profile = ActivationCostProfile(self.window,
                         disposable=True, adapter=self.input_trace.adapter).start(entry)
-            super().begin_cycles()
+            if args.manual:
+                from manual_native_fixture import attach_status
+                self.expected_tab = self.evaluate("_probeWindow.mainContentRef.option3ActiveTabId").toString()
+                if not self.expected_tab:
+                    raise RuntimeError("Manual Time Entry workspace did not open")
+                # The inherited tracker only supplies a no-op command sink.
+                self.tracker = context["PixelTracker"]()
+                attach_status(self, source_git["head"], dll_hash, audit)
+                self.record("manual-ready", workspace=args.workspace, externalCollectors=False)
+            else:
+                super().begin_cycles()
 
         def create_probe_marker(self, code, name):
             # Direct component construction releases the Python GIL during QML
@@ -738,6 +794,8 @@ Item {
         def record(self, name, **data):
             row = {"event": name, "t": time.perf_counter(), "cycle": self.completed, **data}
             self.rows.append(row)
+            if args.manual and hasattr(self, "manual_controller"):
+                self.manual_controller.event(name, data)
             if not args.profile_boundaries:
                 print(json.dumps(row), flush=True)
 
@@ -827,10 +885,15 @@ Item {
 
         @guarded
         def step(self):
-            if self.completed >= args.cycles:
+            if args.manual:
+                if not self.manual_requested:
+                    return
+                self.manual_requested = False
+            elif self.completed >= args.cycles:
                 self.complete()
                 return
-            maximize = (self.completed % 2 == 0) == (args.first_direction == "maximize")
+            maximize = (not self.window.property("uiMaximized") if args.manual
+                else (self.completed % 2 == 0) == (args.first_direction == "maximize"))
             kind = "maximize" if maximize else "restore"
             self.window_state = "normal" if maximize else "maximized"
             self.current = {"kind": kind, "command": time.perf_counter(), "sourceClient": client(self.window)}
@@ -1523,7 +1586,12 @@ Item {
             self.record("live-host-revealed")
             self.window.update()
             if args.physical_diagnostics or args.intrinsic_only:
-                QTimer.singleShot(750, self.live_host_deadline)
+                if args.manual:
+                    transaction = self.current
+                    QTimer.singleShot(750, lambda: self.live_host_deadline()
+                        if self.current is transaction else None)
+                else:
+                    QTimer.singleShot(750, self.live_host_deadline)
             else:
                 QTimer.singleShot(100, self.handoff)
 
@@ -1674,7 +1742,12 @@ Item {
                 self.begin_input_witness()
                 return
             self.completed += 1
-            QTimer.singleShot(200, self.step)
+            if args.manual:
+                self.manual_busy = False
+                self.manual_controller.update("direction", self.current["kind"] + " complete; ready for manual control")
+                self.write_results()
+            else:
+                QTimer.singleShot(200, self.step)
 
         def restore_source_activation(self, boundary):
             if not self.source_foreground_before_transfer:
@@ -1781,6 +1854,8 @@ Item {
         def fail(self, category, error):
             context["failures"].append(category + ": " + error)
             self.record("qualification-failure", category=category, error=error)
+            if args.manual:
+                self.manual_rejected = True
             self.complete()
 
         def timeout(self):
@@ -1930,6 +2005,14 @@ Item {
                 self.desktop_camera.release()
                 self.desktop_camera = None
             self.record("spike-finished", completeCycles=self.completed)
+            if args.manual and getattr(self, "manual_rejected", False) and hasattr(self, "manual_controller") and self.window is not None and isValid(self.window):
+                # Existing bounded cleanup above is unchanged. Terminal rejection
+                # leaves the enabled live window visible for diagnosis, never retries
+                # or presents production motion. Close is still available.
+                self.manual_busy = False
+                self.manual_controller.update("direction", "Native rejected; no further transitions in this fixture")
+                self.write_results()
+                return
             if self.window is not None and isValid(self.window):
                 try:
                     self.evaluate("_probeWindow.geometryTransitionSuppressed = false; _probeWindow.requestCloseAnimation()")
@@ -2033,7 +2116,7 @@ Item {
                 "scope": "No diagnostic application owner; no transition or pixel qualification"}, indent=2), encoding="utf-8")
         after = hashes()
         (audit / "protected_hashes.json").write_text(json.dumps({"before": before, "after": after, "unchanged": before == after}, indent=2), encoding="utf-8")
-        if before != after:
+        if before != after and not args.manual:
             raise RuntimeError("Protected production files changed")
         faulthandler.cancel_dump_traceback_later()
         stack_log.close()
