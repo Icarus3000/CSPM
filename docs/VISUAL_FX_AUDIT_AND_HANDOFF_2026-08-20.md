@@ -2,6 +2,20 @@
 
 Status: Active user-directed priority as of 2026-08-20.
 
+## Latest continuation point — 2026-10-03
+
+Complete user-requested handoff: `docs/MAXIMIZE_RESTORE_COMPLETE_HANDOFF_2026-10-03.md`. It consolidates the silky, smooth, flowing, gliding, elite, premium objectives, documented attempts and current status. This handoff does not introduce a new animation fix or validation result.
+
+**Hard user acceptance requirement:** maximize/restore must be one uninterrupted smooth movement from start to finish, including the captured-image/live handoff. No perceptible pause, restart, jump, jerk or separate final settling movement. Faster timing only qualifies when this complete continuity is preserved.
+
+Latest feel clarification: it must **flow like plasma or water** and cannot be jarring. Smooth changes in speed and arrival must preserve that fluid feeling through target readiness and live handoff. This is a requirements update only; the faster implementation remains unresolved.
+
+The user explicitly identifies CSPM's existing opening and closing animations as **perfectly smooth and flowing**. Preserve them and use their accepted uninterrupted movement and final arrival as the in-app visual benchmark for maximize/restore. Recording this benchmark does not establish a new implementation or validation result.
+
+Follow-up component profiling is attempted but remains inconclusive: source-frame watchdog/state/overall-timeout failures and stalled control/native-render fixtures do not produce a usable target-layout profile. Preserve failed/incomplete evidence, exclude it from prior passing aggregates, and do not adopt the diagnostic elapsed-time animation driver. No production/dist/installed change or new smoothness/WebEngine acceptance is obtained. Restore reliable desktop profiling before attributing the measured target-layout cost to a specific component.
+
+The user accepts smooth maximize from a smaller window, requests at least 3× speed and explicitly requires KDE/Fedora-style continuous motion with natural deceleration. A matched 20-toggle comparison shows that shortening 800/220 ms timings to 240/65 ms improves complete maximize/restore by only 1.21×/1.45×. Target layout/rendering still dominates, and shortened preparation can end before target readiness. Reject the timing-only candidate and restore accepted production QML; installed/dist runtime is unchanged. Granular metrics, immediate capture, lazy prompts and metrics coalescing do not establish a useful gain. Retain only disposable comparison diagnostics and nonsensitive evidence. Read `docs/MAXIMIZE_RESTORE_SPEED_AND_SMOOTHNESS_ANALYSIS_2026-10-03.md` and the latest task/implementation entries. Threefold speed and continuous smoothness remain unmet; profile the measured layout/first-render boundaries before another correction. Stay on P0 until real-app user acceptance.
+
 ## Latest continuation point — 2026-10-02
 
 **Latest authorized correction:** the user permits fixing the intermittent restore nudge and previously requests release publication/recompilation. Native framebuffer capture and actual Windows client geometry preserve the physical pixel grid through direct shader endpoints, while accepted header mapping/early movement and all gates/watchdog remain. Both GPU regressions pass, including 18 exact handoffs across three screens and monitor boundaries; forty safe tests pass. Final populated-app comparisons pass at both DPIs. Both executables are rebuilt and the complete package is installed at `C:/Programs/CSPM`. Candidate/installed startup, four title-bar toggles each and actual packaged WebEngine rendering pass; all 4,377 runtime files and 168 source/bundled QML files match, with workbook/settings hashes unchanged. Fix/release `6c72200` is pushed and the full remote SHA independently verified; this documentation follow-up records publication. Read `docs/RESTORE_PIXEL_ALIGNMENT_FIX_2026-10-02.md` and the latest ledger. Do not advance from P0; real-user installed acceptance remains open.

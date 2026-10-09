@@ -1,0 +1,1346 @@
+{
+  "date": "2026-10-03",
+  "status": "No faster production candidate accepted or deployed; threefold speed and continuous smoothness remain unmet.",
+  "measurement": "QML handler to GUI handling of submitted-frame notifications; no physical scanout or frame-pacing certification.",
+  "safe_checks": {
+    "focused_tests_passed": 28,
+    "diagnostic_compilation": "passed",
+    "governed_qml_lint": "exit 0, existing warnings",
+    "whitespace": "passed"
+  },
+  "outside_sandbox": "Desktop/full-source Qt GPU functional and timing fixtures on disposable data/settings; no new dedicated WebEngine e2e.",
+  "runs": {
+    "baseline": {
+      "primary_toggles": 6,
+      "total_transitions": 9,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 111,
+            "source-presented": 268,
+            "motion-first-submitted-frame": 305,
+            "commit-start": 305,
+            "commit-width": 368,
+            "commit-height": 572,
+            "commit-end": 581,
+            "target-grab-request": 872,
+            "target-grab-ready": 898,
+            "motion-start-request": 907,
+            "motion-finished": 1186,
+            "live-target-reveal": 1187,
+            "finish-start": 1270,
+            "finish-end": 1292
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 29,
+            "source-presented": 118,
+            "motion-first-submitted-frame": 137,
+            "commit-start": 137,
+            "commit-width": 185,
+            "commit-height": 402,
+            "commit-end": 415,
+            "target-grab-request": 672,
+            "target-grab-ready": 690,
+            "motion-start-request": 733,
+            "motion-finished": 1017,
+            "live-target-reveal": 1051,
+            "finish-start": 1133,
+            "finish-end": 1161
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 31,
+            "source-presented": 126,
+            "motion-first-submitted-frame": 141,
+            "commit-start": 141,
+            "commit-width": 192,
+            "commit-height": 388,
+            "commit-end": 396,
+            "target-grab-request": 647,
+            "target-grab-ready": 678,
+            "motion-start-request": 685,
+            "motion-finished": 970,
+            "live-target-reveal": 1010,
+            "finish-start": 1092,
+            "finish-end": 1117
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 40,
+            "source-presented": 141,
+            "motion-first-submitted-frame": 156,
+            "commit-start": 157,
+            "commit-width": 194,
+            "commit-height": 380,
+            "commit-end": 394,
+            "target-grab-request": 652,
+            "target-grab-ready": 674,
+            "motion-start-request": 685,
+            "motion-finished": 957,
+            "live-target-reveal": 990,
+            "finish-start": 1072,
+            "finish-end": 1093
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 47,
+            "source-presented": 155,
+            "motion-first-submitted-frame": 169,
+            "commit-start": 169,
+            "commit-width": 222,
+            "commit-height": 439,
+            "commit-end": 446,
+            "target-grab-request": 714,
+            "target-grab-ready": 739,
+            "motion-start-request": 749,
+            "motion-finished": 1024,
+            "live-target-reveal": 1054,
+            "finish-start": 1120,
+            "finish-end": 1139
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 35,
+            "source-presented": 157,
+            "motion-first-submitted-frame": 176,
+            "commit-start": 176,
+            "commit-width": 221,
+            "commit-height": 400,
+            "commit-end": 411,
+            "target-grab-request": 678,
+            "target-grab-ready": 702,
+            "motion-start-request": 740,
+            "motion-finished": 1040,
+            "live-target-reveal": 1057,
+            "finish-start": 1139,
+            "finish-end": 1165
+          }
+        }
+      ],
+      "exploratory_medians_ms": {
+        "total": 1150.0,
+        "geometry_layout_commit": 265.5,
+        "target_readiness_and_capture": 286.5
+      }
+    },
+    "short_motion": {
+      "primary_toggles": 6,
+      "total_transitions": 9,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 24,
+            "source-presented": 129,
+            "motion-first-submitted-frame": 164,
+            "commit-start": 164,
+            "commit-width": 232,
+            "commit-height": 475,
+            "commit-end": 485,
+            "target-grab-request": 757,
+            "target-grab-ready": 779,
+            "motion-start-request": 795,
+            "motion-finished": 878,
+            "live-target-reveal": 910,
+            "finish-start": 976,
+            "finish-end": 994
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 31,
+            "source-presented": 128,
+            "motion-first-submitted-frame": 146,
+            "commit-start": 146,
+            "commit-width": 193,
+            "commit-height": 376,
+            "commit-end": 391,
+            "target-grab-request": 615,
+            "target-grab-ready": 636,
+            "motion-start-request": 664,
+            "motion-finished": 751,
+            "live-target-reveal": 779,
+            "finish-start": 863,
+            "finish-end": 881
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 17,
+            "source-presented": 106,
+            "motion-first-submitted-frame": 124,
+            "commit-start": 124,
+            "commit-width": 181,
+            "commit-height": 399,
+            "commit-end": 409,
+            "target-grab-request": 625,
+            "target-grab-ready": 653,
+            "motion-start-request": 675,
+            "motion-finished": 770,
+            "live-target-reveal": 791,
+            "finish-start": 873,
+            "finish-end": 898
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 43,
+            "source-presented": 195,
+            "motion-first-submitted-frame": 217,
+            "commit-start": 217,
+            "commit-width": 263,
+            "commit-height": 469,
+            "commit-end": 484,
+            "target-grab-request": 697,
+            "target-grab-ready": 714,
+            "motion-start-request": 746,
+            "motion-finished": 840,
+            "live-target-reveal": 862,
+            "finish-start": 946,
+            "finish-end": 967
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 18,
+            "source-presented": 130,
+            "motion-first-submitted-frame": 141,
+            "commit-start": 141,
+            "commit-width": 197,
+            "commit-height": 442,
+            "commit-end": 447,
+            "target-grab-request": 645,
+            "target-grab-ready": 671,
+            "motion-start-request": 693,
+            "motion-finished": 777,
+            "live-target-reveal": 808,
+            "finish-start": 891,
+            "finish-end": 910
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 33,
+            "source-presented": 125,
+            "motion-first-submitted-frame": 146,
+            "commit-start": 146,
+            "commit-width": 184,
+            "commit-height": 364,
+            "commit-end": 378,
+            "target-grab-request": 632,
+            "target-grab-ready": 648,
+            "motion-start-request": 665,
+            "motion-finished": 745,
+            "live-target-reveal": 778,
+            "finish-start": 862,
+            "finish-end": 879
+          }
+        }
+      ],
+      "exploratory_medians_ms": {
+        "total": 904.0,
+        "geometry_layout_commit": 276.0,
+        "target_readiness_and_capture": 244.5
+      }
+    },
+    "granular_metrics": {
+      "primary_toggles": 6,
+      "total_transitions": 9,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 27,
+            "source-presented": 156,
+            "motion-first-submitted-frame": 188,
+            "commit-start": 188,
+            "commit-width": 259,
+            "commit-height": 449,
+            "commit-end": 455,
+            "target-grab-request": 699,
+            "target-grab-ready": 719,
+            "motion-start-request": 742,
+            "motion-finished": 835,
+            "live-target-reveal": 857,
+            "finish-start": 940,
+            "finish-end": 959
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 28,
+            "source-presented": 153,
+            "motion-first-submitted-frame": 168,
+            "commit-start": 168,
+            "commit-width": 232,
+            "commit-height": 468,
+            "commit-end": 481,
+            "target-grab-request": 684,
+            "target-grab-ready": 701,
+            "motion-start-request": 718,
+            "motion-finished": 810,
+            "live-target-reveal": 830,
+            "finish-start": 914,
+            "finish-end": 932
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 20,
+            "source-presented": 111,
+            "motion-first-submitted-frame": 129,
+            "commit-start": 129,
+            "commit-width": 184,
+            "commit-height": 375,
+            "commit-end": 386,
+            "target-grab-request": 649,
+            "target-grab-ready": 674,
+            "motion-start-request": 699,
+            "motion-finished": 791,
+            "live-target-reveal": 812,
+            "finish-start": 894,
+            "finish-end": 938
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 42,
+            "source-presented": 168,
+            "motion-first-submitted-frame": 190,
+            "commit-start": 190,
+            "commit-width": 258,
+            "commit-height": 561,
+            "commit-end": 577,
+            "target-grab-request": 891,
+            "target-grab-ready": 910,
+            "motion-start-request": 927,
+            "motion-finished": 1008,
+            "live-target-reveal": 1032,
+            "finish-start": 1115,
+            "finish-end": 1135
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 25,
+            "source-presented": 120,
+            "motion-first-submitted-frame": 137,
+            "commit-start": 137,
+            "commit-width": 202,
+            "commit-height": 456,
+            "commit-end": 466,
+            "target-grab-request": 847,
+            "target-grab-ready": 869,
+            "motion-start-request": 903,
+            "motion-finished": 994,
+            "live-target-reveal": 1034,
+            "finish-start": 1106,
+            "finish-end": 1136
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 42,
+            "source-presented": 183,
+            "motion-first-submitted-frame": 206,
+            "commit-start": 206,
+            "commit-width": 266,
+            "commit-height": 530,
+            "commit-end": 543,
+            "target-grab-request": 792,
+            "target-grab-ready": 815,
+            "motion-start-request": 842,
+            "motion-finished": 927,
+            "live-target-reveal": 951,
+            "finish-start": 1034,
+            "finish-end": 1481
+          }
+        }
+      ],
+      "exploratory_medians_ms": {
+        "total": 1047.0,
+        "geometry_layout_commit": 321.0,
+        "target_readiness_and_capture": 280.0
+      }
+    },
+    "direct_capture": {
+      "primary_toggles": 6,
+      "total_transitions": 9,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 22,
+            "source-presented": 193,
+            "motion-first-submitted-frame": 220,
+            "commit-start": 221,
+            "commit-width": 301,
+            "commit-height": 566,
+            "commit-end": 575,
+            "target-grab-request": 575,
+            "target-grab-ready": 930,
+            "motion-start-request": 962,
+            "motion-finished": 1051,
+            "live-target-reveal": 1078,
+            "finish-start": 1161,
+            "finish-end": 1182
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 26,
+            "source-presented": 153,
+            "motion-first-submitted-frame": 163,
+            "commit-start": 163,
+            "commit-width": 221,
+            "commit-height": 455,
+            "commit-end": 471,
+            "target-grab-request": 471,
+            "target-grab-ready": 1735,
+            "motion-start-request": 1781,
+            "motion-finished": 1866,
+            "live-target-reveal": 1894,
+            "finish-start": 1978,
+            "finish-end": 2005
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 26,
+            "source-presented": 182,
+            "motion-first-submitted-frame": 194,
+            "commit-start": 194,
+            "commit-width": 263,
+            "commit-height": 505,
+            "commit-end": 510,
+            "target-grab-request": 510,
+            "target-grab-ready": 1775,
+            "motion-start-request": 1803,
+            "motion-finished": 1896,
+            "live-target-reveal": 1922,
+            "finish-start": 2004,
+            "finish-end": 2034
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 28,
+            "source-presented": 151,
+            "motion-first-submitted-frame": 174,
+            "commit-start": 174,
+            "commit-width": 239,
+            "commit-height": 568,
+            "commit-end": 582,
+            "target-grab-request": 582,
+            "target-grab-ready": 1885,
+            "motion-start-request": 1936,
+            "motion-finished": 2022,
+            "live-target-reveal": 2052,
+            "finish-start": 2135,
+            "finish-end": 2153
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 25,
+            "source-presented": 114,
+            "motion-first-submitted-frame": 133,
+            "commit-start": 133,
+            "commit-width": 190,
+            "commit-height": 413,
+            "commit-end": 422,
+            "target-grab-request": 422,
+            "target-grab-ready": 1741,
+            "motion-start-request": 1783,
+            "motion-finished": 1874,
+            "live-target-reveal": 1904,
+            "finish-start": 1982,
+            "finish-end": 2004
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 22,
+            "source-presented": 140,
+            "motion-first-submitted-frame": 144,
+            "commit-start": 144,
+            "commit-width": 193,
+            "commit-height": 390,
+            "commit-end": 405,
+            "target-grab-request": 405,
+            "target-grab-ready": 1667,
+            "motion-start-request": 1711,
+            "motion-finished": 1797,
+            "live-target-reveal": 1826,
+            "finish-start": 1909,
+            "finish-end": 1935
+          }
+        }
+      ],
+      "exploratory_medians_ms": {
+        "total": 2004.5,
+        "geometry_layout_commit": 312.0,
+        "target_readiness_and_capture": 1264.5
+      }
+    },
+    "lazy_prompts_retry": {
+      "primary_toggles": 6,
+      "total_transitions": 9,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 26,
+            "source-presented": 184,
+            "motion-first-submitted-frame": 222,
+            "commit-start": 222,
+            "commit-width": 290,
+            "commit-height": 540,
+            "commit-end": 547,
+            "target-grab-request": 827,
+            "target-grab-ready": 848,
+            "motion-start-request": 872,
+            "motion-finished": 960,
+            "live-target-reveal": 985,
+            "finish-start": 1069,
+            "finish-end": 1094
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 25,
+            "source-presented": 158,
+            "motion-first-submitted-frame": 174,
+            "commit-start": 174,
+            "commit-width": 230,
+            "commit-height": 425,
+            "commit-end": 457,
+            "target-grab-request": 686,
+            "target-grab-ready": 703,
+            "motion-start-request": 718,
+            "motion-finished": 790,
+            "live-target-reveal": 821,
+            "finish-start": 906,
+            "finish-end": 928
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 21,
+            "source-presented": 122,
+            "motion-first-submitted-frame": 144,
+            "commit-start": 144,
+            "commit-width": 215,
+            "commit-height": 435,
+            "commit-end": 443,
+            "target-grab-request": 653,
+            "target-grab-ready": 671,
+            "motion-start-request": 694,
+            "motion-finished": 787,
+            "live-target-reveal": 808,
+            "finish-start": 875,
+            "finish-end": 895
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 25,
+            "source-presented": 152,
+            "motion-first-submitted-frame": 160,
+            "commit-start": 160,
+            "commit-width": 208,
+            "commit-height": 392,
+            "commit-end": 410,
+            "target-grab-request": 644,
+            "target-grab-ready": 662,
+            "motion-start-request": 682,
+            "motion-finished": 772,
+            "live-target-reveal": 793,
+            "finish-start": 861,
+            "finish-end": 888
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 26,
+            "source-presented": 117,
+            "motion-first-submitted-frame": 135,
+            "commit-start": 135,
+            "commit-width": 210,
+            "commit-height": 471,
+            "commit-end": 476,
+            "target-grab-request": 674,
+            "target-grab-ready": 687,
+            "motion-start-request": 702,
+            "motion-finished": 787,
+            "live-target-reveal": 815,
+            "finish-start": 881,
+            "finish-end": 903
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 32,
+            "source-presented": 123,
+            "motion-first-submitted-frame": 142,
+            "commit-start": 142,
+            "commit-width": 186,
+            "commit-height": 370,
+            "commit-end": 386,
+            "target-grab-request": 633,
+            "target-grab-ready": 650,
+            "motion-start-request": 669,
+            "motion-finished": 743,
+            "live-target-reveal": 774,
+            "finish-start": 856,
+            "finish-end": 875
+          }
+        }
+      ],
+      "exploratory_medians_ms": {
+        "total": 899.0,
+        "geometry_layout_commit": 291.0,
+        "target_readiness_and_capture": 249.0
+      }
+    },
+    "coalesced_metrics": {
+      "primary_toggles": 6,
+      "total_transitions": 9,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 23,
+            "source-presented": 119,
+            "motion-first-submitted-frame": 152,
+            "commit-start": 152,
+            "commit-width": 165,
+            "commit-height": 176,
+            "commit-end": 430,
+            "target-grab-request": 683,
+            "target-grab-ready": 712,
+            "motion-start-request": 735,
+            "motion-finished": 825,
+            "live-target-reveal": 851,
+            "finish-start": 933,
+            "finish-end": 952
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 47,
+            "source-presented": 152,
+            "motion-first-submitted-frame": 172,
+            "commit-start": 172,
+            "commit-width": 187,
+            "commit-height": 191,
+            "commit-end": 448,
+            "target-grab-request": 691,
+            "target-grab-ready": 709,
+            "motion-start-request": 733,
+            "motion-finished": 823,
+            "live-target-reveal": 850,
+            "finish-start": 918,
+            "finish-end": 939
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 16,
+            "source-presented": 124,
+            "motion-first-submitted-frame": 128,
+            "commit-start": 128,
+            "commit-width": 142,
+            "commit-height": 155,
+            "commit-end": 472,
+            "target-grab-request": 706,
+            "target-grab-ready": 721,
+            "motion-start-request": 759,
+            "motion-finished": 871,
+            "live-target-reveal": 894,
+            "finish-start": 977,
+            "finish-end": 998
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 38,
+            "source-presented": 149,
+            "motion-first-submitted-frame": 171,
+            "commit-start": 171,
+            "commit-width": 189,
+            "commit-height": 197,
+            "commit-end": 484,
+            "target-grab-request": 732,
+            "target-grab-ready": 749,
+            "motion-start-request": 771,
+            "motion-finished": 862,
+            "live-target-reveal": 885,
+            "finish-start": 967,
+            "finish-end": 988
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 18,
+            "source-presented": 131,
+            "motion-first-submitted-frame": 143,
+            "commit-start": 143,
+            "commit-width": 154,
+            "commit-height": 165,
+            "commit-end": 420,
+            "target-grab-request": 628,
+            "target-grab-ready": 652,
+            "motion-start-request": 674,
+            "motion-finished": 770,
+            "live-target-reveal": 790,
+            "finish-start": 874,
+            "finish-end": 892
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": null,
+          "events_ms": {
+            "source-grab-ready": 31,
+            "source-presented": 124,
+            "motion-first-submitted-frame": 143,
+            "commit-start": 143,
+            "commit-width": 156,
+            "commit-height": 162,
+            "commit-end": 467,
+            "target-grab-request": 697,
+            "target-grab-ready": 715,
+            "motion-start-request": 734,
+            "motion-finished": 809,
+            "live-target-reveal": 841,
+            "finish-start": 924,
+            "finish-end": 949
+          }
+        }
+      ],
+      "exploratory_medians_ms": {
+        "total": 950.5,
+        "geometry_layout_commit": 295.5,
+        "target_readiness_and_capture": 255.0
+      }
+    },
+    "matched": {
+      "primary_toggles": 20,
+      "total_transitions": 23,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 23,
+            "source-presented": 186,
+            "motion-first-submitted-frame": 222,
+            "commit-start": 222,
+            "commit-width": 309,
+            "commit-height": 597,
+            "commit-end": 607,
+            "target-grab-request": 1025,
+            "target-grab-ready": 1054,
+            "motion-start-request": 1064,
+            "motion-finished": 1338,
+            "live-target-reveal": 1371,
+            "finish-start": 1453,
+            "finish-end": 1479
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 45,
+            "source-presented": 183,
+            "motion-first-submitted-frame": 209,
+            "commit-start": 209,
+            "commit-width": 289,
+            "commit-height": 575,
+            "commit-end": 595,
+            "target-grab-request": 935,
+            "target-grab-ready": 974,
+            "motion-start-request": 979,
+            "motion-finished": 1264,
+            "live-target-reveal": 1286,
+            "finish-start": 1350,
+            "finish-end": 1377
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 28,
+            "source-presented": 134,
+            "motion-first-submitted-frame": 154,
+            "commit-start": 154,
+            "commit-width": 219,
+            "commit-height": 446,
+            "commit-end": 453,
+            "target-grab-request": 679,
+            "target-grab-ready": 697,
+            "motion-start-request": 727,
+            "motion-finished": 810,
+            "live-target-reveal": 835,
+            "finish-start": 903,
+            "finish-end": 924
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 31,
+            "source-presented": 124,
+            "motion-first-submitted-frame": 142,
+            "commit-start": 142,
+            "commit-width": 189,
+            "commit-height": 393,
+            "commit-end": 408,
+            "target-grab-request": 620,
+            "target-grab-ready": 637,
+            "motion-start-request": 655,
+            "motion-finished": 745,
+            "live-target-reveal": 774,
+            "finish-start": 858,
+            "finish-end": 877
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 28,
+            "source-presented": 115,
+            "motion-first-submitted-frame": 132,
+            "commit-start": 132,
+            "commit-width": 185,
+            "commit-height": 413,
+            "commit-end": 420,
+            "target-grab-request": 707,
+            "target-grab-ready": 733,
+            "motion-start-request": 743,
+            "motion-finished": 993,
+            "live-target-reveal": 1011,
+            "finish-start": 1092,
+            "finish-end": 1122
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 32,
+            "source-presented": 147,
+            "motion-first-submitted-frame": 163,
+            "commit-start": 163,
+            "commit-width": 224,
+            "commit-height": 512,
+            "commit-end": 528,
+            "target-grab-request": 849,
+            "target-grab-ready": 881,
+            "motion-start-request": 888,
+            "motion-finished": 1169,
+            "live-target-reveal": 1190,
+            "finish-start": 1273,
+            "finish-end": 1296
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 23,
+            "source-presented": 117,
+            "motion-first-submitted-frame": 130,
+            "commit-start": 130,
+            "commit-width": 187,
+            "commit-height": 369,
+            "commit-end": 377,
+            "target-grab-request": 611,
+            "target-grab-ready": 628,
+            "motion-start-request": 650,
+            "motion-finished": 733,
+            "live-target-reveal": 765,
+            "finish-start": 833,
+            "finish-end": 853
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 32,
+            "source-presented": 131,
+            "motion-first-submitted-frame": 150,
+            "commit-start": 150,
+            "commit-width": 194,
+            "commit-height": 379,
+            "commit-end": 395,
+            "target-grab-request": 613,
+            "target-grab-ready": 632,
+            "motion-start-request": 652,
+            "motion-finished": 735,
+            "live-target-reveal": 764,
+            "finish-start": 831,
+            "finish-end": 848
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 28,
+            "source-presented": 116,
+            "motion-first-submitted-frame": 134,
+            "commit-start": 134,
+            "commit-width": 186,
+            "commit-height": 368,
+            "commit-end": 375,
+            "target-grab-request": 636,
+            "target-grab-ready": 664,
+            "motion-start-request": 680,
+            "motion-finished": 943,
+            "live-target-reveal": 987,
+            "finish-start": 1068,
+            "finish-end": 1090
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 27,
+            "source-presented": 120,
+            "motion-first-submitted-frame": 137,
+            "commit-start": 137,
+            "commit-width": 182,
+            "commit-height": 440,
+            "commit-end": 462,
+            "target-grab-request": 832,
+            "target-grab-ready": 853,
+            "motion-start-request": 860,
+            "motion-finished": 1140,
+            "live-target-reveal": 1170,
+            "finish-start": 1238,
+            "finish-end": 1255
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 35,
+            "source-presented": 137,
+            "motion-first-submitted-frame": 154,
+            "commit-start": 154,
+            "commit-width": 223,
+            "commit-height": 478,
+            "commit-end": 488,
+            "target-grab-request": 725,
+            "target-grab-ready": 748,
+            "motion-start-request": 785,
+            "motion-finished": 873,
+            "live-target-reveal": 902,
+            "finish-start": 988,
+            "finish-end": 1009
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 27,
+            "source-presented": 124,
+            "motion-first-submitted-frame": 149,
+            "commit-start": 149,
+            "commit-width": 194,
+            "commit-height": 461,
+            "commit-end": 471,
+            "target-grab-request": 685,
+            "target-grab-ready": 704,
+            "motion-start-request": 727,
+            "motion-finished": 821,
+            "live-target-reveal": 841,
+            "finish-start": 924,
+            "finish-end": 948
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 21,
+            "source-presented": 107,
+            "motion-first-submitted-frame": 125,
+            "commit-start": 125,
+            "commit-width": 172,
+            "commit-height": 396,
+            "commit-end": 454,
+            "target-grab-request": 729,
+            "target-grab-ready": 754,
+            "motion-start-request": 763,
+            "motion-finished": 1024,
+            "live-target-reveal": 1041,
+            "finish-start": 1124,
+            "finish-end": 1143
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 27,
+            "source-presented": 120,
+            "motion-first-submitted-frame": 136,
+            "commit-start": 136,
+            "commit-width": 185,
+            "commit-height": 475,
+            "commit-end": 499,
+            "target-grab-request": 792,
+            "target-grab-ready": 813,
+            "motion-start-request": 851,
+            "motion-finished": 1141,
+            "live-target-reveal": 1171,
+            "finish-start": 1252,
+            "finish-end": 1269
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 24,
+            "source-presented": 110,
+            "motion-first-submitted-frame": 129,
+            "commit-start": 129,
+            "commit-width": 192,
+            "commit-height": 376,
+            "commit-end": 385,
+            "target-grab-request": 592,
+            "target-grab-ready": 622,
+            "motion-start-request": 645,
+            "motion-finished": 736,
+            "live-target-reveal": 760,
+            "finish-start": 843,
+            "finish-end": 863
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 31,
+            "source-presented": 129,
+            "motion-first-submitted-frame": 149,
+            "commit-start": 149,
+            "commit-width": 203,
+            "commit-height": 397,
+            "commit-end": 410,
+            "target-grab-request": 628,
+            "target-grab-ready": 646,
+            "motion-start-request": 666,
+            "motion-finished": 749,
+            "live-target-reveal": 781,
+            "finish-start": 848,
+            "finish-end": 865
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 17,
+            "source-presented": 111,
+            "motion-first-submitted-frame": 128,
+            "commit-start": 128,
+            "commit-width": 191,
+            "commit-height": 390,
+            "commit-end": 397,
+            "target-grab-request": 662,
+            "target-grab-ready": 696,
+            "motion-start-request": 704,
+            "motion-finished": 990,
+            "live-target-reveal": 1006,
+            "finish-start": 1089,
+            "finish-end": 1111
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 33,
+            "source-presented": 154,
+            "motion-first-submitted-frame": 173,
+            "commit-start": 173,
+            "commit-width": 217,
+            "commit-height": 465,
+            "commit-end": 487,
+            "target-grab-request": 798,
+            "target-grab-ready": 824,
+            "motion-start-request": 838,
+            "motion-finished": 1107,
+            "live-target-reveal": 1140,
+            "finish-start": 1220,
+            "finish-end": 1239
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 29,
+            "source-presented": 120,
+            "motion-first-submitted-frame": 135,
+            "commit-start": 135,
+            "commit-width": 182,
+            "commit-height": 449,
+            "commit-end": 458,
+            "target-grab-request": 698,
+            "target-grab-ready": 714,
+            "motion-start-request": 738,
+            "motion-finished": 820,
+            "live-target-reveal": 853,
+            "finish-start": 919,
+            "finish-end": 946
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 29,
+            "source-presented": 122,
+            "motion-first-submitted-frame": 140,
+            "commit-start": 140,
+            "commit-width": 202,
+            "commit-height": 496,
+            "commit-end": 506,
+            "target-grab-request": 749,
+            "target-grab-ready": 774,
+            "motion-start-request": 790,
+            "motion-finished": 870,
+            "live-target-reveal": 903,
+            "finish-start": 987,
+            "finish-end": 1005
+          }
+        }
+      ],
+      "matched_medians_ms": [
+        {
+          "baseline_motion": true,
+          "kind": "maximize",
+          "count": 5,
+          "total": 1122
+        },
+        {
+          "baseline_motion": true,
+          "kind": "restore",
+          "count": 5,
+          "total": 1269
+        },
+        {
+          "baseline_motion": false,
+          "kind": "maximize",
+          "count": 5,
+          "total": 924
+        },
+        {
+          "baseline_motion": false,
+          "kind": "restore",
+          "count": 5,
+          "total": 877
+        }
+      ]
+    },
+    "portable_check": {
+      "primary_toggles": 4,
+      "total_transitions": 7,
+      "functional_failures": [],
+      "watchdog_timeouts": 0,
+      "samples": [
+        {
+          "kind": "maximize",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 28,
+            "source-presented": 136,
+            "motion-first-submitted-frame": 170,
+            "commit-start": 170,
+            "commit-width": 251,
+            "commit-height": 468,
+            "commit-end": 477,
+            "target-grab-request": 804,
+            "target-grab-ready": 827,
+            "motion-start-request": 834,
+            "motion-finished": 1107,
+            "live-target-reveal": 1139,
+            "finish-start": 1221,
+            "finish-end": 1247
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": true,
+          "events_ms": {
+            "source-grab-ready": 48,
+            "source-presented": 170,
+            "motion-first-submitted-frame": 187,
+            "commit-start": 187,
+            "commit-width": 238,
+            "commit-height": 425,
+            "commit-end": 440,
+            "target-grab-request": 712,
+            "target-grab-ready": 734,
+            "motion-start-request": 739,
+            "motion-finished": 1026,
+            "live-target-reveal": 1050,
+            "finish-start": 1117,
+            "finish-end": 1139
+          }
+        },
+        {
+          "kind": "maximize",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 27,
+            "source-presented": 119,
+            "motion-first-submitted-frame": 133,
+            "commit-start": 133,
+            "commit-width": 183,
+            "commit-height": 373,
+            "commit-end": 379,
+            "target-grab-request": 603,
+            "target-grab-ready": 627,
+            "motion-start-request": 651,
+            "motion-finished": 743,
+            "live-target-reveal": 765,
+            "finish-start": 850,
+            "finish-end": 868
+          }
+        },
+        {
+          "kind": "restore",
+          "baseline_motion": false,
+          "events_ms": {
+            "source-grab-ready": 37,
+            "source-presented": 145,
+            "motion-first-submitted-frame": 164,
+            "commit-start": 164,
+            "commit-width": 214,
+            "commit-height": 422,
+            "commit-end": 436,
+            "target-grab-request": 670,
+            "target-grab-ready": 692,
+            "motion-start-request": 713,
+            "motion-finished": 807,
+            "live-target-reveal": 830,
+            "finish-start": 913,
+            "finish-end": 930
+          }
+        }
+      ],
+      "exploratory_medians_ms": {
+        "total": 1034.5,
+        "geometry_layout_commit": 262.5,
+        "target_readiness_and_capture": 275.0
+      }
+    }
+  },
+  "failed_diagnostics": [
+    {
+      "name": "lazy_prompts_initial_rewrite",
+      "failure": "ValueError: substring not found, before application launch",
+      "corrected_retry": "lazy_prompts_retry"
+    }
+  ]
+}

@@ -1,5 +1,43 @@
 # Implementation History
 
+## 2026-10-09: Preservation-only closeout
+
+The existing October 3 tracked diagnostic changes and sanitized speed/results
+handoffs are preserved together. Validation for this closeout is read-only
+Python AST/JSON review, staged privacy/credential checks and whitespace review;
+there is no new desktop, WebEngine, animation, package or installation run.
+Production data and the installed executable remain outside the commit scope.
+The clean-room motion continuation remains on its separate experimental branch.
+The consolidated new-computer audit is published on the archival
+`docs/new-computer-closeout-20261009` branch, so it can record exact final
+development-branch commits without merging them or a self-referential SHA.
+
+## 2026-10-03: Threefold Maximize Speed And KDE Smoothness Investigation
+
+The user requests a complete text handoff. `docs/MAXIMIZE_RESTORE_COMPLETE_HANDOFF_2026-10-03.md` consolidates their silky/smooth/flowing/gliding/elite/premium objectives, all documented approach families, retained production mechanism, rejected trials, measured boundaries, release/validation distinctions and unresolved acceptance gates. Documentation-only addition; no new application change or runtime check.
+
+Further user clarification makes one uninterrupted smooth movement from start to finish a hard acceptance gate, including the image/live handoff. It must flow like plasma or water, with smoothly blended speed changes and arrival, and cannot be jarring. No perceptible pause, restart, jump, jerk or separate final settling movement is acceptable. The user calls the existing opening/closing animations perfectly smooth and flowing; preserve them and use their accepted quality as the in-app visual benchmark. This requirements update is documentation only; no production animation change or new runtime validation is made.
+
+Follow-up outside-sandbox component profiling is inconclusive: the corrected Python profiler times out at the source-frame gate before target geometry, with a state failure and overall fixture timeout; an unmodified control and native Qt timing/elapsed-clock attempts also stall and are stopped. Preserve the initial harness compilation failure and all failed/incomplete runs under `logs/maximize_speed_python_profile*20261003*` / `logs/maximize_continuity_*20261003*`. Exclude them from earlier passing aggregates and speed estimates. No animation-driver switch is adopted, no new subjective smoothness or WebEngine validation is obtained, and follow-up sandbox-safe checks cover diagnostic compilation/whitespace only. Production, dist and installed runtime stay unchanged.
+
+The user accepts smooth movement but requires at least three times the speed, clarifying KDE/Fedora-style continuity and natural deceleration. Runtime logs were reviewed first, including the latest installed session under LocalAppData. A populated-workspace same-process comparison completes 20 primary toggles plus lifecycle without functional failure or watchdog timeout. Accepted versus 240/65 ms timing medians are 1,122/924 ms maximize and 1,269/877 ms restore: only 1.21×/1.45× overall. Separate baseline layout commit and target readiness/capture cost 265.5 and 286.5 ms. The short preparation can end before the target is ready, so it carries a continuity risk and is rejected. No subjective smoothness claim is made.
+
+Disposable experiments with separate QObject metric fields, direct synchronous target capture, lazy prompt trees, and coalesced metric publication fail to establish a useful gain. The immediate capture trial regresses to roughly two seconds. A minimal Qt property-update-group experiment does not batch ordinary QML binding evaluation. None of these changes is retained in production. The temporary animation edit is restored exactly to the accepted source; dist and installed runtime are unchanged. No financial command, release build/deployment or Git publication occurred.
+
+Only `scripts/diagnostics/window_responsiveness_probe.py --compare-short-motion` is retained: it adds comparison controls and timing properties exclusively inside its disposable mirror, preserves frame gates, and records configuration labels. Its final four-toggle/lifecycle run passes. Across completed investigation runs, 60 primary toggles / 84 total transitions pass functional assertions without watchdog timeout; the initial failed lazy-prompt rewrite remains failed evidence. Sandbox-safe checks: 28 focused tests, diagnostic compilation, governed QML lint with existing warnings and whitespace checks. Outside sandbox: full-source desktop Qt GPU timing/workspace/geometry/taskbar/close fixtures. No new dedicated WebEngine HTML/PDF e2e or packaged startup validation was run.
+
+P0 remains unmet for threefold total speed and KDE-style continuous motion. The next correction requires a component-level profile of measured layout/first-render boundaries, not another unsupported metrics/capture shortcut or timer reduction. Preserve accepted title/glyph rendering, physical endpoint pixels, the existing workspace, readiness gates and watchdog; user visual acceptance remains required. Full evidence/reproduction: `docs/MAXIMIZE_RESTORE_SPEED_AND_SMOOTHNESS_ANALYSIS_2026-10-03.md` and `docs/MAXIMIZE_RESTORE_SPEED_AND_SMOOTHNESS_RESULTS_2026-10-03.json`.
+
+## 2026-10-03: Pulled Cloud Source, Rebuilt, And Verified Installed Package
+
+User requested a Git cloud pull followed by executable recompilation. The clean current branch `fix/invoice-billing-client-correction-20260926` fast-forwarded from `3d055d5` to `ad72d59`. No application-source repair or workbook mutation was performed. The existing Python 3.14.2 / PyInstaller 6.21.0 / PySide6 6.10.3 environment rebuilt main and recovery through `scripts/build_release.py --validate --no-deploy`. Approved starter templates passed governance/confidentiality checks; they do not replace the user's existing practice workbooks.
+
+Sandbox-safe validation: changed Python compiled; governed QML lint exited zero with existing warning diagnostics; whitespace checks passed. The focused suite returned 29 passes and two startup-contract failures. Both failing tests reproduce against isolated copies of pre-pull `3d055d5`, confirming they were not introduced by this pull. They remain unresolved; this rebuild did not broaden into startup implementation changes.
+
+The candidate passed outside-sandbox packaged startup in 18.03 seconds before deployment through `build_release.deploy_to_programs()`. The installed executable passed in 16.06 seconds. Each disposable fixture reached a visible input-ready main window and completed normal window close; the harness then stopped its own tray-resident process, so these are not clean event-loop exit assertions. Actual installed Qt WebEngine helper/resources/locales loaded HTML and produced a valid 39,708-byte PDF; Chromium emitted a nonfatal DirectComposition interface diagnostic. These checks ran without filesystem/process sandbox restrictions.
+
+Installed `C:/Programs/CSPM` and dist runtime manifests match exactly: 4,292 files / 674,474,609 bytes excluding preserved data/logs/backups. All 168 QML-tree files match source, and protected repository/local/shared workbooks and authoritative settings retain their hashes. Main EXE SHA-256: `8D461B679B4D578CFB6BE6DE259AB2E183E62A6D9F1EB944A69527BEFC8C0FA3`; recovery: `40A89891C31023A032AF32E0FF2AAF1BAC38F98EBD540A590E347A6FAC22BEA4`. Previous packages remain at `to_delete/dist__replaced_release_20261003_091440` and `to_delete/installed__before_pull_rebuild_20261003_091552`. Build, smoke, protected hashes, manifest verification and WebEngine evidence are under `logs/pull_rebuild_20261003_*`. Real-user P0 restore/maximize motion and physical mixed-DPI acceptance remain open; this turn validates rebuilding, deployment and startup/rendering only.
+
 ## 2026-10-02: Native Framebuffer Restore Endpoint Fix And Installed Release
 
 The user authorizes fixing the diagnosed restore nudge. A transient `backend/window_frame_capture.py` service captures the actual QQuickWindow framebuffer on the GUI thread, publishes physical-size images in memory, and releases them at finish/cancellation. The engine exposes it before QML load. The fixed transition window queries actual Windows client origin/size while hidden; shader endpoint replay maps those pixels directly while retaining intermediate fixed-size header mapping and early movement. Original durations, frame gates and 3500 ms watchdog are unchanged. Whole-root item rerendering and predictive coordinate rounding were rejected by pixel tests. No alternate workspace or persistent screenshot is introduced.

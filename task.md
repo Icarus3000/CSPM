@@ -1,5 +1,33 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-09: End-of-computer preservation
+
+- [x] Review and preserve the existing October 3 diagnostic comparison and sanitized handoff/report files; no additional experiment, application change, build or installation.
+- [x] Keep this production-reference branch separate from `experiment/clean-room-fluid-maximize-restore`; no merge, rebase or history rewrite.
+- [ ] Resume only after reading `docs/CSPM_NEW_COMPUTER_CONTINUATION_2026-10-09.md` on the archival `docs/new-computer-closeout-20261009` branch. The experimental candidate remains unqualified; P0 acceptance remains open.
+
+## 2026-10-03: Maximize Speed With KDE-Style Smoothness — No Fix Accepted
+
+- [x] At the user's request, consolidate the silky/smooth/flowing/gliding/elite/premium motion objectives, documented attempt families, current enabled mechanism, evidence limits and remaining work into `docs/MAXIMIZE_RESTORE_COMPLETE_HANDOFF_2026-10-03.md`. This is a handoff only; no new app change or runtime validation.
+- [x] Record the user's further clarification as a hard visual gate: one uninterrupted smooth movement from start to finish, flowing like plasma or water, including the image/live handoff; no jarring speed change, pause, restart, jump, jerk or separate settling movement. The user calls the existing opening/closing animations perfectly smooth and flowing: preserve them and use their quality as the in-app benchmark. Faster timings alone do not satisfy this gate.
+- [x] Attempt follow-up component profiling outside sandbox; preserve source-gate watchdog/state/overall-timeout failures and incomplete control/native-render traces. These do not reach a usable target-layout profile or provide new speed/smoothness evidence. Stop only the exact disposable diagnostic processes; retain accepted production behavior. Follow-up sandbox-safe diagnostic compilation/whitespace checks pass; no new WebEngine e2e.
+- [x] Read repository and current installed runtime logs first. User accepts smooth maximize from a smaller window, requests at least 3× speed, and explicitly requires KDE/Fedora-style continuous motion and natural settlement.
+- [x] Complete a matched same-process 20-toggle timing comparison on a populated workspace. Accepted/short-timing medians: 1,122/924 ms maximize and 1,269/877 ms restore. Every functional assertion passes, without watchdog timeout; this is only 1.21×/1.45× total improvement and does not certify smoothness.
+- [x] Reject the 240/65 ms timing-only change because target preparation can outlast the shortened movement. Separate trials with granular metric fields, direct target capture, lazy prompts and coalesced metric publication do not establish a useful improvement. Restore production QML exactly; installed/dist runtime remains unchanged.
+- [x] Retain portable `--compare-short-motion` diagnostics confined to disposable QML/data/settings. Four-toggle final diagnostic check passes plus lifecycle. Across completed investigation runs: 60 primary toggles / 84 total transitions, functional assertions pass, zero watchdog timeouts. Preserve the failed initial mirror rewrite as failed evidence.
+- [x] Sandbox-safe checks: 28 focused tests, diagnostic compilation, governed QML lint (existing warnings), and whitespace checks pass. Outside sandbox: desktop/full-source Qt GPU timing and lifecycle checks. No new dedicated WebEngine e2e or packaged smoke test, build, deployment, commit or push.
+- [ ] P0 remains unresolved: profile component-level work beneath geometry/layout and the first resized render, then prove at least 3× total speed with continuous motion, fixed title/glyph sizes, matching physical endpoint pixels and the existing workspace/readiness gates. Obtain real-app user acceptance before another visual state machine. Evidence: `docs/MAXIMIZE_RESTORE_SPEED_AND_SMOOTHNESS_ANALYSIS_2026-10-03.md` and its aggregate JSON.
+
+## 2026-10-03: Git Cloud Pull And Executable Rebuild
+
+- [x] Fast-forward the clean current branch `fix/invoice-billing-client-correction-20260926` from `3d055d5` to `ad72d59` through `git pull --ff-only`.
+- [x] Compile changed Python and run governed QML lint (exit 0, existing warnings). Focused sandbox-safe tests: 29 passed, two pre-existing startup-contract failures; both failures also reproduce against isolated copies of the pre-pull `3d055d5` source.
+- [x] Rebuild main and recovery executables with `scripts/build_release.py --validate --no-deploy`; approved-template and confidentiality gates passed. Preserve prior dist at `to_delete/dist__replaced_release_20261003_091440` and prior installed package at `to_delete/installed__before_pull_rebuild_20261003_091552`.
+- [x] Deploy through the governed builder helper to `C:/Programs/CSPM/CSPM.exe`. Dist/installed runtime manifests match: 4,292 files / 674,474,609 bytes. All 168 bundled QML-tree files match source. Main EXE SHA-256: `8D461B679B4D578CFB6BE6DE259AB2E183E62A6D9F1EB944A69527BEFC8C0FA3`.
+- [x] Outside-sandbox candidate/installed startup reached a visible input-ready main window in 18.03/16.06 seconds on disposable data/settings. Both main windows close normally; the harness stops its own remaining tray fixture. Actual installed WebEngine HTML/PDF rendering passed (39,708 bytes).
+- [x] Protected repository/local/shared workbook and authoritative settings hashes remain unchanged; deployment preserves existing installed data. Evidence: `logs/pull_rebuild_20261003_*`.
+- [ ] Existing real-user P0 restore/maximize visual and physical mixed-DPI acceptance remains pending; startup/rendering checks do not establish motion acceptance.
+
 ## Pixel-Aligned Restore Fix And Release (2026-10-02)
 
 - [x] User authorizes the scoped fix; honor the existing commit/push/recompile request. Preserve accepted title/glyph rendering, early motion and the existing workspace.

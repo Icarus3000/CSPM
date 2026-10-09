@@ -18,6 +18,7 @@ parser = argparse.ArgumentParser(description="Outside-sandbox desktop timing fix
 parser.add_argument('--audit-label', default='window_responsiveness_' + time.strftime('%Y%m%d_%H%M%S'))
 parser.add_argument('--compare', action='store_true', help='Alternate the earlier preparation order and the early-motion path for 20 toggles.')
 parser.add_argument('--compare-capture', action='store_true', help='Alternate content-only and native-frame capture for matched timing pairs.')
+parser.add_argument('--compare-short-motion', action='store_true', help='Alternate accepted 800/220 ms timings and experimental 240/65 ms timings in the disposable copy; retain all frame gates. This does not validate smoothness.')
 parser.add_argument('--pixels', action='store_true', help='Collect actual desktop marker coordinates in a separate process; requires desktop duplication access.')
 parser.add_argument('--geometry', action='store_true', help='Record content-to-desktop coordinates at transition stages and late live frames.')
 parser.add_argument('--cycles', type=int, default=10, help='Even number of primary toggles (default: 10; --compare defaults to 20).')
@@ -29,11 +30,11 @@ if args.cycles < 2 or args.cycles % 2:
     parser.error('--cycles must be an even number of at least two')
 if args.screen_index is not None and args.screen_index < 0:
     parser.error('--screen-index must be nonnegative')
-if args.compare and args.compare_capture:
-    parser.error('--compare and --compare-capture are mutually exclusive')
+if sum((args.compare, args.compare_capture, args.compare_short_motion)) > 1:
+    parser.error('--compare, --compare-capture and --compare-short-motion are mutually exclusive')
 if args.endpoint_hold_ms < 0 or args.endpoint_hold_ms > 1000:
     parser.error('--endpoint-hold-ms must be between zero and 1000')
-cycle_count = 20 if (args.compare or args.compare_capture) and args.cycles == 10 else args.cycles
+cycle_count = 20 if (args.compare or args.compare_capture or args.compare_short_motion) and args.cycles == 10 else args.cycles
 if not args.audit_label or any(ch not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for ch in args.audit_label):
     parser.error('--audit-label must contain only letters, digits, underscores or hyphens')
 ROOT = Path(__file__).resolve().parents[2]
@@ -184,6 +185,17 @@ shell = shell.replace('responsivenessProbeRuns.push({kind: kind, events: respons
     'responsivenessProbeRuns.push({kind: kind, optimized: professionalEarlyWindowMotionEnabled, events: responsivenessProbeEvents});')
 shell = shell.replace('optimized: professionalEarlyWindowMotionEnabled,',
     'optimized: professionalEarlyWindowMotionEnabled, nativeFrames: professionalPixelAlignedWindowCaptureEnabled,')
+if args.compare_short_motion:
+    shell = replace_once(shell, '    property var responsivenessProbeEvents: []',
+        '    property bool responsivenessProbeBaselineMotion: false\n    property var responsivenessProbeEvents: []')
+    shell = replace_once(shell, '            mainWin.maximizeOverlayRef = surface;', '''
+            if (mainWin.responsivenessProbeBaselineMotion) {
+                surface.preparationDurationMs = 800;
+                surface.settlementDurationMs = 220;
+            }
+            mainWin.maximizeOverlayRef = surface;''')
+    shell = shell.replace('nativeFrames: professionalPixelAlignedWindowCaptureEnabled,',
+        'nativeFrames: professionalPixelAlignedWindowCaptureEnabled, baselineMotion: responsivenessProbeBaselineMotion,')
 if args.endpoint_hold_ms:
     shell = replace_once(shell, '    function toggleWindowMaximize() {', '''
     Timer {
@@ -201,6 +213,14 @@ shell_path.write_text(shell, encoding='utf-8')
 
 surface_path = MIRROR/'src/qml/WindowTransitionSurface.qml'
 surface = surface_path.read_text(encoding='utf-8')
+if args.compare_short_motion:
+    surface = replace_once(surface, '    property bool earlyMotionEnabled: false', '''
+    property bool earlyMotionEnabled: false
+    property int preparationDurationMs: 240
+    property int settlementDurationMs: 65''')
+    assert surface.count('duration: 220') == 2
+    surface = surface.replace('duration: 220', 'duration: surface.settlementDurationMs')
+    surface = replace_once(surface, 'duration: 800', 'duration: surface.preparationDurationMs')
 surface = replace_once(surface, '    function startMotion() {',
     '    function startMotion() {\n        mainWindow.recordResponsivenessStage("motion-start-request");')
 assert surface.count('            surface.motionComplete = true') in (1, 2)
@@ -337,6 +357,10 @@ code = code.replace('raise SystemExit(1 if failures else 0)', '')''')
 if args.compare_capture:
     wrapper = wrapper.replace("code = code.replace('raise SystemExit(1 if failures else 0)', '')", '''
 code = code.replace('    def step(self):', '    def step(self):\\n        self.evaluate("_probeWindow.professionalPixelAlignedWindowCaptureEnabled = " + ("true" if (self.index // 2) % 2 else "false"))\\n        QTimer.singleShot(100, self.command_step)\\n\\n    def command_step(self):')
+code = code.replace('raise SystemExit(1 if failures else 0)', '')''')
+if args.compare_short_motion:
+    wrapper = wrapper.replace("code = code.replace('raise SystemExit(1 if failures else 0)', '')", '''
+code = code.replace('    def step(self):', '    def step(self):\\n        self.evaluate("_probeWindow.responsivenessProbeBaselineMotion = " + ("false" if (self.index // 2) % 2 else "true"))\\n        QTimer.singleShot(100, self.command_step)\\n\\n    def command_step(self):')
 code = code.replace('raise SystemExit(1 if failures else 0)', '')''')
 if args.screen_index is not None:
     wrapper = replace_once(wrapper, "code = code.replace('raise SystemExit(1 if failures else 0)', '')",
