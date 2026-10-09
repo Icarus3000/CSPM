@@ -36,6 +36,8 @@ data and result paths inside the audit directory; its discard output device is
 also permitted. Qt WebEngine storage is explicitly
 redirected and uses memory cache/no persistent cookies. This is a scoped
 development fixture, not an operating-system security sandbox or production app.
+The legacy draft-session filename is also redirected process-locally before the
+controller is constructed, preventing its repository-root recovery read/write.
 
 Only an ignored disposable QML copy intercepts the ordinary maximize/restore
 control, after its existing command guards. Other Professional transition entry

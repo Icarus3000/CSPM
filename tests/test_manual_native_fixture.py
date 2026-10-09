@@ -158,3 +158,41 @@ def test_only_owned_synthetic_briefing_child_is_allowed(tmp_path):
     assert not permitted_briefing_worker(root, audit, sys.executable, command[:2] + ["--other"] + command[3:])
     request.write_text(json.dumps({"root": str(root), "dataDir": str(tmp_path / "outside")}))
     assert not permitted_briefing_worker(root, audit, sys.executable, command)
+
+
+def test_manual_status_control_queues_only_explicit_native_requests(tmp_path):
+    # Offscreen widget/control contract only; no CSPM main or WebEngine launch.
+    from PySide6.QtCore import QObject
+    from PySide6.QtWidgets import QApplication
+    from manual_native_fixture import attach_status
+    qt = QApplication.instance() or QApplication(["manual-contract", "-platform", "offscreen"])
+
+    class Fixture(QObject):
+        def step(self):
+            self.requests += 1
+
+    fixture = Fixture()
+    fixture.finished = False
+    fixture.manual_ready = False
+    fixture.manual_busy = False
+    fixture.requests = 0
+    fixture.engine = SimpleNamespace(rootContext=lambda: SimpleNamespace(setContextProperty=lambda *_: None))
+    fixture.window = SimpleNamespace(screen=qt.primaryScreen,
+        setTitle=lambda _: None, property=lambda name: "Professional" if name == "appStyle" else False)
+    controller = attach_status(fixture, "synthetic-source-sha", "synthetic-dll-hash", tmp_path)
+    qt.processEvents()
+    assert fixture.requests == 0
+    assert controller.requestToggle() is True
+    assert fixture.requests == 1
+    assert controller.requestToggle() is False  # in-flight guard
+    fixture.manual_busy = False
+    assert controller.requestToggle() is True
+    assert fixture.requests == 2
+    fixture.finished = True
+    fixture.manual_busy = False
+    assert controller.requestToggle() is False  # terminal rejection
+    controller.observe_native_event("qualification-failure", {"category": "source", "error": "source-band rejected"})
+    assert "No transition" in controller.values["actually used"]
+    assert "DISABLED" == controller.values["external observation"]
+    controller.panel.close()
+    qt.processEvents()

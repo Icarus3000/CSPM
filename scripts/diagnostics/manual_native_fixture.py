@@ -278,7 +278,7 @@ def attach_status(app, source_sha, dll_hash, audit):
             self.text.setText("\n".join(f"{key}: {value}" for key, value in self.values.items()))
             (Path(audit) / "manual_status.json").write_text(json.dumps(self.values, indent=2), encoding="utf-8")
 
-        def event(self, name, data):
+        def observe_native_event(self, name, data):
             if name == "native-clock-start":
                 self.update("actually used", "Native experimental GPU composition")
                 self.update("source preparation", "Accepted by existing native guards")

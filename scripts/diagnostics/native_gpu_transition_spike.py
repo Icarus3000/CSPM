@@ -440,6 +440,11 @@ class PixelTracker:
         from manual_native_fixture import LABEL
         entry.APP_TITLE = LABEL
         entry.APP_MAINTAINER = "Leviathan Disposable Diagnostics"
+        # This legacy filename is joined to the repository root by the ordinary
+        # session manager. An absolute process-local diagnostic path prevents
+        # both recovery reads and periodic snapshot writes in that location.
+        import backend.app_controller as manual_backend
+        manual_backend.DRAFT_SESSION_FILE = str(manual_profile / "session_draft_snapshot.json")
     from PySide6.QtCore import QObject, QTimer, Qt, QUrl, Signal, QLoggingCategory
     from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent
     from PySide6.QtQuick import QSGRendererInterface, QQuickItem
@@ -795,7 +800,7 @@ Item {
             row = {"event": name, "t": time.perf_counter(), "cycle": self.completed, **data}
             self.rows.append(row)
             if args.manual and hasattr(self, "manual_controller"):
-                self.manual_controller.event(name, data)
+                self.manual_controller.observe_native_event(name, data)
             if not args.profile_boundaries:
                 print(json.dumps(row), flush=True)
 

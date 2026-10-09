@@ -12,7 +12,7 @@ production selector, timings/deadlines and failure cleanup remain unchanged.
 There are no automatic cycles, collectors, prepared targets or production
 fallbacks. Terminal native rejection remains visible rather than retrying.
 
-Focused safe tests pass 197 cases; compilation and the governed bridge build
+Focused safe tests pass 199 cases; compilation and the governed bridge build
 pass. See `docs/MANUAL_NATIVE_VISUAL_HARNESS.md` for launch/review boundaries.
 Real desktop launch and Cory's five-toggle visual judgment follow final review;
 neither the manual adapter nor a visual opinion closes technical qualification.

@@ -5,8 +5,9 @@
 - [x] Verify approved experimental checkpoint and unchanged live remote; isolate harness on a local setup branch.
 - [x] Add opt-in manual diagnostic mode with synthetic populated Time Entry data, ignored QML control interception, explicit native rejection status and no production fallback or external collector.
 - [x] Preserve production selector/source, native bridge implementation and 350/240/100 ms contracts; keep all technical qualification failures open.
-- [x] Focused safe selector/native contracts: 197 passed; Python compilation and governed native build passed.
-- [ ] Complete final privacy/diff/load validation and launch for Cory's five manual toggles. No visual or technical acceptance claimed.
+- [x] Focused safe selector/native contracts: 199 passed; Python compilation and governed native build passed.
+- [x] Complete final privacy/diff/load validation; prepare the documented disposable desktop launch.
+- [ ] Cory's five manual toggles and visual assessment; all technical qualification remains open. Actual desktop status is recorded in the ignored launch audit.
 
 ## 2026-10-09: Computer Closeout And Cloud Preservation
 
