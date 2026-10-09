@@ -30,7 +30,10 @@ templates and seeds three explicitly synthetic clients, matters and time entries
 All settings, data, cache, exports and machine identity are redirected below the
 unique audit folder. No master/cloud directory is configured. A process-local
 Python I/O guard refuses outside writes, outside user-profile reads, registry
-mutations, external actions and sockets. Qt WebEngine storage is explicitly
+mutations, external actions and sockets. The only permitted Python child command
+is the existing crash-isolated briefing worker, with verified synthetic request,
+data and result paths inside the audit directory; its discard output device is
+also permitted. Qt WebEngine storage is explicitly
 redirected and uses memory cache/no persistent cookies. This is a scoped
 development fixture, not an operating-system security sandbox or production app.
 

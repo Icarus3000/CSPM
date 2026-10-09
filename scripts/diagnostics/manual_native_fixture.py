@@ -165,6 +165,8 @@ def install_io_guard(root, audit):
     def allowed(path, write):
         if isinstance(path, int) or path is None:
             return True
+        if os.fsdecode(path).lower() == os.devnull.lower():
+            return True  # Windows discard device, not an application-state file.
         value = Path(os.fsdecode(path)).resolve()
         if not write and value.is_relative_to(Path(root).resolve()) and not value.is_relative_to(write_root):
             relative = value.relative_to(Path(root).resolve())
@@ -178,6 +180,17 @@ def install_io_guard(root, audit):
             path, mode, flags = args
             write = (isinstance(mode, str) and any(c in mode for c in "wax+")) or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC))
             if not allowed(path, write):
+                frame = sys._getframe(1)
+                stack = []
+                for _ in range(12):
+                    if frame is None:
+                        break
+                    stack.append({"file": frame.f_code.co_filename, "line": frame.f_lineno,
+                                  "function": frame.f_code.co_name})
+                    frame = frame.f_back
+                with (write_root / "io_rejections.jsonl").open("a", encoding="utf-8") as output:
+                    output.write(json.dumps({"event": event, "path": os.fsdecode(path),
+                                             "write": write, "stack": stack}) + "\n")
                 raise PermissionError("Manual fixture denied I/O outside disposable/source/runtime roots")
         elif event in ("os.remove", "os.rmdir", "os.mkdir", "os.chmod", "os.utime"):
             if not allowed(args[0], True):
@@ -187,10 +200,51 @@ def install_io_guard(root, audit):
                 raise PermissionError("Manual fixture denied file transfer outside disposable root")
         elif event in ("winreg.SetValue", "winreg.DeleteValue", "winreg.DeleteKey", "winreg.CreateKey"):
             raise PermissionError("Manual fixture forbids registry changes")
-        elif event in ("socket.connect", "socket.bind", "subprocess.Popen", "os.system", "os.startfile"):
+        elif event == "subprocess.Popen":
+            if (args[3] is not None or Path(args[2] or "").resolve() != Path(root).resolve()
+                    or not permitted_briefing_worker(root, audit, args[0], args[1])):
+                raise PermissionError("Manual fixture permits only its isolated synthetic briefing worker")
+        elif event in ("socket.connect", "socket.bind", "os.system", "os.startfile"):
             raise PermissionError("Manual fixture forbids external actions")
     sys.addaudithook(guard)
     return guard
+
+
+def permitted_briefing_worker(root, audit, executable, argv):
+    """Allow the existing crash-isolated bootstrap only with owned input/output."""
+    if isinstance(argv, str) and sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+        count = ctypes.c_int()
+        shell = ctypes.WinDLL("shell32")
+        shell.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+        shell.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+        pointers = shell.CommandLineToArgvW(argv, ctypes.byref(count))
+        if not pointers:
+            return False
+        try:
+            argv = [pointers[index] for index in range(count.value)]
+        finally:
+            kernel = ctypes.WinDLL("kernel32")
+            kernel.LocalFree.argtypes = [ctypes.c_void_p]
+            kernel.LocalFree.restype = ctypes.c_void_p
+            kernel.LocalFree(pointers)
+    if not isinstance(argv, (list, tuple)) or len(argv) != 5:
+        return False
+    if ((executable is not None and Path(executable).resolve() != Path(sys.executable).resolve())
+            or Path(argv[0]).resolve() != Path(sys.executable).resolve()
+            or Path(argv[1]).resolve() != (Path(root) / "src/python/main.py").resolve()
+            or argv[2] != "--startup-briefing-worker"):
+        return False
+    try:
+        request_path, result_path = (checked_child(audit, value) for value in argv[3:])
+        payload = json.loads(request_path.read_text(encoding="utf-8"))
+        data = checked_child(audit, payload["dataDir"])
+        return (Path(payload["root"]).resolve() == Path(root).resolve()
+                and request_path.parent == result_path.parent == data.parent
+                and (data / "CSPM.xlsm").is_file())
+    except (ValueError, OSError, KeyError, TypeError):
+        return False
 
 
 def attach_status(app, source_sha, dll_hash, audit):

@@ -11,7 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts/diagnostics"))
 from manual_native_fixture import (bridge_path, checked_child, fixture_source,
-                                   prepare_profile, shell_source, validate_manual_options)
+                                   prepare_profile, shell_source, validate_manual_options,
+                                   permitted_briefing_worker)
 
 
 def options(**changes):
@@ -138,3 +139,22 @@ assert denied==4
                              str(audit), str(outside)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert outside.read_text() == "synthetic forbidden path"
+
+
+def test_only_owned_synthetic_briefing_child_is_allowed(tmp_path):
+    root = tmp_path / "source"
+    audit = root / "logs/owned"
+    data = audit / "startup/data"
+    data.mkdir(parents=True)
+    (data / "CSPM.xlsm").write_bytes(b"synthetic")
+    request, result = data.parent / "request.json", data.parent / "result.json"
+    request.write_text(json.dumps({"root": str(root), "dataDir": str(data)}))
+    command = [sys.executable, str(root / "src/python/main.py"), "--startup-briefing-worker",
+               str(request), str(result)]
+    assert permitted_briefing_worker(root, audit, sys.executable, command)
+    if sys.platform == "win32":
+        assert permitted_briefing_worker(root, audit, None, subprocess.list2cmdline(command))
+    assert not permitted_briefing_worker(root, audit, sys.executable, command + ["extra"])
+    assert not permitted_briefing_worker(root, audit, sys.executable, command[:2] + ["--other"] + command[3:])
+    request.write_text(json.dumps({"root": str(root), "dataDir": str(tmp_path / "outside")}))
+    assert not permitted_briefing_worker(root, audit, sys.executable, command)
