@@ -1,5 +1,17 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-09: Preservation Checkpoint
+
+No new experiment or implementation result belongs to this closeout. The
+October 8 collector-free Productivity restore deadline failure, three Home
+554-pixel failures and all earlier failed predecessors remain unchanged.
+Seven portable evidence helpers and their source provenance are preserved under
+`scripts/diagnostics/evidence_builders/`; private inputs and ignored originals
+remain on this computer. See the archival `docs/new-computer-closeout-20261009`
+branch for the consolidated new-computer audit and exact development SHAs.
+The candidate remains unqualified and uninstalled; production remains the safe
+default and Cory's P0 acceptance remains open.
+
 ## 2026-10-08: Moving Slot Pass And Collector-Free Readiness Failure
 
 **PROVEN BY MEASUREMENT:** create-in-band supports the populated instrumented

@@ -1,5 +1,25 @@
 # Implementation History
 
+## 2026-10-09: Preservation-Only Computer Handoff
+
+Closeout preserves the clean experimental `3c41aaf` checkpoint and the existing
+primary-checkout changes on separate remote branches. Seven first-party evidence
+constructors/validators are recovered from ignored output folders into
+`scripts/diagnostics/evidence_builders/`, with repository-root/dependency path
+adaptations and a portable privacy-screen identifier. Original helpers and all
+raw inputs remain unchanged. Reviewed relative-path source provenance accompanies
+the preserved copies; AST/in-memory compilation, staged privacy and whitespace
+checks execute no builder, launcher, native window or WebEngine runtime.
+
+The archival `docs/new-computer-closeout-20261009` branch holds
+`docs/CSPM_NEW_COMPUTER_CONTINUATION_2026-10-09.md`, including exact final
+development SHAs, worktree/ref/stash inventory, local-only evidence boundaries,
+setup and future reproduction steps. There is no merge, rebase, feature change,
+animation experiment, package or installation. Collector-free Productivity's
+first restore still misses 240 ms; all three 554-pixel Home source failures and
+historical predecessors remain failures. Production remains the default and
+Cory's P0 acceptance remains open.
+
 ## 2026-10-08: Moving Slot And Conditional Qualification Results
 
 After pushed/live-verified `65edcb7`, the same bracketed native DLL completes

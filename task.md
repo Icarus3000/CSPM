@@ -1,5 +1,13 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-09: Computer Closeout And Cloud Preservation
+
+- [x] Preserve the existing primary-checkout diagnostic/report changes on their own branch; no merge or implementation continuation.
+- [x] Verify the experimental `3c41aaf` checkpoint and current learning/moving reports on the live remote; retain all failures and the unqualified status.
+- [x] Preserve seven reviewed portable evidence helpers under `scripts/diagnostics/evidence_builders/`; keep private raw inputs and ignored originals untouched. Static AST/compilation and staged privacy/whitespace checks only; no helper execution.
+- [x] Audit all registered worktrees, branches, detached checkpoints and four unchanged local-only stashes. Record sanitized historical knowledge and new-computer recovery instructions on the archival `docs/new-computer-closeout-20261009` branch.
+- [ ] On the new computer, recover the exact documented experimental checkpoint and prerequisites before diagnosing collector-free Productivity restore readiness. Fixed 350/240/100 ms contracts, three retained Home failures, full qualification and Cory's P0 acceptance remain open. No package/install or other visual state work follows closeout.
+
 ## 2026-10-08: Created Band Moving Controls And Cold Gate
 
 - [x] Commit/push and independently verify the bounded source-band checkpoint `65edcb7`; preserve all earlier failed source/setup controls.

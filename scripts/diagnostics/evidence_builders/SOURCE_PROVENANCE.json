@@ -1,0 +1,51 @@
+[
+  {
+    "source": "outputs/native_wait_20261008/created_band_report_constructor.py",
+    "sourceSha256": "46d0194939bdb23df4c8d41d72aeefb33f6533e538f6f1d4da05214975937c7f",
+    "preserved": "scripts/diagnostics/evidence_builders/native_wait_20261008/created_band_report_constructor.py",
+    "preservedSha256": "76d78f35fc87505548bc566fdec901b1ca4c34a198d066a39144e691aed0e255",
+    "validated": "Complete source review, AST parse and compile only; never executed"
+  },
+  {
+    "source": "outputs/created_band_resume_20261008/extend_report.py",
+    "sourceSha256": "afa098a38a661ee8596e74ca319dbfe7f4c6cc5cd7fe8f77ee1700e615de6c60",
+    "preserved": "scripts/diagnostics/evidence_builders/created_band_resume_20261008/extend_report.py",
+    "preservedSha256": "c9b2e6a8bcf373aee958f5b17486462dd6700c174ff8b1aeaad96e4f38eaa2ac",
+    "validated": "Complete source review, AST parse and compile only; never executed"
+  },
+  {
+    "source": "outputs/created_band_resume_20261008/moving_report.py",
+    "sourceSha256": "c295e5097797d918ef38a443b988b16ac893c5b45b1e82ef19a65a5cbae56092",
+    "preserved": "scripts/diagnostics/evidence_builders/created_band_resume_20261008/moving_report.py",
+    "preservedSha256": "b2fe1809d6a04ccf20d3cd19b133b2433e2328d46066de2cd9887ce9e402115e",
+    "validated": "Complete source review, AST parse and compile only; never executed"
+  },
+  {
+    "source": "outputs/created_band_resume_20261008/safety_report.py",
+    "sourceSha256": "5440008d308806d4847bce2d3daac327f99bd58dd6ecc57006630ef1b2e2d563",
+    "preserved": "scripts/diagnostics/evidence_builders/created_band_resume_20261008/safety_report.py",
+    "preservedSha256": "2e11bbd25be8bfdfd31310d468c481603b0602c22d7c5f48a9990b87dab81e6a",
+    "validated": "Complete source review, AST parse and compile only; never executed"
+  },
+  {
+    "source": "outputs/created_band_resume_20261008/validate_public.py",
+    "sourceSha256": "a798284c4e5e4e914f2a00e57eea6fa809c694219c763c605b0ec5b34e55629e",
+    "preserved": "scripts/diagnostics/evidence_builders/created_band_resume_20261008/validate_public.py",
+    "preservedSha256": "cf74b71efad61cec5abd527ea7f9bbc1fcea5cf2b62ba973a1a797492a866387",
+    "validated": "Complete source review, AST parse and compile only; never executed"
+  },
+  {
+    "source": "outputs/created_band_resume_20261008/existing_safety_launcher.py",
+    "sourceSha256": "fe22b53f785b68f0a76c620130bbe457b36475cbda602818e7e6a64507381659",
+    "preserved": "scripts/diagnostics/evidence_builders/created_band_resume_20261008/existing_safety_launcher.py",
+    "preservedSha256": "5acfc4bd81fa7e9a5ab75e006bc61a5fe11f08c3a4b5130198729b384265aef1",
+    "validated": "Complete source review, AST parse and compile only; never executed"
+  },
+  {
+    "source": "outputs/native_cleanroom/collect_physical_qualification_20261004.py",
+    "sourceSha256": "ddbf8766860ac95a992eb4d9bf61121b21ff8be3ecdbee08055cccfa4b5ba79e",
+    "preserved": "scripts/diagnostics/evidence_builders/native_cleanroom/collect_physical_qualification_20261004.py",
+    "preservedSha256": "e2642769beed883bf377d830b648c859a9aafb11e0679c28bc55ed18dc122a93",
+    "validated": "Complete source review, AST parse and compile only; never executed"
+  }
+]
