@@ -566,3 +566,14 @@ are in `docs/CLEANROOM_CREATED_SOURCE_BAND_2026-10-08.md` and JSON. These
 stopped controls do not qualify moving presentation-slot, target deadline,
 continuous motion, WebEngine or installed acceptance. All 350/240/100 ms gates
 remain unchanged and production remains the default.
+
+The subsequent moving-control report is
+`docs/CLEANROOM_CREATED_BAND_MOVING_2026-10-08.md`. Instrumented workspace
+controls retain 361 passing exact slot returns, while the collector-free first
+Productivity restore misses target readiness. Full cold qualification and
+packaging therefore remain blocked. The disposable runner now maps startup to
+the observed Qt primary screen and accepts `--desktop-device-index` and
+`--desktop-output-index` for observation. These selectors do not relocate the
+fixture or change the source GPU; the complete acquisition must fit the chosen
+output. Existing QML reduced/unavailable-selector safety is recorded separately
+from unimplemented native bridge reduced/failure recovery integration.

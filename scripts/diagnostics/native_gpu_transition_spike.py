@@ -193,6 +193,10 @@ def main():
         help="Bounded native API/wait results and revision/state evidence; does not change wait deadlines")
     parser.add_argument("--native-created-source-band", action="store_true",
         help="Create the hidden native HWND in the band sampled from the owned live source")
+    parser.add_argument("--desktop-output-index", type=int, default=0,
+        help="DXGI output for physical observation; the complete crop must fit that output")
+    parser.add_argument("--desktop-device-index", type=int, default=0,
+        help="DXGI adapter for physical observation; presentation keeps the source GPU")
     parser.add_argument("--intrinsic-only", action="store_true",
         help="Matched source ownership/readiness/input control without any desktop collector; physical gates stay unmeasured")
     parser.add_argument("--probe-endpoint", action="store_true",
@@ -205,6 +209,8 @@ def main():
         parser.error("source transfer trace requires single-owner source ownership")
     if args.native_created_source_band and not args.single_owner_source:
         parser.error("created native source band requires single-owner visibility ownership")
+    if args.desktop_output_index < 0 or args.desktop_device_index < 0:
+        parser.error("desktop adapter/output indices must be nonnegative")
     if args.intrinsic_only and (not args.single_owner_source or args.physical_diagnostics
             or args.endpoint_pixels or args.pixels or args.source_observation_only
             or args.controlled_backdrop or args.probe_composition or args.probe_endpoint
@@ -625,7 +631,7 @@ Item {
                 if dependencies:
                     sys.path.insert(0, dependencies)
                 import dxcam
-                self.desktop_camera = dxcam.create(device_idx=0, output_idx=0,
+                self.desktop_camera = dxcam.create(device_idx=args.desktop_device_index, output_idx=args.desktop_output_index,
                     output_color="BGRA", processor_backend="numpy", max_buffer_len=2)
                 self.desktop_observer = DesktopFrameObserver()
                 self.record("capture-session-start", qpcSeconds=self.desktop_observer.started_seconds)
@@ -1975,7 +1981,9 @@ Item {
                 for row in self.rows:
                     print(json.dumps(row), flush=True)
 
-    entry._capture_startup_launch_context = lambda: {"screenIndex": 0, "cursorX": 900, "cursorY": 500}
+    # Qt enumeration index zero can be a different display from DXGI output
+    # zero. Reuse the disposable fixture's observed primary-screen mapping.
+    entry._capture_startup_launch_context = context["diagnostic_launch_context"]
     if args.activation_profile:
         class ActivationSpike(NativeSpike):
             # Only this explicit diagnostic adds Python dispatch on all events.

@@ -1,5 +1,10 @@
 # Created source band recovery — 2026-10-08
 
+Subsequent moving and safety results are preserved separately in
+[the moving continuation](CLEANROOM_CREATED_BAND_MOVING_2026-10-08.md).
+Its collector-free cold-readiness failure keeps full qualification open.
+The source-only counts and historical evidence below retain their original scope.
+
 **Current guarded and unlocked source controls pass; complete qualification remains open.**
 The final candidate creates its hidden host in the observed source band, preserves
 that band during preparation, then performs one nonactivating `HWND_TOP`

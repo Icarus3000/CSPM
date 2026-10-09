@@ -1,5 +1,46 @@
 # Implementation History
 
+## 2026-10-08: Moving Slot And Conditional Qualification Results
+
+After pushed/live-verified `65edcb7`, the same bracketed native DLL completes
+the instrumented Productivity five-toggle, Time Entry four-direction,
+Directory pair and existing invoice-preview Chromium pair controls. Large Home
+first completes its pair but fails three full-source comparisons by 554 margin
+pixels each in the taskbar strip. A separate 1,550 × 850 Home pair wholly within
+the work area passes all twelve comparisons; the 1,550 × 900 failure is retained.
+The physical control aggregate records 17 executed directions, 119 fresh passes,
+99 exact comparisons, three failed comparisons and 17 accepted QML pairs.
+
+All 361 recorded frame-latency waits return WAIT_OBJECT_0 within the unchanged
+100 ms gate, maximum 54.3261 ms. Generation checks match; completed native final
+traces have zero dropped rows, retained hosts and pinned failures. Render import
+tables explicitly use the post-start-call GUI receipt as their reference; native
+code separately enforces the actual 240 ms deadline. No historical wait cause,
+populated immutable endpoint probe or physical continuity pass is inferred.
+
+Three Time Entry setup failures expose an unstable Qt screen-index-zero versus
+DXGI-output-zero assumption. The disposable runner now reuses its existing
+observed primary-screen mapping and accepts explicit observer adapter/output
+indices. Full-crop gates and the native GPU/source are unchanged. Production
+QML, geometry curves, duration/easing and fallback remain unchanged.
+
+The collector-free same-source/DLL Productivity control misses target readiness
+on its first restore, completes zero directions and returns enabled/interactive
+flags before normal fixture close. Its endpoint metadata records motion 1.0,
+content 0.0 and no ready target. Exact slot/deletion telemetry is intentionally
+absent; no accepted input follows the rejection. This blocks complete cold
+qualification and packaging. No QML optimization or deadline extension follows.
+
+Existing QML reduced-motion and unavailable-native selector fallback controls
+each pass geometry/workspace/restored-maximized taskbar/close checks outside
+sandbox. Native reduced/failure recovery integration, physical input and motion
+continuity remain open. Actual existing-preview Qt WebEngine synthetic HTML
+renders outside sandbox; new PDF/installed WebEngine and mixed DPI remain open.
+Reports are `docs/CLEANROOM_CREATED_BAND_MOVING_2026-10-08.md` and bounded
+per-run JSON, plus the safety aggregate. Final safe checks pass 784 tests (one
+real-window deselection), compilation/whitespace and zero source drift. All task
+evidence/storage stays on Y:; production/settings/workbooks match the baseline.
+
 ## 2026-10-08: Created Source Band And Immediate Native Evidence
 
 Recovered `65fc1e7` and preserved the interrupted create-band source success.

@@ -1,5 +1,29 @@
 # Clean-room maximize/restore learning record
 
+## 2026-10-08: Moving Slot Pass And Collector-Free Readiness Failure
+
+**PROVEN BY MEASUREMENT:** create-in-band supports the populated instrumented
+workspace matrix. All 361 recorded 100 ms frame-latency waits return WAIT_OBJECT_0,
+maximum 54.3261 ms, with matching generations. Seventeen executed directions
+retain 119 fresh observations, 99 exact comparisons and 17 accepted QML pairs.
+Three Home source comparisons still fail by 554 taskbar-strip margin pixels;
+the later wholly contained large Home control passes but does not erase them.
+Actual invoice-preview Chromium synthetic HTML renders outside sandbox.
+
+**QUALIFICATION FAILS:** the same-DLL collector-free Productivity first restore
+misses the fixed target-transfer deadline and completes zero directions. Native
+trajectory reaches endpoint motion 1.0/content 0.0; input enabled/interactive
+flags return before normal close, with no accepted input witness after failure.
+Do not infer unrecorded slot returns or typed deletion outcomes. No 350/240/100 ms
+change or QML optimization is authorized by this failure.
+
+Existing QML reduced and unavailable-native selector fallback safety controls
+pass geometry/workspace/taskbar/close checks. Native bridge integration/recovery,
+uninterrupted physical motion, mixed DPI and broad lifecycle/input remain open.
+Discrete endpoint and observer passes do not prove a pause-free transaction.
+Detailed failed/successful controls are retained in the moving/safety reports.
+Production remains unchanged; packaging is blocked and **Cory's P0 acceptance stays open**.
+
 ## 2026-10-08: Created Band Measured Before Motion
 
 **PROVEN BY MEASUREMENT:** the final matched D3D11 DLL passes both source

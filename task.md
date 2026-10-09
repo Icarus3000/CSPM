@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-08: Created Band Moving Controls And Cold Gate
+
+- [x] Commit/push and independently verify the bounded source-band checkpoint `65edcb7`; preserve all earlier failed source/setup controls.
+- [x] Retest the unchanged 100 ms slot: 361 exact `WAIT_OBJECT_0` returns across the instrumented moving controls, maximum 54.3261 ms; generation checks match and completed traces have no pinned failures/drops/retained hosts. Do not infer the historical failure's cause from passing repeats.
+- [x] Run small Time Entry four directions, large Home both, Productivity five toggles, Directory both and actual existing invoice-preview Chromium both. Preserve 17 executed directions, 119 fresh observations, 99 exact client comparisons, three failed Home source comparisons and 17 accepted QML pairs.
+- [x] Retain large Home's three 554-pixel taskbar-strip margin failures. A separate large client fitting within the work area passes both directions/all twelve comparisons; the earlier failure is unchanged.
+- [x] Correct only disposable observer/startup display mapping after three pre-native setup failures; explicit DXGI adapter/output selectors keep the full crop gate and native source GPU unchanged.
+- [x] Exercise existing reduced-motion and unavailable-native QML fallback geometry/workspace/taskbar/close controls outside sandbox, with unchanged source/protected files. Native bridge reduced/failure recovery integration and physical input/continuity remain open.
+- [x] Run collector-free Productivity with fixed 350/240/100 ms limits. First restore misses target readiness, completes zero directions and safely returns enabled/interactive flags before closing. Preserve the failure without deadline/QML changes.
+- [x] Validate final source with 784 sandbox-safe cases, one real-window deselection, compilation/whitespace and zero source drift. Read-only privacy/report validation precedes the final evidence checkpoint.
+- [ ] Resolve reliable collector-free cold readiness, intersecting desktop margins, continuous visible response/handoff, native reduced/failure recovery, physical input and lifecycle/mixed-DPI qualification. No package/install/production-default change or new visual state machine before all gates pass; Cory's P0 acceptance remains open.
+
 ## 2026-10-08: Created Source Band Checkpoint
 
 - [x] Recover exact local/upstream/live remote `65fc1e7`, all uncommitted work, preserved controls, four stashes and worktrees. Preserve previous evidence and production baselines.
@@ -7,7 +19,7 @@
 - [x] Measure matched final-DLL SDK controls: direct creation passes ordinary/topmost with and without the guard; late topmost promotion rejects before motion. Preserve pure Win32 variability, setup failures and physical witness rejection separately.
 - [x] Correct stopped visible-host placement with one nonactivating within-band `HWND_TOP` call. Guarded/unlocked populated passive source controls each pass five fresh observations, four exact full-client comparisons and safe cleanup.
 - [x] Validate 784 sandbox-safe cases, one real-window deselection, thirteen privacy-scanner tests, native/shader/control builds, no-window ABI contract, compilation and no source drift. Preserve sanitized evidence in `docs/CLEANROOM_CREATED_SOURCE_BAND_2026-10-08.md` and JSON.
-- [ ] Retest moving target import and exact 100 ms presentation-slot result; then complete repeated populated cold/input/WebEngine/reduced-motion/lifecycle/DPI gates. Package only after complete qualification; production/default/data and Cory's P0 acceptance remain unchanged.
+- [x] Retest moving target import and exact 100 ms presentation-slot result in the following continuation; preserve full qualification as open after the collector-free readiness failure.
 
 ## 2026-10-08: Native Return/Wait Investigation Continuation
 
