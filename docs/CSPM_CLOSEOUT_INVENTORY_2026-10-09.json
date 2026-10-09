@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-09",
+  "scope": "Preservation-only filename census; private per-file inventories remain local. Primary/repair reuse completed snapshots; experimental uses long-path enumeration. Counts include ignored audit outputs at the snapshot boundary.",
+  "checkouts": [
+    {
+      "checkout": "__CSPM",
+      "ignoredFiles": 874819,
+      "importantUntrackedFilesAfterPreservation": 0,
+      "categories": {
+        "B": 824382,
+        "A": 50433,
+        "C": 4
+      },
+      "enumerationIssueCount": 0,
+      "privateInventorySha256": "222e6cef76186b692b1fc5beed500a259f34e74031206de3cf6eeb631ebec18b"
+    },
+    {
+      "checkout": "__CSPM-repair-restored",
+      "ignoredFiles": 4415,
+      "importantUntrackedFilesAfterPreservation": 0,
+      "categories": {
+        "B": 4409,
+        "A": 6
+      },
+      "enumerationIssueCount": 0,
+      "privateInventorySha256": "a995ccc48d6b4258cc37a3fc5cf597ea1918fefbdd9c311a0618e7ed836c2348"
+    },
+    {
+      "checkout": "__CSPM_cleanroom_fluid_transition_20261003",
+      "ignoredFiles": 39454,
+      "importantUntrackedFilesAfterPreservation": 0,
+      "categories": {
+        "B": 20098,
+        "A": 19277,
+        "C": 72,
+        "D": 7
+      },
+      "enumerationIssueCount": 0,
+      "privateInventorySha256": "5fbe6f47911f16021f4fcbbd042f8bc031ead3510c6b50c7cc1a04a5c95641dd"
+    },
+    {
+      "checkout": "__CSPM_closeout_handoff_20261009",
+      "ignoredFiles": 0,
+      "importantUntrackedFilesAfterPreservation": 0,
+      "categories": {},
+      "enumerationIssueCount": 0,
+      "privateInventorySha256": "17d72796142d3fe7075e198df316a46246b224f238389f44f01e411c1f4f9412"
+    }
+  ],
+  "preservedPortableHelpers": 7,
+  "unchangedStashes": 4,
+  "intentionalLocalOnlyHistoricalStashCommitObjects": 16,
+  "protectedHashesUnchanged": 12,
+  "noRuntimeBuildPackageOrInstall": true
+}
