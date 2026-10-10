@@ -1222,8 +1222,8 @@ def _configure_qt_webengine_runtime() -> None:
     if webengine_disabled and not force_webengine:
         return
 
-    # Keep sandbox disabled (required on some Windows setups for local splash assets).
-    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+    # Preserve Qt/Chromium's default security boundary. Desktop validation must
+    # diagnose an unsupported environment instead of disabling the sandbox.
 
     # Remove legacy splash flags that caused delayed/blank WebEngine render.
     # Keep a targeted compatibility feature-disable for DirectComposition to

@@ -99,3 +99,23 @@ def test_native_bridge_no_window_abi_and_null_rejection():
     assert bridge.dll.cspm_comp_status(None) & 16
     assert not bridge.dll.cspm_comp_create_from_frame_with_source_band(None, 0, 0, 0, 10, 10)
     assert bridge.error()
+
+
+@pytest.mark.parametrize("transferred,started,diagnostic,outcome", [
+    (False, False, "pre-motion-rejection", "legacy-fallback"),
+    (True, False, "post-transfer-failure", "safe-rejection"),
+    (True, True, "post-transfer-failure", "safe-rejection"),
+])
+def test_partial_visibility_transfer_recovers_without_recapturing_source(
+        local_motion, monkeypatch, caplog, transferred, started, diagnostic, outcome):
+    runtime = native_motion.NativeMotion(bridge_factory=lambda _: None)
+    transaction = dict(direction="restore", cancelled=False, started=started,
+                       visibility_transferred=transferred)
+    runtime._transaction = transaction
+    released = []
+    monkeypatch.setattr(runtime, "_release", lambda tx, used: released.append((tx, used)))
+    with caplog.at_level(logging.INFO, logger="motion"):
+        runtime._recover(transaction, "injected-transfer-failure")
+    assert released == [(transaction, outcome)]
+    assert f"used={diagnostic}" in caplog.text
+    assert "used=native " not in caplog.text

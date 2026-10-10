@@ -14,10 +14,15 @@ def profile() -> Path | None:
     return _profile
 
 
-def validate_profile(root: Path) -> Path:
+def validate_profile(root: Path, *, diagnostic_only: bool = False) -> Path:
     root = root.resolve()
     provenance = json.loads((root / "snapshot.private.json").read_text(encoding="utf-8"))
-    if provenance.get("schemaVersion") != 1 or provenance.get("integrityPassed") is not True:
+    if provenance.get("schemaVersion") != 1:
+        raise ValueError("Unsupported snapshot provenance")
+    if diagnostic_only and (provenance.get("purpose") != "diagnostic_only"
+                            or provenance.get("productionEligible") is not False):
+        raise ValueError("Diagnostic profile must be explicitly ineligible for production")
+    if provenance.get("integrityPassed") is not True and not diagnostic_only:
         raise ValueError("The protected dataset has not passed canonical integrity")
     if provenance.get("cloudWritesEnabled") is not False:
         raise ValueError("Candidate must have cloud publishing disabled")
@@ -45,7 +50,11 @@ def configure() -> None:
     sidecar = executable_root / "candidate-profile.json"
     try:
         configuration = json.loads(sidecar.read_text(encoding="utf-8"))
-        root = validate_profile(Path(configuration["profile"]))
+        package = json.loads(marker.read_text(encoding="utf-8"))
+        diagnostic_only = configuration.get("diagnosticOnly") is True
+        if diagnostic_only and package.get("technicalQualificationComplete") is not False:
+            raise ValueError("Qualified packages cannot bypass the production data gate")
+        root = validate_profile(Path(configuration["profile"]), diagnostic_only=diagnostic_only)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         # This path runs before Qt, the workspace, cloud sync or bridge loading.
         # A small native dialog gives a recovery action instead of blank startup.

@@ -16,7 +16,7 @@ if ($validation.schemaVersion -ne 1 -or $validation.ordinaryStartupAndClosePasse
     $validation.packageSmokePassed -ne $true) {
     throw 'Candidate installation refused: required regression, privacy or data-safety gate is incomplete.'
 }
-$executable = Join-Path $package 'CSPM-NativeMotionCandidate.exe'
+$executable = Join-Path $package 'CSPM.exe'
 $marker = Join-Path $package '_internal\native-motion-candidate.json'
 if (-not (Test-Path -LiteralPath $executable) -or -not (Test-Path -LiteralPath $marker)) {
     throw 'Not a governed native motion candidate package.'
@@ -37,7 +37,7 @@ Copy-Item -LiteralPath $package -Destination $destination -Recurse
 $settingsLink = Join-Path $destination 'CSPM Motion Settings.lnk'
 $shellObject = New-Object -ComObject WScript.Shell
 $shortcut = $shellObject.CreateShortcut($settingsLink)
-$shortcut.TargetPath = Join-Path $destination 'CSPM-NativeMotionCandidate.exe'
+$shortcut.TargetPath = Join-Path $destination 'CSPM.exe'
 $shortcut.Arguments = '--motion-settings'
 $shortcut.WorkingDirectory = $destination
 $shortcut.Save()

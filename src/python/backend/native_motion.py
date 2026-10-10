@@ -182,7 +182,7 @@ class NativeMotion(QObject):
                         max(physical[1]+physical[3], goal[1]+goal[3])+32-top]
             transaction = dict(window=window, sequence=sequence, direction=direction, source=physical,
                 target=goal, envelope=envelope, host=None, header=header*dpr, right=right_fixed*dpr,
-                input=None, started=False, pending=None, capture=False, frame_ready=False,
+                input=None, started=False, visibility_transferred=False, pending=None, capture=False, frame_ready=False,
                 foreground=int(self._bridge.user.GetForegroundWindow() or 0) == int(window.winId()),
                 saved_focus=window.activeFocusItem(), cancelled=False, frames=[], lock=threading.Lock())
             self._transaction = transaction
@@ -272,6 +272,7 @@ class NativeMotion(QObject):
                 bridge.user.EnableWindow(int(window.winId()), False)
                 # Mark recovery ownership before calling the potentially
                 # partial visibility transfer, exactly as the audited adapter.
+                transaction["visibility_transferred"] = True
                 bridge.require(dll.cspm_comp_transfer_source_visibility(host, int(window.winId())), host)
                 window.setOpacity(0)
                 window.show()
@@ -337,9 +338,12 @@ class NativeMotion(QObject):
     def _recover(self, transaction, reason):
         if self._transaction is not transaction or transaction["cancelled"]:
             return
-        used = "safe-rejection" if transaction["started"] else "legacy-fallback"
-        self.record(transaction["direction"], used, reason)
-        self._release(transaction, used)
+        transferred = transaction["visibility_transferred"]
+        self.record(transaction["direction"],
+                    "post-transfer-failure" if transferred else "pre-motion-rejection", reason)
+        # A partially accepted transfer must recover directly to the target,
+        # even if native start itself failed. Never capture it as a new source.
+        self._release(transaction, "safe-rejection" if transferred else "legacy-fallback")
 
     def _window_destroyed(self, transaction):
         if self._transaction is transaction and not transaction["cancelled"]:
@@ -375,6 +379,14 @@ class NativeMotion(QObject):
                 self._bridge.user.ShowWindow(int(window.winId()), 4)
             if transaction["input"] is not None:
                 self._bridge.user.EnableWindow(int(window.winId()), transaction["input"])
+            visible = bool(self._bridge.user.IsWindowVisible(int(window.winId())))
+            input_restored = (transaction["input"] is None or
+                              bool(self._bridge.user.IsWindowEnabled(int(window.winId()))) == transaction["input"])
+            log.log(logging.INFO if visible and input_restored else logging.ERROR,
+                    "motion live-return outcome=%s visibility_transferred=%s motion_started=%s "
+                    "visible=%s input_restored=%s recovery=%s", outcome,
+                    transaction["visibility_transferred"], transaction["started"],
+                    visible, input_restored, "passed" if visible and input_restored else "FAILED")
             if transaction["foreground"] and int(self._bridge.user.GetForegroundWindow() or 0) == int(window.winId()):
                 window.requestActivate()
                 focus = transaction["saved_focus"]

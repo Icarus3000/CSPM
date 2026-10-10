@@ -187,12 +187,12 @@ Rectangle {
             spacing: 2
 
             Text {
+                id: cspmFontOwner0
                 text: "Matter Command Center"
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                property bool cspmFontOwnerVisible: visible
                 property QtObject cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))
-                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                    active: !root.layoutRepairEnabled || cspmFontOwner0.visible
                 }
                 font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
@@ -200,12 +200,12 @@ Rectangle {
             }
 
             Text {
+                id: cspmFontOwner1
                 text: "Premium quick action: open a clean Time Docket Entry prefilled for this matter."
                 color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                property bool cspmFontOwnerVisible: visible
                 property QtObject cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
-                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                    active: !root.layoutRepairEnabled || cspmFontOwner1.visible
                 }
                 font.pixelSize: cspmFontGate.pixelSize
                 elide: Text.ElideRight
@@ -264,15 +264,15 @@ Rectangle {
             spacing: 8
 
             Text {
+                id: cspmFontOwner2
                 Layout.fillWidth: true
                 text: "Retainer / engagement agreement: "
                     + root.filenameFromPath(savedAgreementRow.documentPath)
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                property bool cspmFontOwnerVisible: visible
                 property QtObject cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct,
                     root.metricFloor("fontFloorBodyPx", 10))
-                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                    active: !root.layoutRepairEnabled || cspmFontOwner2.visible
                 }
                 font.pixelSize: cspmFontGate.pixelSize
                 elide: Text.ElideMiddle
@@ -314,12 +314,12 @@ Rectangle {
                     Layout.fillWidth: true
 
                     Text {
+                        id: cspmFontOwner3
                         text: "WIP & unpaid invoices"
                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                        property bool cspmFontOwnerVisible: visible
                         property QtObject cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))
-                            active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                            active: !root.layoutRepairEnabled || cspmFontOwner3.visible
                         }
                         font.pixelSize: cspmFontGate.pixelSize
                         font.weight: Font.DemiBold
@@ -340,19 +340,20 @@ Rectangle {
                 }
 
                 Text {
+                    id: cspmFontOwner4
                     Layout.fillWidth: true
                     visible: root.matterFinancialSummaryLoading
                     text: "Loading unbilled WIP and unpaid invoices…"
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    property bool cspmFontOwnerVisible: visible
                     property QtObject cspmFontGate: HiddenFontGate {
                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
-                        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                        active: !root.layoutRepairEnabled || cspmFontOwner4.visible
                     }
                     font.pixelSize: cspmFontGate.pixelSize
                 }
 
                 Text {
+                    id: cspmFontOwner5
                     Layout.fillWidth: true
                     visible: !root.matterFinancialSummaryLoading
                         && (!root.matterFinancialSummary || !root.matterFinancialSummary.ok)
@@ -360,10 +361,9 @@ Rectangle {
                         ? String(root.matterFinancialSummary.message)
                         : "Load a matter to see WIP and unpaid invoices."
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    property bool cspmFontOwnerVisible: visible
                     property QtObject cspmFontGate: HiddenFontGate {
                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
-                        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                        active: !root.layoutRepairEnabled || cspmFontOwner5.visible
                     }
                     font.pixelSize: cspmFontGate.pixelSize
                     wrapMode: Text.WordWrap
@@ -376,14 +376,14 @@ Rectangle {
                     spacing: 14
 
                     Text {
+                        id: cspmFontOwner6
                         text: "Unbilled WIP: " + Number(root.matterFinancialSummary.unbilledWipCount || 0)
                             + " item(s) · " + root.matterFinancialMoney(root.matterFinancialSummary.unbilledWipAmount)
                         color: Number(root.matterFinancialSummary.unbilledWipCount || 0) > 0
                             ? "#b36a1d" : SemanticTheme.inkMuted(root.t, root.appStyle)
-                        property bool cspmFontOwnerVisible: visible
                         property QtObject cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
-                            active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                            active: !root.layoutRepairEnabled || cspmFontOwner6.visible
                         }
                         font.pixelSize: cspmFontGate.pixelSize
                         font.weight: Font.DemiBold
@@ -392,14 +392,14 @@ Rectangle {
                     Item { Layout.fillWidth: true }
 
                     Text {
+                        id: cspmFontOwner7
                         text: "Unpaid invoices: " + Number(root.matterFinancialSummary.unpaidInvoiceCount || 0)
                             + " · " + root.matterFinancialMoney(root.matterFinancialSummary.unpaidInvoiceAmount)
                         color: Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
                             ? "#bd312c" : SemanticTheme.inkMuted(root.t, root.appStyle)
-                        property bool cspmFontOwnerVisible: visible
                         property QtObject cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
-                            active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                            active: !root.layoutRepairEnabled || cspmFontOwner7.visible
                         }
                         font.pixelSize: cspmFontGate.pixelSize
                         font.weight: Font.DemiBold
@@ -407,15 +407,15 @@ Rectangle {
                 }
 
                 Text {
+                    id: cspmFontOwner8
                     Layout.fillWidth: true
                     visible: root.matterFinancialSummary && root.matterFinancialSummary.ok
                         && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) === 0
                     text: "No unpaid invoices are linked to this matter."
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    property bool cspmFontOwnerVisible: visible
                     property QtObject cspmFontGate: HiddenFontGate {
                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
-                        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                        active: !root.layoutRepairEnabled || cspmFontOwner8.visible
                     }
                     font.pixelSize: cspmFontGate.pixelSize
                 }
@@ -450,10 +450,9 @@ Rectangle {
                                     + " · Amount due " + root.matterFinancialMoney(modelData.balanceDue)
                                     + " — open in Invoice Directory"
                                 color: SemanticTheme.accentPrimary(root.t, root.appStyle)
-                                property bool cspmFontOwnerVisible: visible
                                 property QtObject cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
-                                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                    active: !root.layoutRepairEnabled || unpaidInvoiceLink.visible
                                 }
                                 font.pixelSize: cspmFontGate.pixelSize
                                 font.underline: unpaidInvoiceMouse.containsMouse
@@ -475,13 +474,13 @@ Rectangle {
 
 
         Text {
+            id: cspmFontOwner10
 
             text: String(root.matterProfileLookupMessage || "Select and load a matter profile.")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            property bool cspmFontOwnerVisible: visible
             property QtObject cspmFontGate: HiddenFontGate {
                 inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
-                active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                active: !root.layoutRepairEnabled || cspmFontOwner10.visible
             }
             font.pixelSize: cspmFontGate.pixelSize
             elide: Text.ElideRight
@@ -551,10 +550,9 @@ Rectangle {
 
                                     text: String(matterLeftCard.entry && matterLeftCard.entry.label ? matterLeftCard.entry.label : "")
                                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                    property bool cspmFontOwnerVisible: visible
                                     property QtObject cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
-                                        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                        active: !root.layoutRepairEnabled || matterLeftLabelText.visible
                                     }
                                     font.pixelSize: cspmFontGate.pixelSize
                                     font.weight: Font.DemiBold
@@ -572,10 +570,9 @@ Rectangle {
 
                                     text: String(matterLeftCard.entry && matterLeftCard.entry.value ? matterLeftCard.entry.value : "[blank]")
                                     color: (matterLeftCard.entry && matterLeftCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                    property bool cspmFontOwnerVisible: visible
                                     property QtObject cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
-                                        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                        active: !root.layoutRepairEnabled || matterLeftValueText.visible
                                     }
                                     font.pixelSize: cspmFontGate.pixelSize
                                     font.underline: (matterLeftCard.entry && matterLeftCard.entry.label === "Client" && text !== "[blank]")
@@ -628,10 +625,9 @@ Rectangle {
 
                                     text: String(matterRightCard.entry && matterRightCard.entry.label ? matterRightCard.entry.label : "")
                                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                    property bool cspmFontOwnerVisible: visible
                                     property QtObject cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
-                                        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                        active: !root.layoutRepairEnabled || matterRightLabelText.visible
                                     }
                                     font.pixelSize: cspmFontGate.pixelSize
                                     font.weight: Font.DemiBold
@@ -649,10 +645,9 @@ Rectangle {
 
                                     text: String(matterRightCard.entry && matterRightCard.entry.value ? matterRightCard.entry.value : "[blank]")
                                     color: (matterRightCard.entry && matterRightCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                    property bool cspmFontOwnerVisible: visible
                                     property QtObject cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
-                                        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                        active: !root.layoutRepairEnabled || matterRightValueText.visible
                                     }
                                     font.pixelSize: cspmFontGate.pixelSize
                                     font.underline: (matterRightCard.entry && matterRightCard.entry.label === "Client" && text !== "[blank]")

@@ -26,12 +26,12 @@ Rectangle {
             spacing: root.ratioPx(root.scaleRatios.gridColumnSpacingPct * 0.6, 6)
 
             Text {
+                id: cspmFontOwner0
                 text: "Search Mode"
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
-                property bool cspmFontOwnerVisible: visible
                 property QtObject cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.88, root.metricFloor("fontFloorLabelPx", 8))
-                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                    active: !root.layoutRepairEnabled || cspmFontOwner0.visible
                 }
                 font.pixelSize: cspmFontGate.pixelSize
                 verticalAlignment: Text.AlignVCenter
@@ -102,14 +102,14 @@ Rectangle {
         }
 
         Text {
+            id: cspmFontOwner1
             text: String(root.globalSearchMessage || "")
             color: root.globalSearchLastOk
                 ? Qt.rgba(root._text.r, root._text.g, root._text.b, 0.78)
                 : Qt.rgba(0.98, 0.42, 0.42, 0.96)
-            property bool cspmFontOwnerVisible: visible
             property QtObject cspmFontGate: HiddenFontGate {
                 inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.88, root.metricFloor("fontFloorLabelPx", 8))
-                active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                active: !root.layoutRepairEnabled || cspmFontOwner1.visible
             }
             font.pixelSize: cspmFontGate.pixelSize
             elide: Text.ElideRight
@@ -165,13 +165,13 @@ Rectangle {
                             border.color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.52)
 
                             Text {
+                                id: cspmFontOwner2
                                 anchors.centerIn: parent
                                 text: String(globalRow.modelData.entityTypeLabel || globalRow.modelData.entityType || "Item")
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.92)
-                                property bool cspmFontOwnerVisible: visible
                                 property QtObject cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0098, root.metricFloor("fontFloorLabelPx", 8))
-                                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                    active: !root.layoutRepairEnabled || cspmFontOwner2.visible
                                 }
                                 font.pixelSize: cspmFontGate.pixelSize
                                 font.weight: Font.DemiBold
@@ -185,22 +185,23 @@ Rectangle {
                             spacing: root.ratioPx(0.0028, 2)
 
                             Text {
+                                id: cspmFontOwner3
                                 Layout.fillWidth: true
                                 text: root._cleanLowerText(globalRow.modelData.entityType) === "client"
                                     ? root.globalResultClientHeadline(globalRow.modelData)
                                     : String(globalRow.modelData.title || "")
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.96)
                                 elide: Text.ElideRight
-                                property bool cspmFontOwnerVisible: visible
                                 property QtObject cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0116, root.metricFloor("fontFloorBodyPx", 9))
-                                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                    active: !root.layoutRepairEnabled || cspmFontOwner3.visible
                                 }
                                 font.pixelSize: cspmFontGate.pixelSize
                                 font.weight: Font.DemiBold
                             }
 
                             Text {
+                                id: cspmFontOwner4
                                 Layout.fillWidth: true
                                 text: root._cleanLowerText(globalRow.modelData.entityType) === "client"
                                     ? root.globalResultClientSecondary(globalRow.modelData)
@@ -208,37 +209,36 @@ Rectangle {
                                 visible: text.length > 0
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
                                 elide: Text.ElideRight
-                                property bool cspmFontOwnerVisible: visible
                                 property QtObject cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0100, root.metricFloor("fontFloorLabelPx", 8))
-                                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                    active: !root.layoutRepairEnabled || cspmFontOwner4.visible
                                 }
                                 font.pixelSize: cspmFontGate.pixelSize
                             }
 
                             Text {
+                                id: cspmFontOwner5
                                 Layout.fillWidth: true
                                 text: "Matched: " + String((globalRow.modelData.matchedFields || []).join(", "))
                                 visible: text.length > 9
                                 color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.92)
                                 elide: Text.ElideRight
-                                property bool cspmFontOwnerVisible: visible
                                 property QtObject cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0096, root.metricFloor("fontFloorLabelPx", 8))
-                                    active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                    active: !root.layoutRepairEnabled || cspmFontOwner5.visible
                                 }
                                 font.pixelSize: cspmFontGate.pixelSize
                             }
                         }
 
                         Text {
+                            id: cspmFontOwner6
                             Layout.alignment: Qt.AlignVCenter
                             text: "Open"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.96)
-                            property bool cspmFontOwnerVisible: visible
                             property QtObject cspmFontGate: HiddenFontGate {
                                 inputPixelSize: root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))
-                                active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                                active: !root.layoutRepairEnabled || cspmFontOwner6.visible
                             }
                             font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold

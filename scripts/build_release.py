@@ -520,9 +520,9 @@ def main():
         print(f"  Live-hash match: NO (safe)")
             
     if args.native_motion_candidate:
-        original_exe = dist_dir / "CSPM" / "CSPM.exe"
-        candidate_exe = original_exe.with_name("CSPM-NativeMotionCandidate.exe")
-        original_exe.rename(candidate_exe)
+        # Isolation is enforced by the embedded candidate marker and private
+        # profile sidecar. Keep the canonical executable name for packaging
+        # qualification; the staging directory carries the candidate label.
         print("Candidate engine policy: native default, local legacy/reduced recovery, protected snapshot required")
     print("PyInstaller build complete.")
     

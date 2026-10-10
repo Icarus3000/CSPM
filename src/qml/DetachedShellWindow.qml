@@ -3840,8 +3840,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         function onFinished(window, sequence, outcome) {
             if (window !== mainWin || sequence !== mainWin.maximizeOverlayHandoffSeq) return;
             mainWin.nativeMotionPreparing = false;
-            // A failure after motion began remains a safe rejection in the log;
-            // recover to the requested target without relabelling it as legacy.
+            // The adapter diagnoses failures after visibility transfer separately
+            // from pre-motion rejection and reports the live recovery result.
             if (outcome === "safe-rejection")
                 mainWin.completeProfessionalWindowTransitionDirect(sequence, outcome);
             else

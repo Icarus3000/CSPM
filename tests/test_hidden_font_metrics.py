@@ -121,18 +121,22 @@ def run_probe():
             visible: true
             Text {
                 id: label
-                property real cspmHeldFontPixelSize: -1
                 text: "Stable metrics label"
-                HiddenFontGate { id: labelGate; inputPixelSize: root.requestedFont; active: !root.layoutRepairEnabled || label.visible }
-                font.pixelSize: labelGate.pixelSize
+                property QtObject cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.requestedFont
+                    active: !root.layoutRepairEnabled || label.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 onFontChanged: ++root.notifications
             }
             Text {
                 id: second
-                property real cspmHeldFontPixelSize: -1
                 text: "Independent owner"
-                HiddenFontGate { id: secondGate; inputPixelSize: root.requestedSecondFont; active: !root.layoutRepairEnabled || second.visible }
-                font.pixelSize: secondGate.pixelSize
+                property QtObject cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.requestedSecondFont
+                    active: !root.layoutRepairEnabled || second.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
             }
             TextEdit { id: editor; text: "Draft before" }
         }

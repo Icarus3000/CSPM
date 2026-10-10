@@ -51,6 +51,35 @@ def test_modified_protected_baseline_is_rejected(snapshot):
         native_candidate.validate_profile(snapshot)
 
 
+def test_failed_integrity_requires_explicit_disposable_diagnostic_status(snapshot):
+    manifest = snapshot / "snapshot.private.json"
+    values = json.loads(manifest.read_text())
+    values.update(integrityPassed=False, purpose="diagnostic_only", productionEligible=False)
+    manifest.write_text(json.dumps(values))
+    with pytest.raises(ValueError):
+        native_candidate.validate_profile(snapshot)
+    assert native_candidate.validate_profile(snapshot, diagnostic_only=True) == snapshot
+    values["productionEligible"] = True
+    manifest.write_text(json.dumps(values))
+    with pytest.raises(ValueError, match="ineligible"):
+        native_candidate.validate_profile(snapshot, diagnostic_only=True)
+
+
+def test_diagnostic_mode_still_refuses_cloud_writes_and_tampered_baseline(snapshot):
+    manifest = snapshot / "snapshot.private.json"
+    values = json.loads(manifest.read_text())
+    values.update(integrityPassed=False, purpose="diagnostic_only", productionEligible=False,
+                  cloudWritesEnabled=True)
+    manifest.write_text(json.dumps(values))
+    with pytest.raises(ValueError, match="publishing"):
+        native_candidate.validate_profile(snapshot, diagnostic_only=True)
+    values["cloudWritesEnabled"] = False
+    manifest.write_text(json.dumps(values))
+    (snapshot / "baseline" / "CSPM.xlsm").write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="hash mismatch"):
+        native_candidate.validate_profile(snapshot, diagnostic_only=True)
+
+
 def test_overlap_with_authority_is_rejected(snapshot):
     manifest = snapshot / "snapshot.private.json"
     values = json.loads(manifest.read_text())
