@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+from typing import Any
 
 from PySide6.QtCore import QObject, Property, Qt, QTimer, Signal, Slot
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
@@ -24,7 +25,7 @@ log = logging.getLogger("motion")
 
 def bridge_path() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "native" / "cspm_native_motion.dll"
+        return Path(getattr(sys, "_MEIPASS")) / "native" / "cspm_native_motion.dll"
     return Path(__file__).resolve().parents[3] / "outputs" / "native_cleanroom" / "cspm_native_motion.dll"
 
 
@@ -96,7 +97,7 @@ class NativeMotion(QObject):
         super().__init__(parent)
         self._mode = read_mode()
         self._system_reduced = system_reduced_motion()
-        self._bridge = None
+        self._bridge: NativeBridge | None = None
         self._unavailable = ""
         self._transaction = None
         self._retiring = False
@@ -106,8 +107,13 @@ class NativeMotion(QObject):
             except (OSError, AttributeError, RuntimeError) as exc:
                 self._unavailable = type(exc).__name__
                 log.warning("Native bridge unavailable; operations use legacy fallback (%s)", self._unavailable)
-        self._captureReady.connect(self._captured, Qt.QueuedConnection)
-        self._cleanupReady.connect(self._cleanup_done, Qt.QueuedConnection)
+        self._captureReady.connect(self._captured, Qt.ConnectionType.QueuedConnection)
+        self._cleanupReady.connect(self._cleanup_done, Qt.ConnectionType.QueuedConnection)
+
+    def _require_bridge(self) -> NativeBridge:
+        if self._bridge is None:
+            raise RuntimeError("Native transaction has no owning bridge")
+        return self._bridge
 
     @Property(str, constant=True)
     def engine(self):
@@ -180,7 +186,7 @@ class NativeMotion(QObject):
             left, top = min(physical[0], goal[0])-32, min(physical[1], goal[1])-32
             envelope = [left, top, max(physical[0]+physical[2], goal[0]+goal[2])+32-left,
                         max(physical[1]+physical[3], goal[1]+goal[3])+32-top]
-            transaction = dict(window=window, sequence=sequence, direction=direction, source=physical,
+            transaction: dict[str, Any] = dict(window=window, sequence=sequence, direction=direction, source=physical,
                 target=goal, envelope=envelope, host=None, header=header*dpr, right=right_fixed*dpr,
                 input=None, started=False, visibility_transferred=False, pending=None, capture=False, frame_ready=False,
                 foreground=int(self._bridge.user.GetForegroundWindow() or 0) == int(window.winId()),
@@ -198,10 +204,10 @@ class NativeMotion(QObject):
     def _request_capture(self, transaction, kind):
         window = transaction["window"]
         transaction["pending"] = kind
-        transaction["geometry"] = self._bridge.client(window)
+        transaction["geometry"] = self._require_bridge().client(window)
         if not transaction["capture"]:
             transaction["callback"] = lambda: self._on_render(transaction)
-            window.afterRenderPassRecording.connect(transaction["callback"], Qt.DirectConnection)
+            window.afterRenderPassRecording.connect(transaction["callback"], Qt.ConnectionType.DirectConnection)
             transaction["capture"] = True
         window.update()
         QTimer.singleShot(1800, lambda: self._capture_deadline(transaction, kind))
@@ -218,14 +224,14 @@ class NativeMotion(QObject):
                 return
             kind, transaction["pending"] = transaction["pending"], None
             result = {"kind": kind}
-            window, bridge = transaction["window"], self._bridge
+            window, bridge = transaction["window"], self._require_bridge()
             try:
                 renderer = window.rendererInterface()
-                if renderer.graphicsApi() != QSGRendererInterface.Direct3D11:
+                if renderer.graphicsApi() != QSGRendererInterface.GraphicsApi.Direct3D11:
                     raise RuntimeError("renderer-is-not-D3D11")
                 window.beginExternalCommands()
                 try:
-                    context = renderer.getResource(window, QSGRendererInterface.DeviceContextResource)
+                    context = renderer.getResource(window, QSGRendererInterface.Resource.DeviceContextResource)
                     if context is None or not int(context):
                         raise RuntimeError("D3D11-device-context-unavailable")
                     width, height = ctypes.c_uint(), ctypes.c_uint()
@@ -248,7 +254,7 @@ class NativeMotion(QObject):
     def _captured(self, transaction, result):
         if self._transaction is not transaction or transaction["cancelled"]:
             return
-        window, bridge = transaction["window"], self._bridge
+        window, bridge = transaction["window"], self._require_bridge()
         if result.get("error"):
             self._recover(transaction, result["error"])
             return
@@ -300,7 +306,7 @@ class NativeMotion(QObject):
         if transaction is None or transaction["window"] is not window or transaction["sequence"] != sequence:
             return
         try:
-            if self._bridge.client(window) != transaction["target"]:
+            if self._require_bridge().client(window) != transaction["target"]:
                 raise RuntimeError("target-native-client-mismatch")
             self._request_capture(transaction, "target")
         except Exception as exc:
@@ -309,14 +315,14 @@ class NativeMotion(QObject):
     def _poll(self, transaction):
         if self._transaction is not transaction or transaction["cancelled"]:
             return
-        status = self._bridge.dll.cspm_comp_status(transaction["host"])
+        status = self._require_bridge().dll.cspm_comp_status(transaction["host"])
         if status & 16:
-            self._recover(transaction, self._bridge.error(transaction["host"]))
+            self._recover(transaction, self._require_bridge().error(transaction["host"]))
         elif status & 4:
             window = transaction["window"]
             callback = lambda: self._live_ready(transaction)
             transaction["live_callback"] = callback
-            window.frameSwapped.connect(callback, Qt.QueuedConnection)
+            window.frameSwapped.connect(callback, Qt.ConnectionType.QueuedConnection)
             window.setOpacity(1)
             window.update()
             QTimer.singleShot(750, lambda: self._recover(transaction, "live-handoff-frame-timeout")
@@ -329,7 +335,8 @@ class NativeMotion(QObject):
     def _live_ready(self, transaction):
         if self._transaction is transaction and not transaction["cancelled"]:
             try:
-                self._bridge.require(self._bridge.dll.cspm_comp_finish(transaction["host"]), transaction["host"])
+                bridge = self._require_bridge()
+                bridge.require(bridge.dll.cspm_comp_finish(transaction["host"]), transaction["host"])
                 self.record(transaction["direction"], "native", "endpoint-submitted-and-live-frame-returned")
                 self._release(transaction, "native")
             except Exception as exc:
@@ -366,6 +373,7 @@ class NativeMotion(QObject):
         # retirement is pending. Never retry native destruction after timeout.
         transaction["cancelled"] = True
         window = transaction["window"]
+        bridge = self._require_bridge()
         if isValid(window):
             if transaction.get("destroy_callback"):
                 window.destroyed.disconnect(transaction["destroy_callback"])
@@ -375,19 +383,19 @@ class NativeMotion(QObject):
                 window.frameSwapped.disconnect(transaction["live_callback"])
             window.setOpacity(1)
             window.show()
-            if not self._bridge.user.IsWindowVisible(int(window.winId())):
-                self._bridge.user.ShowWindow(int(window.winId()), 4)
+            if not bridge.user.IsWindowVisible(int(window.winId())):
+                bridge.user.ShowWindow(int(window.winId()), 4)
             if transaction["input"] is not None:
-                self._bridge.user.EnableWindow(int(window.winId()), transaction["input"])
-            visible = bool(self._bridge.user.IsWindowVisible(int(window.winId())))
+                bridge.user.EnableWindow(int(window.winId()), transaction["input"])
+            visible = bool(bridge.user.IsWindowVisible(int(window.winId())))
             input_restored = (transaction["input"] is None or
-                              bool(self._bridge.user.IsWindowEnabled(int(window.winId()))) == transaction["input"])
+                              bool(bridge.user.IsWindowEnabled(int(window.winId()))) == transaction["input"])
             log.log(logging.INFO if visible and input_restored else logging.ERROR,
                     "motion live-return outcome=%s visibility_transferred=%s motion_started=%s "
                     "visible=%s input_restored=%s recovery=%s", outcome,
                     transaction["visibility_transferred"], transaction["started"],
                     visible, input_restored, "passed" if visible and input_restored else "FAILED")
-            if transaction["foreground"] and int(self._bridge.user.GetForegroundWindow() or 0) == int(window.winId()):
+            if transaction["foreground"] and int(bridge.user.GetForegroundWindow() or 0) == int(window.winId()):
                 window.requestActivate()
                 focus = transaction["saved_focus"]
                 if focus is not None and isValid(focus):
@@ -398,9 +406,9 @@ class NativeMotion(QObject):
         def retire():
             with transaction["lock"]:
                 if transaction["host"]:
-                    self._bridge.dll.cspm_comp_destroy(transaction["host"])
+                    bridge.dll.cspm_comp_destroy(transaction["host"])
                 for frame in transaction["frames"]:
-                    self._bridge.dll.cspm_gpu_release(frame)
+                    bridge.dll.cspm_gpu_release(frame)
                 transaction["frames"].clear()
             if isValid(self):
                 self._cleanupReady.emit(transaction, outcome)

@@ -5,6 +5,26 @@ from decimal import Decimal
 from services.financial_sync_service import FinancialSyncService
 
 
+def test_readonly_source_shadow_can_be_removed_without_changing_source(tmp_path) -> None:
+    from services.financial_sync_service import _read_shadow
+    source = tmp_path / "protected.xlsm"
+    raw = b"SYNTHETIC-PROTECTED-SOURCE"
+    source.write_bytes(raw)
+    source.chmod(0o444)
+    shadow = None
+    try:
+        shadow = _read_shadow(source)
+        assert shadow.read_bytes() == raw
+        shadow.unlink()
+        assert not shadow.exists()
+        assert source.read_bytes() == raw
+    finally:
+        source.chmod(0o600)
+        if shadow is not None and shadow.exists():
+            shadow.chmod(0o600)
+            shadow.unlink()
+
+
 def test_canonical_source_receivables_consolidates_legacy_duplicates_and_credit_signs() -> None:
     source = {
         "Receivables": [

@@ -122,7 +122,7 @@ def run_probe():
             Text {
                 id: label
                 text: "Stable metrics label"
-                property QtObject cspmFontGate: HiddenFontGate {
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.requestedFont
                     active: !root.layoutRepairEnabled || label.visible
                 }
@@ -132,7 +132,7 @@ def run_probe():
             Text {
                 id: second
                 text: "Independent owner"
-                property QtObject cspmFontGate: HiddenFontGate {
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.requestedSecondFont
                     active: !root.layoutRepairEnabled || second.visible
                 }

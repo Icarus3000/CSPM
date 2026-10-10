@@ -18,7 +18,7 @@ Window {
             : ("CSPM - " + ((mainWin.detachedPanelTitle && mainWin.detachedPanelTitle.length > 0)
                 ? mainWin.detachedPanelTitle : "Module")))
         : ((typeof nativeMotionCandidate !== "undefined" && nativeMotionCandidate)
-            ? "CSPM Native Motion Candidate - PROTECTED LATEST-DATA SNAPSHOT"
+            ? "CSPM Candidate - LOCAL DATA NOT ACCEPTED"
             : "CSPM - Main Menu")
     objectName: mainWin.detachedMode ? "CSPMFloatingDocketWindow" : "CSPMMainWindow"
     property alias mainContentRef: mainContent

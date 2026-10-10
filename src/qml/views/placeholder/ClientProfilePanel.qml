@@ -251,7 +251,7 @@ Rectangle {
 
             text: String(root.profileLookupMessage || "Select and load a client profile.")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            property QtObject cspmFontGate: HiddenFontGate {
+            property HiddenFontGate cspmFontGate: HiddenFontGate {
                 inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                 active: !root.layoutRepairEnabled || cspmFontOwner0.visible
             }
@@ -325,7 +325,7 @@ Rectangle {
 
                                         text: String(leftCard.entry && leftCard.entry.label ? leftCard.entry.label : "")
                                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                        property QtObject cspmFontGate: HiddenFontGate {
+                                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
                                             active: !root.layoutRepairEnabled || leftLabelText.visible
                                         }
@@ -342,7 +342,7 @@ Rectangle {
                                         elide: Text.ElideNone
                                         Layout.fillWidth: true
                                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                        property QtObject cspmFontGate: HiddenFontGate {
+                                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                                             inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                             active: !root.layoutRepairEnabled || leftValueText.visible
                                         }
@@ -384,7 +384,7 @@ Rectangle {
 
                                         text: String(rightCard.entry && rightCard.entry.label ? rightCard.entry.label : "")
                                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                        property QtObject cspmFontGate: HiddenFontGate {
+                                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
                                             active: !root.layoutRepairEnabled || rightLabelText.visible
                                         }
@@ -401,7 +401,7 @@ Rectangle {
                                         elide: Text.ElideNone
                                         Layout.fillWidth: true
                                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                        property QtObject cspmFontGate: HiddenFontGate {
+                                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                                             inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                             active: !root.layoutRepairEnabled || rightValueText.visible
                                         }
@@ -437,7 +437,7 @@ Rectangle {
                             id: cspmFontOwner5
                             text: "Related Matters"
                             font.bold: true
-                            property QtObject cspmFontGate: HiddenFontGate {
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                 inputPixelSize: root.ratioPx(0.0125, 12.5)
                                 active: !root.layoutRepairEnabled || cspmFontOwner5.visible
                             }
@@ -462,7 +462,7 @@ Rectangle {
                         id: cspmFontOwner6
                         text: "Matters found: " + String(clientProfilePanel.relatedMatters.length)
                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                        property QtObject cspmFontGate: HiddenFontGate {
+                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.9, root.metricFloor("fontFloorLabelPx", 8))
                             active: !root.layoutRepairEnabled || cspmFontOwner6.visible
                         }
@@ -508,7 +508,7 @@ Rectangle {
                                             id: cspmFontOwner7
                                             text: String(modelData.matterNumber || "[no number]")
                                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.60)
-                                            property QtObject cspmFontGate: HiddenFontGate {
+                                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                                 inputPixelSize: root.ratioPx(0.009, root.metricFloor("fontFloorLabelPx", 8))
                                                 active: !root.layoutRepairEnabled || cspmFontOwner7.visible
                                             }
@@ -520,7 +520,7 @@ Rectangle {
                                             id: cspmFontOwner8
                                             text: String(modelData.role || "Client")
                                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.8)
-                                            property QtObject cspmFontGate: HiddenFontGate {
+                                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                                 inputPixelSize: root.ratioPx(0.0085, root.metricFloor("fontFloorLabelPx", 8))
                                                 active: !root.layoutRepairEnabled || cspmFontOwner8.visible
                                             }
@@ -536,7 +536,7 @@ Rectangle {
                                             Layout.fillWidth: true
                                             text: String(modelData.displayName || modelData.matterName || "")
                                             color: root.appStyle === "Professional" ? root.proInk : root._text
-                                            property QtObject cspmFontGate: HiddenFontGate {
+                                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                                 inputPixelSize: root.ratioPx(0.011, 11)
                                                 active: !root.layoutRepairEnabled || cspmFontOwner9.visible
                                             }
@@ -549,7 +549,7 @@ Rectangle {
                                             color: modelData.status === "Open" || modelData.status === "Active"
                                                 ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
                                                 : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.5)
-                                            property QtObject cspmFontGate: HiddenFontGate {
+                                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                                 inputPixelSize: root.ratioPx(0.0095, root.metricFloor("fontFloorLabelPx", 8))
                                                 active: !root.layoutRepairEnabled || cspmFontOwner10.visible
                                             }
@@ -572,7 +572,7 @@ Rectangle {
                         id: cspmFontOwner11
                         text: "Tip: Double-click a matter to open its Matter Profile 360."
                         color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.5)
-                        property QtObject cspmFontGate: HiddenFontGate {
+                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.8, root.metricFloor("fontFloorLabelPx", 8))
                             active: !root.layoutRepairEnabled || cspmFontOwner11.visible
                         }

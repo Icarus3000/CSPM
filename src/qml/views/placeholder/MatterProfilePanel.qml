@@ -190,7 +190,7 @@ Rectangle {
                 id: cspmFontOwner0
                 text: "Matter Command Center"
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                property QtObject cspmFontGate: HiddenFontGate {
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))
                     active: !root.layoutRepairEnabled || cspmFontOwner0.visible
                 }
@@ -203,7 +203,7 @@ Rectangle {
                 id: cspmFontOwner1
                 text: "Premium quick action: open a clean Time Docket Entry prefilled for this matter."
                 color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                property QtObject cspmFontGate: HiddenFontGate {
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                     active: !root.layoutRepairEnabled || cspmFontOwner1.visible
                 }
@@ -269,7 +269,7 @@ Rectangle {
                 text: "Retainer / engagement agreement: "
                     + root.filenameFromPath(savedAgreementRow.documentPath)
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                property QtObject cspmFontGate: HiddenFontGate {
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct,
                     root.metricFloor("fontFloorBodyPx", 10))
                     active: !root.layoutRepairEnabled || cspmFontOwner2.visible
@@ -317,7 +317,7 @@ Rectangle {
                         id: cspmFontOwner3
                         text: "WIP & unpaid invoices"
                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                        property QtObject cspmFontGate: HiddenFontGate {
+                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.92, root.metricFloor("fontFloorBodyPx", 10))
                             active: !root.layoutRepairEnabled || cspmFontOwner3.visible
                         }
@@ -345,7 +345,7 @@ Rectangle {
                     visible: root.matterFinancialSummaryLoading
                     text: "Loading unbilled WIP and unpaid invoices…"
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    property QtObject cspmFontGate: HiddenFontGate {
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                         active: !root.layoutRepairEnabled || cspmFontOwner4.visible
                     }
@@ -361,7 +361,7 @@ Rectangle {
                         ? String(root.matterFinancialSummary.message)
                         : "Load a matter to see WIP and unpaid invoices."
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    property QtObject cspmFontGate: HiddenFontGate {
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                         active: !root.layoutRepairEnabled || cspmFontOwner5.visible
                     }
@@ -381,7 +381,7 @@ Rectangle {
                             + " item(s) · " + root.matterFinancialMoney(root.matterFinancialSummary.unbilledWipAmount)
                         color: Number(root.matterFinancialSummary.unbilledWipCount || 0) > 0
                             ? "#b36a1d" : SemanticTheme.inkMuted(root.t, root.appStyle)
-                        property QtObject cspmFontGate: HiddenFontGate {
+                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
                             active: !root.layoutRepairEnabled || cspmFontOwner6.visible
                         }
@@ -397,7 +397,7 @@ Rectangle {
                             + " · " + root.matterFinancialMoney(root.matterFinancialSummary.unpaidInvoiceAmount)
                         color: Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
                             ? "#bd312c" : SemanticTheme.inkMuted(root.t, root.appStyle)
-                        property QtObject cspmFontGate: HiddenFontGate {
+                        property HiddenFontGate cspmFontGate: HiddenFontGate {
                             inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.98, root.metricFloor("fontFloorLabelPx", 8))
                             active: !root.layoutRepairEnabled || cspmFontOwner7.visible
                         }
@@ -413,7 +413,7 @@ Rectangle {
                         && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) === 0
                     text: "No unpaid invoices are linked to this matter."
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                    property QtObject cspmFontGate: HiddenFontGate {
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                         active: !root.layoutRepairEnabled || cspmFontOwner8.visible
                     }
@@ -450,7 +450,7 @@ Rectangle {
                                     + " · Amount due " + root.matterFinancialMoney(modelData.balanceDue)
                                     + " — open in Invoice Directory"
                                 color: SemanticTheme.accentPrimary(root.t, root.appStyle)
-                                property QtObject cspmFontGate: HiddenFontGate {
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                                     active: !root.layoutRepairEnabled || unpaidInvoiceLink.visible
                                 }
@@ -478,7 +478,7 @@ Rectangle {
 
             text: String(root.matterProfileLookupMessage || "Select and load a matter profile.")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            property QtObject cspmFontGate: HiddenFontGate {
+            property HiddenFontGate cspmFontGate: HiddenFontGate {
                 inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                 active: !root.layoutRepairEnabled || cspmFontOwner10.visible
             }
@@ -550,7 +550,7 @@ Rectangle {
 
                                     text: String(matterLeftCard.entry && matterLeftCard.entry.label ? matterLeftCard.entry.label : "")
                                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                    property QtObject cspmFontGate: HiddenFontGate {
+                                    property HiddenFontGate cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
                                         active: !root.layoutRepairEnabled || matterLeftLabelText.visible
                                     }
@@ -570,7 +570,7 @@ Rectangle {
 
                                     text: String(matterLeftCard.entry && matterLeftCard.entry.value ? matterLeftCard.entry.value : "[blank]")
                                     color: (matterLeftCard.entry && matterLeftCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                    property QtObject cspmFontGate: HiddenFontGate {
+                                    property HiddenFontGate cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                         active: !root.layoutRepairEnabled || matterLeftValueText.visible
                                     }
@@ -625,7 +625,7 @@ Rectangle {
 
                                     text: String(matterRightCard.entry && matterRightCard.entry.label ? matterRightCard.entry.label : "")
                                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
-                                    property QtObject cspmFontGate: HiddenFontGate {
+                                    property HiddenFontGate cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
                                         active: !root.layoutRepairEnabled || matterRightLabelText.visible
                                     }
@@ -645,7 +645,7 @@ Rectangle {
 
                                     text: String(matterRightCard.entry && matterRightCard.entry.value ? matterRightCard.entry.value : "[blank]")
                                     color: (matterRightCard.entry && matterRightCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
-                                    property QtObject cspmFontGate: HiddenFontGate {
+                                    property HiddenFontGate cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                         active: !root.layoutRepairEnabled || matterRightValueText.visible
                                     }

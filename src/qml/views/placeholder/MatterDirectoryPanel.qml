@@ -170,7 +170,7 @@ Rectangle {
             text: "Matters found: " + String(root.matterDirectoryFilteredRows.length)
                 + (root.matterDirectoryMode === "active" ? " (active only)" : "")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            property QtObject cspmFontGate: HiddenFontGate {
+            property HiddenFontGate cspmFontGate: HiddenFontGate {
                 inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
                 active: !root.layoutRepairEnabled || cspmFontOwner0.visible
             }
@@ -226,7 +226,7 @@ Rectangle {
                             text: String(modelData.matterNumber || "")
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.74)
                             elide: Text.ElideRight
-                            property QtObject cspmFontGate: HiddenFontGate {
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                 inputPixelSize: root.ratioPx(0.010, root.metricFloor("fontFloorLabelPx", 8))
                                 active: !root.layoutRepairEnabled || cspmFontOwner1.visible
                             }
@@ -239,7 +239,7 @@ Rectangle {
                             Layout.preferredWidth: root.ratioPxW(0.200, 180)
                             text: String(modelData.clientName || "")
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, root.matterRowIsActive(modelData) ? 0.9 : 0.4)
-                            property QtObject cspmFontGate: HiddenFontGate {
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                 inputPixelSize: root.ratioPx(0.0125, 12.5)
                                 active: !root.layoutRepairEnabled || cspmFontOwner2.visible
                             }
@@ -252,7 +252,7 @@ Rectangle {
                             Layout.fillWidth: true
                             text: String(modelData.displayName || modelData.matterName || "")
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, root.matterRowIsActive(modelData) ? 0.9 : 0.4)
-                            property QtObject cspmFontGate: HiddenFontGate {
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                 inputPixelSize: root.ratioPx(0.0125, 12.5)
                                 active: !root.layoutRepairEnabled || cspmFontOwner3.visible
                             }
@@ -269,7 +269,7 @@ Rectangle {
                                 ? SemanticTheme.accentPrimary(root.t, root.appStyle)
                                 : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
                             elide: Text.ElideRight
-                            property QtObject cspmFontGate: HiddenFontGate {
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                 inputPixelSize: root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))
                                 active: !root.layoutRepairEnabled || cspmFontOwner4.visible
                             }
@@ -347,7 +347,7 @@ Rectangle {
 
             text: "Tip: double-click a matter to open Matter Profile 360. Right-click an archived matter to delete it."
             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
-            property QtObject cspmFontGate: HiddenFontGate {
+            property HiddenFontGate cspmFontGate: HiddenFontGate {
                 inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
                 active: !root.layoutRepairEnabled || cspmFontOwner5.visible
             }

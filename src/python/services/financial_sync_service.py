@@ -209,7 +209,9 @@ def _read_shadow(source_path: Path) -> Path:
     os.close(fd)
     shadow = Path(raw_path)
     try:
-        shutil.copy2(source_path, shadow)
+        # A protected baseline may be read-only on Windows. Only bytes belong
+        # in this disposable shadow; copying attributes makes cleanup fail.
+        shutil.copyfile(source_path, shadow)
         return shadow
     except (PermissionError, OSError):
         try:

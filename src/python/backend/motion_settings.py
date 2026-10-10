@@ -54,11 +54,11 @@ def handle_motion_arguments(argv: list[str]) -> None:
             choices.addItem(label, mode)
         choices.setCurrentIndex(MODES.index(read_mode()))
         layout.addWidget(choices)
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
-        if dialog.exec() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             write_mode(choices.currentData())
         application.quit()
         raise SystemExit(0)

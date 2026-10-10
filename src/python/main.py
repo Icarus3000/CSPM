@@ -585,7 +585,7 @@ APP_MAINTAINER = "Tim"
 APP_TITLE = "Practice Console"
 APP_USER_MODEL_ID = "CSPM.PracticeConsole"
 if native_candidate_profile() is not None:
-    APP_TITLE = "CSPM Native Motion Candidate - Protected Snapshot"
+    APP_TITLE = "CSPM Candidate - Local Validation"
     APP_USER_MODEL_ID = "CSPM.NativeMotionCandidate"
 
 from services.paths import AppPaths

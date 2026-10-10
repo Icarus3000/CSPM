@@ -102,3 +102,17 @@ def test_ordinary_primary_paths_remain_unchanged(monkeypatch, tmp_path):
     paths = AppPaths(ROOT, override_data_dir=tmp_path / "local", override_master_dir=tmp_path / "cloud")
     assert paths.data_dir() == tmp_path / "local"
     assert paths.master_data_dir() == tmp_path / "cloud"
+
+
+def test_candidate_settings_reload_cannot_enable_cloud_background_writes_or_tray_residency(snapshot, monkeypatch):
+    monkeypatch.setattr(native_candidate, "_profile", snapshot)
+    loaded = dict(localDataDir=str(snapshot.parent / "authority"), masterDataDir="shared",
+                  keepTrayAlive=True, runAtStartup=True, autoBackupMinutes=10)
+    loaded.update(native_candidate.settings_override())
+    assert loaded["localDataDir"] == str(snapshot / "working" / "data")
+    assert loaded["masterDataDir"] == ""
+    assert loaded["keepTrayAlive"] is False
+    assert loaded["runAtStartup"] is False
+    assert loaded["autoBackupMinutes"] == 0
+    monkeypatch.setattr(native_candidate, "_profile", None)
+    assert native_candidate.settings_override() == {}

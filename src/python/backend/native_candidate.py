@@ -14,6 +14,15 @@ def profile() -> Path | None:
     return _profile
 
 
+def settings_override() -> dict:
+    """Pin every candidate load path to the disposable, cloud-disabled profile."""
+    if _profile is None:
+        return {}
+    return dict(localDataDir=str(_profile / "working" / "data"), masterDataDir="",
+                runAtStartup=False, keepTrayAlive=False, autoBackupMinutes=0,
+                autoBackupIntervalMins=0)
+
+
 def validate_profile(root: Path, *, diagnostic_only: bool = False) -> Path:
     root = root.resolve()
     provenance = json.loads((root / "snapshot.private.json").read_text(encoding="utf-8"))
@@ -43,7 +52,7 @@ def configure() -> None:
     global _profile
     if not getattr(sys, "frozen", False):
         return
-    marker = Path(sys._MEIPASS) / "native-motion-candidate.json"
+    marker = Path(getattr(sys, "_MEIPASS")) / "native-motion-candidate.json"
     if not marker.exists():
         return
     executable_root = Path(sys.executable).resolve().parent

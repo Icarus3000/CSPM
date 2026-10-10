@@ -376,10 +376,8 @@ class AppController(QObject):
             self._prefs_settings_path,
         )
         _init_loaded = _init_payload.get("loaded", {})
-        from backend.native_candidate import profile as candidate_profile
-        if candidate_profile() is not None:
-            _init_loaded.update(localDataDir=str(candidate_profile() / "working" / "data"),
-                                masterDataDir="", runAtStartup=False)
+        from backend.native_candidate import settings_override
+        _init_loaded.update(settings_override())
         _init_local = str(_init_loaded.get("localDataDir", "")).strip()
         _init_master = str(_init_loaded.get("masterDataDir", "")).strip()
         
@@ -1542,6 +1540,8 @@ class AppController(QObject):
         loaded = payload.get("loaded")
         if isinstance(loaded, dict):
             self._settings_data.update(loaded)
+        from backend.native_candidate import settings_override
+        self._settings_data.update(settings_override())
 
         resolved = self._normalize_theme_name(self._settings_data.get("theme"))
         if resolved:
@@ -3043,6 +3043,8 @@ class AppController(QObject):
             loaded = {}
         self._settings_path = runtime_settings_path
         self._settings_data = dict(loaded)
+        from backend.native_candidate import settings_override
+        self._settings_data.update(settings_override())
         resolved_theme = self._normalize_theme_name(self._settings_data.get("theme"))
         if resolved_theme:
             self._theme_name = resolved_theme

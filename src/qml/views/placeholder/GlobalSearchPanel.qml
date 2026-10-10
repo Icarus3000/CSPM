@@ -29,7 +29,7 @@ Rectangle {
                 id: cspmFontOwner0
                 text: "Search Mode"
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
-                property QtObject cspmFontGate: HiddenFontGate {
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
                     inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.88, root.metricFloor("fontFloorLabelPx", 8))
                     active: !root.layoutRepairEnabled || cspmFontOwner0.visible
                 }
@@ -107,7 +107,7 @@ Rectangle {
             color: root.globalSearchLastOk
                 ? Qt.rgba(root._text.r, root._text.g, root._text.b, 0.78)
                 : Qt.rgba(0.98, 0.42, 0.42, 0.96)
-            property QtObject cspmFontGate: HiddenFontGate {
+            property HiddenFontGate cspmFontGate: HiddenFontGate {
                 inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.88, root.metricFloor("fontFloorLabelPx", 8))
                 active: !root.layoutRepairEnabled || cspmFontOwner1.visible
             }
@@ -169,7 +169,7 @@ Rectangle {
                                 anchors.centerIn: parent
                                 text: String(globalRow.modelData.entityTypeLabel || globalRow.modelData.entityType || "Item")
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.92)
-                                property QtObject cspmFontGate: HiddenFontGate {
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0098, root.metricFloor("fontFloorLabelPx", 8))
                                     active: !root.layoutRepairEnabled || cspmFontOwner2.visible
                                 }
@@ -192,7 +192,7 @@ Rectangle {
                                     : String(globalRow.modelData.title || "")
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.96)
                                 elide: Text.ElideRight
-                                property QtObject cspmFontGate: HiddenFontGate {
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0116, root.metricFloor("fontFloorBodyPx", 9))
                                     active: !root.layoutRepairEnabled || cspmFontOwner3.visible
                                 }
@@ -209,7 +209,7 @@ Rectangle {
                                 visible: text.length > 0
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
                                 elide: Text.ElideRight
-                                property QtObject cspmFontGate: HiddenFontGate {
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0100, root.metricFloor("fontFloorLabelPx", 8))
                                     active: !root.layoutRepairEnabled || cspmFontOwner4.visible
                                 }
@@ -223,7 +223,7 @@ Rectangle {
                                 visible: text.length > 9
                                 color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.92)
                                 elide: Text.ElideRight
-                                property QtObject cspmFontGate: HiddenFontGate {
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
                                     inputPixelSize: root.ratioPx(0.0096, root.metricFloor("fontFloorLabelPx", 8))
                                     active: !root.layoutRepairEnabled || cspmFontOwner5.visible
                                 }
@@ -236,7 +236,7 @@ Rectangle {
                             Layout.alignment: Qt.AlignVCenter
                             text: "Open"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.96)
-                            property QtObject cspmFontGate: HiddenFontGate {
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
                                 inputPixelSize: root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))
                                 active: !root.layoutRepairEnabled || cspmFontOwner6.visible
                             }
