@@ -48,11 +48,17 @@ class AppPaths:
 
     # data
     def master_data_dir(self) -> Path | None:
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return None
         if self.override_master_dir and str(self.override_master_dir).strip():
             return self.override_master_dir
         return None
 
     def data_dir(self) -> Path:
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return profile() / "working" / "data"
         if self.override_data_dir and str(self.override_data_dir).strip():
             return self.override_data_dir
         return self._persistent_data_root() / "data"

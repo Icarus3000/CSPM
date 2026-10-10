@@ -14,7 +14,12 @@ TextArea {
     Layout.fillHeight: false
     Layout.preferredHeight: root.ratioPxH(0.084, 64)
     color: root._text
-    font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))))
+    property bool cspmFontOwnerVisible: visible
+    property QtObject cspmFontGate: HiddenFontGate {
+        inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+        active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+    }
+    font.pixelSize: cspmFontGate.pixelSize
     wrapMode: Text.Wrap
     placeholderText: "Conflict check notes (optional)"
     placeholderTextColor: SemanticTheme.inkMuted(root.t, root.appStyle)

@@ -17,7 +17,9 @@ Window {
             ? mainWin.panelTaskbarTitle
             : ("CSPM - " + ((mainWin.detachedPanelTitle && mainWin.detachedPanelTitle.length > 0)
                 ? mainWin.detachedPanelTitle : "Module")))
-        : "CSPM - Main Menu"
+        : ((typeof nativeMotionCandidate !== "undefined" && nativeMotionCandidate)
+            ? "CSPM Native Motion Candidate - PROTECTED LATEST-DATA SNAPSHOT"
+            : "CSPM - Main Menu")
     objectName: mainWin.detachedMode ? "CSPMFloatingDocketWindow" : "CSPMMainWindow"
     property alias mainContentRef: mainContent
     property alias sfxBusRef: sfxBus
@@ -103,6 +105,7 @@ Window {
     property bool professionalInWindowTransitionEnabled: true
     property bool professionalEarlyWindowMotionEnabled: true
     property bool professionalPixelAlignedWindowCaptureEnabled: true
+    property bool nativeMotionPreparing: false
     readonly property bool layoutRepairEnabled: typeof layoutDevelopment !== "undefined"
         && layoutDevelopment.layoutRepair
     property int professionalWindowTransitionTargetX: 0
@@ -3367,6 +3370,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function stopMaximizeFxAnimations() {
+        if (typeof nativeMotion !== "undefined") nativeMotion.cancelWindow(mainWin);
+        nativeMotionPreparing = false;
         professionalSurfaceWatchdog.stop();
         maximizeAnimInProgress = false;
         professionalWindowTransitionActive = false;
@@ -3759,7 +3764,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function beginProfessionalWindowTransition(kind, sourceRect, targetRect,
             targetScreenOverride) {
-        if (professionalWindowTransitionActive || !sourceRect || !targetRect) return false;
+        if (professionalWindowTransitionActive || nativeMotionPreparing || !sourceRect || !targetRect) return false;
         destroyMaximizeOverlay();
         maximizeOverlayHandoffSeq = maximizeOverlayHandoffSeq + 1;
         var sequence = maximizeOverlayHandoffSeq;
@@ -3774,6 +3779,34 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             + " -> " + fmtRect(targetRect.x, targetRect.y,
                 targetRect.w, targetRect.h));
 
+        if (typeof nativeMotion !== "undefined") {
+            if (nativeMotion.reducedMotion || mainWin.lowPerformanceMode) {
+                nativeMotion.record(kind, "reduced-motion", "local-or-system-reduced-motion");
+                return completeProfessionalWindowTransitionDirect(sequence, "reduced-motion");
+            }
+            if (nativeMotion.engine === "native") {
+                var header = mainContent.professionalTransitionHeaderMetrics();
+                var pad = kind === "restore" ? Math.min(settledPaddingPx(targetRect.w, targetRect.h),
+                    Math.max(0, Math.floor((usableW - targetRect.w) / 2)),
+                    Math.max(0, Math.floor((usableH - targetRect.h) / 2))) : 0;
+                var physicalTarget = {x: targetRect.x, y: targetRect.y,
+                    w: targetRect.w, h: targetRect.h, padding: pad};
+                if (nativeMotion.begin(mainWin, sequence, sourceRect, physicalTarget, header.x, header.y)) {
+                    // The complete native source must own the pre-input-lock
+                    // pixels. Command preparation blocks duplicate state
+                    // changes without changing control enabled/font state.
+                    nativeMotionPreparing = true;
+                    professionalWindowTransitionActive = false;
+                    return true;
+                }
+            } else {
+                nativeMotion.record(kind, "legacy-fallback", "local-preference");
+            }
+        }
+        return startLegacyProfessionalWindowTransition(sequence, kind, sourceRect, targetRect, targetScreenOverride);
+    }
+
+    function startLegacyProfessionalWindowTransition(sequence, kind, sourceRect, targetRect, targetScreenOverride) {
         if (mainWin.professionalInWindowTransitionEnabled) {
             return captureProfessionalTransitionSurface(sequence, kind,
                 sourceRect, targetRect, targetScreenOverride);
@@ -3788,6 +3821,40 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 "overlay-create-fallback");
         }
         return true;
+    }
+
+    Connections {
+        target: typeof nativeMotion !== "undefined" ? nativeMotion : null
+        function onTargetRequested(window, sequence) {
+            if (window !== mainWin || sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+            mainWin.nativeMotionPreparing = false;
+            mainWin.professionalWindowTransitionActive = true;
+            try {
+                mainWin.commitProfessionalWindowTransitionTarget(mainWin.professionalWindowTransitionKind,
+                    mainWin.professionalWindowTransitionTarget, mainWin.professionalWindowTransitionScreen);
+                nativeMotion.captureTarget(mainWin, sequence);
+            } catch (error) {
+                nativeMotion.shutdown();
+            }
+        }
+        function onFinished(window, sequence, outcome) {
+            if (window !== mainWin || sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+            mainWin.nativeMotionPreparing = false;
+            // A failure after motion began remains a safe rejection in the log;
+            // recover to the requested target without relabelling it as legacy.
+            if (outcome === "safe-rejection")
+                mainWin.completeProfessionalWindowTransitionDirect(sequence, outcome);
+            else
+                mainWin.finishProfessionalWindowTransition(sequence, outcome);
+        }
+        function onFallbackRequested(window, sequence, reason) {
+            if (window !== mainWin || sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+            mainWin.nativeMotionPreparing = false;
+            mainWin.professionalWindowTransitionActive = true;
+            var source = {x: mainWin.finalX, y: mainWin.finalY, w: mainWin.finalW, h: mainWin.finalH};
+            mainWin.startLegacyProfessionalWindowTransition(sequence, mainWin.professionalWindowTransitionKind,
+                source, mainWin.professionalWindowTransitionTarget, mainWin.professionalWindowTransitionScreen);
+        }
     }
 
     function grabProfessionalWindowFrame(callback) {
@@ -9223,7 +9290,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (!mainWin.detachedMode) {
             autoCheckpointCloseSession("transition-to-closing");
         }
-        if (maximizeAnimInProgress || professionalWindowTransitionActive) {
+        if (maximizeAnimInProgress || professionalWindowTransitionActive || nativeMotionPreparing) {
             stopMaximizeFxAnimations();
         }
         if (isMinimizing) {
@@ -12468,7 +12535,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             close.accepted = false;
             return;
         }
-        if (maximizeAnimInProgress || professionalWindowTransitionActive) {
+        if (maximizeAnimInProgress || professionalWindowTransitionActive || nativeMotionPreparing) {
             stopMaximizeFxAnimations();
         }
         if (isMinimizing) {

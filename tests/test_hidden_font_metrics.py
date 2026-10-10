@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 VIEW = ROOT / "src/qml/views/PlaceholderSubmenuView.qml"
 FONT_METRICS = ROOT / "src/qml/standards/HiddenFontMetrics.js"
+FONT_GATES = ROOT / "src/qml/components"
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +100,7 @@ def run_probe():
     application = QGuiApplication([])
     # The imported library and view helper are the retained runtime code.
     qml = ("import QtQuick\nimport \"" + FONT_METRICS.as_uri() + "\" as HiddenFontMetrics\n"
-           "Item {\n    id: root\n" + enabled + "\n" + helper + "\n" + '''
+           "import \"" + FONT_GATES.as_uri() + "\"\nItem {\n    id: root\n" + enabled + "\n" + helper + "\n" + '''
     property int requestedFont: 12
     property int requestedSecondFont: 16
     property bool pageVisible: true
@@ -120,14 +121,18 @@ def run_probe():
             visible: true
             Text {
                 id: label
+                property real cspmHeldFontPixelSize: -1
                 text: "Stable metrics label"
-                font.pixelSize: root.fontPixelSize(this, (root.requestedFont))
+                HiddenFontGate { id: labelGate; inputPixelSize: root.requestedFont; active: !root.layoutRepairEnabled || label.visible }
+                font.pixelSize: labelGate.pixelSize
                 onFontChanged: ++root.notifications
             }
             Text {
                 id: second
+                property real cspmHeldFontPixelSize: -1
                 text: "Independent owner"
-                font.pixelSize: root.fontPixelSize(this, (root.requestedSecondFont))
+                HiddenFontGate { id: secondGate; inputPixelSize: root.requestedSecondFont; active: !root.layoutRepairEnabled || second.visible }
+                font.pixelSize: secondGate.pixelSize
             }
             TextEdit { id: editor; text: "Draft before" }
         }

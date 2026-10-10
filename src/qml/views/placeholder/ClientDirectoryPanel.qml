@@ -150,7 +150,12 @@ Rectangle {
             text: "Clients found: " + String(root.clientDirectoryFilteredRows.length)
                 + (root.clientDirectoryMode === "active" ? " (active only)" : "")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
+            property bool cspmFontOwnerVisible: visible
+            property QtObject cspmFontGate: HiddenFontGate {
+                inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+            }
+            font.pixelSize: cspmFontGate.pixelSize
             elide: Text.ElideRight
         }
 
@@ -199,7 +204,12 @@ Rectangle {
                             text: String(modelData.displayName || modelData.clientName || "")
                             color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                             elide: Text.ElideRight
-                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0115, root.metricFloor("fontFloorBodyPx", 9))))
+                            property bool cspmFontOwnerVisible: visible
+                            property QtObject cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.0115, root.metricFloor("fontFloorBodyPx", 9))
+                                active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                         }
                         Text {
@@ -210,7 +220,12 @@ Rectangle {
                                 ? SemanticTheme.accentPrimary(root.t, root.appStyle)
                                 : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
                             elide: Text.ElideRight
-                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))))
+                            property bool cspmFontOwnerVisible: visible
+                            property QtObject cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))
+                                active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                         }
                     }
 
@@ -229,7 +244,12 @@ Rectangle {
             Layout.fillWidth: true
             text: "Tip: double-click a client to open its editable Client Profile."
             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
-            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))))
+            property bool cspmFontOwnerVisible: visible
+            property QtObject cspmFontGate: HiddenFontGate {
+                inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+                active: !root.layoutRepairEnabled || cspmFontOwnerVisible
+            }
+            font.pixelSize: cspmFontGate.pixelSize
             elide: Text.ElideRight
         }
     }

@@ -311,7 +311,17 @@ def main():
     parser.add_argument("--workpath", help="Override PyInstaller work directory")
     parser.add_argument("--deploy-dir", default=r"C:\programs\CSPM", help="Deployment directory for runnable CSPM package (default: C:\\programs\\CSPM)")
     parser.add_argument("--no-deploy", action="store_true", help="Disable automatic deployment to --deploy-dir")
+    parser.add_argument("--native-motion-candidate", action="store_true", help="Build the native-default side-by-side candidate; requires --no-deploy")
     args = parser.parse_args()
+    if args.native_motion_candidate and (not args.no_deploy or args.installer):
+        parser.error("Native candidate requires --no-deploy and the separate governed side-by-side installation; primary installer/deployment is prohibited")
+    native_bridge = ROOT_DIR / "outputs" / "native_cleanroom" / "cspm_native_motion.dll"
+    if args.native_motion_candidate:
+        if not native_bridge.is_file():
+            parser.error("Build the governed native bridge before candidate packaging")
+        sys.path.insert(0, str(ROOT_DIR / "src" / "python"))
+        from backend.native_motion import NativeBridge
+        NativeBridge(native_bridge)  # ABI/load gate; creates no HWND or GPU.
 
     if args.candidate_validation:
         print("==================================================")
@@ -422,6 +432,9 @@ def main():
     
     for src, dst in datas:
         cmd_main.extend(["--add-data", f"{src}{os.pathsep}{dst}"])
+    if args.native_motion_candidate:
+        cmd_main.extend(["--add-binary", f"{native_bridge}{os.pathsep}native",
+                         "--add-data", f"native-motion-candidate.json{os.pathsep}."])
         
     cmd_main.append(str(main_script))
     
@@ -506,6 +519,11 @@ def main():
         print(f"  SHA-256: {bundled_hash}")
         print(f"  Live-hash match: NO (safe)")
             
+    if args.native_motion_candidate:
+        original_exe = dist_dir / "CSPM" / "CSPM.exe"
+        candidate_exe = original_exe.with_name("CSPM-NativeMotionCandidate.exe")
+        original_exe.rename(candidate_exe)
+        print("Candidate engine policy: native default, local legacy/reduced recovery, protected snapshot required")
     print("PyInstaller build complete.")
     
     if args.installer:

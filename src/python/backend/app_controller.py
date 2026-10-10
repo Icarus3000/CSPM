@@ -376,6 +376,10 @@ class AppController(QObject):
             self._prefs_settings_path,
         )
         _init_loaded = _init_payload.get("loaded", {})
+        from backend.native_candidate import profile as candidate_profile
+        if candidate_profile() is not None:
+            _init_loaded.update(localDataDir=str(candidate_profile() / "working" / "data"),
+                                masterDataDir="", runAtStartup=False)
         _init_local = str(_init_loaded.get("localDataDir", "")).strip()
         _init_master = str(_init_loaded.get("masterDataDir", "")).strip()
         
@@ -473,7 +477,10 @@ class AppController(QObject):
             is_booted=lambda: self._is_booted,
         )
         startup_logger.info("%s AppController creating session manager", _elapsed())
-        self._draft_session_path = self._paths.root / DRAFT_SESSION_FILE
+        # Keep candidate recovery state with its snapshot, outside packaged
+        # code and independently of production recovery state.
+        from backend.native_candidate import profile as candidate_profile
+        self._draft_session_path = (self._paths.runtime_dir() if candidate_profile() is not None else self._paths.root) / DRAFT_SESSION_FILE
         self._runtime_session_path = self._paths.state_dir() / RUNTIME_SESSION_FILE
         self._session_mgr = SessionRecoveryManager(
             draft_session_path=self._draft_session_path,
@@ -2803,6 +2810,9 @@ class AppController(QObject):
 
     @masterDataDir.setter
     def masterDataDir(self, value):
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         if self._master_data_dir != value:
             self._master_data_dir = value
             self._settings_data["masterDataDir"] = value
@@ -2820,6 +2830,9 @@ class AppController(QObject):
 
     @localDataDir.setter
     def localDataDir(self, value):
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         if self._local_data_dir != value:
             self._local_data_dir = value
             self._settings_data["localDataDir"] = value
@@ -3820,6 +3833,9 @@ class AppController(QObject):
 
     @Slot()
     def promptDataFolderSetup(self) -> None:
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, 
                                        QLabel, QPushButton, QFileDialog, 
                                        QMessageBox, QLineEdit, QGroupBox, QApplication)
@@ -3988,6 +4004,9 @@ class AppController(QObject):
             self.save_settings()
 
     def _apply_run_at_startup(self) -> None:
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         import winreg
         import sys
         import os

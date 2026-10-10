@@ -15,6 +15,12 @@ $ensureScript = Join-Path $repoRoot "scripts\ensure_venv.ps1"
 
 function Get-QmlLintCandidates {
     $paths = New-Object System.Collections.Generic.List[string]
+    # Reuse an explicitly selected existing environment without installing or
+    # copying tooling into a new integration worktree.
+    if ($env:VIRTUAL_ENV) {
+        $selectedWrapper = Join-Path $env:VIRTUAL_ENV 'Scripts\pyside6-qmllint.exe'
+        if (Test-Path -LiteralPath $selectedWrapper) { $paths.Add($selectedWrapper) | Out-Null }
+    }
 
     # Prefer workspace-local virtual environments first so tooling is
     # project-portable and not tied to a machine-global Python install.
@@ -164,23 +170,22 @@ $lintArgs = @()
 if (-not $FailOnWarnings) {
     $lintArgs += @("-W", "-1")
 }
-$lintArgs += $qmlFiles
-
 $toolName = Split-Path -Leaf $qmlLintPath
 Write-Host "[QMLLINT] Running $toolName on $($qmlFiles.Count) file(s)..."
-
-$quotedArgs = @()
-foreach ($arg in $lintArgs) {
-    $safeArg = $arg -replace '"', '\"'
-    $quotedArgs += '"' + $safeArg + '"'
+# cmd.exe has an 8191-character bound. Keep full coverage in small governed
+# batches rather than dropping files or changing the warning baseline.
+$overallExitCode = 0
+for ($offset = 0; $offset -lt $qmlFiles.Count; $offset += 16) {
+    $last = [Math]::Min($qmlFiles.Count - 1, $offset + 15)
+    $batchArgs = @($lintArgs) + @($qmlFiles[$offset..$last])
+    $quotedArgs = @()
+    foreach ($arg in $batchArgs) {
+        $safeArg = $arg -replace '"', '\"'
+        $quotedArgs += '"' + $safeArg + '"'
+    }
+    $cmdLine = '"' + $qmlLintPath + '" ' + ($quotedArgs -join ' ')
+    $lintOutput = & cmd /d /c "$cmdLine 2>&1"
+    if ($LASTEXITCODE -ne 0) { $overallExitCode = $LASTEXITCODE }
+    if ($lintOutput) { $lintOutput | ForEach-Object { $_ } }
 }
-$cmdLine = '"' + $qmlLintPath + '" ' + ($quotedArgs -join ' ')
-
-$lintOutput = & cmd /d /c "$cmdLine 2>&1"
-$exitCode = $LASTEXITCODE
-
-if ($lintOutput) {
-    $lintOutput | ForEach-Object { $_ }
-}
-
-exit $exitCode
+exit $overallExitCode
