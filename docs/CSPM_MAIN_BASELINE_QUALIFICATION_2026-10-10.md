@@ -121,3 +121,9 @@ Sanitized code/handoff publication is authorized to the verified existing `https
 | Remote continuity | Sanitized staging/handoff publication and exact SHA verification recorded in publication evidence |
 
 Single Cory action: review the private 119-record exception report and newer-source reconciliation plan, deciding record-specific source/remediation authority. Routine code, copying, diagnostics and builds remain agent work.
+
+## Verified staging publication
+
+Sanitized code and this handoff were published as `6bbdf772d6b91ef828eda294ab2c8af43f988720` to `origin/integration/cspm-main-20261010`; independent `git ls-remote` matches that exact local SHA. Remote main remains `562e24d5a565198a630b2a57984012b3051e53e3`. Remote backup tags resolve to that preserved main and primary `f96880be888032ac10cd94696b5287335a817159`. This documentation follow-up records that verified publication; it changes no executable code. Current final local/remote comparison is additionally recorded in workstation publication evidence after the follow-up push.
+
+The private continuity pack was generated with the existing `99_update_context_dump.ps1` / `31_dump_chatpack.ps1` / `36_verify_chatpack.ps1` / `35_make_copilot_upload_set.ps1` workflow on a filtered export; generator and verification pass. The export excludes workbooks, data, credentials, test financial fixtures, historical identifying diagnostics, prior backups/dumps, builds and temporary files. Its path is recorded in the private workstation continuity record. The first incomplete export omitted a required pathways document; that failed run remains separate. No private pack, exceptions or raw runtime logs were pushed.
