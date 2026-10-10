@@ -1,5 +1,18 @@
 # Implementation History
 
+## 2026-10-10: OmniBook main-baseline qualification (candidate only)
+
+- [x] Preserve main/primary, all refs, uncommitted animation repairs, private configuration/data and accepted installation; fetch without overwrite.
+- [x] Integrate repair on `integration/cspm-main-20261010`; exact runnable package code `7db297ebaa5ff24caf40016ad122806ebfd2c592`; preserve original animation worktree.
+- [x] Qualify scalar font gates and failure-phase diagnostics; completed desktop functional/recovery runs exit normally; excessive target/handoff failures remain blockers.
+- [x] Acquire fresh protected governed pair and separately discover the newer historic source through October 9; retain read-only reconciliation and private exceptions.
+- [x] Unchanged integrity A/B: 119 errors on both. All original rows/amount distinctions preserved through disposable create/edit/save/reopen workflows.
+- [x] Native/contracts, focused tests, compilation/hygiene/privacy pass; full pre-existing unit/type/QML failures remain disclosed; no baseline or severity weakening.
+- [x] Build isolated CSPM.exe with native/Qt/WebEngine assets; accepted installation unchanged. Exact package/runtime/rollback details in `docs/CSPM_MAIN_BASELINE_QUALIFICATION_2026-10-10.md`.
+- [ ] Main promotion: blocked by animation/packaged acceptance and red quality gates.
+- [ ] Production/latest-data acceptance: blocked by 119 findings, newer-source reconciliation and unattested server freshness.
+
+
 ## 2026-10-09: Preservation-only closeout
 
 The existing October 3 tracked diagnostic changes and sanitized speed/results
