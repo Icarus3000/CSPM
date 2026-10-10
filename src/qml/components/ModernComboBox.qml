@@ -10,6 +10,14 @@ ComboBox {
     id: control
     property var t;
     property var metrics
+    readonly property bool layoutRepairEnabled: typeof layoutDevelopment !== "undefined"
+        && layoutDevelopment.layoutRepair
+    readonly property var layoutMetrics: layoutRepairEnabled ? layoutMetricsGate.snapshot : metrics
+    LayoutMetricsGate {
+        id: layoutMetricsGate
+        inputMetrics: control.metrics
+        active: control.layoutRepairEnabled && control.visible
+    }
     property color _accent: (t && t.accent) ? t.accent : "#FF1744";
     property color _text: (t && t.text) ? t.text : "#FFFFFF";
     property color _panel: (t && t.panel2) ? t.panel2 : "#1A1A1A";
@@ -69,16 +77,16 @@ ComboBox {
     function ratioPx(ratio, minPx) {
         // Avoid binding loops: ComboBox implicit size/font/padding can depend on
         // each other; this helper must stay independent of control width/height.
-        var rw = (metrics && typeof metrics.contentW === "number") ? metrics.contentW : 1220
-        var rh = (metrics && typeof metrics.contentH === "number") ? metrics.contentH : 920
+        var rw = (layoutMetrics && typeof layoutMetrics.contentW === "number") ? layoutMetrics.contentW : 1220
+        var rh = (layoutMetrics && typeof layoutMetrics.contentH === "number") ? layoutMetrics.contentH : 920
         var unit = Math.min(Math.max(1, rw), Math.max(1, rh))
         var floorPx = (typeof minPx === "number") ? minPx : 1
         return Math.max(floorPx, Math.round(unit * ratio))
     }
 
     function metricFloor(metricKey, fallbackPx) {
-        if (metrics && typeof metrics[metricKey] === "number") {
-            return Math.max(1, Math.round(metrics[metricKey]))
+        if (layoutMetrics && typeof layoutMetrics[metricKey] === "number") {
+            return Math.max(1, Math.round(layoutMetrics[metricKey]))
         }
         return Math.max(1, Math.round(fallbackPx))
     }
@@ -390,8 +398,10 @@ ComboBox {
             source: comboBg
             horizontalOffset: 0
             verticalOffset: 0
-            radius: control.isProMode ? visualRules.radiusControl : control.ratioPx(control.scaleRatios.radiusPct * 1.8, 4)
-            samples: control.ratioPx(control.scaleRatios.radiusPct * 4.0, 10)
+            radius: control.layoutRepairEnabled && visualRules.shadowOpacity <= 0 ? 0
+                : (control.isProMode ? visualRules.radiusControl : control.ratioPx(control.scaleRatios.radiusPct * 1.8, 4))
+            samples: control.layoutRepairEnabled && visualRules.shadowOpacity <= 0 ? 9
+                : control.ratioPx(control.scaleRatios.radiusPct * 4.0, 10)
             color: Qt.rgba(control._accent.r, control._accent.g, control._accent.b, parent.activeGlow ? 0.20 : 0.0)
             transparentBorder: true
         }

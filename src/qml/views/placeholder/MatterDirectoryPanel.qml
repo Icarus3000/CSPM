@@ -169,7 +169,7 @@ Rectangle {
             text: "Matters found: " + String(root.matterDirectoryFilteredRows.length)
                 + (root.matterDirectoryMode === "active" ? " (active only)" : "")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))))
             elide: Text.ElideRight
         }
 
@@ -220,7 +220,7 @@ Rectangle {
                             text: String(modelData.matterNumber || "")
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.74)
                             elide: Text.ElideRight
-                            font.pixelSize: root.ratioPx(0.010, root.metricFloor("fontFloorLabelPx", 8))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.010, root.metricFloor("fontFloorLabelPx", 8))))
                             font.weight: Font.Medium
                         }
 
@@ -228,7 +228,7 @@ Rectangle {
                             Layout.preferredWidth: root.ratioPxW(0.200, 180)
                             text: String(modelData.clientName || "")
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, root.matterRowIsActive(modelData) ? 0.9 : 0.4)
-                            font.pixelSize: root.ratioPx(0.0125, 12.5)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0125, 12.5)))
                             elide: Text.ElideRight
                         }
 
@@ -236,7 +236,7 @@ Rectangle {
                             Layout.fillWidth: true
                             text: String(modelData.displayName || modelData.matterName || "")
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, root.matterRowIsActive(modelData) ? 0.9 : 0.4)
-                            font.pixelSize: root.ratioPx(0.0125, 12.5)
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0125, 12.5)))
                             elide: Text.ElideRight
                         }
 
@@ -248,7 +248,7 @@ Rectangle {
                                 ? SemanticTheme.accentPrimary(root.t, root.appStyle)
                                 : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
                             elide: Text.ElideRight
-                            font.pixelSize: root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))
+                            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))))
                             font.weight: root.matterRowIsActive(modelData) ? Font.Bold : Font.Medium
                         }
                     }
@@ -321,7 +321,7 @@ Rectangle {
 
             text: "Tip: double-click a matter to open Matter Profile 360. Right-click an archived matter to delete it."
             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
-            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+            font.pixelSize: root.fontPixelSize(this, (root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))))
             elide: Text.ElideRight
         }
     }

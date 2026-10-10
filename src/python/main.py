@@ -69,7 +69,7 @@ from PySide6.QtCore import (
     QUrl,
     qInstallMessageHandler,
 )
-from PySide6.QtGui import QCursor, QIcon
+from PySide6.QtGui import QCursor, QIcon, QWindow
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget
 from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QLinearGradient, QRadialGradient, QPen
 from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QTimer, QVariantAnimation, Property, QEasingCurve
@@ -1044,11 +1044,12 @@ def _apply_app_icon_to_window(window: Any, icon: QIcon) -> bool:
 class _AppIconSync(QObject):
     """Keep the saved CSPM icon on QML windows that are created after app init."""
 
-    def __init__(self, app: QApplication, icon: QIcon) -> None:
+    def __init__(self, app: QApplication, icon: QIcon, *, window_events_only: bool = False) -> None:
         super().__init__(app)
         self._app = app
         self._icon = icon
         self._pending_apply = False
+        self._window_events_only = bool(window_events_only)
 
     def apply_all(self) -> None:
         self._pending_apply = False
@@ -1075,6 +1076,9 @@ class _AppIconSync(QObject):
         QTimer.singleShot(0, self.apply_all)
 
     def eventFilter(self, watched: QObject, event: Any) -> bool:
+        # Preserve Qt activation/input propagation; only icon work is gated.
+        if self._window_events_only and not isinstance(watched, QWindow):
+            return False
         try:
             if event is not None and event.type() in _APP_ICON_SYNC_EVENT_TYPES:
                 _apply_app_icon_to_window(watched, self._icon)
@@ -1086,11 +1090,11 @@ class _AppIconSync(QObject):
         return False
 
 
-def _install_app_icon_sync(app: QApplication) -> None:
+def _install_app_icon_sync(app: QApplication, *, window_events_only: bool = False) -> None:
     icon = _load_app_icon()
     if icon.isNull():
         return
-    icon_sync = _AppIconSync(app, icon)
+    icon_sync = _AppIconSync(app, icon, window_events_only=window_events_only)
     app.installEventFilter(icon_sync)
     try:
         app.focusWindowChanged.connect(lambda _window=None: icon_sync.queue_apply_all())
@@ -1430,7 +1434,9 @@ def _drain_all_windows(max_passes: int = 8) -> int:
     return remaining
 
 
-def main() -> None:
+def main(*, layout_development=None) -> None:
+    from backend.layout_development import resolve_development_capability
+    layout_development = resolve_development_capability(layout_development)
     if _is_chromium_helper_process():
         startup_logger.warning(
             "QtWebEngine helper-style argv detected before GUI startup; skipping CSPM QML initialization: %s",
@@ -1538,7 +1544,7 @@ def main() -> None:
     except Exception as exc:
         _report_nonfatal_startup_failure("startup.installInputProbe", exc)
 
-    _install_app_icon_sync(app)
+    _install_app_icon_sync(app, window_events_only=bool(layout_development.activationRepair))
 
     app.setOrganizationName(APP_MAINTAINER)
     app.setApplicationName(APP_TITLE)
@@ -1894,6 +1900,8 @@ def main() -> None:
     from backend.window_frame_capture import WindowFrameCapture
     window_frame_capture = WindowFrameCapture(engine)
     engine.rootContext().setContextProperty("windowFrameCapture", window_frame_capture)
+    layout_development.setParent(engine)
+    engine.rootContext().setContextProperty("layoutDevelopment", layout_development)
     engine.rootContext().setContextProperty("apBackendController", controller.apController)
     _boot_log("context.app.injected")
     engine.rootContext().setContextProperty("docketApp", controller.docketing)
@@ -2317,14 +2325,6 @@ def main() -> None:
                     native_splash_signal_bound = True
             except Exception as exc:
                 _report_nonfatal_startup_failure("nativeSplash.bindBootstrapFallback", exc)
-        from PySide6.QtGui import QKeyEvent
-        class GlobalSplashSkipFilter(QObject):
-            def eventFilter(self, watched: QObject, event: Any) -> bool:
-                return False
-
-        _splash_skip_filter = GlobalSplashSkipFilter(app)
-        app.installEventFilter(_splash_skip_filter)
-        app._splash_skip_filter = _splash_skip_filter # type: ignore[attr-defined]
 
     def _resolve_hook_target_window():
         nonlocal root

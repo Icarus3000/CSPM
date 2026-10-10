@@ -11,6 +11,14 @@ TextField {
     id: control
     property var t
     property var metrics
+    readonly property bool layoutRepairEnabled: typeof layoutDevelopment !== "undefined"
+        && layoutDevelopment.layoutRepair
+    readonly property var layoutMetrics: layoutRepairEnabled ? layoutMetricsGate.snapshot : metrics
+    LayoutMetricsGate {
+        id: layoutMetricsGate
+        inputMetrics: control.metrics
+        active: control.layoutRepairEnabled && control.visible
+    }
     property string label: ""
     property bool datePickerEnabled: false
     property color accentColor: SemanticTheme.accentPrimary(control.t, control.appStyle)
@@ -40,11 +48,11 @@ TextField {
     })
     // Use stable sizing inputs (app metrics or fixed fallback), not control width/height.
     // This prevents implicitHeight/font/padding feedback loops in Qt Quick TextField.
-    property real _baseContentW: (metrics && typeof metrics.contentW === "number" && metrics.contentW > 0)
-        ? metrics.contentW
+    property real _baseContentW: (layoutMetrics && typeof layoutMetrics.contentW === "number" && layoutMetrics.contentW > 0)
+        ? layoutMetrics.contentW
         : 1280
-    property real _baseContentH: (metrics && typeof metrics.contentH === "number" && metrics.contentH > 0)
-        ? metrics.contentH
+    property real _baseContentH: (layoutMetrics && typeof layoutMetrics.contentH === "number" && layoutMetrics.contentH > 0)
+        ? layoutMetrics.contentH
         : 800
     VisualRules {
         id: visualRules
@@ -63,8 +71,8 @@ TextField {
     }
 
     function metricFloor(metricKey, fallbackPx) {
-        if (metrics && typeof metrics[metricKey] === "number") {
-            return Math.max(1, Math.round(metrics[metricKey]))
+        if (layoutMetrics && typeof layoutMetrics[metricKey] === "number") {
+            return Math.max(1, Math.round(layoutMetrics[metricKey]))
         }
         return Math.max(1, Math.round(fallbackPx))
     }
@@ -120,8 +128,11 @@ TextField {
             source: fieldBg
             horizontalOffset: 0
             verticalOffset: 0
-            radius: control.isProMode ? visualRules.radiusControl : control.ratioPx(control.scaleRatios.radiusPct * 1.8, 4)
-            samples: control.ratioPx(control.scaleRatios.radiusPct * 4.0, 10)
+            // Qt rebuilds blur shaders synchronously even for invisible effects.
+            radius: control.layoutRepairEnabled && visualRules.shadowOpacity <= 0 ? 0
+                : (control.isProMode ? visualRules.radiusControl : control.ratioPx(control.scaleRatios.radiusPct * 1.8, 4))
+            samples: control.layoutRepairEnabled && visualRules.shadowOpacity <= 0 ? 9
+                : control.ratioPx(control.scaleRatios.radiusPct * 4.0, 10)
             color: Qt.rgba(
                 control.accentColor.r,
                 control.accentColor.g,
