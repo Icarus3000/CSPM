@@ -5,11 +5,16 @@
 - [x] Cory accepts repaired candidate runtime `19d030d9516ef026da158e610db432a434335966` for current use.
 - [x] Integrate reviewed source paths on approved primary `f96880be888032ac10cd94696b5287335a817159`; preserve diagnostic/experimental branches and newer documentation.
 - [x] Preserve exact accepted Python/QML/native source, legacy fallback, reduced motion and fixed readiness/ownership contracts.
-- [x] Pass 136 focused static tests, compilation and native call/probe contracts. Remove private datasets and generated evidence from the promoted tracked tree, retaining local originals and prior history.
-- [ ] Verify prior-runtime rollback launch, ordinary package smoke, main installation and remote publication.
-- [ ] Commit desktop deployment handoff and final validation/installation record.
+- [x] Pass 146 focused runtime/deployment tests, compilation and both native call/probe contracts. Remove private datasets and generated evidence from the promoted tracked tree, retaining local originals and prior history.
+- [x] Verify prior-runtime rollback launch, ordinary package provenance/privacy and focused native/legacy/readiness/reduced/WebEngine/lifecycle smokes.
+- [x] Install ordinary main, verify every runtime manifest record, native selection, normal shortcuts, installed startup/motion/input/close and unchanged authoritative hashes/six dockets.
+- [x] Prepare bounded desktop deployment handoff and final promotion record; publish the promotion branch without force and record the independently verified full remote head in the workstation dashboard.
+
+Exact build/desktop source pin: `4237e7d1f5b4aab89a016f068c1620566f5d70d8`. Main is installed at `C:/Programs/CSPM/CSPM.exe`; prior runtime is immutable under `C:/Programs/CSPM-Rollback/before-native-motion-20261011`. Read [the promotion record](docs/CSPM_NATIVE_MOTION_PROMOTION_2026-10-11.md) and [desktop handoff](docs/CSPM_NATIVE_MOTION_DESKTOP_DEPLOYMENT_2026-10-11.md). Intermittent safe deadline recovery, existing tray retention and historical gates remain disclosed. No ordinary production profile was recovered or silently configured.
 
 Visual acceptance supersedes the old pending visual gate. Historical diagnostic failures remain disclosed. Financial reconciliation and production-data acceptance are separate and unauthorized.
+
+Final data exception: the governed authoritative pair/protected originals and 18 XML checks covering six original dockets remain unchanged; a separate historical shared Dockets workbook was saved during final checks after the earlier nine-file audit. Both historical versions are preserved privately, writer/cause are unverified, and no authoritative overwrite or reconciliation was performed. See the promotion record before any future financial-data action.
 
 ## 2026-10-09: End-of-computer preservation
 
