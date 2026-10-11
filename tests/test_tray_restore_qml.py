@@ -8,6 +8,44 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_data_status_banner_exposes_one_accessible_label_and_updates():
+    script = r'''
+from pathlib import Path
+from PySide6.QtCore import QObject, QUrl
+from PySide6.QtGui import QGuiApplication, QAccessible
+from PySide6.QtQml import QQmlComponent, QQmlEngine
+
+app = QGuiApplication([])
+engine = QQmlEngine()
+component = QQmlComponent(engine, QUrl.fromLocalFile(str(
+    Path("src/qml/components/DataSourceStatusBanner.qml").resolve())))
+assert component.status() == QQmlComponent.Ready, [e.toString() for e in component.errors()]
+banner = component.createWithInitialProperties({
+    "width": 420.0, "status": "governed-source",
+    "statusLabel": "Governed source | Read-only verification | Dataset abcd",
+})
+label = banner.findChild(QObject, "CSPMDataSourceStatusText")
+assert label is not None
+accessible = QAccessible.queryAccessibleInterface(label)
+assert accessible.role() == QAccessible.Role.StaticText
+assert accessible.text(QAccessible.Text.Name) == banner.property("statusLabel")
+assert len(banner.findChildren(QObject, "CSPMDataSourceStatusText")) == 1
+banner.setProperty("status", "unverified-local")
+banner.setProperty("statusLabel", "Unverified local snapshot | Read-only verification")
+assert accessible.text(QAccessible.Text.Name) == banner.property("statusLabel")
+assert banner.property("sourceNeedsReview") is True
+assert banner.property("implicitHeight") >= 38
+banner.deleteLater()
+app.processEvents()
+'''
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=ROOT,
+        env=dict(os.environ, QT_QPA_PLATFORM="offscreen"),
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_tray_return_has_one_growth_and_taskbar_choreography_is_preserved():
     script = r'''
 import math

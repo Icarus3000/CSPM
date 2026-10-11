@@ -37,6 +37,8 @@ Rectangle {
         anchors.leftMargin: 14
         anchors.rightMargin: 14
         text: root.statusLabel
+        Accessible.role: Accessible.StaticText
+        Accessible.name: root.statusLabel
         textFormat: Text.PlainText
         color: root.statusInk
         font.family: "Segoe UI"
