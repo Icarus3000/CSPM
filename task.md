@@ -14,7 +14,7 @@ Exact build/desktop source pin: `4237e7d1f5b4aab89a016f068c1620566f5d70d8`. Main
 
 Visual acceptance supersedes the old pending visual gate. Historical diagnostic failures remain disclosed. Financial reconciliation and production-data acceptance are separate and unauthorized.
 
-Final data exception: the governed authoritative pair/protected originals and 18 XML checks covering six original dockets remain unchanged; a separate historical shared Dockets workbook was saved during final checks after the earlier nine-file audit. Both historical versions are preserved privately, writer/cause are unverified, and no authoritative overwrite or reconciliation was performed. See the promotion record before any future financial-data action.
+Final data exception: the governed authoritative pair/protected originals and 18 XML checks covering six original dockets remain unchanged; a separate historical shared Dockets workbook was saved during final checks after the earlier nine-file audit. Cory confirmed editing that historical workbook at the reported time. Both versions are preserved privately; the promotion performed no authoritative overwrite or reconciliation. See the promotion record before any future financial-data action.
 
 ## 2026-10-09: End-of-computer preservation
 

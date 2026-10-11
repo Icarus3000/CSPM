@@ -182,8 +182,8 @@ dataset-free. All six original dockets remain intact where independently verifie
 
 The final OmniBook audit confirms the governed authoritative pair and protected
 originals unchanged. A separate historical shared Dockets file was saved during
-the final checks and differs from its preserved snapshot; writer/cause are
-unverified. Both versions are retained privately and no overwrite/reconciliation
+the final checks and differs from its preserved snapshot; Cory confirmed editing
+that workbook at the reported time. Both versions are retained privately and no overwrite/reconciliation
 was attempted. Do not treat that historical change as accepted financial data or
 claim that every shared file remained unchanged throughout promotion.
 

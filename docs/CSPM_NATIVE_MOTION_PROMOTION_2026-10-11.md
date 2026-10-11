@@ -169,13 +169,15 @@ where they were unresolved before promotion. Server freshness is unverified.
 The final recheck detected a separate historical shared Dockets workbook saved
 at 2026-10-11 18:23:55 UTC, after all nine files passed at 18:21:28 UTC. Its
 container and 53 resolved cell values/formulas differ from the preserved historical
-snapshot; writer and cause are unverified. Both historical versions are preserved
-privately. The other eight proof files and all 18 docket XML checks still match.
+snapshot. Cory subsequently confirmed editing that historical workbook at the
+reported time. Both historical versions are preserved privately. The other eight
+proof files and all 18 docket XML checks still match.
 No promotion process launched against that historical shared path, no cloud master
 folder was configured in the tests, and no authoritative workbook write or restore
 was performed. This exception prevents a claim that every shared file stayed
-unchanged throughout the session; it does not authorize reconciliation or a blind
-overwrite of the newly saved file.
+unchanged throughout the session. The save is confirmed user activity, not a
+promotion write; it does not authorize reconciliation, validate the changed
+financial content, or permit a blind overwrite of the newly saved file.
 
 The recovered prior accepted installation used its isolated development profile
 with approved empty templates. A saved ordinary production configuration was
