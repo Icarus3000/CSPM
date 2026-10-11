@@ -1,5 +1,16 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-11: Visually accepted native motion promotion
+
+- [x] Cory accepts repaired candidate runtime `19d030d9516ef026da158e610db432a434335966` for current use.
+- [x] Integrate reviewed source paths on approved primary `f96880be888032ac10cd94696b5287335a817159`; preserve diagnostic/experimental branches and newer documentation.
+- [x] Preserve exact accepted Python/QML/native source, legacy fallback, reduced motion and fixed readiness/ownership contracts.
+- [x] Pass 136 focused static tests, compilation and native call/probe contracts. Remove private datasets and generated evidence from the promoted tracked tree, retaining local originals and prior history.
+- [ ] Verify prior-runtime rollback launch, ordinary package smoke, main installation and remote publication.
+- [ ] Commit desktop deployment handoff and final validation/installation record.
+
+Visual acceptance supersedes the old pending visual gate. Historical diagnostic failures remain disclosed. Financial reconciliation and production-data acceptance are separate and unauthorized.
+
 ## 2026-10-09: End-of-computer preservation
 
 - [x] Review and preserve the existing October 3 diagnostic comparison and sanitized handoff/report files; no additional experiment, application change, build or installation.

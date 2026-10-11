@@ -376,6 +376,8 @@ class AppController(QObject):
             self._prefs_settings_path,
         )
         _init_loaded = _init_payload.get("loaded", {})
+        from backend.native_candidate import settings_override
+        _init_loaded.update(settings_override())
         _init_local = str(_init_loaded.get("localDataDir", "")).strip()
         _init_master = str(_init_loaded.get("masterDataDir", "")).strip()
         
@@ -473,7 +475,10 @@ class AppController(QObject):
             is_booted=lambda: self._is_booted,
         )
         startup_logger.info("%s AppController creating session manager", _elapsed())
-        self._draft_session_path = self._paths.root / DRAFT_SESSION_FILE
+        # Keep candidate recovery state with its snapshot, outside packaged
+        # code and independently of production recovery state.
+        from backend.native_candidate import profile as candidate_profile
+        self._draft_session_path = (self._paths.runtime_dir() if candidate_profile() is not None else self._paths.root) / DRAFT_SESSION_FILE
         self._runtime_session_path = self._paths.state_dir() / RUNTIME_SESSION_FILE
         self._session_mgr = SessionRecoveryManager(
             draft_session_path=self._draft_session_path,
@@ -484,6 +489,7 @@ class AppController(QObject):
         self._auto_backup_minutes = self._resolve_auto_backup_minutes()
         self._auto_backup_enabled = self._auto_backup_minutes > 0
         self._auto_backup_timer = QTimer(self)
+        self._auto_backup_timer.timeout.connect(self._run_auto_backup_tick)
         self._startup_snapshot_scheduled = False
         self._themes_data = {}
         self._theme_name = "Dark"
@@ -627,10 +633,7 @@ class AppController(QObject):
             self.load_settings()
         self._session_mgr.mark_runtime_open()
 
-        if self._auto_backup_enabled:
-            self._auto_backup_timer.setInterval(self._auto_backup_minutes * 60 * 1000)
-            self._auto_backup_timer.timeout.connect(self._run_auto_backup_tick)
-            self._auto_backup_timer.start()
+        self._update_auto_backup_timer()
         
         startup_logger.info("%s AppController.__init__ END", _elapsed())
 
@@ -1339,9 +1342,13 @@ class AppController(QObject):
         return value
 
     def _run_startup_snapshot(self) -> None:
+        if not self._auto_backup_enabled:
+            return
         self._create_project_snapshot("startup-baseline", emit_toast=False)
 
     def _run_auto_backup_tick(self) -> None:
+        if not self._auto_backup_enabled:
+            return
         self._create_project_snapshot("scheduled-auto-backup", emit_toast=False)
 
     def _create_project_snapshot(self, reason: str, emit_toast: bool) -> bool:
@@ -1535,6 +1542,8 @@ class AppController(QObject):
         loaded = payload.get("loaded")
         if isinstance(loaded, dict):
             self._settings_data.update(loaded)
+        from backend.native_candidate import settings_override
+        self._settings_data.update(settings_override())
 
         resolved = self._normalize_theme_name(self._settings_data.get("theme"))
         if resolved:
@@ -2790,6 +2799,7 @@ class AppController(QObject):
             self._update_auto_backup_timer()
             
     def _update_auto_backup_timer(self):
+        self._auto_backup_enabled = self._auto_backup_minutes > 0
         if hasattr(self, '_auto_backup_timer') and self._auto_backup_timer:
             self._auto_backup_timer.stop()
             if self._auto_backup_minutes > 0:
@@ -2803,6 +2813,9 @@ class AppController(QObject):
 
     @masterDataDir.setter
     def masterDataDir(self, value):
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         if self._master_data_dir != value:
             self._master_data_dir = value
             self._settings_data["masterDataDir"] = value
@@ -2820,6 +2833,9 @@ class AppController(QObject):
 
     @localDataDir.setter
     def localDataDir(self, value):
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         if self._local_data_dir != value:
             self._local_data_dir = value
             self._settings_data["localDataDir"] = value
@@ -3030,6 +3046,8 @@ class AppController(QObject):
             loaded = {}
         self._settings_path = runtime_settings_path
         self._settings_data = dict(loaded)
+        from backend.native_candidate import settings_override
+        self._settings_data.update(settings_override())
         resolved_theme = self._normalize_theme_name(self._settings_data.get("theme"))
         if resolved_theme:
             self._theme_name = resolved_theme
@@ -3820,6 +3838,9 @@ class AppController(QObject):
 
     @Slot()
     def promptDataFolderSetup(self) -> None:
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, 
                                        QLabel, QPushButton, QFileDialog, 
                                        QMessageBox, QLineEdit, QGroupBox, QApplication)
@@ -3988,6 +4009,9 @@ class AppController(QObject):
             self.save_settings()
 
     def _apply_run_at_startup(self) -> None:
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return
         import winreg
         import sys
         import os

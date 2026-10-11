@@ -1,5 +1,11 @@
 # Implementation History
 
+## 2026-10-11: Accepted native motion promotion source
+
+Cory visually accepts candidate runtime `19d030d9516ef026da158e610db432a434335966` for current use and authorizes reversible main installation. Reviewed source paths are integrated on approved primary `f96880be888032ac10cd94696b5287335a817159`. All runtime Python/QML/native code remains identical to the accepted checkpoint; newer primary business logic is retained. No motion timing, easing, readiness, safe rejection or focus contracts change.
+
+Packaging includes the native bridge and inspectable release provenance, with only runtime documentation rather than historical reports. Private datasets/generated diagnostics are removed from the promoted index without deleting local files or rewriting prior history. Governed empty templates remain. Compilation, 136 focused tests and both native contracts pass. Package/rollback/installation validation and desktop handoff continue; no reconciliation is performed.
+
 ## 2026-10-09: Preservation-only closeout
 
 The existing October 3 tracked diagnostic changes and sanitized speed/results

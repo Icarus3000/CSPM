@@ -8,6 +8,7 @@ import "../components"
 import "../standards"
 import "../standards/SubwindowStyle.js" as SubwindowStyle
 import "../standards/SemanticTheme.js" as SemanticTheme
+import "../standards/HiddenFontMetrics.js" as HiddenFontMetrics
 import "./placeholder"
 import "./corporate"
 
@@ -16,6 +17,8 @@ Item {
 
     property var t
     property var metrics
+    readonly property bool layoutRepairEnabled: typeof layoutDevelopment !== "undefined"
+        && layoutDevelopment.layoutRepair
     property var windowRef
     property var appRef: ((typeof app !== "undefined") && app !== null) ? app : null
     property alias transactionMasterView: transactionMasterLoader.item
@@ -272,6 +275,10 @@ Item {
     function ratioPx(ratio, minPx) {
         var floorPx = (typeof minPx === "number") ? minPx : 1
         return Math.max(floorPx, Math.round(areaUnit() * ratio))
+    }
+
+    function fontPixelSize(owner, value) {
+        return HiddenFontMetrics.pixelSize(owner, value, root.layoutRepairEnabled)
     }
 
     function ratioPxW(ratio, minPx) {
@@ -3811,25 +3818,35 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                 spacing: root.isProMode ? 10 : root.ratioPx(0.0035, 2)
 
                 Text {
+                    id: cspmFontOwner0
                     Layout.fillWidth: true
                     text: root.titleText
                     color: root.isProMode ? root.proInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.96)
                     font.family: visualRules.textFontFamily
-                    font.pixelSize: root.isProMode
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
+                        inputPixelSize: root.isProMode
                         ? visualRules.proSectionTitleFontPx
                         : root.ratioPx(root.scaleRatios.headerSubtitleFontPct * 1.03, root.metricFloor("fontFloorLabelPx", 10))
+                        active: !root.layoutRepairEnabled || cspmFontOwner0.visible
+                    }
+                    font.pixelSize: cspmFontGate.pixelSize
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
 
                 Text {
+                    id: cspmFontOwner1
                     Layout.fillWidth: true
                     text: "Pathway map"
                     color: root.isProMode ? root.proMutedInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.70)
                     font.family: visualRules.textFontFamily
-                    font.pixelSize: root.isProMode
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
+                        inputPixelSize: root.isProMode
                         ? visualRules.proCaptionFontPx
                         : root.ratioPx(root.scaleRatios.hintFontPct * 0.88, root.metricFloor("fontFloorLabelPx", 8))
+                        active: !root.layoutRepairEnabled || cspmFontOwner1.visible
+                    }
+                    font.pixelSize: cspmFontGate.pixelSize
                     elide: Text.ElideRight
                 }
 
@@ -3868,6 +3885,7 @@ Behavior on border.color {
 }
 
                             Text {
+                                id: cspmFontOwner2
                                 anchors.centerIn: parent
                                 readonly property real labelWidthPx: Math.max(1, parent.width - root.ratioPx(0.010, 8))
                                 width: labelWidthPx
@@ -3875,7 +3893,11 @@ Behavior on border.color {
                                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.90)
                                 horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
-                                font.pixelSize: root.ratioPx(0.0090, root.metricFloor("fontFloorLabelPx", 7))
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                    inputPixelSize: root.ratioPx(0.0090, root.metricFloor("fontFloorLabelPx", 7))
+                                    active: !root.layoutRepairEnabled || cspmFontOwner2.visible
+                                }
+                                font.pixelSize: cspmFontGate.pixelSize
                                 minimumPixelSize: Math.max(6, root.readableMinFontPx() - 2)
                                 fontSizeMode: Text.Fit
                                 font.weight: Font.DemiBold
@@ -3953,6 +3975,7 @@ Behavior on border.color {
                                 spacing: root.ratioPx(0.0035, 3)
 
                                 Text {
+                                    id: cspmFontOwner3
                                     Layout.fillWidth: true
                                     text: String(navRow.modelData.title || "Placeholder Node")
                                     color: root.isProMode
@@ -3960,9 +3983,13 @@ Behavior on border.color {
                                         : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.93)
                                     elide: Text.ElideRight
                                     font.family: visualRules.textFontFamily
-                                    font.pixelSize: root.isProMode
+                                    property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                        inputPixelSize: root.isProMode
                                         ? visualRules.proLabelFontPx
                                         : root.ratioPx(0.0120, root.metricFloor("fontFloorLabelPx", 9))
+                                        active: !root.layoutRepairEnabled || cspmFontOwner3.visible
+                                    }
+                                    font.pixelSize: cspmFontGate.pixelSize
                                     fontSizeMode: Text.Fit
                                     minimumPixelSize: Math.max(7, root.readableMinFontPx() - 1)
                                     font.weight: navRow.current ? Font.DemiBold : Font.Medium
@@ -4036,9 +4063,13 @@ Behavior on border.color {
                             }
                             color: root.isProMode ? root.proInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.98)
                             font.family: visualRules.textFontFamily
-                            font.pixelSize: root.isProMode
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.isProMode
                                 ? visualRules.proWorkspaceTitleFontPx
                                 : Math.max(14, Math.min(28, root.ratioPxH(0.024, 18)))
+                                active: !root.layoutRepairEnabled || headerTitleText.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             fontSizeMode: Text.Fit
                             minimumPixelSize: root.isProMode ? 12 : 10
                             maximumLineCount: 1
@@ -4052,7 +4083,8 @@ Behavior on border.color {
                             text: root.summaryLineA()
                             color: root.isProMode ? root.proMutedInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.74)
                             font.family: visualRules.textFontFamily
-                            font.pixelSize: root.isProMode
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.isProMode
                                 ? visualRules.proWorkspaceSubtitleFontPx
                                 : Math.max(
                                     6,
@@ -4061,6 +4093,9 @@ Behavior on border.color {
                                         Math.floor(Math.max(10, headerTitleText.fontInfo.pixelSize) * 0.54)
                                     )
                                 )
+                                active: !root.layoutRepairEnabled || headerSubtitleText.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             maximumLineCount: 1
                             wrapMode: Text.NoWrap
                             elide: Text.ElideRight
@@ -4096,9 +4131,13 @@ Behavior on border.color {
                                 text: root.summaryHeadline()
                                 color: root.isProMode ? root.proInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
                                 font.family: visualRules.textFontFamily
-                                font.pixelSize: root.isProMode
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                    inputPixelSize: root.isProMode
                                     ? visualRules.proLabelFontPx
                                     : Math.max(9, Math.min(22, root.ratioPxH(0.018, 12)))
+                                    active: !root.layoutRepairEnabled || summaryHeadlineText.visible
+                                }
+                                font.pixelSize: cspmFontGate.pixelSize
                                 fontSizeMode: Text.Fit
                                 minimumPixelSize: 8
                                 font.weight: Font.DemiBold
@@ -4108,14 +4147,19 @@ Behavior on border.color {
                                 wrapMode: Text.NoWrap
                             }
                             Text {
+                                id: cspmFontOwner7
                                 width: Math.max(1, summaryColumn.width)
                                 text: root.summaryLineB()
                                 visible: false
                                 color: root.isProMode ? root.proMutedInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.72)
                                 font.family: visualRules.textFontFamily
-                                font.pixelSize: root.isProMode
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                    inputPixelSize: root.isProMode
                                     ? visualRules.proCaptionFontPx
                                     : Math.max(8, Math.min(22, root.ratioPxH(0.016, 9)))
+                                    active: !root.layoutRepairEnabled || cspmFontOwner7.visible
+                                }
+                                font.pixelSize: cspmFontGate.pixelSize
                                 horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
                                 maximumLineCount: 1
@@ -4835,9 +4879,14 @@ Behavior on border.color {
 
                         // --- Section: Core Profile ---
                         Text {
+                            id: cspmFontOwner8
                             text: "Core Profile"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.013, 13)
+                                active: !root.layoutRepairEnabled || cspmFontOwner8.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -4989,9 +5038,14 @@ Behavior on border.color {
 
                         // --- Section: Contact Information ---
                         Text {
+                            id: cspmFontOwner9
                             text: "Contact Information"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.013, 13)
+                                active: !root.layoutRepairEnabled || cspmFontOwner9.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5105,9 +5159,14 @@ Behavior on border.color {
 
                         // --- Section: Location ---
                         Text {
+                            id: cspmFontOwner10
                             text: "Location"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.013, 13)
+                                active: !root.layoutRepairEnabled || cspmFontOwner10.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5188,9 +5247,14 @@ Behavior on border.color {
 
                         // --- Section: Billing & Compliance ---
                         Text {
+                            id: cspmFontOwner11
                             text: "Billing & Compliance"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.013, 13)
+                                active: !root.layoutRepairEnabled || cspmFontOwner11.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5293,9 +5357,14 @@ Behavior on border.color {
 
                         // --- Section: Engagement Details ---
                         Text {
+                            id: cspmFontOwner12
                             text: "Engagement Details"
                             color: Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.9)
-                            font.pixelSize: root.ratioPx(0.013, 13)
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.013, 13)
+                                active: !root.layoutRepairEnabled || cspmFontOwner12.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                             Layout.topMargin: root.ratioPxH(0.006, 5)
                             Layout.fillWidth: true
@@ -5361,7 +5430,11 @@ Behavior on border.color {
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.ratioPxH(0.064, 56)
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                                active: !root.layoutRepairEnabled || conflictNotesInput.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             wrapMode: Text.Wrap
                             placeholderText: "Conflict notes"
                             placeholderTextColor: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.50)
@@ -5384,7 +5457,11 @@ Behavior on border.color {
                             Layout.fillWidth: true
                             Layout.preferredHeight: root.ratioPxH(0.074, 64)
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                                active: !root.layoutRepairEnabled || clientNotesInput.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             wrapMode: Text.Wrap
                             placeholderText: "Client notes"
                             placeholderTextColor: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.50)
@@ -5473,9 +5550,14 @@ Behavior on border.color {
                             }
                         }
                         contentItem: Text {
+                            id: cspmFontOwner15
                             text: matterJointRetainerCheck.text
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                                active: !root.layoutRepairEnabled || cspmFontOwner15.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.Medium
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
@@ -5502,10 +5584,15 @@ Behavior on border.color {
                         spacing: root.ratioPxH(0.005, 5)
 
                         Text {
+                            id: cspmFontOwner16
                             Layout.fillWidth: true
                             text: "Matter parties"
                             color: root._text
-                            font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                                active: !root.layoutRepairEnabled || cspmFontOwner16.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                         }
 
@@ -5571,10 +5658,15 @@ Behavior on border.color {
                                     }
 
                                     Text {
+                                        id: cspmFontOwner17
                                         Layout.fillWidth: true
                                         text: String(matterPartyRow.modelData.clientName || "")
                                         color: root._text
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                        property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                            inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                            active: !root.layoutRepairEnabled || cspmFontOwner17.visible
+                                        }
+                                        font.pixelSize: cspmFontGate.pixelSize
                                         elide: Text.ElideRight
                                     }
 
@@ -5702,15 +5794,20 @@ Behavior on border.color {
                         }
 
                         Text {
+                            id: cspmFontOwner18
                             Layout.fillWidth: true
                             text: root.matterEngagementDocumentSourcePath.length > 0
                                 ? "Selected agreement will be attached when you save this matter."
                                 : "Attach the signed retainer or engagement agreement for this matter."
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
-                            font.pixelSize: root.ratioPx(
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(
                                 root.scaleRatios.descFontPct * 0.90,
                                 root.metricFloor("fontFloorLabelPx", 8)
                             )
+                                active: !root.layoutRepairEnabled || cspmFontOwner18.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             wrapMode: Text.Wrap
                         }
                     }
@@ -6051,9 +6148,14 @@ Behavior on border.color {
                             spacing: root.controlGapPx
 
                             Text {
+                                id: cspmFontOwner19
                                 text: "Financial status"
                                 color: root._text
-                                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 10))
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                    inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 10))
+                                    active: !root.layoutRepairEnabled || cspmFontOwner19.visible
+                                }
+                                font.pixelSize: cspmFontGate.pixelSize
                                 font.weight: Font.DemiBold
                             }
 
@@ -6072,14 +6174,20 @@ Behavior on border.color {
                         }
 
                         Text {
+                            id: cspmFontOwner20
                             Layout.fillWidth: true
                             visible: root.matterFinancialSummaryLoading
                             text: "Loading unbilled WIP and unpaid invoices…"
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.68)
-                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                active: !root.layoutRepairEnabled || cspmFontOwner20.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                         }
 
                         Text {
+                            id: cspmFontOwner21
                             Layout.fillWidth: true
                             visible: !root.matterFinancialSummaryLoading
                                 && (!root.matterFinancialSummary || !root.matterFinancialSummary.ok)
@@ -6087,7 +6195,11 @@ Behavior on border.color {
                                 ? String(root.matterFinancialSummary.message)
                                 : "Financial status will load after this matter is saved."
                             color: Qt.rgba(0.90, 0.45, 0.25, 0.96)
-                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                active: !root.layoutRepairEnabled || cspmFontOwner21.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             wrapMode: Text.WordWrap
                         }
 
@@ -6098,37 +6210,52 @@ Behavior on border.color {
                             spacing: root.ratioPx(0.016, 14)
 
                             Text {
+                                id: cspmFontOwner22
                                 text: "Unbilled WIP: "
                                     + Number(root.matterFinancialSummary.unbilledWipCount || 0)
                                     + " item(s) · " + root.matterFinancialMoney(root.matterFinancialSummary.unbilledWipAmount)
                                 color: Number(root.matterFinancialSummary.unbilledWipCount || 0) > 0
                                     ? Qt.rgba(0.86, 0.55, 0.14, 0.98)
                                     : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
-                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                    inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                    active: !root.layoutRepairEnabled || cspmFontOwner22.visible
+                                }
+                                font.pixelSize: cspmFontGate.pixelSize
                                 font.weight: Font.DemiBold
                             }
 
                             Item { Layout.fillWidth: true }
 
                             Text {
+                                id: cspmFontOwner23
                                 text: "Unpaid invoices: "
                                     + Number(root.matterFinancialSummary.unpaidInvoiceCount || 0)
                                     + " · " + root.matterFinancialMoney(root.matterFinancialSummary.unpaidInvoiceAmount)
                                 color: Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) > 0
                                     ? Qt.rgba(0.80, 0.24, 0.20, 0.98)
                                     : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.76)
-                                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                    inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 1.06, root.metricFloor("fontFloorLabelPx", 8))
+                                    active: !root.layoutRepairEnabled || cspmFontOwner23.visible
+                                }
+                                font.pixelSize: cspmFontGate.pixelSize
                                 font.weight: Font.DemiBold
                             }
                         }
 
                         Text {
+                            id: cspmFontOwner24
                             Layout.fillWidth: true
                             visible: root.matterFinancialSummary && root.matterFinancialSummary.ok
                                 && Number(root.matterFinancialSummary.unpaidInvoiceCount || 0) === 0
                             text: "No unpaid invoices are linked to this matter."
                             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.68)
-                            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                active: !root.layoutRepairEnabled || cspmFontOwner24.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                         }
 
                         Column {
@@ -6161,7 +6288,11 @@ Behavior on border.color {
                                             + " · Amount due " + root.matterFinancialMoney(modelData.balanceDue)
                                             + " — open in Invoice Directory"
                                         color: root._accent
-                                        font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                        property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                            inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                                            active: !root.layoutRepairEnabled || invoiceLinkText.visible
+                                        }
+                                        font.pixelSize: cspmFontGate.pixelSize
                                         font.underline: invoiceLinkMouse.containsMouse
                                         elide: Text.ElideRight
                                     }
@@ -6212,7 +6343,11 @@ Behavior on border.color {
                         ? root.ratioPxH(0.094, 72)
                         : 140
                     color: root._text
-                    font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
+                        inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+                        active: !root.layoutRepairEnabled || notesInput.visible
+                    }
+                    font.pixelSize: cspmFontGate.pixelSize
                     wrapMode: Text.Wrap
                     placeholderText: root.activeIsNewMatterWizard()
                         ? "Matter notes"
@@ -6356,6 +6491,7 @@ Behavior on border.color {
                 }
 
                 Text {
+                    id: cspmFontOwner27
                     visible: (root.activeIsNewClientWizard() || root.activeIsNewMatterWizard() || root.activeIsTransactionsMaster() || root.activeIsPaymentEntry())
                         && String(root.saveMessage || "").length > 0
                     Layout.fillWidth: true
@@ -6377,7 +6513,11 @@ Behavior on border.color {
                         ? Qt.rgba(root._accent.r, root._accent.g, root._accent.b, 0.92)
                         : Qt.rgba(0.98, 0.42, 0.42, 0.96)
                     wrapMode: Text.WordWrap
-                    font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
+                        inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                        active: !root.layoutRepairEnabled || cspmFontOwner27.visible
+                    }
+                    font.pixelSize: cspmFontGate.pixelSize
                 }
                     }
                 }
@@ -6413,23 +6553,33 @@ Behavior on border.color {
             spacing: root.ratioPx(0.008, 8)
 
             Text {
+                id: cspmFontOwner28
                 Layout.fillWidth: true
                 text: "Add Matter Type"
                 color: root._text
-                font.pixelSize: root.ratioPx(
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(
                     root.scaleRatios.headerTitleFontPct * 0.62,
                     root.metricFloor("fontFloorBodyPx", 10)
                 )
+                    active: !root.layoutRepairEnabled || cspmFontOwner28.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
             }
 
             Text {
+                id: cspmFontOwner29
                 Layout.fillWidth: true
                 text: "This option will remain available under "
                     + String(root.matterTypeAddPracticeArea || "the selected practice area")
                     + " after the app restarts."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.82)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                    active: !root.layoutRepairEnabled || cspmFontOwner29.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 wrapMode: Text.WordWrap
             }
 
@@ -6447,11 +6597,16 @@ Behavior on border.color {
             }
 
             Text {
+                id: cspmFontOwner30
                 Layout.fillWidth: true
                 visible: String(root.matterTypeAddMessage || "").length > 0
                 text: root.matterTypeAddMessage
                 color: Qt.rgba(0.98, 0.42, 0.42, 0.96)
-                font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                    active: !root.layoutRepairEnabled || cspmFontOwner30.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 wrapMode: Text.WordWrap
             }
 
@@ -6511,22 +6666,32 @@ Behavior on border.color {
             spacing: root.ratioPx(0.008, 8)
 
             Text {
+                id: cspmFontOwner31
                 Layout.fillWidth: true
                 text: "Discard unsaved matter changes?"
                 color: root._text
-                font.pixelSize: root.ratioPx(
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(
                     root.scaleRatios.headerTitleFontPct * 0.62,
                     root.metricFloor("fontFloorBodyPx", 10)
                 )
+                    active: !root.layoutRepairEnabled || cspmFontOwner31.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
                 wrapMode: Text.WordWrap
             }
 
             Text {
+                id: cspmFontOwner32
                 Layout.fillWidth: true
                 text: "The Matter Name and Display Name will remain unchanged until you choose Save Matter & Return."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.86)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                    active: !root.layoutRepairEnabled || cspmFontOwner32.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 wrapMode: Text.WordWrap
             }
 
@@ -6591,22 +6756,32 @@ Behavior on border.color {
             spacing: root.ratioPx(0.008, 8)
 
             Text {
+                id: cspmFontOwner33
                 Layout.fillWidth: true
                 text: "Check Phone/Email Formatting"
                 color: root._text
-                font.pixelSize: root.ratioPx(
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(
                     root.scaleRatios.headerTitleFontPct * 0.62,
                     root.metricFloor("fontFloorBodyPx", 10)
                 )
+                    active: !root.layoutRepairEnabled || cspmFontOwner33.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
                 wrapMode: Text.WordWrap
             }
 
             Text {
+                id: cspmFontOwner34
                 Layout.fillWidth: true
                 text: "The following entries look invalid. Save anyway, or review and fix them first."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.86)
-                font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                    active: !root.layoutRepairEnabled || cspmFontOwner34.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 wrapMode: Text.WordWrap
             }
 
@@ -6629,7 +6804,11 @@ Behavior on border.color {
                         width: parent ? parent.width : implicitWidth
                         text: String(root.clientSaveValidationSummary || "")
                         color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.95)
-                        font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                        property HiddenFontGate cspmFontGate: HiddenFontGate {
+                            inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorLabelPx", 8))
+                            active: !root.layoutRepairEnabled || validationIssueText.visible
+                        }
+                        font.pixelSize: cspmFontGate.pixelSize
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -6746,29 +6925,44 @@ Behavior on border.color {
             spacing: root.ratioPx(0.008, 8)
 
             Text {
+                id: cspmFontOwner36
                 Layout.fillWidth: true
                 text: "Archive matter"
                 color: root._text
-                font.pixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
+                    active: !root.layoutRepairEnabled || cspmFontOwner36.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
             }
 
             Text {
+                id: cspmFontOwner37
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: "Archive " + (root.selectedMatterName || root.selectedMatterId || "this matter")
                     + "? It will be removed from active worklists. Nothing is deleted. New time, fee, and client-disbursement entries will require CSPM's protected re-open flow and a separate final save confirmation."
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                    active: !root.layoutRepairEnabled || cspmFontOwner37.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
             }
 
             Text {
+                id: cspmFontOwner38
                 Layout.fillWidth: true
                 visible: archiveMatterConfirmPopup.blockerMessage.length > 0
                 text: archiveMatterConfirmPopup.blockerMessage
                 color: "#b42318"
                 wrapMode: Text.WordWrap
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                    active: !root.layoutRepairEnabled || cspmFontOwner38.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
             }
 
@@ -6830,28 +7024,43 @@ Behavior on border.color {
             spacing: root.ratioPx(0.008, 8)
 
             Text {
+                id: cspmFontOwner39
                 Layout.fillWidth: true
                 text: "WARNING: DELETE MATTER"
                 color: "#d32f2f"
-                font.pixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
+                    active: !root.layoutRepairEnabled || cspmFontOwner39.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
             }
 
             Text {
+                id: cspmFontOwner40
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: "Deleting a matter is DESTRUCTIVE and IRREVERSIBLE. You will permanently lose all associated data. Use a non-active status instead whenever possible. Deletion is blocked when this matter has active unbilled WIP or unpaid invoices.\n\nAre you absolutely sure you want to permanently delete this matter?"
                 color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94)
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                    active: !root.layoutRepairEnabled || cspmFontOwner40.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
             }
 
             Text {
+                id: cspmFontOwner41
                 Layout.fillWidth: true
                 visible: deleteMatterConfirmPopup.blockerMessage.length > 0
                 text: deleteMatterConfirmPopup.blockerMessage
                 color: "#d32f2f"
                 wrapMode: Text.WordWrap
-                font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
+                    active: !root.layoutRepairEnabled || cspmFontOwner41.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
                 font.weight: Font.DemiBold
             }
 

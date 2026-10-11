@@ -1,6 +1,10 @@
 import os
 import sys
 import argparse
+from backend.motion_settings import handle_motion_arguments
+handle_motion_arguments(sys.argv)
+from backend.native_candidate import configure as configure_native_candidate, profile as native_candidate_profile
+configure_native_candidate()
 os.environ["QML_DISABLE_DISK_CACHE"] = "1"
 os.environ["QML_FORCE_DISK_CACHE_DISABLE"] = "1"
 
@@ -69,7 +73,7 @@ from PySide6.QtCore import (
     QUrl,
     qInstallMessageHandler,
 )
-from PySide6.QtGui import QCursor, QIcon
+from PySide6.QtGui import QCursor, QIcon, QWindow
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget
 from PySide6.QtGui import QPixmap, QColor, QPainter, QPainterPath, QLinearGradient, QRadialGradient, QPen
 from PySide6.QtCore import Qt, QElapsedTimer, QRectF, QTimer, QVariantAnimation, Property, QEasingCurve
@@ -580,6 +584,9 @@ from backend.native_svg import NativeSvgItem
 APP_MAINTAINER = "Tim"
 APP_TITLE = "Practice Console"
 APP_USER_MODEL_ID = "CSPM.PracticeConsole"
+if native_candidate_profile() is not None:
+    APP_TITLE = "CSPM Candidate - Local Validation"
+    APP_USER_MODEL_ID = "CSPM.NativeMotionCandidate"
 
 from services.paths import AppPaths
 PROJECT_ROOT = AppPaths.project_root()
@@ -650,6 +657,10 @@ SPLASH_AUDIO_PATHS = [
     PROJECT_ROOT / "assets" / "splash_sound.mp3",
 ]
 _SINGLE_INSTANCE_MUTEX_NAME = "Local\\CSPM.PracticeConsole.MainInstance"
+_IPC_SERVER_NAME = "CSPM_IPC_SERVER"
+if native_candidate_profile() is not None:
+    _SINGLE_INSTANCE_MUTEX_NAME = "Local\\CSPM.NativeMotionCandidate.MainInstance"
+    _IPC_SERVER_NAME = "CSPM_NATIVE_MOTION_CANDIDATE_IPC_SERVER"
 _single_instance_mutex_handle = None
 
 
@@ -1044,11 +1055,12 @@ def _apply_app_icon_to_window(window: Any, icon: QIcon) -> bool:
 class _AppIconSync(QObject):
     """Keep the saved CSPM icon on QML windows that are created after app init."""
 
-    def __init__(self, app: QApplication, icon: QIcon) -> None:
+    def __init__(self, app: QApplication, icon: QIcon, *, window_events_only: bool = False) -> None:
         super().__init__(app)
         self._app = app
         self._icon = icon
         self._pending_apply = False
+        self._window_events_only = bool(window_events_only)
 
     def apply_all(self) -> None:
         self._pending_apply = False
@@ -1075,6 +1087,9 @@ class _AppIconSync(QObject):
         QTimer.singleShot(0, self.apply_all)
 
     def eventFilter(self, watched: QObject, event: Any) -> bool:
+        # Preserve Qt activation/input propagation; only icon work is gated.
+        if self._window_events_only and not isinstance(watched, QWindow):
+            return False
         try:
             if event is not None and event.type() in _APP_ICON_SYNC_EVENT_TYPES:
                 _apply_app_icon_to_window(watched, self._icon)
@@ -1086,11 +1101,11 @@ class _AppIconSync(QObject):
         return False
 
 
-def _install_app_icon_sync(app: QApplication) -> None:
+def _install_app_icon_sync(app: QApplication, *, window_events_only: bool = False) -> None:
     icon = _load_app_icon()
     if icon.isNull():
         return
-    icon_sync = _AppIconSync(app, icon)
+    icon_sync = _AppIconSync(app, icon, window_events_only=window_events_only)
     app.installEventFilter(icon_sync)
     try:
         app.focusWindowChanged.connect(lambda _window=None: icon_sync.queue_apply_all())
@@ -1207,8 +1222,8 @@ def _configure_qt_webengine_runtime() -> None:
     if webengine_disabled and not force_webengine:
         return
 
-    # Keep sandbox disabled (required on some Windows setups for local splash assets).
-    os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+    # Preserve Qt/Chromium's default security boundary. Desktop validation must
+    # diagnose an unsupported environment instead of disabling the sandbox.
 
     # Remove legacy splash flags that caused delayed/blank WebEngine render.
     # Keep a targeted compatibility feature-disable for DirectComposition to
@@ -1441,7 +1456,7 @@ def main() -> None:
         startup_logger.warning("Duplicate CSPM GUI launch blocked by single-instance mutex. Sending WAKEUP signal.")
         # Connect to existing instance
         socket = QLocalSocket()
-        socket.connectToServer("CSPM_IPC_SERVER")
+        socket.connectToServer(_IPC_SERVER_NAME)
         if socket.waitForConnected(1000):
             socket.write(b"WAKEUP")
             socket.waitForBytesWritten(1000)
@@ -1538,7 +1553,7 @@ def main() -> None:
     except Exception as exc:
         _report_nonfatal_startup_failure("startup.installInputProbe", exc)
 
-    _install_app_icon_sync(app)
+    _install_app_icon_sync(app, window_events_only=True)
 
     app.setOrganizationName(APP_MAINTAINER)
     app.setApplicationName(APP_TITLE)
@@ -1894,6 +1909,12 @@ def main() -> None:
     from backend.window_frame_capture import WindowFrameCapture
     window_frame_capture = WindowFrameCapture(engine)
     engine.rootContext().setContextProperty("windowFrameCapture", window_frame_capture)
+    from backend.native_motion import NativeMotion
+    native_motion = NativeMotion(engine)
+    app.aboutToQuit.connect(native_motion.shutdown)
+    engine.rootContext().setContextProperty("nativeMotion", native_motion)
+    engine.rootContext().setContextProperty("nativeMotionCandidate", native_candidate_profile() is not None)
+    engine.rootContext().setContextProperty("layoutDevelopment", native_motion)
     engine.rootContext().setContextProperty("apBackendController", controller.apController)
     _boot_log("context.app.injected")
     engine.rootContext().setContextProperty("docketApp", controller.docketing)
@@ -2185,8 +2206,8 @@ def main() -> None:
     try:
         # The mutex above proves no live CSPM instance owns this endpoint, so
         # removing a stale endpoint after a crash is safe.
-        QLocalServer.removeServer("CSPM_IPC_SERVER")
-        if not ipc_server.listen("CSPM_IPC_SERVER"):
+        QLocalServer.removeServer(_IPC_SERVER_NAME)
+        if not ipc_server.listen(_IPC_SERVER_NAME):
             logging.getLogger("startup").warning(
                 "Unable to listen for duplicate-launch wakeups: %s",
                 ipc_server.errorString(),
@@ -2317,14 +2338,6 @@ def main() -> None:
                     native_splash_signal_bound = True
             except Exception as exc:
                 _report_nonfatal_startup_failure("nativeSplash.bindBootstrapFallback", exc)
-        from PySide6.QtGui import QKeyEvent
-        class GlobalSplashSkipFilter(QObject):
-            def eventFilter(self, watched: QObject, event: Any) -> bool:
-                return False
-
-        _splash_skip_filter = GlobalSplashSkipFilter(app)
-        app.installEventFilter(_splash_skip_filter)
-        app._splash_skip_filter = _splash_skip_filter # type: ignore[attr-defined]
 
     def _resolve_hook_target_window():
         nonlocal root

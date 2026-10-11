@@ -17,7 +17,9 @@ Window {
             ? mainWin.panelTaskbarTitle
             : ("CSPM - " + ((mainWin.detachedPanelTitle && mainWin.detachedPanelTitle.length > 0)
                 ? mainWin.detachedPanelTitle : "Module")))
-        : "CSPM - Main Menu"
+        : ((typeof nativeMotionCandidate !== "undefined" && nativeMotionCandidate)
+            ? "CSPM Candidate - LOCAL DATA NOT ACCEPTED"
+            : "CSPM - Main Menu")
     objectName: mainWin.detachedMode ? "CSPMFloatingDocketWindow" : "CSPMMainWindow"
     property alias mainContentRef: mainContent
     property alias sfxBusRef: sfxBus
@@ -103,6 +105,9 @@ Window {
     property bool professionalInWindowTransitionEnabled: true
     property bool professionalEarlyWindowMotionEnabled: true
     property bool professionalPixelAlignedWindowCaptureEnabled: true
+    property bool nativeMotionPreparing: false
+    readonly property bool layoutRepairEnabled: typeof layoutDevelopment !== "undefined"
+        && layoutDevelopment.layoutRepair
     property int professionalWindowTransitionTargetX: 0
     property int professionalWindowTransitionTargetY: 0
     property int professionalWindowTransitionTargetW: 0
@@ -398,6 +403,12 @@ Window {
     property int finalY: 0
     property int finalW: 1
     property int finalH: 1
+    onFinalWChanged: {
+        if (layoutRepairEnabled && !layoutMetricsCommitInProgress) layoutMetricsSnapshot = null;
+    }
+    onFinalHChanged: {
+        if (layoutRepairEnabled && !layoutMetricsCommitInProgress) layoutMetricsSnapshot = null;
+    }
     property real maximizeRenderX: 0.0
     property real maximizeRenderY: 0.0
     property real maximizeRenderW: 1.0
@@ -457,7 +468,8 @@ Window {
             && !mainWin.isMinimizing
             && !mainWin.isRestoringFromMinimize
             && !mainWin.userMoveInProgress
-            && !mainWin.userResizeInProgress) {
+            && !mainWin.userResizeInProgress
+            && !mainWin.layoutMetricsCommitInProgress) {
             mainWin.updateCanvasGeometry();
         }
     }
@@ -629,7 +641,25 @@ Window {
 
     // Unified metrics payload for downstream components.
     // All responsive sizing should trace back to monitor usable geometry + settled content geometry.
-    property var uiMetrics: (function() {
+    property bool layoutMetricsCommitInProgress: false
+    property var layoutMetricsSnapshot: null
+    // A committed snapshot is valid only while its other responsive inputs
+    // match. Keep monitor/DPI and interactive resize changes reactive too.
+    readonly property string layoutMetricsEnvironmentKey: layoutRepairEnabled ? [
+        usableW, usableH, monitorScalePercent,
+        targetScreen ? targetScreen.width : 0,
+        targetScreen ? targetScreen.height : 0,
+        usableW > 0 ? 0 : width, usableH > 0 ? 0 : height,
+        userResizeInProgress, userMoveInProgress,
+        frozenContentW, frozenContentH, resizeStartFinalW, resizeStartFinalH
+    ].join("|") : ""
+    onLayoutMetricsEnvironmentKeyChanged: {
+        if (layoutRepairEnabled && !layoutMetricsCommitInProgress) layoutMetricsSnapshot = null;
+    }
+    property var uiMetrics: layoutRepairEnabled && layoutMetricsSnapshot
+        ? layoutMetricsSnapshot : computeUiMetrics()
+
+    function computeUiMetrics() {
         var activeW = Math.max(1, finalW)
         var activeH = Math.max(1, finalH)
         if (mainWin.userResizeInProgress || mainWin.userMoveInProgress) {
@@ -652,7 +682,7 @@ Window {
             "fontFloorBodyPx": metricFloorPx(0.0109, 8),
             "fontFloorLabelPx": metricFloorPx(0.0098, 7)
         }
-    })()
+    }
     
     // ============================================================
     // WINDOW SETUP
@@ -3340,6 +3370,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function stopMaximizeFxAnimations() {
+        if (typeof nativeMotion !== "undefined") nativeMotion.cancelWindow(mainWin);
+        nativeMotionPreparing = false;
         professionalSurfaceWatchdog.stop();
         maximizeAnimInProgress = false;
         professionalWindowTransitionActive = false;
@@ -3419,21 +3451,44 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function commitProfessionalWindowTransitionTarget(kind, targetRect, targetScreenOverride) {
         geometryTransitionSuppressed = true;
-        finalX = Math.round(targetRect.x);
-        finalY = Math.round(targetRect.y);
-        finalW = Math.max(1, Math.round(targetRect.w));
-        finalH = Math.max(1, Math.round(targetRect.h));
-        uiMaximized = kind === "maximize";
-        if (targetScreenOverride) {
-            adoptTargetScreen(targetScreenOverride, true);
-        } else {
-            updateTargetScreenFromFinalCenter();
+        // Hold the previously published metrics while native/item dimensions
+        // and monitor descriptors adopt the target. Publish one complete layout
+        // payload before the first target frame; ordinary resize stays reactive.
+        if (layoutRepairEnabled) {
+            layoutMetricsCommitInProgress = true;
+            layoutMetricsSnapshot = uiMetrics;
         }
-        refreshActiveVisibleRect();
-        applyHostEnvelopeForTarget();
-        updateCanvasGeometry();
-        if (!uiMaximized) {
-            maximizedOwnerScreen = null;
+        try {
+            finalX = Math.round(targetRect.x);
+            finalY = Math.round(targetRect.y);
+            finalW = Math.max(1, Math.round(targetRect.w));
+            finalH = Math.max(1, Math.round(targetRect.h));
+            uiMaximized = kind === "maximize";
+            if (targetScreenOverride) {
+                adoptTargetScreen(targetScreenOverride, true);
+            } else {
+                updateTargetScreenFromFinalCenter();
+            }
+            refreshActiveVisibleRect();
+            // The saved normal rectangle owns its own settled perimeter. A
+            // cold maximized launch still carries its startup padding here;
+            // derive the target padding before publishing its host or canvas.
+            if (layoutRepairEnabled) {
+                glowPadding = settledPaddingPx(finalW, finalH);
+            }
+            applyHostEnvelopeForTarget();
+            updateCanvasGeometry();
+            if (!uiMaximized) {
+                maximizedOwnerScreen = null;
+            }
+            if (layoutRepairEnabled) {
+                layoutMetricsSnapshot = computeUiMetrics();
+            }
+        } catch (error) {
+            if (layoutRepairEnabled) layoutMetricsSnapshot = null;
+            throw error;
+        } finally {
+            if (layoutRepairEnabled) layoutMetricsCommitInProgress = false;
         }
     }
 
@@ -3709,7 +3764,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function beginProfessionalWindowTransition(kind, sourceRect, targetRect,
             targetScreenOverride) {
-        if (professionalWindowTransitionActive || !sourceRect || !targetRect) return false;
+        if (professionalWindowTransitionActive || nativeMotionPreparing || !sourceRect || !targetRect) return false;
         destroyMaximizeOverlay();
         maximizeOverlayHandoffSeq = maximizeOverlayHandoffSeq + 1;
         var sequence = maximizeOverlayHandoffSeq;
@@ -3724,6 +3779,34 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             + " -> " + fmtRect(targetRect.x, targetRect.y,
                 targetRect.w, targetRect.h));
 
+        if (typeof nativeMotion !== "undefined") {
+            if (nativeMotion.reducedMotion || mainWin.lowPerformanceMode) {
+                nativeMotion.record(kind, "reduced-motion", "local-or-system-reduced-motion");
+                return completeProfessionalWindowTransitionDirect(sequence, "reduced-motion");
+            }
+            if (nativeMotion.engine === "native") {
+                var header = mainContent.professionalTransitionHeaderMetrics();
+                var pad = kind === "restore" ? Math.min(settledPaddingPx(targetRect.w, targetRect.h),
+                    Math.max(0, Math.floor((usableW - targetRect.w) / 2)),
+                    Math.max(0, Math.floor((usableH - targetRect.h) / 2))) : 0;
+                var physicalTarget = {x: targetRect.x, y: targetRect.y,
+                    w: targetRect.w, h: targetRect.h, padding: pad};
+                if (nativeMotion.begin(mainWin, sequence, sourceRect, physicalTarget, header.x, header.y)) {
+                    // The complete native source must own the pre-input-lock
+                    // pixels. Command preparation blocks duplicate state
+                    // changes without changing control enabled/font state.
+                    nativeMotionPreparing = true;
+                    professionalWindowTransitionActive = false;
+                    return true;
+                }
+            } else {
+                nativeMotion.record(kind, "legacy-fallback", "local-preference");
+            }
+        }
+        return startLegacyProfessionalWindowTransition(sequence, kind, sourceRect, targetRect, targetScreenOverride);
+    }
+
+    function startLegacyProfessionalWindowTransition(sequence, kind, sourceRect, targetRect, targetScreenOverride) {
         if (mainWin.professionalInWindowTransitionEnabled) {
             return captureProfessionalTransitionSurface(sequence, kind,
                 sourceRect, targetRect, targetScreenOverride);
@@ -3738,6 +3821,40 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 "overlay-create-fallback");
         }
         return true;
+    }
+
+    Connections {
+        target: typeof nativeMotion !== "undefined" ? nativeMotion : null
+        function onTargetRequested(window, sequence) {
+            if (window !== mainWin || sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+            mainWin.nativeMotionPreparing = false;
+            mainWin.professionalWindowTransitionActive = true;
+            try {
+                mainWin.commitProfessionalWindowTransitionTarget(mainWin.professionalWindowTransitionKind,
+                    mainWin.professionalWindowTransitionTarget, mainWin.professionalWindowTransitionScreen);
+                nativeMotion.captureTarget(mainWin, sequence);
+            } catch (error) {
+                nativeMotion.shutdown();
+            }
+        }
+        function onFinished(window, sequence, outcome) {
+            if (window !== mainWin || sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+            mainWin.nativeMotionPreparing = false;
+            // The adapter diagnoses failures after visibility transfer separately
+            // from pre-motion rejection and reports the live recovery result.
+            if (outcome === "safe-rejection")
+                mainWin.completeProfessionalWindowTransitionDirect(sequence, outcome);
+            else
+                mainWin.finishProfessionalWindowTransition(sequence, outcome);
+        }
+        function onFallbackRequested(window, sequence, reason) {
+            if (window !== mainWin || sequence !== mainWin.maximizeOverlayHandoffSeq) return;
+            mainWin.nativeMotionPreparing = false;
+            mainWin.professionalWindowTransitionActive = true;
+            var source = {x: mainWin.finalX, y: mainWin.finalY, w: mainWin.finalW, h: mainWin.finalH};
+            mainWin.startLegacyProfessionalWindowTransition(sequence, mainWin.professionalWindowTransitionKind,
+                source, mainWin.professionalWindowTransitionTarget, mainWin.professionalWindowTransitionScreen);
+        }
     }
 
     function grabProfessionalWindowFrame(callback) {
@@ -9173,7 +9290,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (!mainWin.detachedMode) {
             autoCheckpointCloseSession("transition-to-closing");
         }
-        if (maximizeAnimInProgress || professionalWindowTransitionActive) {
+        if (maximizeAnimInProgress || professionalWindowTransitionActive || nativeMotionPreparing) {
             stopMaximizeFxAnimations();
         }
         if (isMinimizing) {
@@ -12418,7 +12535,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             close.accepted = false;
             return;
         }
-        if (maximizeAnimInProgress || professionalWindowTransitionActive) {
+        if (maximizeAnimInProgress || professionalWindowTransitionActive || nativeMotionPreparing) {
             stopMaximizeFxAnimations();
         }
         if (isMinimizing) {

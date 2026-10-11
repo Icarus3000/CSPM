@@ -146,11 +146,16 @@ Rectangle {
         }
 
         Text {
+            id: cspmFontOwner0
             Layout.fillWidth: true
             text: "Clients found: " + String(root.clientDirectoryFilteredRows.length)
                 + (root.clientDirectoryMode === "active" ? " (active only)" : "")
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
-            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.90, root.metricFloor("fontFloorLabelPx", 8))
+                active: !root.layoutRepairEnabled || cspmFontOwner0.visible
+            }
+            font.pixelSize: cspmFontGate.pixelSize
             elide: Text.ElideRight
         }
 
@@ -195,14 +200,20 @@ Rectangle {
                         spacing: root.ratioPx(0.005, 4)
 
                         Text {
+                            id: cspmFontOwner1
                             Layout.fillWidth: true
                             text: String(modelData.displayName || modelData.clientName || "")
                             color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                             elide: Text.ElideRight
-                            font.pixelSize: root.ratioPx(0.0115, root.metricFloor("fontFloorBodyPx", 9))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.0115, root.metricFloor("fontFloorBodyPx", 9))
+                                active: !root.layoutRepairEnabled || cspmFontOwner1.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                             font.weight: Font.DemiBold
                         }
                         Text {
+                            id: cspmFontOwner2
                             Layout.preferredWidth: root.ratioPxW(0.090, 80)
                             horizontalAlignment: Text.AlignRight
                             text: String(modelData.status || "")
@@ -210,7 +221,11 @@ Rectangle {
                                 ? SemanticTheme.accentPrimary(root.t, root.appStyle)
                                 : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
                             elide: Text.ElideRight
-                            font.pixelSize: root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))
+                            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                                inputPixelSize: root.ratioPx(0.0102, root.metricFloor("fontFloorLabelPx", 8))
+                                active: !root.layoutRepairEnabled || cspmFontOwner2.visible
+                            }
+                            font.pixelSize: cspmFontGate.pixelSize
                         }
                     }
 
@@ -226,10 +241,15 @@ Rectangle {
         }
 
         Text {
+            id: cspmFontOwner3
             Layout.fillWidth: true
             text: "Tip: double-click a client to open its editable Client Profile."
             color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.66)
-            font.pixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+            property HiddenFontGate cspmFontGate: HiddenFontGate {
+                inputPixelSize: root.ratioPx(root.scaleRatios.hintFontPct * 0.86, root.metricFloor("fontFloorLabelPx", 8))
+                active: !root.layoutRepairEnabled || cspmFontOwner3.visible
+            }
+            font.pixelSize: cspmFontGate.pixelSize
             elide: Text.ElideRight
         }
     }

@@ -1,4 +1,5 @@
 import os
+import hashlib
 import sys
 import json
 import shutil
@@ -311,7 +312,16 @@ def main():
     parser.add_argument("--workpath", help="Override PyInstaller work directory")
     parser.add_argument("--deploy-dir", default=r"C:\programs\CSPM", help="Deployment directory for runnable CSPM package (default: C:\\programs\\CSPM)")
     parser.add_argument("--no-deploy", action="store_true", help="Disable automatic deployment to --deploy-dir")
+    parser.add_argument("--native-motion-candidate", action="store_true", help="Build the native-default side-by-side candidate; requires --no-deploy")
     args = parser.parse_args()
+    if args.native_motion_candidate and (not args.no_deploy or args.installer):
+        parser.error("Native candidate requires --no-deploy and the separate governed side-by-side installation; primary installer/deployment is prohibited")
+    native_bridge = ROOT_DIR / "outputs" / "native_cleanroom" / "cspm_native_motion.dll"
+    if not native_bridge.is_file():
+        parser.error("Build the governed native bridge before packaging the native-default application")
+    sys.path.insert(0, str(ROOT_DIR / "src" / "python"))
+    from backend.native_motion import NativeBridge
+    NativeBridge(native_bridge)  # ABI/load gate; creates no HWND or GPU.
 
     if args.candidate_validation:
         print("==================================================")
@@ -394,9 +404,30 @@ def main():
         # so the release bundle must preserve that same assets/ location.
         ("assets", "assets"),
         ("schema", "schema"),
-        ("docs", "docs"),
+        # Ship only documentation consumed by the application/snapshot service.
+        # Historical captures and qualification reports remain source evidence.
+        ("docs/spec", "docs/spec"),
+        ("docs/BIBLE.md", "docs"),
+        ("docs/ROADMAP.md", "docs"),
+        ("docs/CHANGELOG.md", "docs"),
         ("version.json", ".")
     ]
+
+    source_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT_DIR, text=True
+    ).strip()
+    build_identity = build_dir / "release-provenance.json"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    build_identity.write_text(json.dumps({
+        "schemaVersion": 1,
+        "repository": "https://github.com/Icarus3000/CSPM.git",
+        "sourceSha": source_sha,
+        "version": app_version,
+        "nativeDllSha256": hashlib.sha256(native_bridge.read_bytes()).hexdigest().upper(),
+        "defaultMotionEngine": "native",
+        "candidateProfileRequired": args.native_motion_candidate,
+    }, indent=2) + "\n", encoding="utf-8")
+    datas.append((str(build_identity), "."))
     
     cmd_main = [
         sys.executable, "-m", "PyInstaller",
@@ -422,6 +453,9 @@ def main():
     
     for src, dst in datas:
         cmd_main.extend(["--add-data", f"{src}{os.pathsep}{dst}"])
+    cmd_main.extend(["--add-binary", f"{native_bridge}{os.pathsep}native"])
+    if args.native_motion_candidate:
+        cmd_main.extend(["--add-data", f"native-motion-candidate.json{os.pathsep}."])
         
     cmd_main.append(str(main_script))
     
@@ -506,6 +540,11 @@ def main():
         print(f"  SHA-256: {bundled_hash}")
         print(f"  Live-hash match: NO (safe)")
             
+    if args.native_motion_candidate:
+        # Isolation is enforced by the embedded candidate marker and private
+        # profile sidecar. Keep the canonical executable name for packaging
+        # qualification; the staging directory carries the candidate label.
+        print("Candidate engine policy: native default, local legacy/reduced recovery, protected snapshot required")
     print("PyInstaller build complete.")
     
     if args.installer:

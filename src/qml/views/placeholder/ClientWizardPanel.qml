@@ -14,7 +14,11 @@ TextArea {
     Layout.fillHeight: false
     Layout.preferredHeight: root.ratioPxH(0.084, 64)
     color: root._text
-    font.pixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+    property HiddenFontGate cspmFontGate: HiddenFontGate {
+        inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct, root.metricFloor("fontFloorBodyPx", 9))
+        active: !root.layoutRepairEnabled || conflictNotesInput.visible
+    }
+    font.pixelSize: cspmFontGate.pixelSize
     wrapMode: Text.Wrap
     placeholderText: "Conflict check notes (optional)"
     placeholderTextColor: SemanticTheme.inkMuted(root.t, root.appStyle)

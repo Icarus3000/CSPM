@@ -127,7 +127,6 @@ test_run.ps1
 data/*.xlsm
 data/*.xlsx
 data/*.xlsb
-!data/CSPM.xlsm
 data/recovery_backups/
 
 # High-volume project archives
@@ -320,3 +319,14 @@ release_candidates/
 /.release_promotion_staging_*/
 /release_candidate_*/
 startup_briefing/
+
+# Promotion keeps production datasets and local evidence outside the source tree.
+/data/
+/deliverables/
+/report_branding/logo_cache/
+/build_release*_output.txt
+/cspm_crash.txt
+/dash_output.json
+/data_quality_report.json
+/startup_log*.txt
+/test_output*
