@@ -28,6 +28,7 @@ from uuid import uuid4
 from xml.etree import ElementTree
 
 from services.paths import AppPaths
+from backend import data_verification
 
 
 logger = logging.getLogger("sync_service")
@@ -60,7 +61,8 @@ class SyncService:
     RECOVERY_GUARD_PREFIX = ".cspm_checkout_recovering_"
     RECOVERY_DIR_NAME = "checkout_recovery"
 
-    def __init__(self, paths: AppPaths, machine_identity_file: Optional[Path] = None):
+    def __init__(self, paths: AppPaths, machine_identity_file: Optional[Path] = None, *, read_only_verification: bool = False):
+        data_verification.configure(settings={"readOnlyVerification": read_only_verification})
         self.paths = paths
         self.state_file = self.paths.runtime_dir() / "sync_state.json"
         self._machine_identity_file = (
@@ -72,6 +74,28 @@ class SyncService:
         self._machine_id: Optional[str] = None
         self._lease_owned = False
         self._shutdown_complete = False
+
+    def _verification_result(self, *, compare_source: bool = False) -> Dict[str, Any]:
+        """Observe an existing replica only; never acquire, copy or save state."""
+        verified = False
+        identity = ""
+        master = self.paths.master_data_dir()
+        if compare_source:
+            local = self.paths.data_dir()
+            if master and not self._same_path(master, local):
+                try:
+                    if all(self._usable(master / name) and self._usable(local / name) for name in self._FILES):
+                        local_hashes = [self._sha256(local / name) for name in self._FILES]
+                        verified = local_hashes == [self._sha256(master / name) for name in self._FILES]
+                        if verified:
+                            identity = hashlib.sha256("|".join(local_hashes).encode("ascii")).hexdigest()[:12].upper()
+                except OSError:
+                    verified = False
+        return self._result(
+            not (compare_source and master and not verified), "read-only-verification",
+            "Read-only verification: no writer checkout, synchronization or publishing was performed.",
+            readOnly=True, sourceVerified=verified, sourceIdentity=identity,
+        )
 
     def _default_machine_identity_file(self) -> Path:
         explicit = os.environ.get("CSPM_MACHINE_ID_FILE", "").strip()
@@ -503,6 +527,7 @@ class SyncService:
 
     def assert_write_lease(self) -> None:
         """Raise before any local workbook save if this session is read-only."""
+        data_verification.assert_writes_allowed()
         master_dir = self.paths.master_data_dir()
         if not master_dir:
             return
@@ -603,6 +628,8 @@ class SyncService:
 
     def _synchronize(self, phase: str, *, create_release: bool = False) -> Dict[str, Any]:
         """Safely reconcile both governed files using their common ancestor."""
+        if data_verification.enabled():
+            return self._verification_result(compare_source=True)
         master_dir = self.paths.master_data_dir()
         local_dir = self.paths.data_dir()
         if not master_dir:
@@ -785,6 +812,8 @@ class SyncService:
         usable package.  If the cloud already contains data, it remains the
         authority and this method delegates to conflict-safe synchronization.
         """
+        if data_verification.enabled():
+            return self._result(False, "read-only-verification", "Shared data setup is disabled during read-only verification.")
         master_dir = self.paths.master_data_dir()
         local_dir = self.paths.data_dir()
         if not master_dir:
@@ -862,6 +891,8 @@ class SyncService:
 
     def checkout_from_cloud(self) -> Dict[str, Any]:
         """Acquire exclusive writer ownership, then safely refresh local data."""
+        if data_verification.enabled():
+            return self._verification_result(compare_source=True)
         master_dir = self.paths.master_data_dir()
         if not master_dir:
             self._lease_owned = True
@@ -892,6 +923,8 @@ class SyncService:
 
     def publish_and_release(self) -> Dict[str, Any]:
         """Publish a checked-out local package, then release the writer lease."""
+        if data_verification.enabled():
+            return self._verification_result()
         if self._shutdown_complete:
             return self._result(True, "already-released", "Shared checkout was already finalized for this session.")
         master_dir = self.paths.master_data_dir()

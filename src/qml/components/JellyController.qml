@@ -75,6 +75,8 @@ Item {
     property real exitFromTrayProgress: 0.0
     property real taskbarTargetDistX: 0.0
     property real taskbarTargetDistY: 0.0
+    property bool restoreIsTrayReturn: false
+    property bool restoreTrayFlightArrived: false
     property bool isExplicitAnimating: closeSeq.running || minimizeSeq.running || restoreSeq.running || exitFromTraySeq.running
 
     property point launchOrigin: Qt.point(0,0)
@@ -862,6 +864,22 @@ Item {
     // ============================================================
     // MINIMIZE & RESTORE: Gravitational Siphon Engine
     // ============================================================
+    function cancelMinimizeRestore() {
+        if (minimizeSeq.running) minimizeSeq.stop();
+        if (restoreSeq.running) restoreSeq.stop();
+    }
+
+    function trayRestoreVisualProgress(progress) {
+        var p = Math.max(0.0, Math.min(1.0, progress));
+        return restoreTrayFlightArrived ? 0.28 + (p * 0.72) : p;
+    }
+
+    function restoreBloomProgress(progress) {
+        var p = restoreIsTrayReturn ? trayRestoreVisualProgress(progress) : progress;
+        var start = restoreIsTrayReturn ? 0.28 : 0.74;
+        return Math.max(0.0, Math.min(1.0, (p - start) / (1.0 - start)));
+    }
+
     function startMinimize(targetDistX, targetDistY) {
         console.log("[JELLY] startMinimize targetDistX=" + targetDistX + " targetDistY=" + targetDistY);
         taskbarTargetDistX = targetDistX;
@@ -890,8 +908,10 @@ Item {
         minimizeSeq.restart();
     }
 
-    function startRestore(targetDistX, targetDistY) {
+    function startRestore(targetDistX, targetDistY, trayReturn, trayFlightArrived) {
         console.log("[JELLY] startRestore targetDistX=" + targetDistX + " targetDistY=" + targetDistY);
+        restoreIsTrayReturn = !!trayReturn;
+        restoreTrayFlightArrived = restoreIsTrayReturn && !!trayFlightArrived;
         taskbarTargetDistX = targetDistX;
         taskbarTargetDistY = targetDistY;
         if (root.reducedMotion) {
@@ -1035,15 +1055,17 @@ Item {
         transY = 0.0;
 
         if (restoreSeq.running) {
-            // 5-Stage Reverse Restore:
-            // Stages 1-4 (0.0 to 0.74): Comet climbs -> pauses in middle -> disappears into itself -> pauses at pinpoint
-            // Stage 5 (0.74 to 1.00): Bursts forth from center into final settled position
-            if (p < 0.74) {
+            // Taskbar return retains its five stages. Tray return grows once
+            // from the incoming comet's arrival, without collapse and rebloom.
+            var bloomStart = restoreIsTrayReturn ? 0.28 : 0.74;
+            var restoreP = restoreIsTrayReturn ? trayRestoreVisualProgress(p) : p;
+            if (restoreP < bloomStart) {
                 scaleX = 0.001;
                 scaleY = 0.001;
                 opacityVal = 0.0;
             } else {
-                var expandP = (p - 0.74) / 0.26; // 0.0 to 1.0
+                var expandP = restoreIsTrayReturn
+                    ? restoreBloomProgress(p) : (p - 0.74) / 0.26;
                 var bloom = Math.sin(expandP * Math.PI * 0.5);
                 scaleX = Math.max(0.001, Math.min(1.0, bloom));
                 scaleY = Math.max(0.001, Math.min(1.0, bloom));

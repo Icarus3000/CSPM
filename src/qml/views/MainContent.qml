@@ -25,6 +25,10 @@ Item {
     property var windowRef
     property var sfxBus
     property var appRef
+    readonly property string dataSourceStatus: root.appRef && typeof root.appRef.dataSourceStatus === "string"
+        ? root.appRef.dataSourceStatus : "setup"
+    readonly property string dataSourceStatusLabel: root.appRef && typeof root.appRef.dataSourceStatusLabel === "string"
+        ? root.appRef.dataSourceStatusLabel : "Data source: setup required"
     property string appStyle: (root.appRef && root.appRef.appStyle) ? String(root.appRef.appStyle) : "Professional"
     property bool isProMode: appStyle === "Professional"
     property bool isInteractive: true
@@ -3586,6 +3590,16 @@ Item {
             Layout.preferredHeight: root.isProMode ? 0 : (root ? root.dividerThicknessPx : 1)
             visible: !root.isProMode
             color: Qt.rgba((root && root.textColor ? root.textColor.r : 255), (root && root.textColor ? root.textColor.g : 255), (root && root.textColor ? root.textColor.b : 255), 0.15)
+        }
+
+        DataSourceStatusBanner {
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? implicitHeight : 0
+            visible: !root.option3ShellEnabled
+            t: root.t
+            appStyle: root.appStyle
+            status: root.dataSourceStatus
+            statusLabel: root.dataSourceStatusLabel
         }
 
         // === BODY ===

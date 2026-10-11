@@ -35,6 +35,8 @@ def _read_request(path: Path) -> dict[str, Any]:
 
 def collect_startup_briefing(request: dict[str, Any]) -> dict[str, Any]:
     """Build a JSON-safe, read-only briefing snapshot from copied workbooks."""
+    from backend.data_verification import configure
+    configure(settings={"readOnlyVerification": request.get("readOnlyVerification") is True})
     root = Path(str(request.get("root") or "")).resolve()
     data_dir = Path(str(request.get("dataDir") or "")).resolve()
     filters = request.get("filters") if isinstance(request.get("filters"), dict) else {}

@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
+from backend.data_verification import assert_writes_allowed
 
 from domain.ap_lifecycle import APValidationError, build_bill_snapshot, clean_text, money
 from domain.ap_schema import (
@@ -161,6 +162,7 @@ class APWorkbookRepository:
         return _active_payments(self.list_payments(bill_id))
 
     def create_bill(self, bill: Mapping[str, Any]) -> dict[str, Any]:
+        assert_writes_allowed()
         bill_id = clean_text(bill.get("APBillID"))
         if not bill_id:
             raise APValidationError("APBillID is required.")
@@ -226,6 +228,7 @@ class APWorkbookRepository:
 
     def update_bill(self, bill: Mapping[str, Any]) -> dict[str, Any]:
         """Update one AP bill in place while retaining its identity and payment history."""
+        assert_writes_allowed()
         bill_id = clean_text(bill.get("APBillID"))
         if not bill_id:
             raise APValidationError("APBillID is required.")
@@ -307,6 +310,7 @@ class APWorkbookRepository:
         return persisted
 
     def delete_bill(self, bill_id: str) -> dict[str, Any]:
+        assert_writes_allowed()
         """Permanently remove an eligible bill and all payment rows that reference it."""
         bill_id = clean_text(bill_id)
         if not bill_id:
@@ -357,6 +361,7 @@ class APWorkbookRepository:
         }
 
     def post_payment(self, payment: Mapping[str, Any]) -> dict[str, Any]:
+        assert_writes_allowed()
         payment_id = clean_text(payment.get("APPaymentID"))
         bill_id = clean_text(payment.get("APBillID"))
         if not payment_id or not bill_id:
@@ -406,6 +411,7 @@ class APWorkbookRepository:
         return persisted
 
     def reverse_payment(self, payment_id: str, reversal_id: str, reason: str) -> dict[str, Any]:
+        assert_writes_allowed()
         payment_key = clean_text(payment_id).casefold()
         reversal_id = clean_text(reversal_id)
         if not reversal_id or not clean_text(reason):
@@ -451,6 +457,7 @@ class APWorkbookRepository:
         return next(row for row in self.list_payments(bill_id) if clean_text(row.get("APPaymentID")).casefold() == reversal_id.casefold())
 
     def update_payment_metadata(self, payment_id: str, metadata: Mapping[str, Any]) -> dict[str, Any]:
+        assert_writes_allowed()
         """Add immutable linkage evidence after the cash-transfer transaction saves.
 
         This deliberately cannot change payment amount, bill, or lifecycle

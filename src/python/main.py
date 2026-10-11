@@ -1,6 +1,8 @@
 import os
 import sys
 import argparse
+from backend.data_verification import configure as configure_data_verification
+configure_data_verification(sys.argv)
 from backend.motion_settings import handle_motion_arguments
 handle_motion_arguments(sys.argv)
 from backend.native_candidate import configure as configure_native_candidate, profile as native_candidate_profile
@@ -1496,6 +1498,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="CSPM Application")
     parser.add_argument("--tray-only", action="store_true", help="Start the application minimized in the system tray")
+    parser.add_argument("--verify-data-read-only", action="store_true", help="Verify configured data without workbook writes, checkout or publishing")
     # We parse known args so Qt can still parse its own args if any
     args, _ = parser.parse_known_args()
     is_tray_only = args.tray_only
@@ -2006,6 +2009,19 @@ def main() -> None:
     def on_about_to_quit() -> None:
         global _startup_input_notify_callback
         # Do NOT delete the engine here and do NOT call os._exit().
+        if getattr(app, "_cspm_shutdown_started", False):
+            return
+        app._cspm_shutdown_started = True
+        app._tray_exit_requested = True
+        try:
+            startup_timer = getattr(app, "_startup_focus_timer", None)
+            if startup_timer is not None:
+                startup_timer.stop()
+            tray_lifecycle = getattr(app, "_tray_controller", None)
+            if tray_lifecycle is not None:
+                tray_lifecycle.shutdown()
+        except Exception as exc:
+            _report_nonfatal_startup_failure("aboutToQuit.releaseTrayResources", exc)
         try:
             if controller is not None and hasattr(controller, "shutdown"):
                 # A checked-out CSPM session publishes a verified cloud release
@@ -2056,7 +2072,9 @@ def main() -> None:
         _drain_all_windows()
 
     def on_last_window_closed() -> None:
-        # If the app is living in the system tray, don't quit.
+        if getattr(app, "_cspm_shutdown_started", False):
+            return
+        # Explicit tray minimize retains the session; full exit records intent.
         tray_icon = getattr(app, '_tray_icon', None)
         tray_exit = getattr(app, '_tray_exit_requested', False)
         # A main-shell close can legitimately pass through this Qt signal
@@ -2244,6 +2262,8 @@ def main() -> None:
     def _ensure_tray_qml_loaded(on_ready=None) -> None:
         """Load flyout/toast QML only after the splash-critical path is over."""
         nonlocal tray_qml_loaded, tray_qml_loading
+        if getattr(app, "_cspm_shutdown_started", False):
+            return
         if callable(on_ready):
             tray_qml_ready_callbacks.append(on_ready)
         if tray_qml_loaded:
@@ -2288,6 +2308,7 @@ def main() -> None:
         # only intended visible surface.
         app._tray_icon = QSystemTrayIcon(QIcon(str(PROJECT_ROOT / "src" / "assets" / "app_icon.ico")), app)
         tray_menu = QMenu()
+        app._tray_menu = tray_menu
         open_action = tray_menu.addAction("Open CSPM")
         open_action.triggered.connect(tray_controller.open_cspm)
         exit_action = tray_menu.addAction("Exit CSPM")
@@ -2391,6 +2412,8 @@ def main() -> None:
         return None
 
     def _install_runtime_native_features() -> None:
+        if getattr(app, "_cspm_shutdown_started", False):
+            return
         if runtime_hook_state["installed"]:
             return
         hook_target = _resolve_hook_target_window()
@@ -2471,7 +2494,8 @@ def main() -> None:
             except Exception:
                 continue
 
-    startup_focus_timer = QTimer()
+    startup_focus_timer = QTimer(app)
+    app._startup_focus_timer = startup_focus_timer
     startup_focus_timer.timeout.connect(_reassert_startup_visibility)
     startup_focus_timer.start(90)
 

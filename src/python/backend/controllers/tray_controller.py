@@ -113,7 +113,7 @@ class TrayController(QObject):
     navigateToModule = Signal(int, str, 'QVariantMap')
     openSettingsRequested = Signal()
     showTrayToast = Signal(str)
-    requestRestoreFromTray = Signal()
+    requestRestoreFromTray = Signal(int)
     requestExitFromTray = Signal()
     
     projectRoot = Property(str, lambda self: str(PROJECT_ROOT).replace('\\', '/'), constant=True)
@@ -123,6 +123,10 @@ class TrayController(QObject):
         self._app_controller = app_controller
         self._current_monotonic = time.monotonic()
         self._is_dark_mode = False
+        self._restore_revision = 0
+        self._pending_restore_revision = 0
+        self._exit_requested = False
+        self._shutdown_complete = False
         
         self._timers = []
         self._entries = []
@@ -135,6 +139,9 @@ class TrayController(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update_timers)
         self._timer.start(1000)
+        self._exit_failsafe_timer = QTimer(self)
+        self._exit_failsafe_timer.setSingleShot(True)
+        self._exit_failsafe_timer.timeout.connect(self.force_exit)
         self.update_timers()
         self._sync_theme()
 
@@ -391,6 +398,11 @@ class TrayController(QObject):
     @Slot()
     def open_cspm(self):
         import logging
+        if self._exit_requested or self._shutdown_complete:
+            return
+        if self._pending_restore_revision:
+            logging.getLogger("lifecycle").info("tray restore duplicate rejected revision=%s", self._pending_restore_revision)
+            return
         try:
             app = QApplication.instance()
             for win in app.topLevelWindows():
@@ -398,8 +410,10 @@ class TrayController(QObject):
                     logging.warning("[TRAY-PY] open_cspm: found CSPMMainWindow isVisible=%s", win.isVisible())
                     if not win.isVisible():
                         # Window is hidden (tray-resident) — trigger restore animation
-                        logging.warning("[TRAY-PY] open_cspm: emitting requestRestoreFromTray")
-                        self.requestRestoreFromTray.emit()
+                        self._restore_revision += 1
+                        self._pending_restore_revision = self._restore_revision
+                        logging.getLogger("lifecycle").info("tray restore accepted revision=%s", self._restore_revision)
+                        self.requestRestoreFromTray.emit(self._restore_revision)
                     else:
                         # Window is visible — just bring to front
                         logging.warning("[TRAY-PY] open_cspm: window visible, bringing to front")
@@ -418,6 +432,55 @@ class TrayController(QObject):
                 self._app_controller.requestMainWindowLoad.emit()
         except Exception as e:
             logging.error(f"Failed to open CSPM: {e}")
+
+    @Slot(int)
+    def completeRestoreFromTray(self, revision):
+        if int(revision) != self._pending_restore_revision:
+            return
+        import logging
+        logging.getLogger("lifecycle").info("tray restore completed revision=%s", revision)
+        self._pending_restore_revision = 0
+
+    @Slot(str)
+    def requestApplicationExit(self, reason):
+        """Record explicit full-exit intent; teardown follows animation completion."""
+        if self._exit_requested:
+            return
+        self._exit_requested = True
+        self._pending_restore_revision = 0
+        app = QApplication.instance()
+        if app is not None:
+            app._tray_exit_requested = True
+        import logging
+        logging.getLogger("lifecycle").info("application exit requested reason=%s", reason)
+
+    def shutdown(self):
+        """Stop owned timers, preserve elapsed work and release tray resources once."""
+        if self._shutdown_complete:
+            return
+        self._shutdown_complete = True
+        self.requestApplicationExit("about-to-quit")
+        self._timer.stop()
+        self._exit_failsafe_timer.stop()
+        self._current_monotonic = time.monotonic()
+        try:
+            self.force_shutdown_save()
+        finally:
+            app = QApplication.instance()
+            if app is not None:
+                icon = getattr(app, "_tray_icon", None)
+                if icon is not None:
+                    icon.hide()
+                    icon.setContextMenu(None)
+                    icon.deleteLater()
+                    app._tray_icon = None
+                menu = getattr(app, "_tray_menu", None)
+                if menu is not None:
+                    menu.close()
+                    menu.deleteLater()
+                    app._tray_menu = None
+            import logging
+            logging.getLogger("lifecycle").info("tray resources released; owned timers stopped")
 
     @Slot()
     def open_time_dockets(self):
@@ -455,6 +518,8 @@ class TrayController(QObject):
     @Slot()
     def exit_cspm(self):
         import logging
+        if self._exit_requested or self._shutdown_complete:
+            return
         for t in list(self._timers):
             self.stop_timer(t.timer_id)
             
@@ -463,13 +528,11 @@ class TrayController(QObject):
             self.promptMissingDescriptions.emit()
         else:
             # Mark intentional exit so the lifecycle guard allows quit
-            app = QApplication.instance()
-            if app:
-                app._tray_exit_requested = True
+            self.requestApplicationExit("tray-exit")
             logging.warning("[TRAY-PY] exit_cspm: emitting requestExitFromTray")
             self.requestExitFromTray.emit()
             # Failsafe: if the QML animation doesn't complete within 8s, force quit
-            QTimer.singleShot(8000, self.force_exit)
+            self._exit_failsafe_timer.start(8000)
             
 
     @Slot()

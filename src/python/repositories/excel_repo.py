@@ -812,6 +812,8 @@ class ExcelRepo:
         self._legacy_docket_rows_signature: str = ""
 
     def _assert_write_permitted(self) -> None:
+        from backend.data_verification import assert_writes_allowed
+        assert_writes_allowed()
         if self._write_guard is not None:
             self._write_guard()
 
@@ -909,6 +911,9 @@ class ExcelRepo:
         self._table_meta_cache_dirty = True
 
     def _persist_table_meta_cache(self) -> None:
+        from backend.data_verification import enabled as verification_enabled
+        if verification_enabled():
+            return
         if not self._table_meta_cache_dirty:
             return
         self.paths.state_dir().mkdir(parents=True, exist_ok=True)
@@ -1208,6 +1213,12 @@ class ExcelRepo:
     def ensure_schema(self) -> Dict[str, Any]:
         import time
         _lazy_load_heavy_libs()
+        from backend.data_verification import enabled as verification_enabled
+        if verification_enabled():
+            if not self.paths.workbook_path().is_file() or self.schema_requires_migration():
+                raise PermissionError("Read-only verification requires a current workbook schema; no migration was performed.")
+            self._ensured_schema_signature = self._workbook_signature(self.paths.workbook_path())
+            return dict(createdWorkbook=False, changed=False, tableChanges=[], seedChanges=[], readOnly=True)
         if self._import_batch_active:
             return {
                 "createdWorkbook": False,

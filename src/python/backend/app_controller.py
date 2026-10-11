@@ -36,6 +36,7 @@ from backend.crud_facade import CrudFacade
 from backend.session_recovery import SessionRecoveryManager
 from backend.omni_search import handle_omni_search_command
 from backend.telemetry import TelemetryLogger
+from backend import data_verification
 
 SETTINGS_FILE = "user_settings.json"
 DRAFT_SESSION_FILE = "session_draft_snapshot.json"
@@ -320,6 +321,7 @@ class AppController(QObject):
     requestMainWindowLoad = Signal()
     runAtStartupChanged = Signal()
     keepTrayAliveChanged = Signal()
+    dataSourceStatusChanged = Signal()
     homeDashboardSummaryUpdated = Signal(dict)
     startupFirstInputSeenChanged = Signal()
     startupUserActivityChanged = Signal()
@@ -378,6 +380,9 @@ class AppController(QObject):
         _init_loaded = _init_payload.get("loaded", {})
         from backend.native_candidate import settings_override
         _init_loaded.update(settings_override())
+        data_verification.configure(settings=_init_loaded)
+        self._governed_source_verified = False
+        self._governed_source_identity = ""
         _init_local = str(_init_loaded.get("localDataDir", "")).strip()
         _init_master = str(_init_loaded.get("masterDataDir", "")).strip()
         
@@ -445,6 +450,7 @@ class AppController(QObject):
 
         if _init_master:
             self._paths.override_master_dir = Path(_init_master)
+        data_verification.assert_separate_replica(self._paths.data_dir(), _init_master)
             
         self._local_data_dir = _init_local
         self._master_data_dir = _init_master
@@ -453,6 +459,7 @@ class AppController(QObject):
         self._snapshot_service = ProjectSnapshotService(self._paths)
         self._sync_service = SyncService(self._paths)
         self._shutdown_sync_complete = False
+        self._shutting_down = False
 
         
         self._app_version = self._load_app_version()
@@ -777,6 +784,8 @@ class AppController(QObject):
         on_error=None,
         priority: Optional[int] = None,
     ) -> None:
+        if self._shutting_down:
+            return
         worker = Worker(fn, name=name)
         worker_key = id(worker)
         self._background_workers[worker_key] = worker
@@ -787,11 +796,13 @@ class AppController(QObject):
         worker.signals.finished.connect(release_worker)
         if callable(on_result):
             def dispatch_result(res):
-                QTimer.singleShot(0, lambda r=res: on_result(r))
+                if not self._shutting_down:
+                    QTimer.singleShot(0, lambda r=res: None if self._shutting_down else on_result(r))
             worker.signals.result.connect(dispatch_result)
         if callable(on_error):
             def dispatch_error(err):
-                QTimer.singleShot(0, lambda e=err: on_error(e))
+                if not self._shutting_down:
+                    QTimer.singleShot(0, lambda e=err: None if self._shutting_down else on_error(e))
             worker.signals.error.connect(dispatch_error)
         prio = self._background_low_priority if priority is None else int(priority)
         try:
@@ -1176,6 +1187,7 @@ class AppController(QObject):
                         "root": str(self._paths.root),
                         "dataDir": str(copied_data_dir),
                         "filters": dict(filters or {}),
+                        "readOnlyVerification": data_verification.enabled(),
                     },
                     ensure_ascii=False,
                 ),
@@ -1299,7 +1311,12 @@ class AppController(QObject):
         process = state.get("process")
         try:
             if process is not None and process.poll() is None:
-                process.kill()
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
         except Exception:
             pass
         self._finish_startup_briefing_process(state)
@@ -1342,12 +1359,12 @@ class AppController(QObject):
         return value
 
     def _run_startup_snapshot(self) -> None:
-        if not self._auto_backup_enabled:
+        if self._shutting_down or not self._auto_backup_enabled:
             return
         self._create_project_snapshot("startup-baseline", emit_toast=False)
 
     def _run_auto_backup_tick(self) -> None:
-        if not self._auto_backup_enabled:
+        if self._shutting_down or not self._auto_backup_enabled:
             return
         self._create_project_snapshot("scheduled-auto-backup", emit_toast=False)
 
@@ -1450,6 +1467,10 @@ class AppController(QObject):
                 startup_logger.warning(
                     "Workbook schema migration probe unavailable; running ensure_schema defensively."
                 )
+            if data_verification.enabled():
+                if not workbook_exists or not probe_supported or needs_migration:
+                    raise PermissionError("Read-only verification requires a current workbook schema; no migration was performed.")
+                return
             
             # Yield the GIL explicitly to allow PySide6 main thread to process 
             # native window move/resize events before the next heavy openpyxl block.
@@ -1462,6 +1483,8 @@ class AppController(QObject):
                 ensure_schema_fn()
         except Exception as exc:
             self._report_failure("Workbook schema bootstrap failed.", context="startup.schema_bootstrap", exc=exc)
+            if data_verification.enabled():
+                raise
 
     @staticmethod
     def _env_low_perf_override():
@@ -1554,12 +1577,16 @@ class AppController(QObject):
         self._sound_effects_enabled = self._normalize_sound_effects_enabled(
             self._settings_data.get("soundEffectsEnabled")
         )
+        previous_source = (self._master_data_dir, self._local_data_dir)
+        self._master_data_dir = str(self._settings_data.get("masterDataDir", ""))
+        self._local_data_dir = str(self._settings_data.get("localDataDir", ""))
         if hasattr(self, '_paths') and self._paths is not None:
             self._paths.override_master_dir = Path(self._master_data_dir) if self._master_data_dir else None
             self._paths.override_data_dir = Path(self._local_data_dir) if self._local_data_dir else None
-
-        self._master_data_dir = str(self._settings_data.get("masterDataDir", ""))
-        self._local_data_dir = str(self._settings_data.get("localDataDir", ""))
+        if previous_source != (self._master_data_dir, self._local_data_dir):
+            self._governed_source_verified = False
+            self._governed_source_identity = ""
+            self.dataSourceStatusChanged.emit()
         if "autoBackupMinutes" in self._settings_data:
             self.autoBackupMinutes = int(self._settings_data.get("autoBackupMinutes", 0))
         self._auto_backup_interval_mins = int(self._settings_data.get("autoBackupIntervalMins", 0))
@@ -2802,7 +2829,7 @@ class AppController(QObject):
         self._auto_backup_enabled = self._auto_backup_minutes > 0
         if hasattr(self, '_auto_backup_timer') and self._auto_backup_timer:
             self._auto_backup_timer.stop()
-            if self._auto_backup_minutes > 0:
+            if self._auto_backup_minutes > 0 and not self._shutting_down:
                 self._auto_backup_timer.start(self._auto_backup_minutes * 60 * 1000)
 
 
@@ -2817,7 +2844,10 @@ class AppController(QObject):
         if profile() is not None:
             return
         if self._master_data_dir != value:
+            data_verification.assert_separate_replica(self._paths.data_dir(), value)
             self._master_data_dir = value
+            self._governed_source_verified = False
+            self._governed_source_identity = ""
             self._settings_data["masterDataDir"] = value
             if hasattr(self, "_paths") and self._paths is not None:
                 self._paths.override_master_dir = Path(value) if value else None
@@ -2826,6 +2856,7 @@ class AppController(QObject):
             except Exception:
                 pass
             self.masterDataDirChanged.emit()
+            self.dataSourceStatusChanged.emit()
 
     @Property(str, notify=localDataDirChanged)
     def localDataDir(self):
@@ -2837,7 +2868,10 @@ class AppController(QObject):
         if profile() is not None:
             return
         if self._local_data_dir != value:
+            data_verification.assert_separate_replica(value or self._paths._persistent_data_root() / "data", self._master_data_dir)
             self._local_data_dir = value
+            self._governed_source_verified = False
+            self._governed_source_identity = ""
             self._settings_data["localDataDir"] = value
             if hasattr(self, "_paths") and self._paths is not None:
                 self._paths.override_data_dir = Path(value) if value else None
@@ -2846,6 +2880,7 @@ class AppController(QObject):
             except Exception:
                 pass
             self.localDataDirChanged.emit()
+            self.dataSourceStatusChanged.emit()
 
     @Property(bool, notify=backendBootChanged)
     def backendBooted(self):
@@ -3048,6 +3083,11 @@ class AppController(QObject):
         self._settings_data = dict(loaded)
         from backend.native_candidate import settings_override
         self._settings_data.update(settings_override())
+        data_verification.configure(settings=self._settings_data)
+        data_verification.assert_separate_replica(
+            self._settings_data.get("localDataDir") or self._paths._persistent_data_root() / "data",
+            self._settings_data.get("masterDataDir"),
+        )
         resolved_theme = self._normalize_theme_name(self._settings_data.get("theme"))
         if resolved_theme:
             self._theme_name = resolved_theme
@@ -3055,12 +3095,16 @@ class AppController(QObject):
         self._sound_effects_enabled = self._normalize_sound_effects_enabled(
             self._settings_data.get("soundEffectsEnabled")
         )
+        previous_source = (self._master_data_dir, self._local_data_dir)
+        self._master_data_dir = str(self._settings_data.get("masterDataDir", ""))
+        self._local_data_dir = str(self._settings_data.get("localDataDir", ""))
         if hasattr(self, '_paths') and self._paths is not None:
             self._paths.override_master_dir = Path(self._master_data_dir) if self._master_data_dir else None
             self._paths.override_data_dir = Path(self._local_data_dir) if self._local_data_dir else None
-
-        self._master_data_dir = str(self._settings_data.get("masterDataDir", ""))
-        self._local_data_dir = str(self._settings_data.get("localDataDir", ""))
+        if previous_source != (self._master_data_dir, self._local_data_dir):
+            self._governed_source_verified = False
+            self._governed_source_identity = ""
+            self.dataSourceStatusChanged.emit()
         if "autoBackupMinutes" in self._settings_data:
             self.autoBackupMinutes = int(self._settings_data.get("autoBackupMinutes", 0))
         self._auto_backup_interval_mins = int(self._settings_data.get("autoBackupIntervalMins", 0))
@@ -3755,18 +3799,73 @@ class AppController(QObject):
 
     def _checkout_shared_data(self, phase: str) -> None:
         """Acquire the cloud writer checkout before enabling workbook writes."""
+        self._governed_source_verified = False
+        self._governed_source_identity = ""
         try:
             result = self._sync_service.pull_from_master()
         except Exception as exc:
             logging.exception("Shared-data checkout crashed during %s", phase)
+            self.dataSourceStatusChanged.emit()
             self.toast.emit("Shared data opened read-only: cloud checkout failed.")
+            if data_verification.enabled():
+                raise
             return
+        self._governed_source_verified = bool(
+            self._paths.master_data_dir()
+            and result.get("ok")
+            and (result.get("sourceVerified") if data_verification.enabled() else True)
+        )
+        self._governed_source_identity = str(result.get("sourceIdentity", "")) if self._governed_source_verified else ""
+        if self._governed_source_verified and not self._governed_source_identity:
+            hashes = [SyncService._sha256(self._paths.data_dir() / name) for name in SyncService._FILES]
+            import hashlib
+            self._governed_source_identity = hashlib.sha256("|".join(hashes).encode("ascii")).hexdigest()[:12].upper()
+        self.dataSourceStatusChanged.emit()
+        if data_verification.enabled() and self._paths.master_data_dir() and not self._governed_source_verified:
+            raise PermissionError("Read-only verification could not match the local replica to the configured governed source; no checkout or copy was performed.")
         if result.get("ok"):
             logging.info("Shared-data checkout %s during %s: %s", result.get("status"), phase, result.get("message"))
             return
         message = str(result.get("message", "Cloud checkout was not acquired."))
         logging.error("Shared-data checkout blocked during %s: %s", phase, message)
         self.toast.emit(f"Shared data opened read-only: {message}")
+
+    @Property(str, notify=dataSourceStatusChanged)
+    def dataSourceStatus(self) -> str:
+        from backend.native_candidate import profile
+        if profile() is not None:
+            return "isolated-candidate"
+        workbook = self._paths.workbook_path()
+        try:
+            if not workbook.is_file():
+                return "setup"
+            template_dir = self._paths.project_root() / "src" / "templates"
+            if all(
+                (template_dir / name).is_file() and (self._paths.data_dir() / name).is_file()
+                and SyncService._sha256(template_dir / name) == SyncService._sha256(self._paths.data_dir() / name)
+                for name in SyncService._FILES
+            ):
+                return "setup"
+        except OSError:
+            return "unverified-local"
+        if self._governed_source_verified:
+            return "governed-source"
+        return "unverified-local"
+
+    @Property(str, notify=dataSourceStatusChanged)
+    def dataSourceStatusLabel(self) -> str:
+        labels = {
+            "setup": "Setup / empty practice",
+            "isolated-candidate": "Isolated candidate data",
+            "unverified-local": "Unverified local data",
+            "governed-source": "Governed source (local replica verified; cloud freshness unverified)",
+        }
+        label = labels[self.dataSourceStatus]
+        if self.dataSourceStatus == "governed-source" and self._governed_source_identity:
+            label += " #" + self._governed_source_identity
+        if data_verification.enabled():
+            label += " — read-only verification"
+        return label
 
     def load_settings(self, *, emit_theme_signal: bool = False):
         self._settings_load_started = True
@@ -3810,8 +3909,13 @@ class AppController(QObject):
             )
 
         def _on_loaded(payload: Dict[str, Any]) -> None:
-            self._apply_settings_payload(payload, emit_theme_signal=True)
-            self._checkout_shared_data("deferred settings load")
+            try:
+                self._apply_settings_payload(payload, emit_theme_signal=True)
+                self._checkout_shared_data("deferred settings load")
+            except Exception as exc:
+                self._settings_load_started = False
+                self._fail_startup_readiness(exc, context="startup.data_source.verification")
+                return
             self._settings_load_complete = True
             self._settings_load_started = False
             self._trace_startup_backend_step("settings_load_deferred complete")
@@ -4056,6 +4160,18 @@ class AppController(QObject):
         if self._shutdown_sync_complete:
             return
         self._shutdown_sync_complete = True
+        self._shutting_down = True
+        self._auto_backup_timer.stop()
+        self._startup_briefing_process_poll_timer.stop()
+        self.cancelStartupPracticeBriefingProcess()
+        self.cancelLegacyDocketsImport()
+        # Discard queued optional private work, then finish active readers.
+        self._background_pool.clear()
+        self._background_pool.waitForDone()
+        self._background_workers.clear()
+        # Accepted asynchronous docket/billing writes must finish before the
+        # governed publish. Clearing the global pool would discard those saves.
+        QThreadPool.globalInstance().waitForDone()
         try:
             if hasattr(self, "_sync_service"):
                 result = self._sync_service.push_to_master()
@@ -4070,6 +4186,8 @@ class AppController(QObject):
         theme_logger = logging.getLogger("theme.persistence")
         self._ensure_report_branding_settings()
         payload = dict(self._settings_data or {})
+        if data_verification.enabled():
+            payload["readOnlyVerification"] = True
         payload["theme"] = self._theme_name
         payload["appStyle"] = self._app_style
         payload["soundEffectsEnabled"] = bool(self._sound_effects_enabled)

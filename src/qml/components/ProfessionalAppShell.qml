@@ -185,9 +185,23 @@ Item {
         dirty: root.activeDirty
     }
 
+    DataSourceStatusBanner {
+        id: dataSourceBanner
+        anchors.left: proModuleRail.right
+        anchors.right: parent.right
+        anchors.top: proBreadcrumbBar.bottom
+        height: visible ? implicitHeight : 0
+        visible: root.shellEnabled
+        z: 35
+        t: root.t
+        appStyle: root.appStyle
+        status: root.appRoot.dataSourceStatus
+        statusLabel: root.appRoot.dataSourceStatusLabel
+    }
+
     Item {
         id: workspaceHost
-        anchors.top: root.shellEnabled ? proBreadcrumbBar.bottom : (root._topBarVisible ? proTopHeader.bottom : parent.top)
+        anchors.top: root.shellEnabled ? dataSourceBanner.bottom : (root._topBarVisible ? proTopHeader.bottom : parent.top)
         anchors.bottom: parent.bottom
         anchors.right: parent.right
         anchors.left: root.shellEnabled ? proModuleRail.right : parent.left

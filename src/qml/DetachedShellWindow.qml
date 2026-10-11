@@ -201,6 +201,14 @@ Window {
     property bool wasWindowMinimized: false
     property bool isMinimizingToTray: false
     property bool isExitingFromTray: false
+    // Lifecycle commands own their intent before animation completion.
+    property string closeIntent: ""
+    property int trayRestoreRevision: 0
+    property bool trayRestoreActive: false
+    property bool _trayRestoreInWindowStarted: false
+    property bool _trayRestoreFlightArrived: false
+    property var _pendingTrayNavigation: null
+    property bool _pendingTraySettings: false
     property real lastMinimizeTargetDistX: 0.0
     property real lastMinimizeTargetDistY: 0.0
     // Cross-monitor tray flight state
@@ -9265,6 +9273,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     
     function transitionToClosing() {
         if (isClosing) return;
+        closeIntent = mainWin.detachedMode ? "close-detached-window" : "exit-application";
+        mainWin.finishTrayRestoreTransaction("close-preempted");
+        mainWin._pendingTrayAction = "";
+        if (mainWin._crossMonitorOverlay) mainWin._crossMonitorOverlay.abort();
+        jelly.cancelMinimizeRestore();
         if (!mainWin.detachedMode) {
             persistMainWindowLayout();
         }
@@ -9992,6 +10005,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             mainWin.updateCanvasGeometry();
             Qt.callLater(function() {
                 mainWin.geometryTransitionSuppressed = false;
+                mainWin.finishTrayRestoreTransaction("restore-finished");
             });
             if (mainWin.sfxBusRef && mainWin.sfxBusRef.playWindowSettle) {
                 mainWin.sfxBusRef.playWindowSettle("restore", 0.45);
@@ -10920,8 +10934,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 var sinA = Math.sin(angleTheta);
 
                 if (mainWin.isRestoringFromMinimize) {
+                    var trayReturn = mainWin.trayRestoreActive && jelly.restoreIsTrayReturn;
+                    if (trayReturn) p = jelly.trayRestoreVisualProgress(p);
                     // ============================================================
-                    // 5-STAGE REVERSE RESTORE ENGINE (2D VECTOR AWARE)
+                    // TASKBAR REVERSE RESTORE / SINGLE TRAY ARRIVAL BLOOM
                     // ============================================================
                     // Stage 1 (0.00 to 0.28): Comet shoots UPWARD along straight trajectory vector to center
                     // Stage 2 (0.28 to 0.46): Pauses in the middle, blooms to ~32px, and hangs glowing
@@ -10990,6 +11006,23 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         ctx.arc(curX, curY, cometRad, 0, Math.PI * 2);
                         ctx.fill();
 
+                    } else if (trayReturn) {
+                        // One continuous bloom owns comet arrival and the
+                        // live-window reveal. The completed desktop flight
+                        // enters here directly rather than flying in twice.
+                        var trayBloomP = jelly.restoreBloomProgress(rawP);
+                        var trayBloomRadius = 16.0 + Math.sin(trayBloomP * Math.PI * 0.5) * 40.0;
+                        var trayBloomAlpha = Math.max(0.0, 1.0 - trayBloomP);
+                        var trayBloom = ctx.createRadialGradient(centerSingX, centerSingY, 0.5,
+                            centerSingX, centerSingY, trayBloomRadius);
+                        trayBloom.addColorStop(0.00, "rgba(255, 255, 255, " + trayBloomAlpha.toFixed(3) + ")");
+                        trayBloom.addColorStop(0.35, "rgba(255, 250, 235, " + (trayBloomAlpha * 0.80).toFixed(3) + ")");
+                        trayBloom.addColorStop(0.70, "rgba(254, 215, 170, " + (trayBloomAlpha * 0.35).toFixed(3) + ")");
+                        trayBloom.addColorStop(1.00, "rgba(239, 68, 68, 0.00)");
+                        ctx.fillStyle = trayBloom;
+                        ctx.beginPath();
+                        ctx.arc(centerSingX, centerSingY, trayBloomRadius, 0, Math.PI * 2);
+                        ctx.fill();
                     } else if (p < 0.46) {
                         // Stage 2: Arrives at center, blooms from 16px -> 32px, and PAUSES in the middle glowing
                         var midP = (p - 0.28) / 0.18; // 0.0 to 1.0
@@ -11803,7 +11836,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function launchCrossMonitorTrayMinimizeFlightOnce() {
-        if (!mainWin.isMinimizingToTray
+        if (jelly.reducedMotion || !mainWin.isMinimizingToTray
                 || !mainWin._crossMonitorTrayFlight
                 || mainWin._crossMonitorTrayFlightLaunched) {
             return false;
@@ -11825,10 +11858,17 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function requestExitFromTrayAnimation() {
         mainWin.phaseLog("EXIT", "Exit from System Tray animation requested");
-        if (mainWin.isClosing && !mainWin.isExitingFromTray) return false;
+        if (mainWin.forceClose || mainWin.isClosing) return false;
+        mainWin.closeIntent = "exit-application";
+        mainWin.finishTrayRestoreTransaction("tray-exit-preempted");
+        mainWin._pendingTrayAction = "";
+        if (mainWin._crossMonitorOverlay) mainWin._crossMonitorOverlay.abort();
+        mainWin.isClosing = true;
+        mainWin.isExitingFromTray = true;
+        closeFinalizeFailsafeTimer.restart();
 
         // Check if tray is on a different monitor — fly overlay comet first
-        if (typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
+        if (!jelly.reducedMotion && typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
             var winCX = Math.round(mainWin.x + mainWin.width / 2.0);
             var winCY = Math.round(mainWin.y + mainWin.height / 2.0);
             var info = trayController.getTrayFlightInfo(winCX, winCY);
@@ -11881,12 +11921,56 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         jelly.startExitFromTray(targetDistX, targetDistY);
     }
 
-    function requestRestoreFromTrayAnimation() {
-        mainWin.phaseLog("RESTORE", "Restore from System Tray animation requested");
-        if (mainWin.isClosing) return false;
+    function finishTrayRestoreTransaction(reason) {
+        if (!mainWin.trayRestoreActive) return;
+        var revision = mainWin.trayRestoreRevision;
+        mainWin.trayRestoreActive = false;
+        mainWin._trayRestoreInWindowStarted = false;
+        mainWin._trayRestoreFlightArrived = false;
+        if (mainWin._pendingTrayAction === "restore") {
+            mainWin._pendingTrayAction = "";
+            if (mainWin._crossMonitorOverlay) mainWin._crossMonitorOverlay.abort();
+        }
+        console.warn("[TRAY-TRANSACTION] complete revision=" + revision + " reason=" + reason);
+        if (typeof trayController !== "undefined" && trayController.completeRestoreFromTray) {
+            trayController.completeRestoreFromTray(revision);
+        }
+        var navigation = mainWin._pendingTrayNavigation;
+        var settingsRequested = mainWin._pendingTraySettings;
+        mainWin._pendingTrayNavigation = null;
+        mainWin._pendingTraySettings = false;
+        if (reason === "restore-finished" && !mainWin.isClosing && !mainWin.forceClose) {
+            if (navigation && mainWin.mainContentRef
+                    && typeof mainWin.mainContentRef.handleWorkspaceOpenRequested === "function") {
+                mainWin.mainContentRef.handleWorkspaceOpenRequested(navigation.tileIndex,
+                    navigation.nodeId, navigation.state || {});
+            }
+            if (settingsRequested) mainWin.openSettingsMenu();
+        }
+    }
+
+    function requestRestoreFromTrayAnimation(revision) {
+        var requestedRevision = Number(revision);
+        if (!isFinite(requestedRevision) || requestedRevision <= 0) {
+            requestedRevision = mainWin.trayRestoreRevision + 1;
+        }
+        if (mainWin.forceClose || mainWin.isClosing || mainWin.trayRestoreActive
+                || requestedRevision <= mainWin.trayRestoreRevision) {
+            console.warn("[TRAY-TRANSACTION] rejected revision=" + requestedRevision
+                + " active=" + mainWin.trayRestoreActive + " closing=" + mainWin.isClosing);
+            return false;
+        }
+        mainWin.trayRestoreRevision = requestedRevision;
+        mainWin.trayRestoreActive = true;
+        mainWin._trayRestoreInWindowStarted = false;
+        mainWin._trayRestoreFlightArrived = false;
+        mainWin.wasWindowMinimized = false;
+        mainWin.isMinimizingToTray = false;
+        console.warn("[TRAY-TRANSACTION] begin revision=" + requestedRevision);
+        mainWin.phaseLog("RESTORE", "Restore from System Tray animation requested revision=" + requestedRevision);
 
         // Check if tray is on a different monitor — fly overlay comet first
-        if (typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
+        if (!jelly.reducedMotion && typeof trayController !== "undefined" && trayController.getTrayFlightInfo) {
             var winCX = Math.round(mainWin.x + mainWin.width / 2.0);
             var winCY = Math.round(mainWin.y + mainWin.height / 2.0);
             var info = trayController.getTrayFlightInfo(winCX, winCY);
@@ -11915,6 +11999,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function _startRestoreFromTrayInWindow() {
+        if (!mainWin.trayRestoreActive || mainWin._trayRestoreInWindowStarted
+                || mainWin.forceClose || mainWin.isClosing) return false;
+        mainWin._trayRestoreInWindowStarted = true;
         console.warn("[TRAY-ANIM] _startRestoreFromTrayInWindow called");
         trayKeepAlive.visible = false;
         console.warn("[TRAY-ANIM]   isClosing=" + mainWin.isClosing + " isMinimizing=" + mainWin.isMinimizing
@@ -11938,7 +12025,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         var targetDistY = (mainWin.lastMinimizeTargetDistY !== 0.0) ? mainWin.lastMinimizeTargetDistY : ((mainWin.finalH / 2.0) + mainWin.glowPadding);
 
         console.warn("[TRAY-ANIM]   calling jelly.startRestore distX=" + targetDistX + " distY=" + targetDistY);
-        jelly.startRestore(targetDistX, targetDistY);
+        jelly.startRestore(targetDistX, targetDistY, true, mainWin._trayRestoreFlightArrived);
+        return true;
     }
 
     function _ensureCrossMonitorOverlay() {
@@ -11962,6 +12050,8 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin._pendingTrayAction = "";
         mainWin._crossMonitorTrayFlightLaunched = false;
         if (action === "restore") {
+            if (!mainWin.trayRestoreActive || mainWin.isClosing || mainWin.forceClose) return;
+            mainWin._trayRestoreFlightArrived = true;
             mainWin._startRestoreFromTrayInWindow();
         } else if (action === "exit") {
             mainWin._startExitFromTrayInWindow();
@@ -11989,6 +12079,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.destroyClosingOverlay();
         mainWin.destroyMinimizeOverlay();
         mainWin.clearMinimizeRestoreState();
+        mainWin.finishTrayRestoreTransaction("close-finalized");
+        mainWin._pendingTrayAction = "";
+        if (mainWin._crossMonitorOverlay) mainWin._crossMonitorOverlay.abort();
         if (mainWin.detachedMode) {
             mainWin.forceClose = true;
             if (!dockCommitted) {
@@ -11999,21 +12092,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             mainWin.close();
             return;
         }
-        if (mainWin.appRef && mainWin.appRef.keepTrayAlive) {
-            mainWin.phaseLog("CLOSING", "Close complete; retaining the application in the system tray");
-            mainWin.forceClose = false;
-            mainWin.isClosing = false;
-            mainWin.isMinimizing = false;
-            mainWin.isRestoringFromMinimize = false;
-            mainWin.closeMotionStarted = false;
-            mainWin.animationPhase = "settled";
-            mainWin.isSettled = true;
-            mainWin.opacity = 1.0;
-            if (jelly && jelly.restore) jelly.restore();
-            mainWin.visible = false;
-            return;
-        }
         mainWin.forceClose = true;
+        if (typeof trayController !== "undefined" && trayController.requestApplicationExit) {
+            trayController.requestApplicationExit(mainWin.closeIntent);
+        }
+        trayKeepAlive.visible = false;
         mainWin.closeAllTopLevelWindows();
         mainWin.close();
         Qt.callLater(function() {
@@ -12307,6 +12390,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         closeFinalizeFailsafeTimer.stop();
         mainWin.persistCurrentThemeSelection("closeForAppExit");
         mainWin.forceClose = true;
+        mainWin.closeIntent = "exit-application";
+        mainWin.finishTrayRestoreTransaction("application-exit");
+        mainWin._pendingTrayAction = "";
+        if (mainWin._crossMonitorOverlay) mainWin._crossMonitorOverlay.abort();
         mainWin.clearStartupDeferredQueue("closeForAppExit");
         mainWin.clearPendingDockCommit();
         mainWin.clearCloseTargetOverride();
@@ -12462,6 +12549,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 // Close pipeline owns opacity/visibility while exiting; avoid ghost host flashes.
                 return;
             }
+
+            // Hiding into the tray is not a taskbar return. A keyed tray
+            // transaction owns both desktop flight and live-window reveal.
+            if (!mainWin.visible || mainWin.trayRestoreActive) return;
 
             var resumedFromTaskbar = mainWin.wasWindowMinimized;
             if (resumedFromTaskbar && !mainWin.isClosing) {
@@ -12676,15 +12767,19 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         target: typeof trayController !== "undefined" ? trayController : null
         enabled: !mainWin.detachedMode
         ignoreUnknownSignals: true
-        function onRequestRestoreFromTray() {
+        function onRequestRestoreFromTray(revision) {
             console.warn("[TRAY-SIGNAL] onRequestRestoreFromTray received in QML");
-            mainWin.requestRestoreFromTrayAnimation();
+            mainWin.requestRestoreFromTrayAnimation(revision);
         }
         function onRequestExitFromTray() {
             console.log("[TRAY-SIGNAL] onRequestExitFromTray received in QML");
             mainWin.requestExitFromTrayAnimation();
         }
         function onNavigateToModule(tileIndex, nodeId, state) {
+            if (mainWin.trayRestoreActive) {
+                mainWin._pendingTrayNavigation = {"tileIndex": tileIndex, "nodeId": nodeId, "state": state || {}};
+                return;
+            }
             mainWin.showNormal();
             mainWin.requestActivate();
             if (mainWin.mainContentRef && typeof mainWin.mainContentRef.handleWorkspaceOpenRequested === "function") {
@@ -12692,6 +12787,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             }
         }
         function onOpenSettingsRequested() {
+            if (mainWin.trayRestoreActive) {
+                mainWin._pendingTraySettings = true;
+                return;
+            }
             mainWin.showNormal();
             mainWin.requestActivate();
             mainWin.openSettingsMenu();
