@@ -1,5 +1,27 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-11: Governed data and post-promotion lifecycle repair
+
+- [x] Preserve accepted source/installation and both rollback generations; verify remote promotion/main references without modifying them.
+- [x] Identify normal shortcut/setup-profile divergence and independently verify the canonical pair against governed release evidence; retain private source paths and freshness limits.
+- [x] Prepare byte-exact replicas; prevent workbook changes, writable checkout, synchronization and publication in explicit read-only verification.
+- [x] Correct settings data-selector ordering, invalidate changed source identity, and expose persistent data-status indication.
+- [x] Make X orderly full exit after one accepted close animation; retain explicit tray minimize and tray Exit.
+- [x] Measure hidden restore callback and two-stage tray bloom; repair command revision ownership and one continuous tray arrival effect.
+- [x] Pass 87 final focused safe tests, compilation, governed QML lint, native build/contracts, and focused desktop source lifecycle/reduced/legacy checks.
+- [x] Recover already built final package without restarting completed work; pass immutable-source/package/privacy and frozen startup/navigation/X-exit verification, plus actual packaged WebEngine rendering.
+- [x] October 12: pass 97 focused safe/offscreen tests and in-memory runtime/helper compilation; verify accepted motion source and both immutable rollback manifests.
+- [x] Stage and launch the separately labelled read-only candidate for Cory through a validated private launcher and new Desktop shortcut.
+- [ ] Cory: confirm expected governed dataset, X process/icon removal and exactly one tray-return burst before main replacement.
+
+Runtime source `9db13b42eba3d0104465bbdeca181d54b779a81d`; continuation and data boundaries: `docs/CSPM_DATA_LIFECYCLE_REPAIR_2026-10-11.md`.
+
+Final immutable package source `bd1264541af346733881ad9a6b852a944c3870b6`.
+Normal settings/main remain unchanged; local governed October 6 release identity
+is verified, cloud freshness and physical desktop propagation remain unverified.
+Recovery continuation stays local because this branch has no upstream and push
+authorization is unclear.
+
 ## 2026-10-11: Visually accepted native motion promotion
 
 - [x] Cory accepts repaired candidate runtime `19d030d9516ef026da158e610db432a434335966` for current use.
