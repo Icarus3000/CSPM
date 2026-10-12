@@ -447,6 +447,8 @@ def main():
         ("docs/CHANGELOG.md", "docs"),
         ("version.json", ".")
     ]
+    # Installable normal-launch support contains no machine configuration.
+    datas.append(("scripts/launch_governed_readonly.py", "scripts"))
 
     provenance = release_provenance(ROOT_DIR, native_bridge, version_data, invoked_at,
                                    candidate=args.native_motion_candidate)

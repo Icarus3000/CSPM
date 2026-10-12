@@ -1,5 +1,22 @@
 # Implementation History
 
+## 2026-10-12: Normal-launch delay and stale header repair
+
+Actual user launch shows approximately 38 seconds from private launcher entry
+to frozen runtime start, followed by 14.464 seconds to input readiness. The new
+normal launcher had hashed the entire 677 MB runtime on every launch. Routine
+launch now verifies EXE/native/provenance and all governed/local pair hashes;
+deployment and explicit `--audit-runtime` retain full-resource hashing. The
+generic launcher is committed and shipped without private configuration and
+records separate monotonic stage timings. Initial warm preflight is 0.086 seconds.
+Read-only enforcement, source identity/marker guards and local-only lifetime
+protection remain. The obsolete literal October 2 diagnostic header label is
+removed; About retains actual build identity. Eighteen focused launcher checks,
+changed-Python compilation and governed header lint pass. Clean-main release and
+real normal-launch measurements are recorded in private final evidence/dashboard.
+See `docs/CSPM_STARTUP_HEADER_REPAIR_2026-10-12.md`; accepted motion/data boundaries
+remain in effect.
+
 ## 2026-10-12: Accepted CSPM canonical main finalization
 
 Cory reports “That worked well enough” after manual review of the read-only

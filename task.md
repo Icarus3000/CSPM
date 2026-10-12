@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-12: Normal-launch delay and stale header repair
+
+- [x] Read actual normal-launch log/report and identify the pre-application launcher delay separately from Qt startup.
+- [x] Remove the old hard-coded October 2 diagnostic header marker; preserve the ordinary name and About metadata.
+- [x] Version and package the generic normal read-only launcher; routine launch verifies critical runtime identity and every governed/local workbook hash, with explicit full-resource audit and per-stage timings.
+- [x] Pass 18 focused launcher tests, in-memory changed-Python compilation and governed header QML lint.
+
+Release/deployment verification is recorded after the clean-main build in the
+private startup/header evidence and workstation dashboard. Full rationale,
+verification scope and retained data/motion limits:
+`docs/CSPM_STARTUP_HEADER_REPAIR_2026-10-12.md`.
+
 ## 2026-10-12: Accepted application canonical main finalization
 
 - [x] Cory accepts the read-only lifecycle candidate: “That worked well enough.” The previous manual lifecycle/data review gate is satisfied.

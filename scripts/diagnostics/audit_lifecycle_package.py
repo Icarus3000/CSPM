@@ -32,7 +32,7 @@ CODE_FIELDS = (
     "co_varnames", "co_name", "co_qualname", "co_firstlineno", "co_linetable",
     "co_exceptiontable", "co_freevars", "co_cellvars",
 )
-TEXT_SUFFIXES = frozenset((".qml", ".js", ".md", ".json", ".yaml", ".yml", ".svg", ".txt", ".html", ".css", ".csv", ".frag", ".vert"))
+TEXT_SUFFIXES = frozenset((".py", ".qml", ".js", ".md", ".json", ".yaml", ".yml", ".svg", ".txt", ".html", ".css", ".csv", ".frag", ".vert"))
 PRIVATE_DIRS = frozenset(("logs", "backups", "backup", "private", "disposable_profile", "local_profile", "dumps", "captures", "attachments"))
 PRIVATE_SUFFIXES = frozenset((".log", ".csv", ".db", ".db3", ".sqlite", ".sqlite3", ".har", ".pcap", ".dmp", ".pdb", ".obj", ".pem", ".key", ".p12", ".pfx"))
 REQUIRED_MODULES = frozenset(("backend.app_controller", "backend.controllers.tray_controller", "repositories.excel_repo", "repositories.ap_workbook_repository", "services.sync_service"))
@@ -180,7 +180,10 @@ def audit(repo: Path, package: Path, source_sha: str | None = None) -> dict:
     for directory in ("src/qml", "src/assets", "src/templates", "assets", "schema", "docs/spec"):
         expected_assets.update(tracked(directory))
     expected_assets.update(("docs/BIBLE.md", "docs/ROADMAP.md", "docs/CHANGELOG.md", "version.json"))
-    own_prefixes = ("_internal/src/", "_internal/assets/", "_internal/schema/", "_internal/docs/")
+    # Older immutable pins predate the installable launcher; audit their exact
+    # source asset set as well as new packages, without assuming current HEAD.
+    expected_assets.update(tracked("scripts/launch_governed_readonly.py"))
+    own_prefixes = ("_internal/src/", "_internal/assets/", "_internal/schema/", "_internal/docs/", "_internal/scripts/")
     actual_assets = {relative[len("_internal/"):] for relative in files
                      if relative.startswith(own_prefixes) or relative == "_internal/version.json"}
     if actual_assets != expected_assets:
