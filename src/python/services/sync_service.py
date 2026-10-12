@@ -52,7 +52,6 @@ class SyncService:
     """
 
     STATE_VERSION = 2
-    BLANK_SEED_MAX_BYTES = 50_000
     _FILES = ("CSPM.xlsm", "Dockets.xlsm")
     LEASE_FILE_NAME = ".cspm_checkout.json"
     RELEASES_DIR_NAME = ".cspm_releases"
@@ -176,12 +175,31 @@ class SyncService:
             return False
 
     def _is_blank_seed(self, file_name: str, path: Path) -> bool:
-        """Recognize only the small generated CSPM seed as an empty replica."""
-        if file_name != "CSPM.xlsm" or not self._usable(path):
+        """Recognize only an approved empty workbook template as a fresh replica.
+
+        A populated practice can remain below 50 KB. File size cannot prove
+        emptiness and must never let checkout replace saved native records.
+        The shipped template must match its approval before the exact package
+        or its modified-timestamp-only equivalent is accepted as an empty seed.
+        """
+        if file_name not in self._FILES or not self._usable(path):
             return False
         try:
-            return path.stat().st_size < self.BLANK_SEED_MAX_BYTES
-        except OSError:
+            template_dir = self.paths.root / "src" / "templates"
+            template = template_dir / file_name
+            approval = json.loads((template_dir / "template_approval.json").read_text(encoding="utf-8"))
+            records = [
+                record for record in approval["templates"]
+                if record.get("approved_filename") == file_name
+                and record.get("human_approval_status") == "APPROVED"
+            ]
+            if len(records) != 1:
+                return False
+            approved_hash = str(records[0]["sha256"]).upper()
+            if self._sha256(template) != approved_hash:
+                return False
+            return self._sha256(path) == approved_hash or self._workbook_payload_equal(path, template)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return False
 
     def _empty_state(self) -> Dict[str, Any]:
@@ -654,17 +672,26 @@ class SyncService:
 
         state = self._get_state()
         records: Dict[str, Dict[str, Any]] = {}
+        has_recorded_ancestor = any(
+            isinstance(state.get("files", {}).get(name), dict)
+            and bool(state["files"][name].get("baseHash"))
+            for name in self._FILES
+        )
         local_package_blank = (
-            not self._usable(local_paths["CSPM.xlsm"])
-            or self._is_blank_seed("CSPM.xlsm", local_paths["CSPM.xlsm"])
+            phase == "checkout"
+            and not has_recorded_ancestor
+            and all(
+                not self._usable(local_paths[name])
+                or self._is_blank_seed(name, local_paths[name])
+                for name in self._FILES
+            )
         )
         for name in self._FILES:
             cloud_hash = self._sha256(cloud_paths[name])
             local_path = local_paths[name]
-            # The generated empty CSPM package contains a small CSPM workbook
-            # plus a template Dockets workbook.  Treat that entire pair as an
-            # empty replica so a fresh machine pulls the cloud package rather
-            # than falsely treating its template Dockets file as offline work.
+            # Only a first checkout with no recorded ancestor may treat the
+            # approved empty pair (or missing files) as a fresh replica.
+            # Once ancestry exists, even an empty workbook is compared by hash.
             local_is_blank = local_package_blank or not self._usable(local_path)
             local_hash = "" if local_is_blank else self._sha256(local_path)
             saved = state.get("files", {}).get(name, {})

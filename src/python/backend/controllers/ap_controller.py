@@ -52,7 +52,8 @@ class APController(QObject):
             self._ap_repository = orchestration_service.ap_repository
         else:
             self._ap_repository = ap_repository or APWorkbookRepository(
-                self._resolve_workbook_path(excel_repo)
+                self._resolve_workbook_path(excel_repo),
+                write_guard=getattr(excel_repo, "_assert_write_permitted", None),
             )
             self._orchestrator = APOrchestrationService(
                 self._ap_repository,

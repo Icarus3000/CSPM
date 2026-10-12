@@ -596,7 +596,10 @@ class AppController(QObject):
         self._ap_orchestration = None
         self._ap_controller = None
         if ap_workbook_path.is_file():
-            self._ap_repository = APWorkbookRepository(ap_workbook_path)
+            self._ap_repository = APWorkbookRepository(
+                ap_workbook_path,
+                write_guard=self._sync_service.assert_write_lease,
+            )
             self._ap_orchestration = APOrchestrationService(
                 self._ap_repository,
                 self._excel_repo,

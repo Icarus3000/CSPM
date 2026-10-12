@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import zipfile
 from pathlib import Path
@@ -12,10 +13,18 @@ from services.paths import AppPaths
 from services.sync_service import SyncService
 
 
+@pytest.fixture(autouse=True)
+def isolated_sync_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Template tests use the real immutable source root for approval evidence;
+    # each test still needs independent ancestry and recovery state outside it.
+    monkeypatch.setenv("CSPM_RUNTIME_DIR", str(tmp_path / "profile/runtime"))
+    monkeypatch.setenv("CSPM_DATA_DIR", str(tmp_path / "profile/persistent"))
+
+
 def _write_package(folder: Path, label: str) -> None:
     folder.mkdir(parents=True, exist_ok=True)
-    # CSPM's generated blank seed is below 50 KB.  A larger synthetic package
-    # lets the service exercise the normal checked-out replica path.
+    # Distinct synthetic bytes exercise synchronization contracts; approved
+    # empty template identity is tested separately with real workbooks.
     (folder / "CSPM.xlsm").write_bytes((f"CSPM-{label}|".encode("utf-8")) * 7000)
     (folder / "Dockets.xlsm").write_bytes((f"DOCKETS-{label}|".encode("utf-8")) * 1200)
 
@@ -172,11 +181,12 @@ def test_fresh_blank_seed_package_pulls_the_complete_cloud_pair(tmp_path: Path) 
     local = tmp_path / "local"
     _write_package(cloud, "cloud")
     local.mkdir()
-    # The local Dockets template need not match the cloud.  A small generated
-    # CSPM seed marks the complete pair as a fresh replica.
-    (local / "CSPM.xlsm").write_bytes(b"new practice seed")
-    (local / "Dockets.xlsm").write_bytes(b"template" * 9000)
-    service = _service(tmp_path, "a", cloud, local)
+    # Both existing files must be approved empty templates. An arbitrary or
+    # populated workbook must never be discarded as part of a fresh replica.
+    project_root = Path(__file__).resolve().parents[1]
+    shutil.copyfile(project_root / "src/templates/CSPM.xlsm", local / "CSPM.xlsm")
+    shutil.copyfile(project_root / "src/templates/Dockets.xlsm", local / "Dockets.xlsm")
+    service = SyncService(AppPaths(project_root, local, cloud), machine_identity_file=tmp_path / "machine.json")
 
     result = service.checkout_from_cloud()
     assert result["ok"]
@@ -184,6 +194,178 @@ def test_fresh_blank_seed_package_pulls_the_complete_cloud_pair(tmp_path: Path) 
     assert (local / "CSPM.xlsm").read_bytes() == (cloud / "CSPM.xlsm").read_bytes()
     assert (local / "Dockets.xlsm").read_bytes() == (cloud / "Dockets.xlsm").read_bytes()
     assert service.publish_and_release()["ok"]
+
+
+@pytest.mark.parametrize("cspm_present", [True, False])
+def test_approved_or_missing_cspm_does_not_discard_populated_dockets(tmp_path: Path, cspm_present: bool) -> None:
+    from openpyxl import load_workbook
+
+    project_root = Path(__file__).resolve().parents[1]
+    cloud, local = tmp_path / "cloud", tmp_path / "local"
+    _write_package(cloud, "governed")
+    local.mkdir()
+    if cspm_present:
+        shutil.copyfile(project_root / "src/templates/CSPM.xlsm", local / "CSPM.xlsm")
+    dockets = local / "Dockets.xlsm"
+    shutil.copyfile(project_root / "src/templates/Dockets.xlsm", dockets)
+    workbook = load_workbook(dockets, keep_vba=True)
+    try:
+        workbook["Dockets"].cell(2, 1).value = "SYNTHETIC LOCAL DOCKET MUST BE PRESERVED"
+        workbook.save(dockets)
+    finally:
+        for attribute in ("vba_archive", "_archive"):
+            archive = getattr(workbook, attribute, None)
+            if archive is not None:
+                archive.close()
+        workbook.close()
+    before = {str(path): path.read_bytes() for directory in (cloud, local)
+              for path in directory.glob("*.xlsm")}
+    service = SyncService(AppPaths(project_root, local, cloud), machine_identity_file=tmp_path / "machine.json")
+    assert not service._is_blank_seed("Dockets.xlsm", dockets)
+    result = service.checkout_from_cloud()
+    assert not result["ok"] and result["status"] == "conflict"
+    assert "Dockets.xlsm" in result["files"]
+    assert {str(path): path.read_bytes() for directory in (cloud, local)
+            for path in directory.glob("*.xlsm")} == before
+    assert not (cloud / service.LEASE_FILE_NAME).exists()
+
+
+def test_small_populated_workbook_saves_publishes_and_survives_recheckout(tmp_path: Path) -> None:
+    from repositories.excel_repo import ExcelRepo
+    from domain import schema_constants as sc
+
+    project_root = Path(__file__).resolve().parents[1]
+    cloud, local = tmp_path / "cloud", tmp_path / "local"
+    cloud.mkdir()
+    for name in SyncService._FILES:
+        shutil.copyfile(project_root / "src/templates" / name, cloud / name)
+
+    service = SyncService(AppPaths(project_root, local, cloud), machine_identity_file=tmp_path / "machine.json")
+    assert service.checkout_from_cloud()["ok"]
+    repo = ExcelRepo(service.paths, write_guard=service.assert_write_lease)
+    result = repo.add_time_entry({"date": "2026-10-12", "clientName": "Synthetic Client",
+                                 "matterName": "Synthetic Matter", "description": "Synthetic small practice docket",
+                                 "hours": 1, "rate": 10, "sharePct": 100})
+    assert result["ok"]
+    assert (local / "CSPM.xlsm").stat().st_size < 50_000
+    assert not service._is_blank_seed("CSPM.xlsm", local / "CSPM.xlsm")
+
+    published = service.publish_and_release()
+    assert published["ok"] and published["status"] == "push"
+    release = Path(published["release"]["releasePath"])
+    manifest = json.loads((release / service.RELEASE_MANIFEST_NAME).read_text())
+    for name in SyncService._FILES:
+        assert service._sha256(release / name) == service._sha256(cloud / name) == manifest["files"][name]
+    assert not (cloud / service.LEASE_FILE_NAME).exists()
+
+    restarted = SyncService(service.paths, machine_identity_file=tmp_path / "machine.json")
+    assert restarted.checkout_from_cloud()["ok"]
+    reopened = ExcelRepo(restarted.paths, write_guard=restarted.assert_write_lease)
+    assert any(row.get(sc.COL_TIME_ENTRY_ID) == result["entryId"] for row in reopened._read_table_rows(sc.TBL_TIME))
+    assert restarted.publish_and_release()["ok"]
+
+
+def test_approved_empty_first_checkout_closes_without_false_conflict(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    cloud, local = tmp_path / "cloud", tmp_path / "local"
+    cloud.mkdir()
+    for name in SyncService._FILES:
+        shutil.copyfile(project_root / "src/templates" / name, cloud / name)
+    service = SyncService(AppPaths(project_root, local, cloud), machine_identity_file=tmp_path / "machine.json")
+    assert service.checkout_from_cloud()["ok"]
+    assert service._is_blank_seed("CSPM.xlsm", local / "CSPM.xlsm")
+    result = service.publish_and_release()
+    assert result["ok"] and result["status"] == "unchanged"
+    assert not (cloud / service.LEASE_FILE_NAME).exists()
+
+
+def test_approved_seed_does_not_override_existing_common_ancestor(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    cloud, local = tmp_path / "cloud", tmp_path / "local"
+    _write_package(cloud, "initial")
+    service = SyncService(AppPaths(project_root, local, cloud), machine_identity_file=tmp_path / "machine.json")
+    assert service.checkout_from_cloud()["ok"]
+    assert service.publish_and_release()["ok"]
+    # Simulate divergent local reset and independent shared edit. The local
+    # exact empty template does not authorize discarding known offline changes.
+    for name in SyncService._FILES:
+        shutil.copyfile(project_root / "src/templates" / name, local / name)
+    _write_package(cloud, "different-governed-revision")
+    before = {str(path): path.read_bytes() for directory in (cloud, local)
+              for path in directory.glob("*.xlsm")}
+    restarted = SyncService(service.paths, machine_identity_file=tmp_path / "machine.json")
+    assert restarted._is_blank_seed("CSPM.xlsm", local / "CSPM.xlsm")
+    result = restarted.checkout_from_cloud()
+    assert not result["ok"] and result["status"] == "conflict"
+    assert {str(path): path.read_bytes() for directory in (cloud, local)
+            for path in directory.glob("*.xlsm")} == before
+    assert not (cloud / service.LEASE_FILE_NAME).exists()
+
+
+def test_small_unknown_workbook_is_preserved_as_conflict(tmp_path: Path) -> None:
+    cloud, local = tmp_path / "cloud", tmp_path / "local"
+    _write_package(cloud, "governed")
+    local.mkdir()
+    (local / "CSPM.xlsm").write_bytes(b"small unknown populated practice")
+    (local / "Dockets.xlsm").write_bytes(b"small unknown dockets")
+    before = {name: (local / name).read_bytes() for name in SyncService._FILES}
+    service = _service(tmp_path, "a", cloud, local)
+    result = service.checkout_from_cloud()
+    assert not result["ok"] and result["status"] == "conflict"
+    assert {name: (local / name).read_bytes() for name in SyncService._FILES} == before
+    assert not (cloud / service.LEASE_FILE_NAME).exists()
+
+
+def test_approved_seed_allows_only_modified_metadata_difference(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    seed = tmp_path / "CSPM.xlsm"
+    template = project_root / "src/templates/CSPM.xlsm"
+    with zipfile.ZipFile(template) as source, zipfile.ZipFile(seed, "w") as target:
+        for item in source.infolist():
+            payload = source.read(item)
+            if item.filename == "docProps/core.xml":
+                # Change specifically the modified timestamp, preserving creator/created.
+                from xml.etree import ElementTree
+                properties = ElementTree.fromstring(source.read(item))
+                modified = properties.find("{http://purl.org/dc/terms/}modified")
+                assert modified is not None
+                modified.text = "2026-10-12T00:00:00Z"
+                payload = ElementTree.tostring(properties, encoding="utf-8")
+            target.writestr(item, payload)
+    service = SyncService(AppPaths(project_root, tmp_path), machine_identity_file=tmp_path / "machine.json")
+    assert service._sha256(seed) != service._sha256(template)
+    assert service._is_blank_seed("CSPM.xlsm", seed)
+    with zipfile.ZipFile(seed) as source:
+        payloads = [(item, source.read(item)) for item in source.infolist()]
+    with zipfile.ZipFile(seed, "w") as target:
+        for item, payload in payloads:
+            if item.filename == "docProps/core.xml":
+                payload = payload.replace(b"System", b"Changed author")
+            target.writestr(item, payload)
+    assert not service._is_blank_seed("CSPM.xlsm", seed)
+
+
+@pytest.mark.parametrize("failure", ["missing-approval", "malformed-approval", "unapproved", "wrong-template-hash"])
+def test_unverified_template_never_authorizes_seed_replacement(tmp_path: Path, failure: str) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    template_dir = tmp_path / "runtime/src/templates"
+    template_dir.mkdir(parents=True)
+    template = template_dir / "CSPM.xlsm"
+    shutil.copyfile(project_root / "src/templates/CSPM.xlsm", template)
+    seed = tmp_path / "CSPM.xlsm"
+    shutil.copyfile(template, seed)
+    approval_file = template_dir / "template_approval.json"
+    approval = json.loads((project_root / "src/templates/template_approval.json").read_text())
+    if failure == "malformed-approval":
+        approval_file.write_text("not json")
+    elif failure != "missing-approval":
+        if failure == "unapproved":
+            approval["templates"][0]["human_approval_status"] = "PENDING"
+        elif failure == "wrong-template-hash":
+            approval["templates"][0]["sha256"] = "0" * 64
+        approval_file.write_text(json.dumps(approval))
+    service = SyncService(AppPaths(tmp_path / "runtime", tmp_path), machine_identity_file=tmp_path / "machine.json")
+    assert not service._is_blank_seed("CSPM.xlsm", seed)
 
 
 def test_existing_cloud_setup_never_overwrites_a_different_local_package(tmp_path: Path) -> None:

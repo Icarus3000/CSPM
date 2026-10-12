@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 import logging
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
@@ -128,10 +128,22 @@ def _payment_lifecycle(payments: list[Mapping[str, Any]]) -> list[dict[str, Any]
 
 
 class APWorkbookRepository:
-    def __init__(self, workbook_path: str | Path):
+    def __init__(self, workbook_path: str | Path, *, write_guard: Callable[[], None] | None = None):
         self.path = Path(workbook_path)
+        self._write_guard = write_guard
         if not self.path.is_file():
             raise APWorkbookRepositoryError(f"Workbook not found: {self.path}")
+
+    def _assert_write_permitted(self) -> None:
+        assert_writes_allowed()
+        if self._write_guard is not None:
+            self._write_guard()
+
+    def _save_workbook(self, workbook) -> None:
+        # Ownership may have changed since the operation began. Check again
+        # immediately before committing the AP rows to the shared replica.
+        self._assert_write_permitted()
+        workbook.save(self.path)
 
     def list_bills(self) -> list[dict[str, Any]]:
         workbook = _open(self.path)
@@ -162,7 +174,7 @@ class APWorkbookRepository:
         return _active_payments(self.list_payments(bill_id))
 
     def create_bill(self, bill: Mapping[str, Any]) -> dict[str, Any]:
-        assert_writes_allowed()
+        self._assert_write_permitted()
         bill_id = clean_text(bill.get("APBillID"))
         if not bill_id:
             raise APValidationError("APBillID is required.")
@@ -218,7 +230,7 @@ class APWorkbookRepository:
             bills.append(row)
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
-            workbook.save(self.path)
+            self._save_workbook(workbook)
         finally:
             _close_workbook(workbook)
         persisted = self.get_bill(bill_id)
@@ -228,7 +240,7 @@ class APWorkbookRepository:
 
     def update_bill(self, bill: Mapping[str, Any]) -> dict[str, Any]:
         """Update one AP bill in place while retaining its identity and payment history."""
-        assert_writes_allowed()
+        self._assert_write_permitted()
         bill_id = clean_text(bill.get("APBillID"))
         if not bill_id:
             raise APValidationError("APBillID is required.")
@@ -301,7 +313,7 @@ class APWorkbookRepository:
                     existing[header] = bill.get(header, existing.get(header, ""))
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
-            workbook.save(self.path)
+            self._save_workbook(workbook)
         finally:
             _close_workbook(workbook)
         persisted = self.get_bill(bill_id)
@@ -310,7 +322,7 @@ class APWorkbookRepository:
         return persisted
 
     def delete_bill(self, bill_id: str) -> dict[str, Any]:
-        assert_writes_allowed()
+        self._assert_write_permitted()
         """Permanently remove an eligible bill and all payment rows that reference it."""
         bill_id = clean_text(bill_id)
         if not bill_id:
@@ -348,7 +360,7 @@ class APWorkbookRepository:
             ]
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, retained_bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, retained_payments)
-            workbook.save(self.path)
+            self._save_workbook(workbook)
         finally:
             _close_workbook(workbook)
         if self.get_bill(bill_id) is not None:
@@ -361,7 +373,7 @@ class APWorkbookRepository:
         }
 
     def post_payment(self, payment: Mapping[str, Any]) -> dict[str, Any]:
-        assert_writes_allowed()
+        self._assert_write_permitted()
         payment_id = clean_text(payment.get("APPaymentID"))
         bill_id = clean_text(payment.get("APBillID"))
         if not payment_id or not bill_id:
@@ -402,7 +414,7 @@ class APWorkbookRepository:
             target.update({"AmountPaid": float(snapshot.total_paid), "Balance": float(snapshot.balance), "Status": snapshot.status.value, "UpdatedAt": _now()})
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
-            workbook.save(self.path)
+            self._save_workbook(workbook)
         finally:
             _close_workbook(workbook)
         persisted = next((row for row in self.list_payments(bill_id) if clean_text(row.get("APPaymentID")).casefold() == payment_id.casefold()), None)
@@ -411,7 +423,7 @@ class APWorkbookRepository:
         return persisted
 
     def reverse_payment(self, payment_id: str, reversal_id: str, reason: str) -> dict[str, Any]:
-        assert_writes_allowed()
+        self._assert_write_permitted()
         payment_key = clean_text(payment_id).casefold()
         reversal_id = clean_text(reversal_id)
         if not reversal_id or not clean_text(reason):
@@ -451,13 +463,13 @@ class APWorkbookRepository:
             target.update({"AmountPaid": float(snapshot.total_paid), "Balance": float(snapshot.balance), "Status": snapshot.status.value, "UpdatedAt": _now()})
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
-            workbook.save(self.path)
+            self._save_workbook(workbook)
         finally:
             _close_workbook(workbook)
         return next(row for row in self.list_payments(bill_id) if clean_text(row.get("APPaymentID")).casefold() == reversal_id.casefold())
 
     def update_payment_metadata(self, payment_id: str, metadata: Mapping[str, Any]) -> dict[str, Any]:
-        assert_writes_allowed()
+        self._assert_write_permitted()
         """Add immutable linkage evidence after the cash-transfer transaction saves.
 
         This deliberately cannot change payment amount, bill, or lifecycle
@@ -480,7 +492,7 @@ class APWorkbookRepository:
             row["UpdatedAt"] = _now()
             _replace_rows(workbook, AP_BILLS_SHEET, AP_BILLS_TABLE, AP_BILLS_HEADERS, bills)
             _replace_rows(workbook, AP_PAYMENTS_SHEET, AP_PAYMENTS_TABLE, AP_PAYMENTS_HEADERS, payments)
-            workbook.save(self.path)
+            self._save_workbook(workbook)
         finally:
             _close_workbook(workbook)
         return next(row for row in self.list_payments() if clean_text(row.get("APPaymentID")).casefold() == key)

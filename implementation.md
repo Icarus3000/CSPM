@@ -1,5 +1,27 @@
 # Implementation History
 
+## 2026-10-12: Governed production activation audit and isolated writer guards
+
+Installed and canonical main remain clean `528e1cb`. Normal read-only enforcement
+includes private profile/deployment policy, CLI/environment latching and local
+OS protected handles; ordinary writer enablement requires the supported lease
+workflow, not a flag removal. The locally governed October 6 pair/release identity
+and six original dockets are reverified; current server freshness is unavailable
+from existing account-wide OneDrive diagnostics. Original byte copies and a
+complete hash-verified nonlaunchable installation/configuration rollback archive
+are preserved privately. Exact-main synthetic docket/billing/queued-save/
+exclusive-writer/publication/release and inherited verification-mode tests pass.
+An isolated branch repairs size-only seed recognition and missing AP write-lease
+guards, reproducing the original risks on fabricated records only. This source
+candidate is separate from the installed main; no financial reconciliation or
+production write is performed. Forty-nine focused AP/verification checks and
+40 checkout/verification regressions pass, with genuine small-template docket,
+billing, queued-save drain, complete paired release and AP writer/refusal probes.
+Safe checks use synthetic local folders only; this task does not rerun WebEngine
+or animation validation. Activation awaits current authenticated server
+release/pair proof and safe deployment of the validated guards. See
+`docs/CSPM_PRODUCTION_ACTIVATION_GATE_2026-10-12.md`.
+
 ## 2026-10-12: Normal-launch delay and stale header repair
 
 Actual user launch shows approximately 38 seconds from private launcher entry

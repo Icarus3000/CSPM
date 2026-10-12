@@ -1,5 +1,18 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-12: Governed production-write activation gate
+
+- [x] Verify installed/remote main `528e1cb`, complete immutable runtime and exact current read-only enforcement; preserve accepted motion/lifecycle and installation.
+- [x] Recover supported private source/local selectors and verify governed release, all local manifests, schema, original hashes and six original dockets without financial writes.
+- [x] Preserve original pair/manifest and current installed runtime/configuration as verified rollback evidence without another launchable main executable.
+- [x] Verify exact-main synthetic exclusive ownership, docket/billing save/reopen, accepted-save drain, paired immutable publication/release and separate inherited read-only protection.
+- [x] Complete isolated seed-identity/AP writer-guard regressions, genuine small-workbook docket/billing publication and owning/non-owning AP save checks; preserve installed main pending deployment.
+- [ ] Establish current server pair/revision through authenticated cloud evidence before enabling normal production writes.
+
+Missing current server evidence is independent of local hash consistency.
+No reconciliation of 119 findings or desktop propagation claim. Exact gate:
+`docs/CSPM_PRODUCTION_ACTIVATION_GATE_2026-10-12.md`.
+
 ## 2026-10-12: Normal-launch delay and stale header repair
 
 - [x] Read actual normal-launch log/report and identify the pre-application launcher delay separately from Qt startup.
