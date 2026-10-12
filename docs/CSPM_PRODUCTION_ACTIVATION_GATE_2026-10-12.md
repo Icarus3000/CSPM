@@ -9,7 +9,7 @@ verification. Animation development is outside this task.
 
 ## Installed main and read-only controls
 
-Canonical clean source and live remote main remain
+At the initial activation audit, canonical clean source and live remote main were
 `528e1cbbe646b02d76f7a5ff261450b90301b49c`.
 Installed main is `C:/Programs/CSPM/CSPM.exe`, SHA-256
 `AF792032D7DA0007A865648B8209066853B843F3A0C2C66854377AD1A0E23271`;
@@ -54,10 +54,28 @@ mapped OneDrive account has an October 11 account-wide diagnostic snapshot;
 its zero pending counts, placeholder metadata and running processes do not
 identify today's server release manifests or pair revisions/hashes. Current
 authenticated cloud access is required to enumerate the governed release folder
-and verify server bytes against its manifest and the local pair. SharePoint was
-discovered as available and suggested, but is not currently connected. No cloud
-credentials/tokens are read from local caches. No current server revision is
-inferred from filesystem times.
+and verify server bytes against its manifest and the local pair. The available
+SharePoint plugin is unconnected and exposes no original-file download contract
+in this session. Connecting it alone is therefore not a qualified byte-level
+verification mechanism. No cloud credentials/tokens are read from local caches.
+No current server revision is inferred from filesystem times.
+
+The supported alternative is Microsoft Graph PowerShell Authentication, saved
+privately from the PowerShell Gallery at version `2.41.1`. Microsoft documents
+delegated `Files.Read` for folder enumeration and original `driveItem/content`
+downloads. A private acquisition worker uses `Connect-MgGraph` with the existing
+LPN account/tenant pins, `LoginHint`, `ContextScope Process` and read-only scopes.
+Authentication takes place in Microsoft's native account picker/browser sign-in
+interface. Passwords, tokens and preauthenticated download URLs are never sent
+to chat or written to audit reports. The worker validates the authenticated
+account/tenant and Business drive mapping before any acquisition. Current
+manifests and original canonical/archive XLSM streams go to a new private
+evidence directory, with before/after item-version and release-list checks.
+Neither cloud files nor production replicas are overwritten.
+
+Official contracts: [authentication](https://learn.microsoft.com/en-us/powershell/module/microsoft.graph.authentication/connect-mggraph?view=graph-powershell-1.0),
+[original content](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content?view=graph-rest-1.0),
+[folder enumeration](https://learn.microsoft.com/en-us/graph/api/driveitem-list-children?view=graph-rest-1.0).
 
 ## Preservation and synthetic workflow evidence
 
@@ -104,9 +122,18 @@ the owner saves, reopens and publishes a complete hash-verified pair. Initial
 test-harness isolation failures remain preserved and excluded from passing results.
 These are safe local tests. Real WebEngine and motion checks from the unchanged
 installed checkpoint remain historical evidence; neither is rerun for this task.
-The candidate must be reviewed, cleanly integrated/packaged and deployed before
-ordinary writes rely on those repairs. Accepted motion/native/QML code remains
-unchanged. Candidate test logs and exact checkpoint are recorded privately.
+The exact clean writer-safety commit is
+`7f6e4bbd2917ac7558e55c5c5bf9dbc9f4e1d6ff`. A second narrow review passes 72 unique
+focused offscreen tests and in-memory compilation of all 101 runtime Python
+modules. All runtime AP construction paths are reviewed; the remaining unguarded
+construction reads payment history only. The complete nine-file intended delta
+passes the exact-index privacy/credential guard. Canonical main integrates this
+commit by ordinary fast-forward, preserving its history. Live remote publication
+and the final source pin are recorded privately after publication; installed
+main remains the preserved `528e1cb` package while authentication is pending.
+The fixes must be cleanly packaged and deployed before ordinary writes rely on
+them. Accepted motion/native/QML code remains unchanged. No animation development
+or installation change is performed as part of source publication.
 
 ## Activation boundary and remaining action
 
@@ -128,8 +155,17 @@ workbooks or alter records as part of activation. Desktop propagation remains
 untested and requires separate participation on that computer.
 
 The single external prerequisite is authenticated access to the current governed
-OneDrive/SharePoint server folder/release evidence. The suggested SharePoint
-connection is the next action; once connected, compare actual server revision
-and bytes before enabling normal writes. Operational status, source candidate,
-runtime archive and evidence are recorded outside Git in the workstation
+OneDrive/SharePoint server folder/release evidence. The actionable interface is
+the Microsoft Graph PowerShell sign-in dialog initiated by the private worker;
+the user completes sign-in using the existing LPN account. This replaces the
+earlier unqualified SharePoint-plugin suggestion. After authentication, compare
+the current server manifest, original pair hashes and stable item versions with
+the local governed pair. A discrepancy preserves both copies and blocks
+activation; it does not trigger overwrite, merge or financial reconciliation.
+Then build/deploy the clean published writer fixes, retain the independent
+read-only verification command, configure the supported normal writer profile,
+and verify no-edit exclusive checkout/orderly close. Keep one normal Start-menu
+entry. Synthetic save/publication proof remains separate from production upload
+and physical desktop propagation. Operational status, source publication,
+runtime archive and evidence remain outside Git in the workstation
 production-activation evidence and dashboard.

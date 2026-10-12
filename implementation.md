@@ -1,5 +1,25 @@
 # Implementation History
 
+## 2026-10-12: Actionable server authentication and writer-source publication
+
+The exact writer-safety commit `7f6e4bb` passes a second narrow review, 72 unique
+focused AP/checkout/read-only regressions, all 101 runtime Python compilations
+in memory and the complete nine-file index privacy guard. Canonical main is
+fast-forwarded through that tested commit for ordinary authorized remote
+preservation; final remote publication identity is recorded privately. No native,
+QML, motion or installed-runtime changes accompany source publication.
+The available unconnected SharePoint plugin lacks a demonstrated original-byte
+download contract, so connecting it alone cannot establish workbook freshness.
+Microsoft's supported Graph PowerShell Authentication module provides delegated
+Files.Read enumeration and original-content GET downloads, using the existing
+LPN account/tenant and process-confined Microsoft sign-in. The private worker
+preserves downloads and compares current manifest/pair hashes with stable server
+item versions before activation; credentials and download URLs stay out of
+reports. Current server authentication/evidence still gates package deployment
+and normal writes. One normal Start-menu entry is retained; verification remains
+available as a documented command. No findings or financial records are changed.
+See `docs/CSPM_PRODUCTION_ACTIVATION_GATE_2026-10-12.md`.
+
 ## 2026-10-12: Governed production activation audit and isolated writer guards
 
 Installed and canonical main remain clean `528e1cb`. Normal read-only enforcement

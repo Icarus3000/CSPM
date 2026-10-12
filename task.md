@@ -7,7 +7,10 @@
 - [x] Preserve original pair/manifest and current installed runtime/configuration as verified rollback evidence without another launchable main executable.
 - [x] Verify exact-main synthetic exclusive ownership, docket/billing save/reopen, accepted-save drain, paired immutable publication/release and separate inherited read-only protection.
 - [x] Complete isolated seed-identity/AP writer-guard regressions, genuine small-workbook docket/billing publication and owning/non-owning AP save checks; preserve installed main pending deployment.
+- [x] Review exact clean writer-safety commit `7f6e4bb` with 72 unique focused checks and complete-delta privacy review; integrate it into canonical main by fast-forward for authorized remote preservation.
+- [x] Qualify a supported original-byte server acquisition method: Microsoft Graph PowerShell delegated Files.Read; replace the unproven SharePoint-plugin suggestion with Microsoft sign-in.
 - [ ] Establish current server pair/revision through authenticated cloud evidence before enabling normal production writes.
+- [ ] After server-pair verification, package/deploy clean published writer fixes, preserve rollback and a documented read-only verification command, then configure/test the one normal writable launcher without financial edits.
 
 Missing current server evidence is independent of local hash consistency.
 No reconciliation of 119 findings or desktop propagation claim. Exact gate:
