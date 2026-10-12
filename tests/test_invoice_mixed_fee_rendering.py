@@ -32,7 +32,7 @@ class _MixedInvoiceRepo:
                 sc.COL_DRAFT_ID: "DRAFT-ID-MIXED",
                 sc.COL_DRAFT_INVOICE_NUM: DRAFT_NUM,
                 sc.COL_DRAFT_CLIENT_ID: CLIENT_ID,
-                sc.COL_DRAFT_CLIENT_NAME: "Truexperiences Tours Inc.",
+                sc.COL_DRAFT_CLIENT_NAME: "Example Tours Ltd.",
                 sc.COL_DRAFT_DATE: "2026-09-24",
                 sc.COL_DRAFT_DISCOUNT_TYPE: "Flat",
                 sc.COL_DRAFT_DISCOUNT_VALUE: "270.00",
@@ -70,7 +70,7 @@ class _MixedInvoiceRepo:
                 sc.COL_DISB_DATE: "2026-09-23",
                 sc.COL_DISB_CLIENT_ID: CLIENT_ID,
                 sc.COL_DISB_MATTER_ID: MATTER_ID,
-                sc.COL_DISB_DESCRIPTION: "CIPO Filing Fees - supplier invoice 20576109",
+                sc.COL_DISB_DESCRIPTION: "CIPO Filing Fees - supplier invoice TEST-100",
                 sc.COL_DISB_AMOUNT: "491.06",
                 sc.COL_DISB_TAX_EXEMPT: "True",
                 sc.COL_DISB_INVOICE_REF: DRAFT_NUM,
@@ -146,8 +146,8 @@ class _MixedInvoiceRepo:
             "ok": True,
             "client": {
                 "clientId": CLIENT_ID,
-                "clientName": "Truexperiences Tours Inc.",
-                "displayName": "Truexperiences Tours Inc.",
+                "clientName": "Example Tours Ltd.",
+                "displayName": "Example Tours Ltd.",
                 "addressLine1": "1 Test Street",
                 "city": "Toronto",
                 "stateProvince": "ON",
@@ -204,14 +204,14 @@ def test_mixed_hourly_additive_flat_fee_and_disbursement_render_separately():
     assert len(payload["disbursement_lines"]) == 1
     assert payload["disbursement_lines"][0]["supplierName"] == "CIPO"
     assert payload["disbursement_lines"][0]["description"] == (
-        "CIPO Filing Fees - CIPO invoice 20576109 (Tax Exempt)."
+        "CIPO Filing Fees - CIPO invoice TEST-100 (Tax Exempt)."
     )
 
     html = controller._doc_svc.generate_html("Concept_A2", payload)
     assert "Flat Fees" in html
     assert "Disbursements" in html
-    assert "CIPO Filing Fees - CIPO invoice 20576109 (Tax Exempt)." in html
-    assert "supplier invoice 20576109" not in html
+    assert "CIPO Filing Fees - CIPO invoice TEST-100 (Tax Exempt)." in html
+    assert "supplier invoice TEST-100" not in html
     assert "Total Professional Time" not in html
     assert "$1,520.00" in html
     assert "$491.06" in html

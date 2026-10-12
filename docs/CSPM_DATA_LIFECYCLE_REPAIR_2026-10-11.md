@@ -1,5 +1,11 @@
 # Governed data and post-promotion lifecycle repair
 
+October 12 continuation: Cory accepted the read-only candidate (“That worked
+well enough”) and authorized canonical main finalization. The pending review
+gate and lack of push authorization below describe the preserved earlier
+checkpoint. Current authorization and execution boundaries are in
+[the finalization record](CSPM_CANONICAL_MAIN_FINALIZATION_2026-10-12.md).
+
 This repair starts from preserved promotion
 `b56de1bfd625690bf5248630faee7de3f03b949c`, whose runtime matches accepted build
 `4237e7d1f5b4aab89a016f068c1620566f5d70d8`. Runtime repair source is

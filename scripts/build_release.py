@@ -6,10 +6,40 @@ import shutil
 import subprocess
 import argparse
 import atexit
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+
+def source_identity(root: Path) -> tuple[str, str]:
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=root, text=True
+    )
+    return sha, "modified" if status.strip() else "clean"
+
+
+def release_provenance(root: Path, native_bridge: Path, version: dict,
+                       invoked_at: datetime, *, candidate: bool = False) -> dict:
+    """Capture packaging identity without creating a generated source file."""
+    if invoked_at.tzinfo is None:
+        raise ValueError("Packaging invocation timestamp requires a timezone")
+    source_sha, source_status = source_identity(root)
+    return {
+        "schemaVersion": 2,
+        "repository": "https://github.com/Icarus3000/CSPM.git",
+        "sourceSha": source_sha,
+        "sourceStatus": source_status,
+        "sourceDirty": source_status == "modified",
+        "buildTimestampUtc": invoked_at.astimezone(timezone.utc).isoformat(timespec="microseconds"),
+        "version": version.get("version", "Unknown"),
+        "codename": version.get("codename", ""),
+        "versionBuild": str(version.get("build", "")),
+        "nativeDllSha256": hashlib.sha256(native_bridge.read_bytes()).hexdigest().upper(),
+        "defaultMotionEngine": "native",
+        "candidateProfileRequired": candidate,
+    }
 
 
 def quarantine_release_artifact(source_dir: Path, reason: str) -> Path:
@@ -304,6 +334,9 @@ def deploy_to_programs(source_package_dir: Path, target_deploy_dir: Path) -> Non
 
 
 def main():
+    # This one instant is the governed builder invocation, before preflight or
+    # either PyInstaller build. About never substitutes launch/file times.
+    invoked_at = datetime.now(timezone.utc)
     parser = argparse.ArgumentParser(description="CSPM Release Builder")
     parser.add_argument("--installer", action="store_true", help="Compile Inno Setup installer after PyInstaller builds")
     parser.add_argument("--validate", action="store_true", help="Run post-build validation checks")
@@ -335,9 +368,11 @@ def main():
     # 1. Read version
     ver_path = ROOT_DIR / "version.json"
     app_version = "Unknown"
+    version_data = {}
     if ver_path.exists():
         with open(ver_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+            version_data = data
             app_version = data.get("version", "Unknown")
             
     print(f"Target version: {app_version}")
@@ -413,20 +448,11 @@ def main():
         ("version.json", ".")
     ]
 
-    source_sha = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT_DIR, text=True
-    ).strip()
+    provenance = release_provenance(ROOT_DIR, native_bridge, version_data, invoked_at,
+                                   candidate=args.native_motion_candidate)
     build_identity = build_dir / "release-provenance.json"
     build_dir.mkdir(parents=True, exist_ok=True)
-    build_identity.write_text(json.dumps({
-        "schemaVersion": 1,
-        "repository": "https://github.com/Icarus3000/CSPM.git",
-        "sourceSha": source_sha,
-        "version": app_version,
-        "nativeDllSha256": hashlib.sha256(native_bridge.read_bytes()).hexdigest().upper(),
-        "defaultMotionEngine": "native",
-        "candidateProfileRequired": args.native_motion_candidate,
-    }, indent=2) + "\n", encoding="utf-8")
+    build_identity.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
     datas.append((str(build_identity), "."))
     
     cmd_main = [
@@ -435,7 +461,7 @@ def main():
         "--onedir",
         "--windowed",
         "--name", "CSPM",
-        "--icon=src/assets/app_icon.ico",
+        f"--icon={ROOT_DIR / 'src/assets/app_icon.ico'}",
         "--hidden-import=pypdf",
         "--hidden-import=reportlab",
         # Supplier evidence conversion: Pillow renders image files and
@@ -449,13 +475,19 @@ def main():
         "--hidden-import=win32com.client.dynamic",
         "--distpath", str(dist_dir),
         "--workpath", str(build_dir),
+        "--specpath", str(build_dir / "specs"),
     ]
     
     for src, dst in datas:
-        cmd_main.extend(["--add-data", f"{src}{os.pathsep}{dst}"])
+        # PyInstaller resolves relative data paths against --specpath. Keep
+        # inputs anchored to the source while generated specs stay in work/.
+        source_path = Path(src)
+        if not source_path.is_absolute():
+            source_path = ROOT_DIR / source_path
+        cmd_main.extend(["--add-data", f"{source_path}{os.pathsep}{dst}"])
     cmd_main.extend(["--add-binary", f"{native_bridge}{os.pathsep}native"])
     if args.native_motion_candidate:
-        cmd_main.extend(["--add-data", f"native-motion-candidate.json{os.pathsep}."])
+        cmd_main.extend(["--add-data", f"{ROOT_DIR / 'native-motion-candidate.json'}{os.pathsep}."])
         
     cmd_main.append(str(main_script))
     
@@ -477,6 +509,7 @@ def main():
         "--name", "CSPM_Recovery",
         "--distpath", str(dist_dir / "CSPM"), # Put it inside the main CSPM dist folder
         "--workpath", str(build_dir),
+        "--specpath", str(build_dir / "specs"),
     ]
     cmd_rec.append(str(recovery_script))
 
@@ -486,6 +519,9 @@ def main():
     if result_rec.returncode != 0:
         print("ERROR: PyInstaller build for Recovery Utility failed.")
         sys.exit(1)
+
+    if source_identity(ROOT_DIR) != (provenance["sourceSha"], provenance["sourceStatus"]):
+        raise RuntimeError("Source identity changed during packaging; package cannot be promoted")
         
     print("\n[SUCCESS] PyInstaller bundles created in dist/CSPM/")
     

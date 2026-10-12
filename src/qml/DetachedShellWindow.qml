@@ -12703,9 +12703,27 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         onBackupRecoveryRequested: {
             backupRecoveryDialog.open();
         }
+        onAboutRequested: aboutDialog.open()
         onSoundChanged: function(enabled) {
             mainWin.applySoundEffectsEnabled(enabled);
         }
+    }
+
+    AboutDialog {
+        id: aboutDialog
+        t: mainWin.t
+        appStyle: mainWin.appStyle
+        informationProvider: typeof aboutInformation !== "undefined" ? aboutInformation : null
+        reducedMotion: mainWin.lowPerformanceMode
+        x: Math.max(0, (mainWin.width - width) / 2)
+        y: Math.max(0, (mainWin.height - height) / 2)
+        z: 1001
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+A"
+        enabled: mainWin.visible && !mainWin.detachedMode
+        onActivated: aboutDialog.open()
     }
 
     BackupRecoveryDialog {

@@ -1916,6 +1916,9 @@ def main() -> None:
     native_motion = NativeMotion(engine)
     app.aboutToQuit.connect(native_motion.shutdown)
     engine.rootContext().setContextProperty("nativeMotion", native_motion)
+    from backend.about import AboutInformation
+    about_information = AboutInformation(native_motion, engine)
+    engine.rootContext().setContextProperty("aboutInformation", about_information)
     engine.rootContext().setContextProperty("nativeMotionCandidate", native_candidate_profile() is not None)
     engine.rootContext().setContextProperty("layoutDevelopment", native_motion)
     engine.rootContext().setContextProperty("apBackendController", controller.apController)

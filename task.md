@@ -1,5 +1,23 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-12: Accepted application canonical main finalization
+
+- [x] Cory accepts the read-only lifecycle candidate: “That worked well enough.” The previous manual lifecycle/data review gate is satisfied.
+- [x] Verify clean repair checkpoint, accepted candidate provenance and canonical remote main ancestry; preserve all original source worktrees and experiments.
+- [x] Add accessible About with governed version, immutable source identity, actual build timestamp, runtime EXE hash, active motion preference and safe copy text; focused metadata/clipboard/QML checks pass.
+- [x] Review and validate the deliberate accepted-runtime integration; native/legacy/reduced desktop lifecycle, protected motion comparison and complete-delta privacy checks pass with historical gate failures separately disclosed.
+
+The execution record for committing/pushing canonical main, the exact clean-main
+build, verified frozen deployment and final one-executable/one-Start-menu cleanup
+is the private finalization manifest and workstation dashboard. These records
+are written after packaging, so documenting deployment does not change the
+source SHA embedded in About.
+
+Authorization and remaining boundaries: `docs/CSPM_CANONICAL_MAIN_FINALIZATION_2026-10-12.md`.
+Financial writes/reconciliation are unauthorized; server freshness and physical
+cross-computer docket synchronization remain unverified. Accepted motion,
+legacy fallback, reduced motion and all native safety contracts remain required.
+
 ## 2026-10-11: Governed data and post-promotion lifecycle repair
 
 - [x] Preserve accepted source/installation and both rollback generations; verify remote promotion/main references without modifying them.
@@ -12,7 +30,7 @@
 - [x] Recover already built final package without restarting completed work; pass immutable-source/package/privacy and frozen startup/navigation/X-exit verification, plus actual packaged WebEngine rendering.
 - [x] October 12: pass 97 focused safe/offscreen tests and in-memory runtime/helper compilation; verify accepted motion source and both immutable rollback manifests.
 - [x] Stage and launch the separately labelled read-only candidate for Cory through a validated private launcher and new Desktop shortcut.
-- [ ] Cory: confirm expected governed dataset, X process/icon removal and exactly one tray-return burst before main replacement.
+- [x] Cory: accepts the governed read-only candidate and lifecycle/tray behavior on October 12, authorizing final main integration and replacement.
 
 Runtime source `9db13b42eba3d0104465bbdeca181d54b779a81d`; continuation and data boundaries: `docs/CSPM_DATA_LIFECYCLE_REPAIR_2026-10-11.md`.
 

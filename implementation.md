@@ -1,5 +1,24 @@
 # Implementation History
 
+## 2026-10-12: Accepted CSPM canonical main finalization
+
+Cory reports “That worked well enough” after manual review of the read-only
+lifecycle candidate and authorizes About, canonical main integration/push,
+clean-main build/install and subsequent competing-runtime cleanup. The old
+candidate review gate is satisfied. Canonical remote main is an ancestor of the
+clean repair continuation; a separate integration worktree preserves all prior
+source work. The accepted motion/lifecycle runtime, newer primary business
+fixes, legacy fallback and read-only safeguards remain the integration baseline.
+New scratch patch scripts are excluded and new mixed-invoice fixtures sanitized.
+
+The implementation/deployment contract and remaining limitations are recorded in
+`docs/CSPM_CANONICAL_MAIN_FINALIZATION_2026-10-12.md`. Main publication, package
+verification, installed launcher verification and cleanup are recorded as they
+complete in private finalization evidence and the workstation dashboard.
+The first normal main launch remains explicitly governed read-only; financial
+writes/reconciliation, server freshness and cross-computer synchronization are
+outside this authorization.
+
 ## 2026-10-12: Interrupted lifecycle candidate recovered and validated
 
 Recovered actual worktree `C:/Projects/CSPM-lifecycle-repair`, branch `fix/cspm-post-promotion-lifecycle-20261011`, HEAD/build pin `bd1264541af346733881ad9a6b852a944c3870b6`. The previous session had committed runtime/data/lifecycle repairs and finished both ordinary executable builds; recovery reused the final candidate and preserved all other worktrees/dirty experiments. Normal Start-menu configuration is proven empty/setup; supported read-only selectors remain prepared privately rather than applied. Canonical/archived/replica pair hashes still match the locally governed October 6 release; OneDrive server freshness is unverified.

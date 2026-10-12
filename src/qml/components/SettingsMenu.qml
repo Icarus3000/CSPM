@@ -22,6 +22,7 @@ Popup {
     signal reportBrandingRequested()
     signal productivitySettingsRequested()
     signal backupRecoveryRequested()
+    signal aboutRequested()
 
     property color menuSurface: SemanticTheme.surface(root.t, "popup", "neutral", root.appStyle)
     property color menuInk: SemanticTheme.ink(root.t, "popup", "neutral", root.appStyle)
@@ -138,14 +139,42 @@ Popup {
         anchors.margins: 16
         spacing: 12
 
-        Text {
-            text: "Settings"
-            color: root.menuInk
-            font.pixelSize: 16
-            font.weight: Font.Bold
+        RowLayout {
             Layout.fillWidth: true
-            horizontalAlignment: Text.AlignLeft
-            elide: Text.ElideRight
+            Text {
+                text: "Settings"
+                color: root.menuInk
+                font.pixelSize: 16
+                font.weight: Font.Bold
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+            }
+            Button {
+                id: aboutMenuItem
+                objectName: "CSPMAboutMenuItem"
+                text: "About CSPM"
+                activeFocusOnTab: true
+                Accessible.name: "About CSPM"
+                ToolTip.visible: hovered
+                ToolTip.text: "Version and build information (Ctrl+Shift+A)"
+                onClicked: {
+                    root.close()
+                    root.aboutRequested()
+                }
+                contentItem: Text {
+                    text: aboutMenuItem.text
+                    color: root.menuInk
+                    font.pixelSize: 13
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: root.radiusFor(height)
+                    color: aboutMenuItem.hovered ? root.hoverFill : root.inactiveFill
+                    border.width: aboutMenuItem.activeFocus ? 2 : 1
+                    border.color: aboutMenuItem.activeFocus ? root.accent : root.menuBorder
+                }
+            }
         }
 
         Rectangle {
