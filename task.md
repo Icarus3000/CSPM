@@ -1,5 +1,33 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-13: OmniBook invoice preview and installed resource repair
+
+- [x] Read the actual OmniBook runtime error; confirm packaged invoice templates exist and diagnose the writable-profile asset lookup.
+- [x] Pull all current cloud main changes through `d1d6475` with local repair edits and prior release notes preserved.
+- [x] Repair immutable invoice/schema/theme/docs/version/logo resources and approved empty-template recognition; launch the packaged Recovery utility from its actual installation.
+- [x] Pass 156 focused sandbox-safe source checks, seven changed-Python compilations, all 35 locked dependency versions and whitespace checks.
+- [ ] Rebuild clean source; audit candidate/installed assets and bytecode; validate actual invoice WebEngine/PDF and frozen startup/input/exit outside sandbox; verify rollback, deployment and normal launcher identity without workbook/settings changes.
+- [ ] User foreground acceptance: reopen normal CSPM, open the affected draft preview and export its PDF.
+- [ ] Separate follow-up: validate/repair legacy Word-layout billing fields and monetary parity; no unsafe A2-to-A fallback. Legacy-import delegate/type warnings remain separate pending UI findings.
+
+Scope: `docs/CSPM_OMNIBOOK_RESOURCE_REPAIR_2026-10-13.md`. Private evidence stays in ignored `outputs/omnibook_assets_20261013/`.
+
+## 2026-10-13: Git cloud pull and installed executable rebuild
+
+Local OmniBook installation record preceding the resource repair; newer cloud release notes remain below.
+
+- [x] Fast-forward clean `main` from `4668767` to `a8a32e579fae95c84619ca7365090f4b5e29506d`; independently confirm the remote main SHA before and after release.
+- [x] Rebuild ordinary main and Recovery with approved empty templates, all 35 exact locked package versions, clean-source provenance and the unchanged accepted native DLL. Retain the initial incomplete-test-environment COM failure; the complete `CSPM-primary/.venv` release environment succeeds.
+- [x] Pass 130 focused sandbox-safe source checks, ten changed-Python in-memory compilations, governed changed-QML lint (warnings only), whitespace checks and 25 archived invoice checks for each package. Candidate/installed immutable-source audits verify 67 project modules, the entry point, 173 QML-tree files, runtime assets, approved templates and native ABI.
+- [x] Outside sandbox, candidate/installed frozen startup, accessible read-only status, search/navigation, one X close and normal exit pass on protected synthetic pairs in 14.348/14.861 seconds. Actual packaged WebEngine HTML/JavaScript/PDF checks pass for both (37,208 bytes each), with Chromium sandbox enabled.
+- [x] Preserve a hash-verified nonlaunchable rollback archive, deploy through the governed helper to `C:/Programs/CSPM/CSPM.exe`, and verify exact candidate/installed manifests: 4,253 runtime files / 677,648,747 bytes. Refresh only normal launcher runtime identity fields; existing governed writer policy, settings, machine identity, server receipt and workbook hashes remain unchanged. Normal launcher check-only verification passes.
+
+Private evidence: ignored `outputs/pull_rebuild_20261013/` plus the workstation
+immutable-source audit reports. Main EXE SHA-256:
+`C056F35409A4A57FA93544B613853D98258E7A9A4CE4B367F7B0E7CEA60846E1`.
+User foreground invoice/A/R acceptance remains the next release check below.
+
+
 ## 2026-10-13: Statement preview and invoice selection/search filters
 
 - [x] Implement the user-approved preview-only logo/text header repair, preserving the saved/printed header renderer and accepted motion.

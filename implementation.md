@@ -1,5 +1,51 @@
 # Implementation History
 
+## 2026-10-13: OmniBook immutable resources separated from the writable profile
+
+The installed invoice templates were present, but AppController used the normal launcher's writable `CSPM_EXECUTABLE_ROOT` for invoice layouts. InvoiceDocumentService now defaults to bundled/source resources. AppPaths.resource_root preserves injected development roots while selecting frozen `_MEIPASS` for schema/themes/docs, seed approval, version metadata and report-logo defaults. Relative asset resolution retains its subdirectories; custom branding and all writable data/settings/export selectors remain supported. Recovery opens the existing packaged sibling executable. Unsupported Word layouts fail without touching exports and recommend PDF; legacy Word parity remains a separate follow-up.
+
+All cloud main changes through `d1d6475` are pulled before release, preserving newer invoice/statement filters and local release notes. Sandbox-safe checks pass 156 focused source/offscreen regressions, seven in-memory compilations, the 35 exact release dependencies and whitespace review. Clean-source packaging, actual outside-sandbox packaged invoice WebEngine/PDF and frozen startup/input/exit, immutable audits, rollback/deployment and preserved-data checks follow in private ignored evidence. User acceptance remains the affected draft preview/PDF in the normal app. Scope: `docs/CSPM_OMNIBOOK_RESOURCE_REPAIR_2026-10-13.md`.
+
+## 2026-10-13: Cloud source pulled, rebuilt and installed
+
+Local OmniBook installation record preceding the resource repair; newer cloud release notes remain below.
+
+Clean `main` fast-forwards from `4668767` to remote-confirmed
+`a8a32e579fae95c84619ca7365090f4b5e29506d`. Both ordinary executables rebuild
+through `scripts/build_release.py --validate --no-deploy` using the exact 35-package
+release lock, approved empty templates and the unchanged accepted native DLL.
+The initial test-host environment cannot import Windows COM and its failed log
+is preserved; packaging succeeds from the complete existing `CSPM-primary/.venv`.
+Source stays clean throughout packaging. A verified nonlaunchable rollback ZIP
+preserves the preceding complete runtime/configuration before governed deployment.
+The installed `C:/Programs/CSPM` tree matches the candidate at 4,253 runtime files,
+677,648,747 bytes and manifest SHA-256
+`7481A21F9C31C3BA70D0C6212FC087E352BB6FE4C8E046120ABAAF92DFAF077D`.
+Main EXE SHA-256 is
+`C056F35409A4A57FA93544B613853D98258E7A9A4CE4B367F7B0E7CEA60846E1`.
+
+Sandbox-safe checks pass 130 synthetic source billing/payment/WIP tests, ten
+changed-Python in-memory compilations, governed changed-QML lint (warnings only),
+whitespace checks and 25 invoice tests against each executable's compiled archive.
+Independent candidate/installed immutable-source audits pass 67 project modules,
+the entry point, 173 QML-tree files, runtime assets, approved templates, privacy
+and native ABI. Outside sandbox, frozen candidate/installed startup is ready in
+14.348/14.861 seconds; accessible source status, input/search navigation, one X
+animation, tray teardown and exit zero pass with protected synthetic pairs and
+no forced termination. Actual candidate/installed WebEngine HTML/JavaScript/PDF
+rendering passes (37,208 bytes each) using bundled native modules, helper,
+resources and locales, with Chromium sandbox enabled.
+
+The current private normal launcher already uses the governed writer policy.
+Only its runtime source/provenance/EXE/native/full-manifest fields are refreshed;
+all other deployment fields, normal settings, launchers, machine identity,
+preserved activation receipt and workbook hashes remain unchanged. Check-only
+normal launch verification passes after installation. Evidence and rollback
+remain in ignored `outputs/pull_rebuild_20261013/` and the workstation audit
+folder. This release does not establish fresh server or physical cross-computer
+propagation evidence. Foreground review of the corrected invoice/A/R remains.
+
+
 ## 2026-10-13: Statement preview, paid invoice selection and directory filters
 
 ReportWindow preview now reserves logo space independently of its hidden tint source, preserves normal/custom logos in light mode and clears page metadata; the saved/printed header renderer and branding assets remain intact. Statement selection adds Open/Paid/All, paid-only client choices and inclusive optional invoice-date ranges while separately computing the Statement Date cutoff, including dated later settlements and signed reversals. Selection invalidation and instance-qualified request IDs prevent stale filtered previews; report captions and date scope reflect the included invoices.

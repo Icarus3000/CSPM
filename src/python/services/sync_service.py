@@ -185,7 +185,7 @@ class SyncService:
         if file_name not in self._FILES or not self._usable(path):
             return False
         try:
-            template_dir = self.paths.root / "src" / "templates"
+            template_dir = self.paths.resource_root() / "src" / "templates"
             template = template_dir / file_name
             approval = json.loads((template_dir / "template_approval.json").read_text(encoding="utf-8"))
             records = [

@@ -32,6 +32,18 @@ class AppPaths:
             return Path(sys._MEIPASS)
         return AppPaths.project_root()
 
+    def resource_root(self) -> Path:
+        """Locate shipped resources independently of the writable profile.
+
+        Frozen callers may use ``root`` for a per-user runtime directory. The
+        immutable package remains under PyInstaller's resource directory.
+        Development callers retain their explicitly supplied fixture/source root.
+        """
+        import sys
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            return self.project_root()
+        return self.root
+
     # persistent data root
     def _persistent_data_root(self) -> Path:
         env_override = os.environ.get("CSPM_DATA_DIR", "").strip()
@@ -123,7 +135,7 @@ class AppPaths:
 
     # docs/schema
     def docs_dir(self) -> Path:
-        return self.root / "docs"
+        return self.resource_root() / "docs"
 
     def bible_md_path(self) -> Path:
         return self.docs_dir() / "BIBLE.md"
@@ -141,11 +153,11 @@ class AppPaths:
         return self.docs_dir() / "DECISIONS"
 
     def schema_dir(self) -> Path:
-        return self.root / "schema"
+        return self.resource_root() / "schema"
 
     def workbook_schema_path(self) -> Path:
         return self.schema_dir() / "workbook_schema.yml"
 
     # qml
     def themes_json_path(self) -> Path:
-        return self.root / "src" / "qml" / "themes" / "themes.json"
+        return self.resource_root() / "src" / "qml" / "themes" / "themes.json"

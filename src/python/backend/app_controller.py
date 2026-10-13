@@ -573,10 +573,8 @@ class AppController(QObject):
         startup_logger.info("%s AppController creating billing controller", _elapsed())
         from services.invoice_draft_service import InvoiceDraftService
         from services.invoice_document_service import InvoiceDocumentService
-        from services.paths import AppPaths
-        _templates_dir = str(AppPaths.executable_root() / "src" / "templates" / "invoices")
         self._invoice_draft_svc = InvoiceDraftService(self._excel_repo)
-        self._invoice_doc_svc = InvoiceDocumentService(_templates_dir)
+        self._invoice_doc_svc = InvoiceDocumentService()
         self._billing_controller = BillingController(
             self._excel_repo, self._invoice_draft_svc, self._invoice_doc_svc
         )
@@ -649,7 +647,7 @@ class AppController(QObject):
 
     def _load_app_version(self) -> str:
         try:
-            ver_path = self._paths.root / "version.json"
+            ver_path = self._paths.resource_root() / "version.json"
             if ver_path.exists():
                 with open(ver_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -1432,16 +1430,19 @@ class AppController(QObject):
     @Slot(result=bool)
     def openRecoveryUtility(self) -> bool:
         try:
-            # Launch cspm_recovery.py in a new console window
-            script_path = self._paths.root / "scripts" / "cspm_recovery.py"
-            if not script_path.exists():
-                self.error.emit("Recovery utility script not found.")
+            if getattr(sys, "frozen", False):
+                utility_path = Path(sys.executable).resolve().parent / "CSPM_Recovery" / "CSPM_Recovery.exe"
+                command = [str(utility_path)]
+            else:
+                utility_path = self._paths.resource_root() / "scripts" / "cspm_recovery.py"
+                command = [sys.executable, str(utility_path)]
+            if not utility_path.is_file():
+                self.error.emit("Recovery utility not found. Repair the CSPM installation.")
                 return False
-            
-            # Start in a new terminal window
+
             subprocess.Popen(
-                ["cmd.exe", "/c", "start", "cmd.exe", "/k", sys.executable, str(script_path)],
-                cwd=str(self._paths.root),
+                command,
+                cwd=str(utility_path.parent),
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
             return True
@@ -3143,7 +3144,7 @@ class AppController(QObject):
             "addressLines": ["14 Parsons Court", "Thornhill, ON L4K 6Z4"],
             "phone": "416-725-9364",
             "email": "cory@coryschneiderlaw.ca",
-            "logoPath": str(self._paths.root / "assets" / "CS.svg"),
+            "logoPath": str(self._paths.resource_root() / "assets" / "CS.svg"),
         }
 
     def _safe_profile_id(self, text: Any, fallback: str = "") -> str:
@@ -3241,10 +3242,10 @@ class AppController(QObject):
             if resolved_logo:
                 logo_path = str(resolved_logo)
             elif profile_id == DEFAULT_REPORT_BRANDING_PROFILE_ID:
-                default_resolved = self._resolve_asset_file_path(default["logoPath"]) or (self._paths.root / "assets" / "CS.svg")
+                default_resolved = self._resolve_asset_file_path(default["logoPath"]) or (self._paths.resource_root() / "assets" / "CS.svg")
                 logo_path = str(default_resolved)
         elif profile_id == DEFAULT_REPORT_BRANDING_PROFILE_ID:
-            default_resolved = self._resolve_asset_file_path(default["logoPath"]) or (self._paths.root / "assets" / "CS.svg")
+            default_resolved = self._resolve_asset_file_path(default["logoPath"]) or (self._paths.resource_root() / "assets" / "CS.svg")
             logo_path = str(default_resolved)
 
         return {
@@ -3341,9 +3342,10 @@ class AppController(QObject):
             return None
         candidate = Path(source)
         if not candidate.is_absolute():
-            resolved = (self._paths.root / candidate).resolve()
-            if resolved.exists():
-                return resolved
+            for root in (self._paths.resource_root(), self._paths.root):
+                resolved = (root / candidate).resolve()
+                if resolved.exists():
+                    return resolved
         elif candidate.exists():
             return candidate.resolve()
 
@@ -3728,9 +3730,10 @@ class AppController(QObject):
         """
         candidates = []
         configured_logo = str(profile.get("logoPath") or "").strip()
-        firm_report_logo = self._paths.root / "assets" / "CS.svg"
-        legacy_report_logo = self._paths.root / "src" / "qml" / "assets" / "CS.svg"
-        legacy_app_icon = self._paths.root / "src" / "assets" / "app_icon_preview.png"
+        asset_root = self._paths.resource_root()
+        firm_report_logo = asset_root / "assets" / "CS.svg"
+        legacy_report_logo = asset_root / "src" / "qml" / "assets" / "CS.svg"
+        legacy_app_icon = asset_root / "src" / "assets" / "app_icon_preview.png"
         resolved_configured = self._resolve_asset_file_path(configured_logo) if configured_logo else None
         configured_path = resolved_configured or (self._coerce_file_path(configured_logo) if configured_logo else None)
         default_logo_paths = {

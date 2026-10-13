@@ -3,12 +3,17 @@ import logging
 from typing import Dict, Any, Optional
 from jinja2 import Environment, FileSystemLoader
 from docxtpl import DocxTemplate
+from services.paths import AppPaths
 
 logger = logging.getLogger(__name__)
 
 class InvoiceDocumentService:
-    def __init__(self, templates_dir: str):
-        self.templates_dir = templates_dir
+    def __init__(self, templates_dir: Optional[str] = None):
+        # Invoice layouts are shipped code resources. Runtime/data overrides
+        # may point at a fresh writable profile with no source tree.
+        self.templates_dir = str(
+            AppPaths.project_root() / "src" / "templates" / "invoices"
+        ) if templates_dir is None else templates_dir
         self.jinja_env = Environment(loader=FileSystemLoader(self.templates_dir))
 
     def generate_html(self, template_name: str, payload: Dict[str, Any]) -> str:
@@ -25,6 +30,11 @@ class InvoiceDocumentService:
         """Render an invoice as a DOCX file using docxtpl."""
         template_file = os.path.join(self.templates_dir, f"{template_name}.docx")
         try:
+            if not os.path.isfile(template_file):
+                raise ValueError(
+                    f"The {template_name} layout has no Word template in this installation. "
+                    "Use Export PDF for this invoice."
+                )
             doc = DocxTemplate(template_file)
             doc.render(payload)
             doc.save(output_path)
