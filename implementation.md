@@ -1,5 +1,13 @@
 # Implementation History
 
+## 2026-10-13: Read-only Microsoft 365 agenda and holiday sources
+
+Daily Operations replaces the capped docket-description meeting queue with the calendar controller's complete scrolling Today/Next 7 days agenda. Graph calendarView supplies recurring instances and readable shared/custom calendars; times use Toronto with UTC transport to preserve repeated-hour instants. Ended, cancelled and declined appointments are excluded; ongoing and all-day entries remain. The Deadline risk card now counts only real deadlines. Calendar work is isolated from workbook startup/readiness and accepted financial-save workers.
+
+MSAL device-code sign-in checks the configured account. Current-user DPAPI protects atomic token-cache writes with cancellation rollback and a durable disconnected marker; shutdown fulfils a queued Disconnect and stale worker results cannot replace changed account/configuration. Non-secret registration/source preferences live in per-user settings. Country holidays use a maintained local generator (Canada/Ontario, U.S., actual and observed dates); the bounded public Hebcal diaspora feed carries visible attribution. All sources can be hidden and exact holiday duplicates combine source labels.
+
+Focused sandbox-safe tests exercise real offscreen QML, scrolling beyond four rows, first-visible refresh gating, setup/error/disconnect/cancellation, identities, partial/stale reads, recurrence, DST, date boundaries, known-source link restrictions and encrypted persistence. Existing startup/productivity checks remain intact. Separate public Hebcal HTTPS and isolated current-user DPAPI checks pass. Exact frozen package/resource/startup/WebEngine verification follows; real Microsoft sign-in, tenant consent, Outlook coverage and user foreground acceptance remain pending. No accepted motion, workbook data or calendar event writes. Detailed implementation and setup: `docs/CSPM_MICROSOFT_365_AGENDA_2026-10-13.md`.
+
 ## 2026-10-13: OmniBook immutable resources separated from the writable profile
 
 The installed invoice templates were present, but AppController used the normal launcher's writable `CSPM_EXECUTABLE_ROOT` for invoice layouts. InvoiceDocumentService now defaults to bundled/source resources. AppPaths.resource_root preserves injected development roots while selecting frozen `_MEIPASS` for schema/themes/docs, seed approval, version metadata and report-logo defaults. Relative asset resolution retains its subdirectories; custom branding and all writable data/settings/export selectors remain supported. Recovery opens the existing packaged sibling executable. Unsupported Word layouts fail without touching exports and recommend PDF; legacy Word parity remains a separate follow-up.

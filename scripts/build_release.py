@@ -475,6 +475,14 @@ def main():
         "--hidden-import=pywintypes",
         "--hidden-import=win32com.client",
         "--hidden-import=win32com.client.dynamic",
+        # Calendar sign-in is lazy; countries and time-zone resources are
+        # loaded dynamically rather than during application bootstrap.
+        "--hidden-import=win32crypt",
+        "--hidden-import=msal",
+        "--hidden-import=holidays.countries.canada",
+        "--hidden-import=holidays.countries.united_states",
+        "--collect-data=holidays",
+        "--collect-data=tzdata",
         "--distpath", str(dist_dir),
         "--workpath", str(build_dir),
         "--specpath", str(build_dir / "specs"),

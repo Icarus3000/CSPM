@@ -21,7 +21,6 @@ Item {
     property bool startupSnapshotApplied: false
 
     readonly property bool tight: width < 760 || height < 540
-    readonly property int queueRowLimit: height < 560 ? 2 : (height < 760 ? 3 : 4)
     readonly property color backgroundColor: SemanticTheme.surfaceApp(root.t, root.appStyle)
     readonly property color surfaceColor: SemanticTheme.surfacePanel(root.t, root.appStyle)
     readonly property color hoverColor: SemanticTheme.surfaceInput(root.t, root.appStyle)
@@ -115,7 +114,7 @@ Item {
             // The briefing can deliberately prepend overdue deadlines to this
             // list. They have their own risk category here, so do not count or
             // display them twice on the home page.
-            if (String(items[i].date || "") === today)
+            if (String(items[i].date || "") === today && String(items[i].kind || "") === "deadline")
                 result.push(items[i])
         }
         return result
@@ -153,42 +152,6 @@ Item {
         if (summary.readyToBillMatterCount !== undefined && summary.readyToBillMatterCount !== null)
             return whole(summary.readyToBillMatterCount)
         return entryCount(summary.readyToBillMatters)
-    }
-
-    function priorityItems() {
-        var items = []
-        var overdue = root.briefing && root.briefing.overdueDeadlines ? root.briefing.overdueDeadlines : []
-        var today = root.currentDayItems()
-        var upcoming = root.briefing && root.briefing.upcomingDeadlines ? root.briefing.upcomingDeadlines : []
-        for (var i = 0; i < overdue.length; ++i) {
-            items.push({
-                "title": String(overdue[i].description || "Overdue deadline"),
-                "detail": "Overdue · " + String(overdue[i].date || ""),
-                "tone": "urgent"
-            })
-        }
-        for (var j = 0; j < today.length; ++j) {
-            items.push({
-                "title": String(today[j].description || "Today’s item"),
-                "detail": String(today[j].kind || "today").replace("-", " ") + " · today",
-                "tone": "today"
-            })
-        }
-        for (var k = 0; k < upcoming.length; ++k) {
-            items.push({
-                "title": String(upcoming[k].description || "Upcoming deadline"),
-                "detail": "Due " + String(upcoming[k].date || "soon"),
-                "tone": "upcoming"
-            })
-        }
-        if (items.length === 0) {
-            items.push({
-                "title": "No urgent items in the current queue",
-                "detail": "Open Practice Briefing to review the full horizon",
-                "tone": "clear"
-            })
-        }
-        return items
     }
 
     function limitedItems(items, maximum) {
@@ -512,98 +475,17 @@ Item {
             Layout.minimumHeight: root.tight ? 130 : 190
             spacing: root.tight ? 8 : 12
 
-            Rectangle {
+            CalendarAgendaPanel {
+                objectName: "dailyCalendarAgenda"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredWidth: 2
-                radius: 5
-                color: root.surfaceColor
-                border.width: 1
-                border.color: root.borderColor
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: root.tight ? 10 : 14
-                    spacing: root.tight ? 5 : 8
-
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: "Today’s queue"
-                            color: root.inkColor
-                            font.family: "Segoe UI"
-                            font.pixelSize: root.tight ? 13 : 15
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            visible: !root.tight
-                            text: "Practice Briefing ›"
-                            color: root.accentColor
-                            font.family: "Segoe UI"
-                            font.pixelSize: 11
-                        }
-                    }
-
-                    Repeater {
-                        model: root.limitedItems(root.priorityItems(), root.queueRowLimit)
-
-                        delegate: Item {
-                            id: queueRow
-                            required property var modelData
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: root.tight ? 28 : 34
-
-                            Rectangle {
-                                width: 3
-                                height: parent.height - 4
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                radius: 2
-                                color: queueRow.modelData.tone === "urgent" ? root.urgentColor
-                                    : (queueRow.modelData.tone === "clear" ? root.positiveColor : root.accentColor)
-                            }
-
-                            ColumnLayout {
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.leftMargin: 10
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 0
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: queueRow.modelData.title
-                                    color: root.inkColor
-                                    font.family: "Segoe UI"
-                                    font.pixelSize: root.tight ? 10 : 11
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: !root.tight
-                                    text: queueRow.modelData.detail
-                                    color: root.mutedInkColor
-                                    font.family: "Segoe UI"
-                                    font.pixelSize: 10
-                                    elide: Text.ElideRight
-                                }
-                            }
-
-                            TapHandler {
-                                enabled: root.interactive
-                                onTapped: root.openScreenRequested("home", "H01")
-                            }
-                        }
-                    }
-
-                    Item { Layout.fillHeight: true }
-                }
+                t: root.t
+                appRef: root.appRef
+                appStyle: root.appStyle
+                interactive: root.interactive
+                compact: root.tight
+                onPracticeBriefingRequested: root.openScreenRequested("home", "H01")
             }
 
             ColumnLayout {

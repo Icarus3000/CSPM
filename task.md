@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-13: Microsoft 365 Today / Next 7 days agenda
+
+- [x] Replace the home docket-keyword meeting list with a scrolling, source-labelled calendar agenda; preserve the prepared startup snapshot and count only true deadlines in Deadline risk.
+- [x] Implement delegated read-only Microsoft sign-in, owned/readable shared-calendar discovery, recurring occurrences, Toronto date/DST boundaries, calendar selection and asynchronous five-minute refresh.
+- [x] Add Canadian/Ontario and U.S. actual/observed holiday dates plus attributed Hebcal diaspora dates, with independent source switches and duplicate holiday suppression.
+- [x] Protect per-user sign-in through current-user DPAPI and atomic ciphertext writes; preserve cancellation/revision ownership and durable Disconnect intent through shutdown and deletion failures.
+- [x] Verify focused sandbox-safe service/auth/controller/holiday/actual offscreen QML tests, existing startup/productivity checks, governed lint, public Hebcal HTTPS and isolated native DPAPI roundtrips.
+- [ ] Finish exact-source frozen packaging, dependency/resource audit and outside-sandbox startup/WebEngine verification before release availability.
+- [ ] User return: finish public-client/read-only consent setup, complete Microsoft sign-in, compare actual Outlook calendar coverage and review Today/Next 7 days/holiday choices in the application.
+
+Scope and setup: `docs/CSPM_MICROSOFT_365_AGENDA_2026-10-13.md`. Registration/account details and generated evidence remain local and ignored; no calendar writes or financial-data changes.
+
 ## 2026-10-13: OmniBook invoice preview and installed resource repair
 
 - [x] Read the actual OmniBook runtime error; confirm packaged invoice templates exist and diagnose the writable-profile asset lookup.

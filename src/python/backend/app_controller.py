@@ -378,6 +378,8 @@ class AppController(QObject):
             self._prefs_settings_path,
         )
         _init_loaded = _init_payload.get("loaded", {})
+        self._calendar_initial_configuration = _init_loaded.get("calendarAgenda") or {}
+        self._calendar_controller = None
         from backend.native_candidate import settings_override
         _init_loaded.update(settings_override())
         data_verification.configure(settings=_init_loaded)
@@ -1960,6 +1962,35 @@ class AppController(QObject):
             )
             return False
 
+    @Property(QObject, constant=True)
+    def calendarController(self):
+        # Merely binding the hidden home never imports MSAL or reads the network.
+        if self._calendar_controller is None:
+            from backend.controllers.calendar_agenda_controller import CalendarAgendaController
+            configuration = (
+                self._settings_data.get("calendarAgenda", {}) if self._settings_load_complete
+                else self._calendar_initial_configuration
+            )
+            self._calendar_controller = CalendarAgendaController(
+                self._settings_path.parent, configuration,
+                save_callback=self._persist_calendar_configuration, parent=self,
+            )
+        return self._calendar_controller
+
+    def _persist_calendar_configuration(self, configuration) -> bool:
+        if not self._settings_load_complete:
+            self.load_settings()
+        previous = self._settings_data.get("calendarAgenda")
+        self._settings_data["calendarAgenda"] = dict(configuration)
+        if self.save_settings():
+            self.settingsChanged.emit()
+            return True
+        if previous is None:
+            self._settings_data.pop("calendarAgenda", None)
+        else:
+            self._settings_data["calendarAgenda"] = previous
+        return False
+
     @Slot(result=dict)
     def getPracticeBriefing(self) -> Dict[str, Any]:
         """Daily operational briefing for the Practice Briefing home screen."""
@@ -3088,6 +3119,9 @@ class AppController(QObject):
             loaded = {}
         self._settings_path = runtime_settings_path
         self._settings_data = dict(loaded)
+        self._calendar_initial_configuration = self._settings_data.get("calendarAgenda") or {}
+        if self._calendar_controller is not None:
+            self._calendar_controller.apply_configuration(self._calendar_initial_configuration)
         from backend.native_candidate import settings_override
         self._settings_data.update(settings_override())
         data_verification.configure(settings=self._settings_data)
@@ -4170,6 +4204,8 @@ class AppController(QObject):
             return
         self._shutdown_sync_complete = True
         self._shutting_down = True
+        if self._calendar_controller is not None:
+            self._calendar_controller.shutdown()
         self._auto_backup_timer.stop()
         self._startup_briefing_process_poll_timer.stop()
         self.cancelStartupPracticeBriefingProcess()

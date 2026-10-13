@@ -514,6 +514,13 @@ by Flutter or React Native.
   explicitly authorizes a narrow proof-of-concept.
 
 ### Phase 8: Connectivity, Automation, and Ecosystem (A+ Objective)
+- **Authorized early read-only calendar increment (2026-10-13)**: Today's queue
+  reads the configured Microsoft 365 account's available calendars, with Today
+  and Next 7 days horizons and Canadian/Ontario, U.S. and Jewish holiday
+  supplements. Background loading and current-user encrypted sign-in remain
+  independent of workbook startup/persistence. This narrow owner-authorized
+  feature precedes the broader two-way sync and email integration below.
+  Implementation and sign-in acceptance: `docs/CSPM_MICROSOFT_365_AGENDA_2026-10-13.md`.
 - **Secure Client Web Drop**: Build a lightweight, read-only Next.js or React web portal hitting the Azure SQL API for secure invoice delivery, stripe payments, and KYC document uploads to eliminate plaintext email risks.
 - **Pipeline & Web Intake**: Add a Kanban-style Prospects/Leads board to the Option 3 shell. Create a public-facing intake web form that feeds directly into the CSPM database to eliminate manual data entry.
 - **Microsoft Graph API Sync**: Introduce native two-way sync for Deadlines/Ticklers with Outlook Calendar, and a background service to automatically file emails into Matter Notes.
