@@ -13,9 +13,14 @@ from ctypes import wintypes
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT_DIR / "src" / "python"))
 
+# The main application may select data outside its persistent profile. Keep
+# that exact pair/state selection without relocating the backup archive.
+_recovery_data_dir = os.environ.get("CSPM_RECOVERY_DATA_DIR", "").strip()
+RECOVERY_DATA_DIR = Path(_recovery_data_dir).resolve() if _recovery_data_dir else None
+
 try:
     from services.paths import AppPaths
-    PATHS = AppPaths(ROOT_DIR)
+    PATHS = AppPaths(ROOT_DIR, override_data_dir=RECOVERY_DATA_DIR)
 except ImportError:
     print("WARNING: Could not import AppPaths. Using fallback paths.")
     class FallbackPaths:
@@ -26,7 +31,8 @@ except ImportError:
                 lad = os.environ.get("LOCALAPPDATA", "").strip()
                 return Path(lad) / "CSPM" if lad else Path.home() / ".cspm_data"
             return ROOT_DIR
-        def data_dir(self): return self._persistent_data_root() / "data"
+        def data_dir(self):
+            return RECOVERY_DATA_DIR if RECOVERY_DATA_DIR is not None else self._persistent_data_root() / "data"
         def workbook_path(self): return self.data_dir() / "CSPM.xlsm"
         def dockets_workbook_path(self): return self.data_dir() / "Dockets.xlsm"
         def state_dir(self): return self.data_dir() / "state"

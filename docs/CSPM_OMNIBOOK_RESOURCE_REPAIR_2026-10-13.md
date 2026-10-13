@@ -23,7 +23,10 @@ preserving injected development fixture roots. Schema, theme, runtime docs,
 approved empty-workbook recognition, version metadata and report-logo defaults
 use the resource location. Custom logos remain supported. The installed recovery
 action launches the existing sibling Recovery executable rather than searching
-for an unbundled Python script in the writable profile.
+for an unbundled Python script in the writable profile. A child-only
+`CSPM_RECOVERY_DATA_DIR` selector passes the exact active workbook/state folder
+without relocating the profile or backup archives. Both ordinary and fallback
+Recovery path providers honor it.
 
 Missing Word layouts now fail before touching an export and recommend PDF.
 `Concept_A2`, B, C and Agency have HTML layouts but no equivalent shipped Word
@@ -31,9 +34,9 @@ template. Do not silently map A2 to legacy A: the older Word template's billing
 fields/calculations require a separate parity repair. Existing available Word
 layouts are not newly certified by this resource fix.
 
-Sandbox-safe validation passes 156 focused installed-resource, controller,
+Sandbox-safe validation passes 160 focused installed-resource, controller,
 invoice-accounting, checkout/read-only, statement/directory-filter and offscreen
-QML/header checks. Seven changed Python files compile in memory, all 35 release
+QML/header checks. Nine changed Python files compile in memory, all 35 release
 dependencies match the lock, and whitespace checks pass. Real packaged invoice
 HTML/JavaScript/PDF, immutable-source audit, frozen startup/input/orderly exit,
 installation and preservation results are recorded after the clean-source build

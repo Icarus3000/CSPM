@@ -1,5 +1,6 @@
 """Installed resource regressions without launching CSPM or editing workbooks."""
 import json
+import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -68,7 +69,11 @@ def test_relative_asset_keeps_subdirectories_when_profile_is_separate(installed)
 
 @pytest.mark.parametrize("present", [True, False])
 def test_frozen_recovery_uses_sibling_executable_without_relaunching_main(installed, monkeypatch, present):
-    package, _, _, paths = installed
+    package, _, runtime, paths = installed
+    active_data = runtime.parent / "selected-practice"
+    paths.override_data_dir = active_data
+    monkeypatch.setenv("CSPM_DATA_DIR", str(runtime))
+    monkeypatch.setenv("CSPM_RECOVERY_DATA_DIR", "stale-selector")
     recovery = package / "CSPM_Recovery" / "CSPM_Recovery.exe"
     if present:
         recovery.parent.mkdir()
@@ -80,6 +85,9 @@ def test_frozen_recovery_uses_sibling_executable_without_relaunching_main(instal
     if present:
         assert calls[0][0] == ([str(recovery)],)
         assert calls[0][1]["cwd"] == str(recovery.parent)
+        assert calls[0][1]["env"]["CSPM_RECOVERY_DATA_DIR"] == str(active_data.resolve())
+        assert calls[0][1]["env"]["CSPM_DATA_DIR"] == str(runtime)
+        assert os.environ["CSPM_RECOVERY_DATA_DIR"] == "stale-selector"
         assert not errors
     else:
         assert not calls
@@ -93,6 +101,10 @@ def test_development_recovery_uses_injected_source_root(tmp_path, monkeypatch):
     script.write_text("# fixture")
     calls = []
     monkeypatch.setattr("backend.app_controller.subprocess.Popen", lambda *args, **kwargs: calls.append((args, kwargs)))
-    controller = SimpleNamespace(_paths=AppPaths(tmp_path), error=SimpleNamespace(emit=lambda _: None))
+    active_data = tmp_path / "selected-practice"
+    monkeypatch.setenv("CSPM_DATA_DIR", str(tmp_path / "profile"))
+    controller = SimpleNamespace(_paths=AppPaths(tmp_path, override_data_dir=active_data), error=SimpleNamespace(emit=lambda _: None))
     assert AppController.openRecoveryUtility(controller)
     assert calls[0][0] == ([sys.executable, str(script)],)
+    assert calls[0][1]["env"]["CSPM_RECOVERY_DATA_DIR"] == str(active_data.resolve())
+    assert calls[0][1]["env"]["CSPM_DATA_DIR"] == str(tmp_path / "profile")

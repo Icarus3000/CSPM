@@ -1440,9 +1440,12 @@ class AppController(QObject):
                 self.error.emit("Recovery utility not found. Repair the CSPM installation.")
                 return False
 
+            recovery_environment = os.environ.copy()
+            recovery_environment["CSPM_RECOVERY_DATA_DIR"] = str(self._paths.data_dir().resolve())
             subprocess.Popen(
                 command,
                 cwd=str(utility_path.parent),
+                env=recovery_environment,
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
             return True
