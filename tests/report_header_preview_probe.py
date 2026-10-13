@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, qInstallMessageHandler
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlComponent, QQmlEngine, QQmlExpression
 from PySide6.QtQuick import QQuickWindow
@@ -50,6 +50,8 @@ def main():
                         default=PROJECT_ROOT / "src/qml/components/ReportWindow.qml")
     parser.add_argument("--screenshots", type=Path)
     options = parser.parse_args()
+    messages = []
+    qInstallMessageHandler(lambda kind, context, message: messages.append(str(message)))
     application = QGuiApplication([sys.argv[0]])
     engine = QQmlEngine()
     component = QQmlComponent(engine, QUrl.fromLocalFile(str(options.source.resolve())))
@@ -57,7 +59,12 @@ def main():
         error.toString() for error in component.errors()
     ]
     root = component.createWithInitialProperties({
-        "reportDocument": document("", ""), "t": {"mode": "Light"},
+        # Initial fully branded creation must also be free of height/width
+        # binding cycles; beginning with an empty brand can conceal that case.
+        "reportDocument": document(
+            QUrl.fromLocalFile(str(PROJECT_ROOT / "assets/CS.svg")).toString(),
+            "10 Example Street\nExample City, ON\n555-0100 | example@example.test"),
+        "t": {"mode": "Dark"},
     })
     assert root is not None, [error.toString() for error in component.errors()]
     assert isinstance(root, QQuickWindow)
@@ -138,6 +145,9 @@ def main():
     root.hide()
     root.deleteLater()
     QTest.qWait(30)
+    errors = [message for message in messages if any(token in message for token in (
+        "Binding loop", "ReferenceError", "TypeError", "Unable to assign [undefined]"))]
+    assert not errors, errors
     print(json.dumps({"ok": True, "cases": len(results),
                       "source": str(options.source.resolve()), "results": results}), flush=True)
 

@@ -951,6 +951,25 @@ Window {
                                 anchors.rightMargin: 16
                                 height: hasContact ? (firmContact.y + firmContact.height) : (firmName.y + firmName.height)
 
+                                // Measure without a constrained width: otherwise Qt's
+                                // text height can depend on the logo width, which in
+                                // turn depends on this block's height at creation.
+                                Text {
+                                    id: firmNameMeasure
+                                    visible: false
+                                    text: firmName.text
+                                    font: firmName.font
+                                }
+                                Text {
+                                    id: firmContactMeasure
+                                    visible: false
+                                    text: firmContact.text
+                                    font: firmContact.font
+                                    lineHeight: firmContact.lineHeight
+                                    maximumLineCount: firmContact.maximumLineCount
+                                    wrapMode: Text.NoWrap
+                                }
+
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
@@ -986,6 +1005,7 @@ Window {
 
                                 Text {
                                     id: firmName
+                                    height: firmNameMeasure.implicitHeight
                                     text: root._safeText(root.reportDocument.branding && root.reportDocument.branding.firmName)
                                         || "Cory Schneider Law Office"
                                     anchors.left: brandBlock.hasLogo ? reportLogo.right : parent.left
@@ -1001,6 +1021,7 @@ Window {
 
                                 Text {
                                     id: firmContact
+                                    height: firmContactMeasure.implicitHeight
                                     text: root._safeText(root.reportDocument.branding && root.reportDocument.branding.firmContact)
                                     visible: brandBlock.hasContact
                                     anchors.left: brandBlock.hasLogo ? reportLogo.right : parent.left
