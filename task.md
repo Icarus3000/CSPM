@@ -7,7 +7,7 @@
 - [x] Verify every reviewed live total, balance and billing owner; preserve payments, credits, source WIP and reversal history; publish matching local/shared workbooks and release the checkout. Existing unrelated integrity findings remain unchanged.
 - [x] Refresh kept-open Invoice Directory after finalization and preserve refreshes during in-flight list/detail reads; prevent historical sync from overwriting audited corrections.
 - [x] Pass 139 focused sandbox-safe billing/payment/WIP/reversal/repair/sync checks, changed-Python compilation, governed QML lint and whitespace checks.
-- [ ] Finish committed-source clean packaging, candidate/installed source and accounting verification, and outside-sandbox real WebEngine/startup checks; record release evidence.
+- [x] Build and publish exact fix commit a8a32e5 from clean source; verify matching full candidate/installed/repository packages and previous-runtime rollback. Outside-sandbox candidate/installed real invoice WebEngine HTML/JavaScript/PDF, synthetic accounting parity and frozen startup/navigation/normal-close checks pass. Corrected production hashes remain unchanged.
 - [ ] User foreground acceptance: reopen the corrected invoice and LIHDC outstanding A/R in the rebuilt installed application.
 
 Scoped implementation and private evidence boundary: `docs/CSPM_INVOICE_ACCOUNTING_INTEGRITY_2026-10-13.md`.
