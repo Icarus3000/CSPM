@@ -939,11 +939,17 @@ Window {
 
                             Item {
                                 id: brandBlock
+                                // Tinting uses a hidden source image, so its render
+                                // visibility must not decide whether to reserve logo space.
+                                readonly property bool hasLogo: reportLogo.source.toString().length > 0
+                                readonly property bool tintLogo: hasLogo && SemanticTheme.isDarkMode(root.t)
+                                    && reportLogo.source.toString().indexOf("CS.svg") !== -1
+                                readonly property bool hasContact: firmContact.text.trim().length > 0
                                 anchors.left: parent.left
                                 anchors.right: generatedStamp.left
                                 anchors.top: parent.top
                                 anchors.rightMargin: 16
-                                height: (firmContact.text && firmContact.text.trim().length > 0) ? (firmContact.y + firmContact.height) : (firmName.y + firmName.height)
+                                height: hasContact ? (firmContact.y + firmContact.height) : (firmName.y + firmName.height)
 
                                 MouseArea {
                                     anchors.fill: parent
@@ -958,11 +964,11 @@ Window {
                                 Image {
                                     id: reportLogo
                                     anchors.left: parent.left
-                                    anchors.bottom: (firmContact.text && firmContact.text.trim().length > 0) ? firmContact.bottom : firmName.bottom
-                                    height: (firmContact.text && firmContact.text.trim().length > 0) ? (firmContact.y + firmContact.height) : (firmName.y + firmName.height)
+                                    anchors.bottom: parent.bottom
+                                    height: parent.height
                                     width: Math.round(height * 1.583)
                                     source: root._logoSource()
-                                    visible: false
+                                    visible: brandBlock.hasLogo && !brandBlock.tintLogo
                                     fillMode: Image.PreserveAspectFit
                                     verticalAlignment: Image.AlignBottom
                                     horizontalAlignment: Image.AlignLeft
@@ -971,18 +977,19 @@ Window {
                                 }
                                 
                                 ColorOverlay {
+                                    id: reportLogoTint
                                     anchors.fill: reportLogo
                                     source: reportLogo
-                                    color: (SemanticTheme.isDarkMode(root.t) && String(root._logoSource()).indexOf("CS.svg") !== -1) ? "#FFFFFF" : "transparent"
-                                    visible: root._logoSource().length > 0
+                                    color: "#FFFFFF"
+                                    visible: brandBlock.tintLogo
                                 }
 
                                 Text {
                                     id: firmName
                                     text: root._safeText(root.reportDocument.branding && root.reportDocument.branding.firmName)
                                         || "Cory Schneider Law Office"
-                                    anchors.left: reportLogo.visible ? reportLogo.right : parent.left
-                                    anchors.leftMargin: reportLogo.visible ? 16 : 0
+                                    anchors.left: brandBlock.hasLogo ? reportLogo.right : parent.left
+                                    anchors.leftMargin: brandBlock.hasLogo ? 16 : 0
                                     anchors.right: parent.right
                                     anchors.top: parent.top
                                     anchors.topMargin: 0
@@ -995,8 +1002,9 @@ Window {
                                 Text {
                                     id: firmContact
                                     text: root._safeText(root.reportDocument.branding && root.reportDocument.branding.firmContact)
-                                    anchors.left: reportLogo.visible ? reportLogo.right : parent.left
-                                    anchors.leftMargin: reportLogo.visible ? 16 : 0
+                                    visible: brandBlock.hasContact
+                                    anchors.left: brandBlock.hasLogo ? reportLogo.right : parent.left
+                                    anchors.leftMargin: brandBlock.hasLogo ? 16 : 0
                                     anchors.right: parent.right
                                     anchors.top: firmName.bottom
                                     anchors.topMargin: 6
@@ -1019,6 +1027,7 @@ Window {
                                 font.pixelSize: 10
                             }
                             Text {
+                                id: pageNumber
                                 text: "Page " + String(pageDelegate.pageData.pageIndex + 1) + " of " + String(pageDelegate.pageData.pageCount)
                                 anchors.right: parent.right
                                 anchors.top: parent.top
@@ -1030,8 +1039,10 @@ Window {
                                 id: headerRule
                                 anchors.left: parent.left
                                 anchors.right: parent.right
-                                anchors.top: brandBlock.bottom
-                                anchors.topMargin: 12
+                                anchors.top: parent.top
+                                anchors.topMargin: Math.max(brandBlock.height,
+                                    generatedStamp.y + generatedStamp.height,
+                                    pageNumber.y + pageNumber.height) + 12
                                 height: 1
                                 color: root.ruleColor
                             }

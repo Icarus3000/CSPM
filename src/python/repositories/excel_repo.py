@@ -14970,6 +14970,7 @@ class ExcelRepo:
             end_date = date.today()
             
         open_items_only = str(payload.get("openItemsOnly", "")).lower() == "true"
+        statement_view = bool(payload.get("statementView"))
 
         try:
             self.ensure_schema()
@@ -15279,6 +15280,22 @@ class ExcelRepo:
         
         # 1. Debits (Invoices)
         actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        # The Receivables snapshot contains current balances. For a historical
+        # statement, undo only dated settlements after its cutoff while keeping
+        # undated legacy rounding adjustments in the client-facing invoice total.
+        later_settlements: Dict[str, Dict[str, float]] = {}
+        for row in ledger_rows:
+            settlement_date = self._parse_date_value(row.get(sc.COL_LEDGER_DATE))
+            invoice_key = _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).casefold()
+            if not invoice_key or not settlement_date or settlement_date <= end_date:
+                continue
+            collected = self._money_round(row.get(sc.COL_LEDGER_COLLECTED))
+            adjustment = self._money_round(row.get(sc.COL_LEDGER_WRITE_OFF))
+            if collected == 0 and adjustment == 0:
+                continue
+            amounts = later_settlements.setdefault(invoice_key, {"payments": 0.0, "adjustments": 0.0})
+            amounts["payments"] = self._money_round(amounts["payments"] + collected)
+            amounts["adjustments"] = self._money_round(amounts["adjustments"] + adjustment)
         for row in receivable_rows:
             invoice = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
             if not invoice or not actual_invoice_pattern.match(invoice):
@@ -15308,7 +15325,7 @@ class ExcelRepo:
             # statement view that absorbs that adjustment into the displayed
             # invoice amount instead of exposing it in "Paid / Credits".
             statement_values_available = all(
-                key in row
+                _parse_payment_amount_query(row.get(key)) is not None
                 for key in (
                     sc.COL_RECV_TOTAL_INVOICED,
                     sc.COL_RECV_AMOUNT_PAID,
@@ -15319,11 +15336,14 @@ class ExcelRepo:
             statement_invoice_total = amount
             statement_payment_amount = 0.0
             statement_balance_due = amount
+            later = later_settlements.get(invoice.casefold(), {"payments": 0.0, "adjustments": 0.0})
             if statement_values_available:
                 adjustment = self._money_round(row.get(sc.COL_RECV_CREDITS_ADJ))
-                statement_invoice_total = self._money_round(max(0.0, amount - adjustment))
-                statement_payment_amount = self._money_round(row.get(sc.COL_RECV_AMOUNT_PAID))
-                statement_balance_due = self._money_round(row.get(sc.COL_RECV_BALANCE_DUE))
+                statement_invoice_total = self._money_round(max(0.0, amount - adjustment + later["adjustments"]))
+                statement_payment_amount = self._money_round(self._money_round(row.get(sc.COL_RECV_AMOUNT_PAID)) - later["payments"])
+                statement_balance_due = self._money_round(
+                    self._money_round(row.get(sc.COL_RECV_BALANCE_DUE)) + later["payments"] + later["adjustments"]
+                )
                 
             events.append({
                 "date": invoice_date or date.min,
@@ -15342,6 +15362,7 @@ class ExcelRepo:
                 "statementInvoiceTotal": statement_invoice_total,
                 "statementPaymentAmount": statement_payment_amount,
                 "statementBalanceDue": statement_balance_due,
+                "statementLaterSettlement": self._money_round(later["payments"] + later["adjustments"]),
             })
             
         # 2. Credits (Payments & Adjustments)
@@ -15364,7 +15385,7 @@ class ExcelRepo:
             collected = self._money_round(row.get(sc.COL_LEDGER_COLLECTED))
             write_off = self._money_round(row.get(sc.COL_LEDGER_WRITE_OFF))
             total_credit = collected + write_off
-            if total_credit <= 0:
+            if total_credit <= 0 and not (statement_view and (collected != 0 or write_off != 0)):
                 continue
                 
             desc = _clean_text(row.get(sc.COL_LEDGER_DESCRIPTION)) or "Payment"
@@ -15385,6 +15406,8 @@ class ExcelRepo:
                 "billingClient": client_tuple[0],
                 "workClient": client_tuple[1],
                 "workContexts": client_tuple[2],
+                "statementPaymentAmount": collected,
+                "statementAdjustmentAmount": write_off,
             })
             
         # 3. Sort chronologically
@@ -15583,7 +15606,7 @@ class ExcelRepo:
         }
 
     def _statement_open_invoice_candidates(self, payload: dict) -> dict:
-        """Return one current open-invoice row per invoice for a billing client.
+        """Return issued invoices matching a billing client's statement filters.
 
         Statements must be based on the same as-of AR stream as the ledger, but
         the recipient-facing document is invoice-oriented rather than an event
@@ -15596,13 +15619,33 @@ class ExcelRepo:
         )
         if not billing_client:
             return {"ok": False, "message": "Choose a billing client before generating a statement."}
-
-        ledger_request = dict(request)
-        ledger_request["client"] = billing_client
-        ledger_request["client_level"] = "billing"
-        # We need all activity up to the as-of date so each invoice's remaining
-        # balance can be calculated before excluding paid invoices.
-        ledger_request["openItemsOnly"] = False
+        invoice_status = _clean_text(request.get("invoiceStatus") or "open").casefold()
+        if invoice_status not in {"open", "paid", "all"}:
+            return {"ok": False, "message": "Choose Open, Paid, or All invoices."}
+        raw_as_of = request.get("asOfDate") or request.get("endDate") or request.get("as_of_date")
+        as_of_date = self._parse_date_value(raw_as_of) or date.today()
+        if _clean_text(raw_as_of) and not self._parse_date_value(raw_as_of):
+            return {"ok": False, "message": "Enter a valid Statement Date (YYYY-MM-DD)."}
+        raw_from = request.get("invoiceDateFrom")
+        raw_to = request.get("invoiceDateTo")
+        invoice_date_from = self._parse_date_value(raw_from)
+        invoice_date_to = self._parse_date_value(raw_to)
+        for raw_value, parsed_value, label in (
+            (raw_from, invoice_date_from, "From"), (raw_to, invoice_date_to, "To")
+        ):
+            if _clean_text(raw_value) and not parsed_value:
+                return {"ok": False, "message": f"Enter a valid Invoice date {label} (YYYY-MM-DD), or leave it blank."}
+        if invoice_date_from and invoice_date_to and invoice_date_from > invoice_date_to:
+            return {"ok": False, "message": "Invoice date From must be on or before To."}
+        # Invoice dates constrain invoice selection, never its payment history.
+        # Build a complete account stream through the independent statement date.
+        ledger_request = {
+            "client": billing_client,
+            "client_level": "billing",
+            "asOfDate": as_of_date.isoformat(),
+            "openItemsOnly": False,
+            "statementView": True,
+        }
         ledger_res = self._canonical_ar_ledger(ledger_request)
         if not ledger_res.get("ok"):
             return ledger_res
@@ -15621,7 +15664,7 @@ class ExcelRepo:
             return matter_name
 
         grouped: Dict[str, Dict[str, Any]] = {}
-        closed_statuses = {"paid", "closed", "void", "voided", "cancelled", "canceled", "reversed"}
+        excluded_statuses = {"void", "voided", "cancelled", "canceled", "reversed", "superseded", "draft"}
         for event in ledger_res.get("events", []):
             if not isinstance(event, dict):
                 continue
@@ -15636,10 +15679,12 @@ class ExcelRepo:
                     "date": _clean_text(event.get("date")),
                     "invoiceTotal": 0.0,
                     "paidCredits": 0.0,
+                    "cashPaid": 0.0,
                     "statementInvoiceTotal": 0.0,
                     "statementPaymentAmount": 0.0,
                     "statementBalanceDue": 0.0,
                     "hasStatementValues": False,
+                    "hasLaterSettlement": False,
                     "status": _clean_text(event.get("status")),
                     "workClients": [],
                     "clientMatters": [],
@@ -15649,8 +15694,10 @@ class ExcelRepo:
             if not group["date"] and _clean_text(event.get("date")):
                 group["date"] = _clean_text(event.get("date"))
             if _clean_text(event.get("type")).lower() == "invoice":
+                group["date"] = _clean_text(event.get("date")) or group["date"]
                 group["invoiceTotal"] += self._money_round(event.get("debit"))
                 group["status"] = _clean_text(event.get("status")) or group["status"]
+                group["hasLaterSettlement"] = group["hasLaterSettlement"] or self._money_round(event.get("statementLaterSettlement")) > 0.009
                 if event.get("statementValuesAvailable"):
                     group["statementInvoiceTotal"] += self._money_round(event.get("statementInvoiceTotal"))
                     group["statementPaymentAmount"] += self._money_round(event.get("statementPaymentAmount"))
@@ -15658,6 +15705,11 @@ class ExcelRepo:
                     group["hasStatementValues"] = True
             else:
                 group["paidCredits"] += self._money_round(event.get("credit"))
+                group["cashPaid"] += self._money_round(
+                    event.get("statementPaymentAmount")
+                    if "statementPaymentAmount" in event
+                    else (event.get("credit") if _clean_text(event.get("type")).casefold() == "payment" else 0)
+                )
             work_client = _clean_text(event.get("workClient"))
             if work_client and work_client not in group["workClients"]:
                 group["workClients"].append(work_client)
@@ -15722,15 +15774,32 @@ class ExcelRepo:
                 invoice_total = round(float(group["statementInvoiceTotal"]), 2)
                 paid_credits = round(float(group["statementPaymentAmount"]), 2)
                 balance_due = round(float(group["statementBalanceDue"]), 2)
+                cash_paid = paid_credits
             else:
                 invoice_total = round(float(group["invoiceTotal"]), 2)
                 paid_credits = round(float(group["paidCredits"]), 2)
                 balance_due = round(invoice_total - paid_credits, 2)
-            if invoice_total <= 0 or balance_due <= 0.009:
+                cash_paid = round(float(group["cashPaid"]), 2)
+            if invoice_total <= 0 or balance_due < -0.009:
                 continue
             status_key = _clean_text(group["status"]).casefold()
-            if status_key in closed_statuses:
+            if status_key in excluded_statuses:
                 continue
+            # A current lifecycle label alone is not settlement evidence. A
+            # paid invoice may still be open at an earlier cutoff when its
+            # dated later payment was explicitly restored above.
+            if status_key in {"paid", "closed"} and balance_due > 0.009 and not group["hasLaterSettlement"]:
+                continue
+            is_paid = abs(balance_due) <= 0.009
+            if (invoice_status == "open" and is_paid) or (invoice_status == "paid" and not is_paid):
+                continue
+            invoice_date = self._parse_date_value(group["date"])
+            if invoice_date_from and (not invoice_date or invoice_date < invoice_date_from):
+                continue
+            if invoice_date_to and (not invoice_date or invoice_date > invoice_date_to):
+                continue
+            if is_paid:
+                balance_due = 0.0
             client_matters = group["clientMatters"]
             # A later migration can leave both a literal "Legacy Matter …"
             # marker and the resolved contemporary matter for one client.
@@ -15782,7 +15851,8 @@ class ExcelRepo:
                         }
                         for link in matter_links
                     ],
-                    "status": "Partially Paid" if paid_credits > 0.009 else "Unpaid",
+                    "status": "Paid" if is_paid else ("Partially Paid" if cash_paid > 0.009 else "Unpaid"),
+                    "statusKey": "paid" if is_paid else ("partially_paid" if cash_paid > 0.009 else "unpaid"),
                     "invoiceTotal": invoice_total,
                     "invoiceTotalFormatted": f"${invoice_total:,.2f}",
                     "paidCredits": paid_credits,
@@ -15793,18 +15863,19 @@ class ExcelRepo:
             )
         candidates.sort(key=lambda row: (row.get("date") or "", row.get("invoice") or ""))
 
-        as_of_date = self._parse_date_value(
-            request.get("asOfDate") or request.get("endDate") or request.get("as_of_date")
-        ) or date.today()
         return {
             "ok": True,
             "billingClient": billing_client,
             "asOfDate": as_of_date.isoformat(),
+            "invoiceStatus": invoice_status,
+            "invoiceStatusLabel": {"open": "Open invoices only", "paid": "Paid invoices only", "all": "All invoices"}[invoice_status],
+            "invoiceDateFrom": invoice_date_from.isoformat() if invoice_date_from else "",
+            "invoiceDateTo": invoice_date_to.isoformat() if invoice_date_to else "",
             "invoices": candidates,
         }
 
     def list_statement_billing_clients(self) -> List[Dict[str, Any]]:
-        """List bill-to parties with current open receivables for statement selection."""
+        """List bill-to parties with issued invoices, including paid-only accounts."""
         try:
             self.ensure_schema()
             # Keep the first visible Statement screen responsive: all four
@@ -15833,15 +15904,25 @@ class ExcelRepo:
 
         _parent_names, parent_lookup = self._client_parent_lookup(profiles, clients, parents)
         actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
-        closed_statuses = {"paid", "closed", "void", "voided", "cancelled", "canceled", "reversed"}
+        excluded_statuses = {"void", "voided", "cancelled", "canceled", "reversed", "superseded", "draft"}
         choices: Dict[str, Dict[str, Any]] = {}
+        seen_invoices: set[str] = set()
         for row in receivables:
             invoice = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM))
             if not invoice or not actual_invoice_pattern.match(invoice):
                 continue
-            balance = self._money_round(row.get(sc.COL_RECV_BALANCE_DUE))
+            parsed_balance = _parse_payment_amount_query(row.get(sc.COL_RECV_BALANCE_DUE))
+            if parsed_balance is None:
+                continue
+            balance = self._money_round(parsed_balance)
             status = _clean_text(row.get(sc.COL_RECV_STATUS)).casefold()
-            if balance <= 0.009 or status in closed_statuses:
+            total = self._money_round(row.get(sc.COL_RECV_TOTAL_INVOICED))
+            if total <= 0 or balance < -0.009 or status in excluded_statuses:
+                continue
+            if status in {"paid", "closed"} and balance > 0.009:
+                continue
+            invoice_key = invoice.casefold()
+            if invoice_key in seen_invoices:
                 continue
             billing_client = _clean_text(row.get(sc.COL_RECV_CLIENT))
             work_client = _clean_text(row.get(sc.COL_RECV_WORK_CLIENT))
@@ -15856,13 +15937,18 @@ class ExcelRepo:
             name = _clean_text((parent or {}).get("name")) or billing_client or work_client
             if not name:
                 continue
+            seen_invoices.add(invoice_key)
             key = name.casefold()
             choice = choices.setdefault(
                 key,
-                {"name": name, "openInvoiceCount": 0, "openBalance": 0.0},
+                {"name": name, "invoiceCount": 0, "paidInvoiceCount": 0, "openInvoiceCount": 0, "openBalance": 0.0},
             )
-            choice["openInvoiceCount"] += 1
-            choice["openBalance"] = round(choice["openBalance"] + balance, 2)
+            choice["invoiceCount"] += 1
+            if balance > 0.009:
+                choice["openInvoiceCount"] += 1
+                choice["openBalance"] = round(choice["openBalance"] + balance, 2)
+            else:
+                choice["paidInvoiceCount"] += 1
 
         rows = list(choices.values())
         for row in rows:
@@ -15896,6 +15982,18 @@ class ExcelRepo:
         total_open_balance = round(sum(float(row["balanceDue"]) for row in candidates), 2)
         billing_client = candidate_res["billingClient"]
         as_of = candidate_res["asOfDate"]
+        invoice_status = candidate_res["invoiceStatus"]
+        status_label = candidate_res["invoiceStatusLabel"]
+        invoice_date_from = candidate_res["invoiceDateFrom"]
+        invoice_date_to = candidate_res["invoiceDateTo"]
+        invoice_date_label = "All invoice dates"
+        if invoice_date_from and invoice_date_to:
+            invoice_date_label = f"Invoice dates: {invoice_date_from} to {invoice_date_to}"
+        elif invoice_date_from:
+            invoice_date_label = f"Invoice dates: from {invoice_date_from}"
+        elif invoice_date_to:
+            invoice_date_label = f"Invoice dates: through {invoice_date_to}"
+        filter_summary = f"Billing Client: {billing_client} | {status_label} | {invoice_date_label} | As of: {as_of}"
 
         cards = [
             {
@@ -15914,6 +16012,8 @@ class ExcelRepo:
         summary_rows = [
             {"label": "Billing Client", "value": billing_client},
             {"label": "Statement Date", "value": as_of},
+            {"label": "Invoice Status", "value": status_label},
+            {"label": "Invoice Dates", "value": invoice_date_label},
             {"label": "Invoices Included", "value": str(len(selected_rows))},
             {"label": "Amount Due", "value": f"${selected_total:,.2f}"},
         ]
@@ -15939,7 +16039,7 @@ class ExcelRepo:
             },
             {
                 "sectionId": "detail",
-                "title": "Outstanding Invoices",
+                "title": {"open": "Outstanding Invoices", "paid": "Paid Invoices", "all": "Selected Invoices"}[invoice_status],
                 "columns": columns,
                 "rows": selected_rows,
                 "defaultExpanded": True,
@@ -15955,7 +16055,12 @@ class ExcelRepo:
             "clientLevel": "billing",
             "asOfDate": as_of,
             "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "filterSummary": f"Billing Client: {billing_client} | Open invoices only | As of: {as_of}",
+            "invoiceStatus": invoice_status,
+            "invoiceStatusLabel": status_label,
+            "invoiceDateFrom": invoice_date_from,
+            "invoiceDateTo": invoice_date_to,
+            "invoiceDateLabel": invoice_date_label,
+            "filterSummary": filter_summary,
             "cards": cards,
             "rows": selected_rows,
             "availableInvoices": candidates,
@@ -15972,13 +16077,18 @@ class ExcelRepo:
                 "statement": {
                     "billingClient": billing_client,
                     "asOfDate": as_of,
+                    "invoiceStatus": invoice_status,
+                    "invoiceStatusLabel": status_label,
+                    "invoiceDateFrom": invoice_date_from,
+                    "invoiceDateTo": invoice_date_to,
+                    "invoiceDateLabel": invoice_date_label,
                     "invoiceCount": len(selected_rows),
                     "amountDue": selected_total,
                     "amountDueFormatted": f"${selected_total:,.2f}",
                 },
             },
             "sections": sections,
-            "message": "" if candidates else "No unpaid invoices found for this billing client.",
+            "message": "" if candidates else "No invoices match this billing client, status, and invoice date range.",
         }
 
     def export_statement_of_account_csv(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

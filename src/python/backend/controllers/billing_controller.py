@@ -3392,10 +3392,13 @@ class BillingController(QObject):
         # follow Receivables' lifecycle state rather than listing every log row.
         inactive_statuses = {"void", "voided", "reversed", "cancelled", "canceled", "superseded"}
         statuses = {}
+        active_receivables = {}
         for receivable in table_rows.get(TBL_RECEIVABLES.table, []):
             number = str(receivable.get(sc.COL_RECV_INVOICE_NUM) or "").strip().casefold()
-            statuses.setdefault(number, []).append(
-                str(receivable.get(sc.COL_RECV_STATUS) or "").strip().casefold())
+            status = str(receivable.get(sc.COL_RECV_STATUS) or "").strip().casefold()
+            statuses.setdefault(number, []).append(status)
+            if number and status not in inactive_statuses:
+                active_receivables.setdefault(number, []).append(receivable)
         rows = [row for row in rows if
                 not str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip().upper().endswith(("-V", "-SUPERSEDED"))
                 and "-V-ADJ-" not in str(row.get(sc.COL_INV_INVOICE_NUM) or "").upper()
@@ -3408,8 +3411,58 @@ class BillingController(QObject):
             invoice = dict(row)
             invoice_number = str(invoice.get(sc.COL_INV_INVOICE_NUM) or "").strip()
             invoice["MatterDescription"] = matter_descriptions.get(invoice_number, "")
+            # Invoice Log records the original invoice. Receivables governs
+            # the current amount owing after payments and credits. Enrich the
+            # entire list from this same bulk snapshot, never one read per row
+            # or search keystroke. Missing/ambiguous A/R is not a paid invoice.
+            invoice.update({
+                "BalanceKnown": False,
+                "BalanceDue": None,
+                "BalanceDueCents": None,
+                "AmountPaid": None,
+                "AmountPaidCents": None,
+                "CreditsAdj": None,
+                "DirectoryStatus": "Unavailable",
+            })
+            candidates = active_receivables.get(invoice_number.casefold(), [])
+            if len(candidates) == 1:
+                receivable = candidates[0]
+                balance = self._directory_money_cents(receivable.get(sc.COL_RECV_BALANCE_DUE))
+                paid = self._directory_money_cents(receivable.get(sc.COL_RECV_AMOUNT_PAID))
+                credits = self._directory_money_cents(receivable.get(sc.COL_RECV_CREDITS_ADJ))
+                invoice["Status"] = str(receivable.get(sc.COL_RECV_STATUS) or "")
+                invoice["BillingClient"] = str(receivable.get(sc.COL_RECV_CLIENT) or "").strip()
+                if balance is not None:
+                    invoice.update({
+                        "BalanceKnown": True,
+                        "BalanceDue": balance / 100,
+                        "BalanceDueCents": balance,
+                        "AmountPaid": (paid or 0) / 100,
+                        "AmountPaidCents": paid or 0,
+                        "CreditsAdj": (credits or 0) / 100,
+                        "DirectoryStatus": (
+                            "Paid" if balance == 0 else
+                            "Credit balance" if balance < 0 else
+                            "Partially Paid" if (paid or 0) > 0 else "Unpaid"
+                        ),
+                    })
             result.append(invoice)
         return result
+
+    @staticmethod
+    def _directory_money_cents(value):
+        """Return confirmed monetary cents; blank/invalid values stay unknown."""
+        from decimal import InvalidOperation, ROUND_HALF_UP
+
+        if value is None or str(value).strip() == "":
+            return None
+        try:
+            amount = Decimal(str(value))
+            if not amount.is_finite():
+                return None
+            return int(amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100)
+        except (InvalidOperation, ValueError, OverflowError):
+            return None
 
     def _finalized_invoice_matter_descriptions(self, invoice_rows, table_rows=None):
         """Return one concise matter description per finalized invoice.

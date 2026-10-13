@@ -31,17 +31,67 @@ Item {
     property bool useContextClient: false
     property string billingClientName: ""
     property string asOfDateText: todayIsoDate()
+    property string invoiceStatus: "open"
+    property string invoiceDateFrom: ""
+    property string invoiceDateTo: ""
+    readonly property string invoiceStatusLabel: invoiceStatus === "paid" ? "Paid" : (invoiceStatus === "all" ? "All invoices" : "Open")
     property var billingClientRows: []
     property var billingClientNames: []
     property var availableInvoices: []
+    property bool invoicesLoaded: false
     property var selectedInvoiceMap: ({})
     property int selectionRevision: 0
     property var reportData: null
     property bool busy: false
-    property string statusText: "Choose a billing client to load its unpaid invoices."
+    property string statusText: "Choose a billing client to load invoices."
     property int requestSequence: 0
+    readonly property string requestInstanceKey: String(Date.now()) + "-" + String(Math.random()).slice(2)
     property string billingClientsRequestId: ""
     property string statementRequestId: ""
+
+    function invalidateInvoiceSelection() {
+        root.availableInvoices = []
+        root.invoicesLoaded = false
+        root.selectedInvoiceMap = ({})
+        root.selectionRevision += 1
+        root.reportData = null
+        root.statementRequestId = ""
+        root.busy = root.billingClientsRequestId.length > 0
+        root.statusText = root.billingClientName.length > 0
+            ? "Filters changed. Click Load Invoices to choose invoices for this statement."
+            : "Choose a billing client to load invoices."
+    }
+
+    onInvoiceStatusChanged: root.invalidateInvoiceSelection()
+    onInvoiceDateFromChanged: root.invalidateInvoiceSelection()
+    onInvoiceDateToChanged: root.invalidateInvoiceSelection()
+    onAsOfDateTextChanged: root.invalidateInvoiceSelection()
+
+    function snapshotState() {
+        return {
+            "statementBillingClient": root.billingClientName,
+            "statementAsOfDate": root.asOfDateText,
+            "statementInvoiceStatus": root.invoiceStatus,
+            "statementInvoiceDateFrom": root.invoiceDateFrom,
+            "statementInvoiceDateTo": root.invoiceDateTo
+        }
+    }
+
+    function applyState(state) {
+        if (!state) return
+        if (state.statementInvoiceStatus !== undefined) {
+            var status = root.cleanText(state.statementInvoiceStatus)
+            root.invoiceStatus = status === "paid" || status === "all" ? status : "open"
+        }
+        if (state.statementAsOfDate !== undefined)
+            root.asOfDateText = root.cleanText(state.statementAsOfDate) || root.todayIsoDate()
+        if (state.statementInvoiceDateFrom !== undefined)
+            root.invoiceDateFrom = root.cleanText(state.statementInvoiceDateFrom)
+        if (state.statementInvoiceDateTo !== undefined)
+            root.invoiceDateTo = root.cleanText(state.statementInvoiceDateTo)
+        if (state.statementBillingClient !== undefined)
+            root.setBillingClient(state.statementBillingClient, false)
+    }
 
     signal reportWindowRequested(var reportDocument)
     signal workspaceOpenRequested(int tileIndex, string nodeId, var state)
@@ -231,7 +281,7 @@ Item {
         root.selectedInvoiceMap = next
         root.selectionRevision += 1
         root.statusText = selected
-                ? root.availableInvoices.length + " open invoices selected."
+                ? root.availableInvoices.length + " invoices selected."
                 : "No invoices selected."
     }
 
@@ -240,10 +290,7 @@ Item {
         if (name === root.billingClientName && !shouldLoad)
             return
         root.billingClientName = name
-        root.availableInvoices = []
-        root.selectedInvoiceMap = ({})
-        root.selectionRevision += 1
-        root.reportData = null
+        root.invalidateInvoiceSelection()
         if (billingClientCombo.editText !== name)
             billingClientCombo.editText = name
         if (shouldLoad && name.length > 0)
@@ -252,7 +299,7 @@ Item {
 
     function nextRequestId(prefix) {
         root.requestSequence += 1
-        return String(prefix || "statement") + "-" + String(root.requestSequence)
+        return String(prefix || "statement") + "-" + root.requestInstanceKey + "-" + String(root.requestSequence)
     }
 
     function applyBillingClientRows(rows) {
@@ -302,7 +349,10 @@ Item {
             "clientId": root.selectedClientId,
             "client_level": "billing",
             "asOfDate": root.asOfDateText,
-            "openItemsOnly": true
+            "openItemsOnly": root.invoiceStatus === "open",
+            "invoiceStatus": root.invoiceStatus,
+            "invoiceDateFrom": root.invoiceDateFrom,
+            "invoiceDateTo": root.invoiceDateTo
         }
     }
 
@@ -316,20 +366,21 @@ Item {
             return
         }
         root.busy = true
-        root.statusText = "Loading open invoices…"
+        root.statusText = "Loading matching invoices…"
         if (typeof root.appRef.requestStatementOfAccount === "function") {
             root.statementRequestId = root.nextRequestId("statement-open-invoices")
             root.appRef.requestStatementOfAccount(root.statementRequestId, root.basePayload())
             return
         }
         var response = root.appRef.getStatementOfAccount(root.basePayload())
-        root.busy = false
+        root.busy = root.billingClientsRequestId.length > 0
         if (response && response.ok) {
             root.availableInvoices = response.availableInvoices || []
+            root.invoicesLoaded = true
             root.reportData = null
             root.selectAllInvoices(true)
             if (root.availableInvoices.length === 0)
-                root.statusText = "No unpaid invoices found for " + root.billingClientName + "."
+                root.statusText = "No invoices match this billing client and the selected filters."
         } else {
             root.availableInvoices = []
             root.selectedInvoiceMap = ({})
@@ -339,14 +390,15 @@ Item {
     }
 
     function applyOpenInvoicesResponse(response) {
-        root.busy = false
+        root.busy = root.billingClientsRequestId.length > 0
         root.statementRequestId = ""
         if (response && response.ok) {
             root.availableInvoices = response.availableInvoices || []
+            root.invoicesLoaded = true
             root.reportData = null
             root.selectAllInvoices(true)
             if (root.availableInvoices.length === 0)
-                root.statusText = "No unpaid invoices found for " + root.billingClientName + "."
+                root.statusText = "No invoices match this billing client and the selected filters."
         } else {
             root.availableInvoices = []
             root.selectedInvoiceMap = ({})
@@ -358,7 +410,7 @@ Item {
     function generateStatement() {
         var selected = root.selectedInvoiceNumbers()
         if (selected.length === 0) {
-            root.statusText = "Select at least one unpaid invoice for this statement."
+            root.statusText = "Select at least one invoice for this statement."
             return
         }
         if (!root.appRef || typeof root.appRef.getStatementOfAccount !== "function") {
@@ -375,7 +427,7 @@ Item {
             return
         }
         var response = root.appRef.getStatementOfAccount(payload)
-        root.busy = false
+        root.busy = root.billingClientsRequestId.length > 0
         if (response && response.ok) {
             root.reportData = response
             root.availableInvoices = response.availableInvoices || root.availableInvoices
@@ -389,7 +441,7 @@ Item {
     }
 
     function applyGeneratedStatementResponse(response, selected) {
-        root.busy = false
+        root.busy = root.billingClientsRequestId.length > 0
         root.statementRequestId = ""
         if (response && response.ok) {
             root.reportData = response
@@ -433,17 +485,17 @@ Item {
             if (root.cleanText(requestId) !== root.billingClientsRequestId)
                 return
             root.billingClientsRequestId = ""
-            root.busy = false
+            root.busy = root.statementRequestId.length > 0
             root.applyBillingClientRows(rows || [])
             if (root.billingClientNames.length > 0 && root.billingClientName.length === 0)
-                root.statusText = "Choose a billing client to load its unpaid invoices."
+                root.statusText = "Choose a billing client to load invoices."
         }
 
         function onStatementBillingClientsFailed(requestId, message) {
             if (root.cleanText(requestId) !== root.billingClientsRequestId)
                 return
             root.billingClientsRequestId = ""
-            root.busy = false
+            root.busy = root.statementRequestId.length > 0
             root.statusText = "Could not load billing clients: " + root.cleanText(message)
         }
 
@@ -460,7 +512,7 @@ Item {
             if (root.cleanText(requestId) !== root.statementRequestId)
                 return
             root.statementRequestId = ""
-            root.busy = false
+            root.busy = root.billingClientsRequestId.length > 0
             root.statusText = "Could not prepare statement: " + root.cleanText(message)
         }
     }
@@ -476,7 +528,7 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 112
+                Layout.preferredHeight: 206
                 color: SemanticTheme.surfacePanel(root.t, root.appStyle)
                 radius: root.isProMode ? visualRules.radiusPanel : 6
                 border.color: SemanticTheme.borderSubtle(root.t, root.appStyle)
@@ -497,7 +549,7 @@ Item {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            text: "Open invoices only"
+                            text: root.invoiceStatus === "open" ? "Open includes partially paid invoices" : "Balances as of the Statement Date"
                             font.pixelSize: visualRules.proCaptionFontPx
                             font.family: visualRules.textFontFamily
                             color: SemanticTheme.inkMuted(root.t, root.appStyle)
@@ -517,6 +569,7 @@ Item {
                             emptyOptionLabel: "Select a billing client…"
                             fullModel: root.billingClientNames
                             smartFilterEnabled: true
+                            enabled: !root.busy
                             preserveEditTextOnModelChanged: true
                             currentIndex: root.billingClientName.length > 0
                                 ? root.billingClientNames.indexOf(root.billingClientName)
@@ -540,6 +593,7 @@ Item {
                             appStyle: root.appStyle
                             label: "Statement Date"
                             datePickerEnabled: true
+                            enabled: !root.busy
                             Layout.preferredWidth: 180
                             Layout.preferredHeight: 48
                             text: root.asOfDateText
@@ -550,7 +604,7 @@ Item {
                             t: root.t
                             metrics: root.metrics
                             sfxBus: root.sfxBus
-                            text: root.busy ? "Loading…" : "Load Open Invoices"
+                            text: root.busy ? "Loading…" : "Load Invoices"
                             enabled: !root.busy && root.hasBillingClientChoice(root.billingClientName)
                             primary: true
                             Layout.preferredWidth: 160
@@ -560,6 +614,82 @@ Item {
                         }
 
                         Item { Layout.fillWidth: true }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        ModernComboBox {
+                            id: invoiceStatusInput
+                            objectName: "statementInvoiceStatusInput"
+                            t: root.t
+                            metrics: root.metrics
+                            appStyle: root.appStyle
+                            label: "Invoices"
+                            fullModel: ["Open", "Paid", "All invoices"]
+                            smartFilterEnabled: false
+                            editable: false
+                            enabled: !root.busy
+                            currentIndex: root.invoiceStatus === "paid" ? 1 : (root.invoiceStatus === "all" ? 2 : 0)
+                            Layout.preferredWidth: 200
+                            Layout.preferredHeight: 48
+                            onActivated: function(index) {
+                                root.invoiceStatus = index === 1 ? "paid" : (index === 2 ? "all" : "open")
+                            }
+                        }
+                        ModernTextField {
+                            id: invoiceFromInput
+                            objectName: "statementInvoiceDateFromInput"
+                            t: root.t
+                            metrics: root.metrics
+                            appStyle: root.appStyle
+                            label: "Invoice date: From"
+                            placeholderText: "Any date"
+                            datePickerEnabled: true
+                            enabled: !root.busy
+                            text: root.invoiceDateFrom
+                            Layout.preferredWidth: 180
+                            Layout.preferredHeight: 48
+                            onTextChanged: root.invoiceDateFrom = text
+                        }
+                        ModernTextField {
+                            id: invoiceToInput
+                            objectName: "statementInvoiceDateToInput"
+                            t: root.t
+                            metrics: root.metrics
+                            appStyle: root.appStyle
+                            label: "Invoice date: To"
+                            placeholderText: "Any date"
+                            datePickerEnabled: true
+                            enabled: !root.busy
+                            text: root.invoiceDateTo
+                            Layout.preferredWidth: 180
+                            Layout.preferredHeight: 48
+                            onTextChanged: root.invoiceDateTo = text
+                        }
+                        PillButton {
+                            t: root.t
+                            metrics: root.metrics
+                            sfxBus: root.sfxBus
+                            text: "All dates"
+                            enabled: !root.busy && (root.invoiceDateFrom.length > 0 || root.invoiceDateTo.length > 0)
+                            Layout.preferredWidth: 96
+                            Layout.preferredHeight: 40
+                            onClicked: {
+                                root.invoiceDateFrom = ""
+                                root.invoiceDateTo = ""
+                            }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Date range filters invoice dates. Statement Date determines payments and balances. Blank dates include all invoices."
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: visualRules.proCaptionFontPx
+                        font.family: visualRules.textFontFamily
+                        color: SemanticTheme.inkMuted(root.t, root.appStyle)
                     }
                 }
             }
@@ -586,7 +716,7 @@ Item {
                             color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                         }
                         Text {
-                            text: root.availableInvoices.length + " unpaid invoice" + (root.availableInvoices.length === 1 ? "" : "s")
+                            text: root.availableInvoices.length + " matching invoice" + (root.availableInvoices.length === 1 ? "" : "s")
                             font.pixelSize: visualRules.proCaptionFontPx
                             font.family: visualRules.textFontFamily
                             color: SemanticTheme.inkMuted(root.t, root.appStyle)
@@ -657,6 +787,7 @@ Item {
                                 spacing: 8
                                 CheckBox {
                                     Layout.preferredWidth: 68
+                                    enabled: !root.busy
                                     checked: root.selectionRevision >= 0 && root.isInvoiceSelected(invoiceRow.modelData.invoice)
                                     onClicked: root.setInvoiceSelected(invoiceRow.modelData.invoice, checked)
                                 }
@@ -720,8 +851,9 @@ Item {
                             anchors.centerIn: parent
                             visible: invoiceList.count === 0 && !root.busy
                             text: root.billingClientName.length > 0
-                                ? "No unpaid invoices are available for this billing client."
-                                : "Choose a billing client, then load its open invoices."
+                                ? (root.invoicesLoaded ? "No invoices match the selected filters."
+                                    : "Click Load Invoices to view invoices matching the selected filters.")
+                                : "Choose a billing client, then load its invoices."
                             font.pixelSize: visualRules.proBodyFontPx
                             font.family: visualRules.textFontFamily
                             color: SemanticTheme.inkMuted(root.t, root.appStyle)

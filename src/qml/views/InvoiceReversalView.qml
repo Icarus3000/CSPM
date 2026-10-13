@@ -31,6 +31,13 @@ Item {
     property color _danger: SemanticTheme.tone(root.t, "error", root.appStyle)
 
     property var invoicesModel: []
+    property var _allInvoices: []
+    property bool _hasInvoiceSnapshot: false
+    property string invoiceDirectorySearchText: ""
+    property string invoiceDirectoryStatusFilter: "all"
+    readonly property var _amountSearchRange: _directoryAmountRange(invoiceDirectorySearchText)
+    onInvoiceDirectorySearchTextChanged: _filterInvoices(false)
+    onInvoiceDirectoryStatusFilterChanged: _filterInvoices(false)
     property string selectedInvoiceNum: ""
     property var selectedInvoiceData: null
     property var selectedInvoiceSummary: null
@@ -66,30 +73,71 @@ Item {
     }
 
     function _applyInvoices(rawInvoices) {
-        rawInvoices = rawInvoices || []
+        _allInvoices = rawInvoices || []
+        _hasInvoiceSnapshot = true
+        invoiceListLoading = false
+        _filterInvoices(true)
+    }
+
+    function _directoryAmountRange(value) {
+        var query = String(value || "").trim()
+        // A full YY-NNNN invoice reference remains a text search. Currency
+        // grouping, a leading decimal and a trailing dot while typing work.
+        if (!/^[+-]?(?:\$\s*)?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{0,2})?|\.\d{1,2})$/.test(query)) return null
+        var normalized = query.replace(/[$,\s]/g, "")
+        var negative = normalized.charAt(0) === "-"
+        normalized = normalized.replace(/^[+-]/, "")
+        var parts = normalized.split(".")
+        var cents = Number(parts[0] || "0") * 100
+            + Number(((parts[1] || "") + "00").substring(0, 2))
+        // All range products must remain exact JavaScript integers.
+        if (!isFinite(cents) || cents > 818836295885544) return null
+        if (negative) cents = -cents
+        return {
+            "lowerCents": Math.ceil(cents * (cents < 0 ? 11 : 9) / 10),
+            "upperCents": Math.floor(cents * (cents < 0 ? 9 : 11) / 10)
+        }
+    }
+
+    function _directoryMoney(cents) {
+        return "$" + (Number(cents) / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+    }
+
+    function _directoryInvoiceMatches(inv, query, amountRange, statusFilter) {
+        var known = inv.BalanceKnown === true
+        var balance = known ? Number(inv.BalanceDueCents) : NaN
+        var paid = Number(inv.AmountPaidCents || 0)
+        if (statusFilter === "paid" && (!known || balance !== 0)) return false
+        if (statusFilter === "partial" && (!known || balance <= 0 || paid <= 0)) return false
+        if (statusFilter === "owing" && (!known || balance <= 0)) return false
+        if (amountRange) {
+            return known && balance >= amountRange.lowerCents && balance <= amountRange.upperCents
+        }
+        if (!query) return true
+        var textValues = [inv.InvoiceNum, inv.ClientName, inv.SubClient, inv.BillingClient]
+        for (var i = 0; i < textValues.length; i++) {
+            if (String(textValues[i] || "").toLowerCase().indexOf(query) !== -1) return true
+        }
+        return false
+    }
+
+    function _filterInvoices(refreshDetails) {
+        if (!_hasInvoiceSnapshot) return
         var filtered = []
-        var query = (typeof searchInput !== "undefined" && searchInput) ? searchInput.text.toLowerCase() : ""
+        var query = invoiceDirectorySearchText.trim().toLowerCase()
+        var amountRange = _directoryAmountRange(query)
 
         // CSPM invoices match YY-NNNN pattern (e.g. 26-0070)
         var cspmRegex = /^\d{2}-\d{4}$/
 
-        for (var i = 0; i < rawInvoices.length; i++) {
-            var inv = rawInvoices[i]
+        for (var i = 0; i < _allInvoices.length; i++) {
+            var inv = _allInvoices[i]
             var num = String(inv.InvoiceNum || "")
             
             // Only include CSPM generated invoices (filter out vendor AP bills)
             if (!cspmRegex.test(num)) continue
             
-            // Apply text search
-            if (query !== "") {
-                var cName = String(inv.ClientName || "").toLowerCase()
-                var scName = String(inv.SubClient || "").toLowerCase()
-                if (num.toLowerCase().indexOf(query) === -1 && 
-                    cName.indexOf(query) === -1 && 
-                    scName.indexOf(query) === -1) {
-                    continue
-                }
-            }
+            if (!_directoryInvoiceMatches(inv, query, amountRange, invoiceDirectoryStatusFilter)) continue
             filtered.push(inv)
         }
 
@@ -107,16 +155,20 @@ Item {
                 if (String(invoicesModel[j].InvoiceNum) === selectedInvoiceNum) {
                     selectedInvoiceData = invoicesModel[j]
                     found = true
-                    root._refreshSelectedInvoiceDetails()
+                    if (refreshDetails) root._refreshSelectedInvoiceDetails()
                     break
                 }
             }
             if (!found) {
                 selectedInvoiceNum = ""
                 selectedInvoiceData = null
+                selectedInvoiceSummary = null
+                selectedPaymentHistory = []
+                billingCorrectionContext = null
+                billingCorrectionLoading = false
+                invoiceDetailsLoading = false
             }
         }
-        invoiceListLoading = false
     }
 
     function _selectInvoice(invNum) {
@@ -348,8 +400,23 @@ Item {
 
     signal workspaceOpenRequested(int tileIndex, string nodeId, var state)
 
+    function snapshotState() {
+        return {
+            "invoiceDirectorySearchText": invoiceDirectorySearchText,
+            "invoiceDirectoryStatusFilter": invoiceDirectoryStatusFilter,
+            "selectedInvoiceNum": selectedInvoiceNum
+        }
+    }
+
     function applyJumpState(state) {
         if (!state) return
+        if (state.invoiceDirectorySearchText !== undefined)
+            invoiceDirectorySearchText = String(state.invoiceDirectorySearchText || "")
+        if (state.invoiceDirectoryStatusFilter !== undefined) {
+            var status = String(state.invoiceDirectoryStatusFilter || "all")
+            invoiceDirectoryStatusFilter = ["all", "paid", "partial", "owing"].indexOf(status) >= 0 ? status : "all"
+            invoiceStatusFilter.editText = ["All", "Paid", "Partially paid", "Balance owing"][["all", "paid", "partial", "owing"].indexOf(invoiceDirectoryStatusFilter)]
+        }
         var inv = String(state.selectedInvoiceNum || state.invoiceNum || state.entityId || state.invoiceId || "")
         if (inv.length > 0 && selectedInvoiceNum !== inv) {
             _selectInvoice(inv)
@@ -442,9 +509,10 @@ Item {
     Connections {
         target: root.appController ? root.appController.docketing : null
         function onPaymentSaveFinished(result) {
-            if (result && result.ok && String(result.invoice || "") === root.selectedInvoiceNum) {
-                root._refreshSelectedInvoiceDetails()
-            }
+            if (result && result.ok) root._loadInvoices()
+        }
+        function onBillingClientReceiptSaveFinished(result) {
+            if (result && result.ok) root._loadInvoices()
         }
     }
 
@@ -484,7 +552,8 @@ Item {
                 TextField {
                     id: searchInput
                     Layout.fillWidth: true
-                    placeholderText: "Search invoice or client..."
+                    text: root.invoiceDirectorySearchText
+                    placeholderText: "Invoice, client or balance amount…"
                     color: root._text
                     placeholderTextColor: root.isProMode ? SemanticTheme.inkSubtle(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
                     background: Rectangle {
@@ -493,7 +562,35 @@ Item {
                         border.width: 1
                         radius: visualRules.isPro ? visualRules.radiusControl : 4
                     }
-                    onTextChanged: root._loadInvoices()
+                    onTextEdited: root.invoiceDirectorySearchText = text
+                }
+
+                ModernComboBox {
+                    id: invoiceStatusFilter
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 56
+                    t: root.t
+                    appStyle: root.appStyle
+                    label: "Payment status"
+                    fullModel: ["All", "Paid", "Partially paid", "Balance owing"]
+                    smartFilterEnabled: false
+                    editable: false
+                    Component.onCompleted: editText = "All"
+                    onActivated: {
+                        var selectedIndex = fullModel.indexOf(editText)
+                        root.invoiceDirectoryStatusFilter = ["all", "paid", "partial", "owing"][Math.max(0, selectedIndex)]
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root._amountSearchRange
+                        ? "Balance owing: " + root._directoryMoney(root._amountSearchRange.lowerCents)
+                            + "–" + root._directoryMoney(root._amountSearchRange.upperCents) + " (±10%)"
+                        : root.invoicesModel.length + " invoices"
+                    color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
                 }
 
                 Rectangle {
@@ -514,10 +611,9 @@ Item {
                         property string matterDescription: String(modelData.MatterDescription || "").trim()
 
                         width: invoiceListView.width
-                        // Keep the familiar two-line row for historic entries
-                        // with no resolved matter, and give a third line just
-                        // enough room to identify the plain-English matter.
-                        height: matterDescription.length > 0 ? 76 : 60
+                        // Give current status/balance their own line, plus a
+                        // matter line whenever its description is resolved.
+                        height: matterDescription.length > 0 ? 98 : 82
                         color: root.selectedInvoiceNum === (modelData.InvoiceNum || "") ? (root.isProMode ? SemanticTheme.alpha(SemanticTheme.accentPrimary(root.t, root.appStyle), 0.16) : SemanticTheme.hoverOverlay(root.t, root.appStyle)) : "transparent"
                         border.color: root._border
                         border.width: 1
@@ -570,6 +666,25 @@ Item {
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                             }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text {
+                                    text: String(modelData.DirectoryStatus || "Unavailable")
+                                    color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                                    font.pixelSize: 11
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: modelData.BalanceKnown === true
+                                        ? root._directoryMoney(modelData.BalanceDueCents) + " due"
+                                        : "Balance unavailable"
+                                    color: root._text
+                                    font.pixelSize: 12
+                                    font.weight: Font.Medium
+                                }
+                            }
                         }
 
                         ToolTip.visible: invoiceRowMouseArea.containsMouse && matterDescription.length > 0
@@ -578,6 +693,17 @@ Item {
                     }
                     
                     ScrollBar.vertical: ScrollBar { }
+
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 16
+                        visible: !root.invoiceListLoading && root.invoicesModel.length === 0
+                        text: "No matching invoices"
+                        color: SemanticTheme.inkMuted(root.t, root.appStyle)
+                        font.pixelSize: 12
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                    }
                 }
             }
         }

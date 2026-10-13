@@ -666,6 +666,14 @@ def generate_statement_of_account_pdf(payload, export_dir, logo_path):
     as_of_date = _safe_text(statement.get("asOfDate") or payload.get("asOfDate"))
     amount_due = _safe_text(statement.get("amountDueFormatted")) or _money(statement.get("amountDue"))
     invoice_count = int(statement.get("invoiceCount") or len(rows))
+    invoice_status = _safe_text(statement.get("invoiceStatus") or payload.get("invoiceStatus") or "open").casefold()
+    invoice_date_label = _safe_text(statement.get("invoiceDateLabel") or payload.get("invoiceDateLabel"))
+    section_title = {"open": "Outstanding Invoices", "paid": "Paid Invoices", "all": "Selected Invoices"}.get(invoice_status, "Selected Invoices")
+    caption = {
+        "open": "A concise summary of the selected outstanding invoices on your account.",
+        "paid": "A concise summary of the selected paid invoices on your account.",
+        "all": "A concise summary of the selected invoices on your account.",
+    }.get(invoice_status, "A concise summary of the selected invoices on your account.")
     generated = datetime.now().strftime("%Y-%m-%d")
 
     safe_title = "StatementOfAccount"
@@ -717,7 +725,7 @@ def generate_statement_of_account_pdf(payload, export_dir, logo_path):
     story = [
         Paragraph("STATEMENT OF ACCOUNT", title_style),
         Paragraph(
-            "A concise summary of the selected outstanding invoices on your account.",
+            caption,
             caption_style,
         ),
         Spacer(1, 0.17 * inch),
@@ -749,6 +757,8 @@ def generate_statement_of_account_pdf(payload, export_dir, logo_path):
         ),
     )
     story.extend([overview, Spacer(1, 0.15 * inch)])
+    if invoice_date_label and invoice_date_label != "All invoice dates":
+        story.extend([Paragraph(_escaped(invoice_date_label), caption_style), Spacer(1, 0.10 * inch)])
 
     due_callout = Table(
         [[Paragraph("AMOUNT DUE", white_label), Paragraph(amount_due, white_amount)]],
@@ -766,7 +776,7 @@ def generate_statement_of_account_pdf(payload, export_dir, logo_path):
     )
     story.extend([due_callout, Spacer(1, 0.22 * inch)])
 
-    story.append(_section_title("Outstanding Invoices", styles))
+    story.append(_section_title(section_title, styles))
     headers = [
         _paragraph("Invoice Date", styles["tableHeader"]),
         _paragraph("Invoice", styles["tableHeader"]),

@@ -1,5 +1,13 @@
 # Implementation History
 
+## 2026-10-13: Statement preview, paid invoice selection and directory filters
+
+ReportWindow preview now reserves logo space independently of its hidden tint source, preserves normal/custom logos in light mode and clears page metadata; the saved/printed header renderer and branding assets remain intact. Statement selection adds Open/Paid/All, paid-only client choices and inclusive optional invoice-date ranges while separately computing the Statement Date cutoff, including dated later settlements and signed reversals. Selection invalidation and instance-qualified request IDs prevent stale filtered previews; report captions and date scope reflect the included invoices.
+
+Invoice Directory enriches its existing background bulk snapshot with authoritative balances/payments/credits, applies cents-based inclusive +/-10% numeric balance search and combined All/Paid/Partially paid/Balance owing filters locally, displays balance/status and preserves host filter state and payment/finalization refreshes. Missing/invalid/ambiguous A/R does not become a paid zero balance; accepted motion and production data remain untouched.
+
+Safe checks pass 162 focused synthetic/offscreen tests, changed-Python compilation, all 35 locked release dependencies, governed QML lint (existing warnings) and whitespace review. Outside-sandbox native Windows/GPU rendering passes 72 preview layouts, with light/dark framebuffer review. Clean-source executable build and packaged runtime verification follow source publication. Detailed scope and subsequent release evidence: `docs/CSPM_STATEMENT_AND_INVOICE_FILTERS_2026-10-13.md`.
+
 ## 2026-10-13: Invoice accounting parity and reviewed outstanding corrections
 
 Draft accounting applied the agency deduction to an already shared AmountToYou value while the document applied it once to GrossToClient. InvoiceDraftService now supplies one Decimal monetary calculation to initial draft totals, recalculation, document payloads and finalization, with aggregate HST. Directory finalization refresh and coalesced worker rereads suppress stale results. Historical synchronization refuses operations that could discard audited amount/billing-owner corrections.

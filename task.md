@@ -1,5 +1,15 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-13: Statement preview and invoice selection/search filters
+
+- [x] Implement the user-approved preview-only logo/text header repair, preserving the saved/printed header renderer and accepted motion.
+- [x] Offer Open/Paid/All statement invoice scopes, paid-only billing clients and inclusive optional invoice-date ranges, with independent Statement Date payment/balance cutoff and checked-only output.
+- [x] Add current-balance numeric search within inclusive +/-10%, combined All/Paid/Partially paid/Balance owing directory filters, visible balance/status and retained filter state/refreshes.
+- [x] Pass 162 focused sandbox-safe regressions, Python compilation, governed QML lint and whitespace checks; pass 72 outside-sandbox native preview layouts.
+- [ ] Commit/push reviewed source, rebuild both executables from clean committed source, verify immutable runtime and run real packaged WebEngine/startup/lifecycle checks.
+
+Scope and evidence classification: `docs/CSPM_STATEMENT_AND_INVOICE_FILTERS_2026-10-13.md`.
+
 ## 2026-10-13: Invoice accounting integrity and outstanding LIHDC review
 
 - [x] Diagnose the duplicate agency deduction in draft accounting and the independent PDF calculation; unify document and posting totals with one Decimal calculator and aggregate HST rounding.

@@ -3456,7 +3456,18 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             "selectedMatterName": root.selectedMatterName
         }
 
-        if (wipBillingView && typeof wipBillingView.snapshotState === "function") {
+        var statementView = statementOfAccountLoader.item ? statementOfAccountLoader.item.statementView : null
+        if (root.activeIsStatementOfAccount() && statementView && typeof statementView.snapshotState === "function") {
+            var statementState = statementView.snapshotState()
+            for (var statementKey in statementState) {
+                baseState[statementKey] = statementState[statementKey]
+            }
+        } else if (root.activeIsInvoiceDirectory() && invoiceDirectoryView && typeof invoiceDirectoryView.snapshotState === "function") {
+            var invoiceState = invoiceDirectoryView.snapshotState()
+            for (var invoiceKey in invoiceState) {
+                baseState[invoiceKey] = invoiceState[invoiceKey]
+            }
+        } else if (wipBillingView && typeof wipBillingView.snapshotState === "function") {
             var wipState = wipBillingView.snapshotState()
             for (var k in wipState) {
                 baseState[k] = wipState[k]
@@ -3550,6 +3561,13 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         }
         if (root.activeIsInvoiceReversal() && invoiceReversalView) {
             invoiceReversalView.applyJumpState(state)
+        }
+        if (root.activeIsInvoiceDirectory() && invoiceDirectoryView) {
+            invoiceDirectoryView.applyJumpState(state)
+        }
+        var statementView = statementOfAccountLoader.item ? statementOfAccountLoader.item.statementView : null
+        if (root.activeIsStatementOfAccount() && statementView && statementView.applyState) {
+            statementView.applyState(state)
         }
         if (root.activeIsWipToBill()) {
             console.log("PlaceholderSubmenuView: routing to WIP To Bill Workbench. wipBillingView is", wipBillingView)
@@ -4479,8 +4497,14 @@ Behavior on border.color {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
+                    onLoaded: {
+                        if (item && item.statementView && root._pendingStateForLoader)
+                            item.statementView.applyState(root._pendingStateForLoader)
+                    }
+
                     sourceComponent: Component {
                         Rectangle {
+                            property alias statementView: statementPanel
                             anchors.fill: parent
                             radius: root.sectionRadiusPx
                             color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
@@ -4488,6 +4512,7 @@ Behavior on border.color {
                             border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
 
                             StatementOfAccountView {
+                                id: statementPanel
                                 onReportWindowRequested: function(reportDocument) { root.reportWindowRequested(reportDocument) }
                                 onWorkspaceOpenRequested: function(tileIndex, nodeId, state) {
                                     root.workspaceOpenRequested(tileIndex, nodeId, state)
