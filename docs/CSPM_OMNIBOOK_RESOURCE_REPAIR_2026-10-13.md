@@ -46,3 +46,11 @@ planning ledger. No production workbook edits or motion changes are required.
 Foreground acceptance remains the same reported workflow: reopen CSPM normally,
 open the affected draft's preview and export PDF. Legacy-import delegate/type
 warnings are separate pending UI findings; stay on the invoice acceptance gate.
+
+Final release: clean build source `4905c49`, local only, incorporating remote
+`d1d6475`. Candidate/installed immutable and real outside-sandbox invoice
+WebEngine/PDF plus frozen startup/input/exit checks pass. Installed runtime
+matches 4,253 files / 677,671,510 bytes. Protected production files and normal
+writer policy are unchanged; full runtime/data verification and normal launcher
+check-only pass. The verified rollback ZIP and earlier private probe failures
+remain retained. Foreground acceptance remains pending.

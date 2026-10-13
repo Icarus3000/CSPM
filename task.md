@@ -6,7 +6,7 @@
 - [x] Pull all current cloud main changes through `d1d6475` with local repair edits and prior release notes preserved.
 - [x] Repair immutable invoice/schema/theme/docs/version/logo resources and approved empty-template recognition; launch the packaged Recovery utility from its actual installation.
 - [x] Pass 160 focused sandbox-safe source checks, nine changed-Python compilations, all 35 locked dependency versions and whitespace checks.
-- [ ] Rebuild clean source; audit candidate/installed assets and bytecode; validate actual invoice WebEngine/PDF and frozen startup/input/exit outside sandbox; verify rollback, deployment and normal launcher identity without workbook/settings changes.
+- [x] Rebuild both executables from clean `4905c49`; candidate/installed immutable audits pass 67 modules, 173 QML-tree files and unchanged native ABI. Outside-sandbox real invoice WebEngine/PDF and frozen startup/input/X-exit pass for both; verified rollback, 4,253-file deployment, unchanged protected files and normal writer check-only verification pass.
 - [ ] User foreground acceptance: reopen normal CSPM, open the affected draft preview and export its PDF.
 - [ ] Separate follow-up: validate/repair legacy Word-layout billing fields and monetary parity; no unsafe A2-to-A fallback. Legacy-import delegate/type warnings remain separate pending UI findings. Legacy ProjectSnapshotService still uses paths.root for selected data/resources; managed paired backups use the active selectors correctly. Treat snapshot repair as a separate tested follow-up.
 
