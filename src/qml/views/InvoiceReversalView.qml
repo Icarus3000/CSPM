@@ -362,6 +362,15 @@ Item {
         function onFinalizedInvoicesLoaded(invoices) {
             root._applyInvoices(invoices || [])
         }
+        function onDraftFinalized(result) {
+            if (!result || result.ok !== true) return
+            if (String(result.invoiceNum || "") === root.selectedInvoiceNum) {
+                root.selectedInvoiceSummary = null
+                root.selectedPaymentHistory = []
+                root.invoiceDetailsLoading = true
+            }
+            root._loadInvoices()
+        }
         function onInvoiceDirectoryDetailsLoaded(payload) {
             if (!payload || String(payload.invoiceNum || "") !== root.selectedInvoiceNum) return
             root.selectedInvoiceSummary = payload.summary || {}

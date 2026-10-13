@@ -286,3 +286,48 @@ def test_invoice_directory_exposes_guarded_billing_client_correction_workflow():
     assert "does not change the amount, date, work client, matter, or existing PDF" in qml
     assert "def loadInvoiceBillingCorrectionContext" in controller
     assert "def correctInvoiceBillingClient" in controller
+
+
+def test_billing_client_correction_preserves_existing_amount_correction_audit():
+    repo = _BillingCorrectionRepo()
+    invoice = repo.tables[sc.TBL_INVOICE_LOG][0]
+    snapshot = json.loads(invoice[sc.COL_INV_BILL_TO_SNAPSHOT] or "{}")
+    amount_history = [{"reason": "Synthetic verified amount correction", "after": {"total": "113.00"}}]
+    snapshot["amountCorrections"] = amount_history
+    invoice[sc.COL_INV_BILL_TO_SNAPSHOT] = json.dumps(snapshot)
+    service = InvoiceDraftService(repo)
+    service.correct_finalized_invoice_billing_client("26-0095", "LEVI", "Correct billing recipient.")
+    corrected = json.loads(repo.tables[sc.TBL_INVOICE_LOG][0][sc.COL_INV_BILL_TO_SNAPSHOT])
+    assert corrected["amountCorrections"] == amount_history
+    assert corrected["billingCorrections"][-1]["toClientId"] == "LEVI"
+
+
+def test_billing_owner_correction_updates_explicit_non_cash_accrual_only():
+    repo = _BillingCorrectionRepo()
+    accrual = repo.tables[sc.TBL_TRANSACTIONS_MASTER][0]
+    accrual.update({
+        sc.COL_TXN_FROM_ACCOUNT: "ACCOUNTS_RECEIVABLE",
+        sc.COL_TXN_TO_ACCOUNT: "LEGAL_REVENUE",
+        sc.COL_TXN_CLEARED_AT: "2026-07-31",
+        sc.COL_TXN_NOTES: "Historical sync: Client Fees",
+    })
+    bank_receipt = dict(accrual, **{
+        sc.COL_TXN_ID: "TXN-BANK-RECEIPT",
+        sc.COL_TXN_FROM_ACCOUNT: "OPERATING_BANK",
+    })
+    explicit_receipt = dict(accrual, **{
+        sc.COL_TXN_ID: "TXN-EXPLICIT-RECEIPT",
+        sc.COL_TXN_NOTES: "Payment receipt evidence",
+    })
+    repo.tables[sc.TBL_TRANSACTIONS_MASTER].extend([bank_receipt, explicit_receipt])
+    before = deepcopy(repo.tables[sc.TBL_TRANSACTIONS_MASTER])
+    result = InvoiceDraftService(repo).correct_finalized_invoice_billing_client(
+        "26-0095", "LEVI", "Correct documented invoice billing owner.",
+    )
+    after = repo.tables[sc.TBL_TRANSACTIONS_MASTER]
+    assert result["transactionRowsUpdated"] == 1
+    assert after[0][sc.COL_TXN_CLIENT] == "Leviathan Private Network"
+    assert {key: value for key, value in after[0].items() if key != sc.COL_TXN_CLIENT} == {
+        key: value for key, value in before[0].items() if key != sc.COL_TXN_CLIENT
+    }
+    assert after[1:] == before[1:]

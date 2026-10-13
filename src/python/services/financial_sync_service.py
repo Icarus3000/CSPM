@@ -492,6 +492,74 @@ class FinancialSyncService:
         return {key: round(float(actual.get(key, 0) or 0) - float(expected.get(key, 0) or 0), 2)
                 for key in sorted(set(expected) | set(actual))}
 
+    @classmethod
+    def _audited_invoice_replacement_conflicts(
+        cls,
+        source: Mapping[str, Sequence[Mapping[str, Any]]],
+        target: Mapping[str, Sequence[Mapping[str, Any]]],
+    ) -> list[str]:
+        """Identify audited corrections this historical snapshot could erase.
+
+        Corrections are authoritative native evidence even when the original
+        invoice predates the source cutoff. A historical replacement cannot
+        silently discard that evidence or recreate the former financial owner.
+        Refuse this operation rather than attempting an automatic financial merge.
+        """
+        audited: dict[str, str] = {}
+        for row in target.get("Invoice Log", []):
+            raw = row.get(sc.COL_INV_BILL_TO_SNAPSHOT)
+            try:
+                snapshot = json.loads(str(raw or "")) if not isinstance(raw, Mapping) else raw
+            except (TypeError, ValueError):
+                continue
+            if isinstance(snapshot, Mapping) and (
+                snapshot.get("billingCorrections") or snapshot.get("amountCorrections")
+            ):
+                number = _text(row.get(sc.COL_INV_INVOICE_NUM))
+                if number:
+                    audited[_key(number)] = number
+        if not audited:
+            return []
+
+        docket_cutoff = cls._max_date(source.get("Dockets", []), "Date")
+        ledger_cutoff = cls._max_date(source.get("Ledger", []), "Date")
+        source_references = {
+            _key(row.get(column))
+            for table, column in (
+                ("Invoice Log", "Invoice #"), ("Receivables", "InvoiceNum"),
+                ("Dockets", "Invoice #"), ("Ledger", "Reference"),
+                ("Disbursements", "Invoice"),
+            )
+            for row in source.get(table, [])
+        }
+        conflicts = set(audited) & source_references
+        for table, reference, dated, cutoff in (
+            ("Invoice Log", sc.COL_INV_INVOICE_NUM, sc.COL_INV_INVOICE_DATE, docket_cutoff),
+            ("Receivables", sc.COL_RECV_INVOICE_NUM, sc.COL_RECV_DATE, docket_cutoff),
+            ("TimeEntries", sc.COL_TIME_INVOICE_REF, sc.COL_TIME_DATE, docket_cutoff),
+            ("Disbursements", sc.COL_DISB_INVOICE_REF, sc.COL_DISB_DATE, docket_cutoff),
+            ("Ledger", sc.COL_LEDGER_REFERENCE, sc.COL_LEDGER_DATE, ledger_cutoff),
+            ("Transactions", sc.COL_TXN_INVOICE_REF, sc.COL_TXN_DATE, ledger_cutoff),
+        ):
+            for row in target.get(table, []):
+                number = _key(row.get(reference))
+                if number not in audited:
+                    continue
+                removed_reference = table in {"Invoice Log", "Receivables"} and not _is_actual_invoice(row.get(reference))
+                historical_row = cutoff is not None and (_date(row.get(dated)) or date.min) <= cutoff
+                if removed_reference or historical_row:
+                    conflicts.add(number)
+        return sorted(audited[number] for number in conflicts)
+
+    @staticmethod
+    def _audited_invoice_conflict_message(invoices: Sequence[str]) -> str:
+        return (
+            "Historic synchronization would overwrite audited invoice corrections: "
+            + ", ".join(invoices)
+            + ". Review the corrected invoices and historical source before synchronizing. "
+            "No corrections were merged or reapplied automatically."
+        )
+
     def preview(self, source_path: str | Path, target_path: str | Path | None = None) -> dict[str, Any]:
         """Return a source-of-truth plan without modifying either workbook."""
         source_file = Path(source_path)
@@ -514,6 +582,10 @@ class FinancialSyncService:
         )
         if source_docket_cutoff is None or source_ledger_cutoff is None:
             errors.append("The historic source has no usable Dockets or Ledger cutoff date.")
+
+        audited_conflicts = self._audited_invoice_replacement_conflicts(source, target)
+        if audited_conflicts:
+            errors.append(self._audited_invoice_conflict_message(audited_conflicts))
 
         source_receivables = self._source_receivables(source["Receivables"])
         target_receivables = self._target_receivables(target["Receivables"])
@@ -613,6 +685,7 @@ class FinancialSyncService:
             "actions": dict(sorted(actions.items())),
             "receivableDifferences": receivable_differences,
             "targetOnlyReceivables": sorted(target_only_receivables),
+            "auditedInvoiceConflicts": audited_conflicts,
             "settlementEvidence": settlement_rows,
             "sourceMetrics": source_metrics,
             "targetMetrics": target_metrics,
@@ -1103,6 +1176,9 @@ class FinancialSyncService:
 
     def _apply_to_candidate(self, source: Mapping[str, Sequence[Mapping[str, Any]]], candidate_path: Path) -> dict[str, int]:
         target = self._read_target(candidate_path)
+        audited_conflicts = self._audited_invoice_replacement_conflicts(source, target)
+        if audited_conflicts:
+            raise FinancialSyncError(self._audited_invoice_conflict_message(audited_conflicts))
         source_docket_cutoff = self._max_date(source["Dockets"], "Date")
         source_ledger_cutoff = self._max_date(source["Ledger"], "Date")
         source_receivables = self._source_receivables(source["Receivables"])

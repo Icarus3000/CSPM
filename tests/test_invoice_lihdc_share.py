@@ -25,6 +25,9 @@ class _MemoryRepo:
     def _write_table_rows(self, table, rows):
         self.tables[table] = deepcopy(rows)
 
+    def get_client_profile(self, client_id):
+        return {"ok": True, "client": {"clientId": "LIHDC", "clientName": "LIHDC Professional Corporation"}}
+
 
 def test_lihdc_draft_does_not_apply_lawyer_share_twice():
     repo = _MemoryRepo()
@@ -38,7 +41,7 @@ def test_lihdc_draft_does_not_apply_lawyer_share_twice():
 
     draft = repo.tables[sc.TBL_DRAFT_INVOICES][0]
     assert draft[sc.COL_DRAFT_INVOICE_NUM] == draft_num
-    assert draft[sc.COL_DRAFT_AGENCY_SPLIT_PERCENT] == "0.0"
+    assert draft[sc.COL_DRAFT_AGENCY_SPLIT_PERCENT] == "30.0"
     assert draft[sc.COL_DRAFT_TOTAL_FEES] == "221.20"
     assert draft[sc.COL_DRAFT_TOTAL_TAX] == "28.76"
     assert draft[sc.COL_DRAFT_TOTAL_DUE] == "249.96"

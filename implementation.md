@@ -1,5 +1,13 @@
 # Implementation History
 
+## 2026-10-13: Invoice accounting parity and reviewed outstanding corrections
+
+Draft accounting applied the agency deduction to an already shared AmountToYou value while the document applied it once to GrossToClient. InvoiceDraftService now supplies one Decimal monetary calculation to initial draft totals, recalculation, document payloads and finalization, with aggregate HST. Directory finalization refresh and coalesced worker rereads suppress stale results. Historical synchronization refuses operations that could discard audited amount/billing-owner corrections.
+
+The authorized private PDF/workbook audit reviews fourteen outstanding LIHDC invoices and establishes five amount discrepancies plus eight billing-owner discrepancies across eleven entries. A protected, source-hash-bound isolated candidate is verified field by field, atomically promoted and published under the shared lease. Live readback verifies every reviewed total/balance/owner, retained payments/credits, unchanged historical workbook/macros, matching local/shared hashes and released checkout. Existing unrelated integrity errors are not newly introduced or reconciled. Correction audit history persists in BillToSnapshot; only explicit noncash invoice-accrual transaction ownership is corrected, preserving bank receipt evidence.
+
+Sandbox-safe gates pass 139 focused checks, changed-Python compilation, governed QML lint and whitespace review. Exact committed-source clean packaging and candidate/installed actual WebEngine/startup validation follow separately; real user acceptance remains. No practice datasets, PDFs or raw private evidence enter Git. Detailed boundaries: `docs/CSPM_INVOICE_ACCOUNTING_INTEGRITY_2026-10-13.md`.
+
 ## 2026-10-12: Actionable server authentication and writer-source publication
 
 The exact writer-safety commit `7f6e4bb` passes a second narrow review, 72 unique

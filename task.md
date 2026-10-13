@@ -1,5 +1,17 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-13: Invoice accounting integrity and outstanding LIHDC review
+
+- [x] Diagnose the duplicate agency deduction in draft accounting and the independent PDF calculation; unify document and posting totals with one Decimal calculator and aggregate HST rounding.
+- [x] Audit fourteen outstanding LIHDC invoices against issued PDFs; correct five monetary discrepancies and eight billing-owner discrepancies across eleven invoices using a backed-up candidate and exclusive checkout.
+- [x] Verify every reviewed live total, balance and billing owner; preserve payments, credits, source WIP and reversal history; publish matching local/shared workbooks and release the checkout. Existing unrelated integrity findings remain unchanged.
+- [x] Refresh kept-open Invoice Directory after finalization and preserve refreshes during in-flight list/detail reads; prevent historical sync from overwriting audited corrections.
+- [x] Pass 139 focused sandbox-safe billing/payment/WIP/reversal/repair/sync checks, changed-Python compilation, governed QML lint and whitespace checks.
+- [ ] Finish committed-source clean packaging, candidate/installed source and accounting verification, and outside-sandbox real WebEngine/startup checks; record release evidence.
+- [ ] User foreground acceptance: reopen the corrected invoice and LIHDC outstanding A/R in the rebuilt installed application.
+
+Scoped implementation and private evidence boundary: `docs/CSPM_INVOICE_ACCOUNTING_INTEGRITY_2026-10-13.md`.
+
 ## 2026-10-12: Governed production-write activation gate
 
 - [x] Verify installed/remote main `528e1cb`, complete immutable runtime and exact current read-only enforcement; preserve accepted motion/lifecycle and installation.

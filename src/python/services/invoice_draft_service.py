@@ -359,11 +359,10 @@ class InvoiceDraftService:
         draft: Dict[str, Any],
         time_entries: List[Dict[str, Any]],
         disb_entries: List[Dict[str, Any]],
-    ) -> None:
+    ) -> Dict[str, Decimal]:
         """Refresh a draft's totals without forcing an intermediate save."""
         draft_num = self._text(draft.get(sc.COL_DRAFT_INVOICE_NUM))
         fees = Decimal("0.0")
-        tax = Decimal("0.0")
         invoice_flat_fee_rows: List[Dict[str, Any]] = []
         invoice_flat_fee_total = Decimal("0.0")
         for row in time_entries:
@@ -371,12 +370,14 @@ class InvoiceDraftService:
                 self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
                 == draft_num.casefold()
             ):
-                entry_net, entry_tax = self._entry_invoice_amounts(row)
-                fees += entry_net
-                tax += entry_tax
+                # The document starts with the client-facing fee and applies
+                # its explicit agency split once. AmountToYou already contains
+                # the docket's lawyer share and cannot be that fee base.
+                entry_fee = self._entry_client_fee_base(row)
+                fees += entry_fee
                 if self._is_invoice_wide_custom_fee(row):
                     invoice_flat_fee_rows.append(row)
-                    invoice_flat_fee_total += entry_net
+                    invoice_flat_fee_total += entry_fee
 
         disb_total = Decimal("0.0")
         for row in disb_entries:
@@ -424,15 +425,12 @@ class InvoiceDraftService:
             if not tax_exempt:
                 taxable_disbursements += self._money(row.get(sc.COL_DISB_AMOUNT))
 
-        # If flat fee, agency split, or discount is applied, compute tax on final net fees
-        if is_flat_fee or agency_split_percent > 0 or discount_amt > 0:
-            final_tax = self._money(
-                (net_professional_fees + taxable_disbursements) * Decimal("0.13")
-            )
-        else:
-            final_tax = self._money(
-                tax + (taxable_disbursements * Decimal("0.13"))
-            )
+        # The document rounds HST on the final aggregate taxable amount.
+        # Summing individually rounded docket HST can differ by a cent.
+        final_tax = self._money(
+            max(Decimal("0.0"), net_professional_fees + taxable_disbursements)
+            * Decimal("0.13")
+        )
 
         billings_excluding_tax = self._money(net_professional_fees + disb_total)
 
@@ -445,6 +443,24 @@ class InvoiceDraftService:
             self._money(billings_excluding_tax + final_tax)
         )
         draft[sc.COL_DRAFT_UPDATED_AT] = datetime.now().astimezone().isoformat()
+        return {
+            "gross_professional_fees": self._money(fees_to_use),
+            "discount_amount": self._money(discount_amt),
+            "agency_split_amount": self._money(agency_split_amt),
+            "net_professional_fees": self._money(net_professional_fees),
+            "disbursement_total": self._money(disb_total),
+            "total_tax": final_tax,
+            "total_due": self._money(billings_excluding_tax + final_tax),
+        }
+
+    def calculate_draft_invoice_totals(
+        self,
+        draft: Dict[str, Any],
+        time_entries: List[Dict[str, Any]],
+        disb_entries: List[Dict[str, Any]],
+    ) -> Dict[str, Decimal]:
+        """Provide document and accounting totals from one read-only calculator."""
+        return self._recalculate_draft_totals_in_memory(dict(draft), time_entries, disb_entries)
 
     def _assert_invoice_number_available(self, invoice_num: str) -> None:
         """Reject a final number already used by a live financial record.
@@ -559,7 +575,7 @@ class InvoiceDraftService:
         tax = self._money(row.get(sc.COL_TIME_HST))
         is_direct_fee = "entrytype:fee" in str(row.get(sc.COL_TIME_LOCK_AUDIT) or "").lower()
 
-        invoice_fee = net if net > 0 else gross
+        invoice_fee = net if net != 0 else gross
 
         if is_direct_fee:
             if net <= 0 and gross > 0:
@@ -573,6 +589,16 @@ class InvoiceDraftService:
                 row[sc.COL_TIME_TOTAL] = str(net + tax)
 
         return invoice_fee, tax
+
+    def _entry_client_fee_base(self, row: Dict[str, Any]) -> Decimal:
+        """Use the same pre-agency fee base as the invoice document.
+
+        Keep finalized WIP's AmountToYou semantics in _entry_invoice_amounts:
+        linked-WIP reconciliation and historical repair must not turn an
+        already earned lawyer share back into the client's gross fee.
+        """
+        gross = self._money(row.get(sc.COL_TIME_GROSS))
+        return gross if gross != 0 else self._entry_invoice_amounts(row)[0]
 
     def create_draft(
         self,
@@ -710,8 +736,8 @@ class InvoiceDraftService:
                 row[sc.COL_TIME_INVOICE_STATUS] = "Draft"
                 updated_time = True
                 
-                net, tax = self._entry_invoice_amounts(row, normalize_fee=True)
-                fees_total += net
+                _, tax = self._entry_invoice_amounts(row, normalize_fee=True)
+                fees_total += self._entry_client_fee_base(row)
                 tax_total += tax
                 
                 row_date = str(row.get(sc.COL_TIME_DATE) or "").strip()
@@ -770,10 +796,8 @@ class InvoiceDraftService:
         if updated_disb:
             self.repo._write_table_rows(sc.TBL_DISBURSEMENTS, disb_entries)
 
-        # Apply 30% agency split for LIHDC. Because _entry_invoice_amounts
-        # now uses GrossToClient as the draft's fee base, this accurately
-        # matches the HTML preview and correctly reduces the backend total
-        # to the net AmountToYou without double-deduction.
+        # Apply the document's 30% agency split to the client-facing fee
+        # base. AmountToYou already contains the lawyer share.
         agency_split_percent = "0.0"
         try:
             cid = str(client_id).split(',')[0].strip()
@@ -882,23 +906,13 @@ class InvoiceDraftService:
                         logger.info(f"Auto-deleting orphan draft {old_num}")
                         continue
                     else:
-                        old_fees = sum((self._entry_invoice_amounts(r)[0] for r in remaining_time), Decimal("0.00"))
-                        old_tax = sum((self._entry_invoice_amounts(r)[1] for r in remaining_time), Decimal("0.00"))
-                        old_disb_total = sum(Decimal(str(r.get(sc.COL_DISB_AMOUNT) or 0)) for r in remaining_disb)
-                        
-                        d[sc.COL_DRAFT_TOTAL_FEES] = str(old_fees + old_disb_total)
-                        d[sc.COL_DRAFT_TOTAL_TAX] = str(old_tax)
-                        d[sc.COL_DRAFT_TOTAL_DUE] = str(old_fees + old_disb_total + old_tax)
-                        d[sc.COL_DRAFT_UPDATED_AT] = now_str
+                        self._recalculate_draft_totals_in_memory(d, time_entries, disb_entries)
                 drafts_to_keep.append(d)
             drafts = drafts_to_keep
             
+        self._recalculate_draft_totals_in_memory(draft_record, time_entries, disb_entries)
         drafts.append(draft_record)
         self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
-        
-        # If there's an agency split, recalculate immediately to ensure math is correct
-        if float(agency_split_percent) > 0:
-            self.recalculate_draft_totals(draft_num)
             
         logger.info(f"[CREATE DRAFT] Success. Draft {draft_num} created.")
         return draft_num
@@ -2535,6 +2549,8 @@ class InvoiceDraftService:
                 selection_source="invoice-billing-client-correction",
             )
             snapshot["billingCorrections"] = history
+            if "amountCorrections" in prior_snapshot:
+                snapshot["amountCorrections"] = prior_snapshot["amountCorrections"]
             invoice[sc.COL_INV_BILL_TO_CLIENT] = target_client_name
             invoice[sc.COL_INV_BILL_TO_SNAPSHOT] = json.dumps(snapshot, separators=(",", ":"))
             if work_client:
@@ -2568,14 +2584,21 @@ class InvoiceDraftService:
                     continue
                 txn_type = self._text(row.get(sc.COL_TXN_TYPE)).casefold()
                 category = self._text(row.get(sc.COL_TXN_CATEGORY_CODE)).casefold()
+                notes = self._text(row.get(sc.COL_TXN_NOTES)).casefold()
+                is_accrual_invoice = (
+                    self._text(row.get(sc.COL_TXN_FROM_ACCOUNT)).casefold() == "accounts_receivable"
+                    and self._text(row.get(sc.COL_TXN_TO_ACCOUNT)).casefold() == "legal_revenue"
+                    and txn_type in {"income", "invoice"}
+                    and category in {"inc_legal_fees", "legal_revenue"}
+                )
                 # A payment can also be an Income / legal-fees transaction.
                 # The financial gate above says none should exist, but never
                 # rewrite receipt evidence if historical rows disagree.
                 is_receipt = bool(
-                    self._text(row.get(sc.COL_TXN_FROM_ACCOUNT))
-                    or self._text(row.get(sc.COL_TXN_CLEARED_AT))
-                    or "payment" in self._text(row.get(sc.COL_TXN_NOTES)).casefold()
-                    or "receipt" in self._text(row.get(sc.COL_TXN_NOTES)).casefold()
+                    ((self._text(row.get(sc.COL_TXN_FROM_ACCOUNT))
+                      or self._text(row.get(sc.COL_TXN_CLEARED_AT))) and not is_accrual_invoice)
+                    or "payment" in notes
+                    or "receipt" in notes
                 )
                 if is_receipt:
                     continue
@@ -2605,112 +2628,176 @@ class InvoiceDraftService:
                 ),
             }
 
-    def repair_finalized_invoice_amounts(self, invoice_num: str) -> Dict[str, Any]:
-        """Rebuild one finalized invoice's monetary records from linked WIP.
+    def repair_finalized_invoice_amounts(
+        self, invoice_num: str, *, expected_total: Any = None,
+        expected_tax: Any = None, reason: str = ""
+    ) -> Dict[str, Any]:
+        """Atomically repair one unpaid ordinary invoice from earned WIP.
 
-        This is a targeted integrity repair for historical invoices created by
-        the direct-fee zero-total defect.  It deliberately leaves payment and
-        credit figures intact while synchronizing the Invoice Log, Receivables,
-        Revenue ledger row, and linked time-entry invoice fields.
+        AmountToYou already contains the lawyer share. Recover that earned
+        amount once, then round HST on the aggregate as the document does.
+        Invoices with lost discount/flat-fee terms require a separate reviewed
+        correction rather than guessing their historical pricing.
         """
-        invoice_num = str(invoice_num or "").strip()
+        with _DRAFT_LIFECYCLE_LOCK:
+            return self._repair_finalized_invoice_amounts_locked(
+                invoice_num, expected_total=expected_total, expected_tax=expected_tax, reason=reason
+            )
+
+    def _repair_finalized_invoice_amounts_locked(
+        self, invoice_num: str, *, expected_total: Any = None,
+        expected_tax: Any = None, reason: str = ""
+    ) -> Dict[str, Any]:
+        invoice_num = self._text(invoice_num)
+        invoice_key = invoice_num.casefold()
         if not invoice_num:
             raise ValueError("Invoice number is required.")
+        expected = None
+        issued_tax = None
+        if expected_total is not None:
+            try:
+                expected = Decimal(str(expected_total))
+                if not expected.is_finite() or expected <= 0:
+                    raise ValueError
+                expected = expected.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except Exception as exc:
+                raise ValueError("Expected invoice total must be a positive monetary amount.") from exc
+        if expected_tax is not None:
+            if expected is None:
+                raise ValueError("Issued-document tax requires a confirmed expected invoice total.")
+            try:
+                issued_tax = Decimal(str(expected_tax))
+                if not issued_tax.is_finite() or issued_tax < 0:
+                    raise ValueError
+                issued_tax = issued_tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            except Exception as exc:
+                raise ValueError("Issued-document tax must be a nonnegative monetary amount.") from exc
 
-        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
+        tables = self._read_tables_once([
+            sc.TBL_TIME, sc.TBL_DISBURSEMENTS, sc.TBL_INVOICE_LOG,
+            sc.TBL_RECEIVABLES, sc.TBL_LEDGER, sc.TBL_TRANSACTIONS_MASTER,
+        ])
+        before = {table: [dict(row) for row in rows] for table, rows in tables.items()}
+        time_entries = tables[sc.TBL_TIME]
         linked_time = [
             row for row in time_entries
-            if str(row.get(sc.COL_TIME_INVOICE_REF) or "").strip() == invoice_num
+            if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold() == invoice_key
         ]
         if not linked_time:
             raise ValueError(f"No billed time or fee entries are linked to {invoice_num}.")
+        if any(
+            self._text(row.get(sc.COL_TIME_INVOICE_STATUS)).casefold() != "billed"
+            or self._is_invoice_wide_custom_fee(row)
+            or self._audit_markers(row).get("entrytype", "").casefold() == "invoiceadjustment"
+            or any(marker in self._text(row.get(sc.COL_TIME_DESC)).casefold()
+                   for marker in ("courtesy discount", "flat fee adjustment", "custom fee reconciliation"))
+            for row in linked_time
+        ):
+            raise ValueError("Only billed ordinary invoices without ambiguous discount or flat-fee terms can be repaired.")
 
-        fees = Decimal("0.00")
-        tax = Decimal("0.00")
-        for row in linked_time:
-            entry_net, entry_tax = self._entry_invoice_amounts(row, normalize_fee=True)
-            fees += entry_net
-            tax += entry_tax
+        invoice_rows = [row for row in tables[sc.TBL_INVOICE_LOG]
+                        if self._text(row.get(sc.COL_INV_INVOICE_NUM)).casefold() == invoice_key]
+        receivable_rows = [row for row in tables[sc.TBL_RECEIVABLES]
+                           if self._text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() == invoice_key]
+        ledger_rows = [row for row in tables[sc.TBL_LEDGER]
+                       if self._text(row.get(sc.COL_LEDGER_REFERENCE)).casefold() == invoice_key
+                       and self._text(row.get(sc.COL_LEDGER_CATEGORY)).casefold() == "revenue"]
+        if len(invoice_rows) != 1 or len(receivable_rows) != 1 or len(ledger_rows) != 1:
+            raise ValueError("Amount repair requires exactly one Invoice Log, Receivables, and Revenue ledger row.")
+        invoice, receivable, revenue = invoice_rows[0], receivable_rows[0], ledger_rows[0]
+        if (
+            self._text(receivable.get(sc.COL_RECV_STATUS)).casefold() not in {"unpaid", "open", "outstanding"}
+            or self._money(receivable.get(sc.COL_RECV_AMOUNT_PAID)) != 0
+            or self._money(receivable.get(sc.COL_RECV_CREDITS_ADJ)) != 0
+            or any(self._money(row.get(sc.COL_TIME_INVOICE_AMOUNT_PAID)) != 0 for row in linked_time)
+        ):
+            raise ValueError("Amount repair requires an active completely unpaid invoice with no credits.")
+        if any(
+            self._text(row.get(sc.COL_TXN_INVOICE_REF)).casefold() == invoice_key
+            for row in tables[sc.TBL_TRANSACTIONS_MASTER]
+        ):
+            raise ValueError("An invoice with transaction references requires a separate reviewed amount correction.")
 
-        disbursements = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
-        disbursement_total = sum(
-            (
-                self._money(row.get(sc.COL_DISB_AMOUNT))
-                for row in disbursements
-                if str(row.get(sc.COL_DISB_INVOICE_REF) or "").strip() == invoice_num
-            ),
+        fees = self._money(sum(
+            (self._entry_invoice_amounts(row, normalize_fee=True)[0] for row in linked_time),
+            Decimal("0.00"),
+        ))
+        linked_disbursements = [row for row in tables[sc.TBL_DISBURSEMENTS]
+                               if self._text(row.get(sc.COL_DISB_INVOICE_REF)).casefold() == invoice_key]
+        disbursement_total = self._money(sum(
+            (self._money(row.get(sc.COL_DISB_AMOUNT)) for row in linked_disbursements), Decimal("0.00")
+        ))
+        taxable_disbursements = sum(
+            (self._money(row.get(sc.COL_DISB_AMOUNT)) for row in linked_disbursements
+             if self._text(row.get(sc.COL_DISB_TAX_EXEMPT)).casefold() not in {"true", "1", "yes", "y", "on"}),
             Decimal("0.00"),
         )
-        total_due = fees + tax + disbursement_total
+        tax = self._money(max(Decimal("0.00"), fees + taxable_disbursements) * Decimal("0.13"))
+        if issued_tax is not None:
+            if abs(issued_tax - tax) > Decimal("0.01"):
+                raise ValueError("Issued-document tax differs from aggregate HST by more than one cent.")
+            # Preserve the issued historical document's rounding. New invoices
+            # use the shared Decimal calculator instead of Python float round.
+            tax = issued_tax
+        total_due = self._money(fees + tax + disbursement_total)
+        if fees <= 0 or total_due <= 0:
+            raise ValueError("Linked WIP does not establish a positive invoice amount.")
+        if expected is not None and total_due != expected:
+            raise ValueError(
+                f"Linked WIP establishes {total_due}, which does not match expected invoice total {expected}."
+            )
 
-        invoice_log = self.repo._read_table_rows(sc.TBL_INVOICE_LOG)
-        invoice_rows = [
-            row for row in invoice_log
-            if str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip() == invoice_num
-        ]
-        if not invoice_rows:
-            raise ValueError(f"Invoice Log entry {invoice_num} was not found.")
-        for row in invoice_rows:
-            row[sc.COL_INV_TOTAL_FEES] = str(fees)
-            row[sc.COL_INV_TOTAL_DISBURSEMENTS] = str(disbursement_total)
-            row[sc.COL_INV_TOTAL_TAX] = str(tax)
-            row[sc.COL_INV_AGGREGATE_BILLED] = str(total_due)
-
-        receivables = self.repo._read_table_rows(sc.TBL_RECEIVABLES)
-        receivable_rows = [
-            row for row in receivables
-            if str(row.get(sc.COL_RECV_INVOICE_NUM) or "").strip() == invoice_num
-        ]
-        if not receivable_rows:
-            raise ValueError(f"Receivables entry {invoice_num} was not found.")
-        paid = Decimal("0.00")
-        credits = Decimal("0.00")
-        for row in receivable_rows:
-            paid = self._money(row.get(sc.COL_RECV_AMOUNT_PAID))
-            credits = self._money(row.get(sc.COL_RECV_CREDITS_ADJ))
-            balance_due = total_due - paid - credits
-            if abs(balance_due) < Decimal("0.01"):
-                balance_due = Decimal("0.00")
-            row[sc.COL_RECV_TOTAL_INVOICED] = str(total_due)
-            row[sc.COL_RECV_BALANCE_DUE] = str(balance_due)
-
-        invoice_date = invoice_rows[0].get(sc.COL_INV_INVOICE_DATE, "")
-        balance_due = total_due - paid - credits
-        if abs(balance_due) < Decimal("0.01"):
-            balance_due = Decimal("0.00")
+        prior_amounts = {
+            "fees": str(self._money(invoice.get(sc.COL_INV_TOTAL_FEES))),
+            "disbursements": str(self._money(invoice.get(sc.COL_INV_TOTAL_DISBURSEMENTS))),
+            "tax": str(self._money(invoice.get(sc.COL_INV_TOTAL_TAX))),
+            "total": str(self._money(invoice.get(sc.COL_INV_AGGREGATE_BILLED))),
+            "balanceDue": str(self._money(receivable.get(sc.COL_RECV_BALANCE_DUE))),
+        }
+        invoice[sc.COL_INV_TOTAL_FEES] = str(fees)
+        invoice[sc.COL_INV_TOTAL_DISBURSEMENTS] = str(disbursement_total)
+        invoice[sc.COL_INV_TOTAL_TAX] = str(tax)
+        invoice[sc.COL_INV_AGGREGATE_BILLED] = str(total_due)
+        receivable[sc.COL_RECV_TOTAL_INVOICED] = str(total_due)
+        receivable[sc.COL_RECV_BALANCE_DUE] = str(total_due)
         for row in linked_time:
             row[sc.COL_TIME_INVOICE_TOTAL] = str(total_due)
-            row[sc.COL_TIME_INVOICE_AMOUNT_PAID] = str(paid)
-            row[sc.COL_TIME_INVOICE_BALANCE_DUE] = str(balance_due)
-            if invoice_date:
-                row[sc.COL_TIME_INVOICE_DATE] = invoice_date
+            row[sc.COL_TIME_INVOICE_BALANCE_DUE] = str(total_due)
+        revenue[sc.COL_LEDGER_BILLINGS_EXCL_HST] = str(self._money(fees + disbursement_total))
+        revenue[sc.COL_LEDGER_HST_COLLECTED] = str(tax)
+        revenue[sc.COL_LEDGER_RECEIVABLE] = str(total_due)
 
-        ledger = self.repo._read_table_rows(sc.TBL_LEDGER)
-        ledger_rows = [
-            row for row in ledger
-            if str(row.get(sc.COL_LEDGER_REFERENCE) or "").strip() == invoice_num
-            and str(row.get(sc.COL_LEDGER_CATEGORY) or "").strip().lower() == "revenue"
-        ]
-        for row in ledger_rows:
-            row[sc.COL_LEDGER_BILLINGS_EXCL_HST] = str(fees + disbursement_total)
-            row[sc.COL_LEDGER_HST_COLLECTED] = str(tax)
-            row[sc.COL_LEDGER_RECEIVABLE] = str(balance_due)
-
-        self.repo._write_table_rows(sc.TBL_TIME, time_entries)
-        self.repo._write_table_rows(sc.TBL_INVOICE_LOG, invoice_log)
-        self.repo._write_table_rows(sc.TBL_RECEIVABLES, receivables)
-        if ledger_rows:
-            self.repo._write_table_rows(sc.TBL_LEDGER, ledger)
+        changed_tables = {table: tables[table] for table in (
+            sc.TBL_TIME, sc.TBL_INVOICE_LOG, sc.TBL_RECEIVABLES, sc.TBL_LEDGER,
+        ) if tables[table] != before[table]}
+        if changed_tables:
+            raw_snapshot = self._text(invoice.get(sc.COL_INV_BILL_TO_SNAPSHOT))
+            snapshot = self._bill_to_snapshot_payload(raw_snapshot)
+            if raw_snapshot and not snapshot:
+                raise ValueError("The existing invoice billing snapshot cannot be safely audited.")
+            history = snapshot.get("amountCorrections", [])
+            if not isinstance(history, list):
+                raise ValueError("The invoice amount-correction audit history is invalid.")
+            snapshot["amountCorrections"] = history + [{
+                "correctedAt": datetime.now().astimezone().isoformat(),
+                "reason": self._text(reason) or "Rebuilt earned WIP amounts and aggregate HST.",
+                "source": "linked-wip-amount-repair",
+                "before": prior_amounts,
+                "after": {
+                    "fees": str(fees), "disbursements": str(disbursement_total),
+                    "tax": str(tax), "total": str(total_due), "balanceDue": str(total_due),
+                },
+            }]
+            invoice[sc.COL_INV_BILL_TO_SNAPSHOT] = json.dumps(snapshot, separators=(",", ":"))
+            changed_tables[sc.TBL_INVOICE_LOG] = tables[sc.TBL_INVOICE_LOG]
+            self._write_tables_once(changed_tables)
 
         return {
-            "invoiceNum": invoice_num,
-            "fees": float(fees),
-            "disbursements": float(disbursement_total),
-            "tax": float(tax),
-            "total": float(total_due),
-            "balanceDue": float(balance_due),
-            "linkedTimeEntries": len(linked_time),
-            "ledgerRowsUpdated": len(ledger_rows),
+            "invoiceNum": invoice_num, "fees": float(fees),
+            "disbursements": float(disbursement_total), "tax": float(tax),
+            "total": float(total_due), "balanceDue": float(total_due),
+            "linkedTimeEntries": len(linked_time), "ledgerRowsUpdated": len(ledger_rows),
+            "updated": bool(changed_tables),
         }
 
     def delete_draft(self, draft_num: str) -> bool:

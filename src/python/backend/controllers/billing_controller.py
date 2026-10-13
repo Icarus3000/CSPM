@@ -174,7 +174,9 @@ class BillingController(QObject):
         self._wip_cache_signature = ""
         self._wip_load_in_progress = False
         self._finalized_invoice_load_in_progress = False
+        self._finalized_invoice_refresh_pending = False
         self._invoice_directory_detail_requests = set()
+        self._invoice_directory_detail_refresh_pending = set()
         self._invoice_billing_context_requests = set()
         self._draft_workspace_requests = set()
         self._invoice_reversal_in_progress = False
@@ -1937,20 +1939,12 @@ class BillingController(QObject):
     def _build_invoice_payload(self, draft_num, is_draft=True, final_invoice_num=None):
 
         cache_key = f"{draft_num}_{is_draft}_{final_invoice_num}"
-        if cache_key in self._payload_cache:
-            payload = self._payload_cache[cache_key]
-            # Refresh draft metadata (like discount/totals) but keep heavy line items cached
-            fresh_draft = self._draft_svc.get_draft(draft_num)
-            if fresh_draft:
-                payload["invoice"] = dict(fresh_draft)
-            self._payload_cache[cache_key] = payload
-            return payload
-
         draft = self._draft_svc.get_draft(draft_num)
-
         if not draft:
-
             raise ValueError(f"Draft {draft_num} not found")
+        cached = self._payload_cache.get(cache_key)
+        if cached and cached.get("invoice") == draft:
+            return cached
 
         from repositories.excel_repo import (
             TBL_DISBURSEMENTS,
@@ -1960,6 +1954,9 @@ class BillingController(QObject):
 
         rows = self._excel_repo._read_table_rows(TBL_TIME)
         disb_rows = self._excel_repo._read_table_rows(TBL_DISBURSEMENTS)
+        # The document and saved accounting consume one Decimal calculation.
+        # Float tax/discount arithmetic can otherwise disagree at a half cent.
+        invoice_totals = self._draft_svc.calculate_draft_invoice_totals(draft, rows, disb_rows)
         transaction_rows = self._excel_repo._read_table_rows(TBL_TRANSACTIONS_MASTER)
         supplier_by_transaction_id = {
             str(row.get(sc.COL_TXN_ID) or "").strip().casefold():
@@ -2221,7 +2218,7 @@ class BillingController(QObject):
                 }
 
             try:
-                net = float(row.get(sc.COL_TIME_GROSS) or row.get(sc.COL_TIME_NET) or 0)
+                net = float(self._draft_svc._entry_client_fee_base(row))
 
             except (ValueError, TypeError):
 
@@ -2483,30 +2480,31 @@ class BillingController(QObject):
             else:
                 discount_amount = 0.0
 
-        subtotal_after_discount = max(0.0, gross_professional_fees - discount_amount)
-
-        agency_split_amount = subtotal_after_discount * (agency_split_percent / 100.0)
-
-        net_professional_fees = max(0.0, subtotal_after_discount - agency_split_amount)
-        
-        # Calculate tax separating tax-exempt disbursements
-        taxable_disbursements = sum(
-            float(item.get("amount") or 0)
-            for item in disbursement_lines
-            if not item.get("taxExempt")
-        )
-        taxable_fees = net_professional_fees + taxable_disbursements
-        
-        total_tax = round(max(0.0, taxable_fees) * 0.13, 2)
+        if is_flat_fee and flat_fee_courtesy_discount > 0:
+            # Courtesy presentation shows the original service value first;
+            # its reduction and any explicit discount reach the canonical fee.
+            discount_amount = float(self._draft_svc._money(
+                Decimal(str(flat_fee_courtesy_discount)) + invoice_totals["discount_amount"]
+            ))
+            gross_professional_fees = float(self._draft_svc._money(gross_professional_fees))
+        else:
+            gross_professional_fees = float(invoice_totals["gross_professional_fees"])
+            discount_amount = float(invoice_totals["discount_amount"])
+        agency_split_amount = float(invoice_totals["agency_split_amount"])
+        net_professional_fees = float(invoice_totals["net_professional_fees"])
+        disbursement_total = float(invoice_totals["disbursement_total"])
+        total_tax = float(invoice_totals["total_tax"])
+        total_due = float(invoice_totals["total_due"])
 
         if not is_flat_fee:
             for m in matters_map.values():
                 m_sub = max(0.0, m["total_fees"] - (m["total_fees"] * (discount_value / 100.0) if discount_type == "Percentage" else 0))
                 if discount_type == "Flat" and total_fees > 0:
                     m_sub = max(0.0, m["total_fees"] - (discount_value * (m["total_fees"] / total_fees)))
-                m["total_tax"] = round((m_sub - (m_sub * (agency_split_percent / 100.0))) * 0.13, 2)
-
-        total_due = net_professional_fees + disbursement_total + total_tax
+                m["total_tax"] = float(self._draft_svc._money(
+                    Decimal(str(m_sub)) * (Decimal("1") - Decimal(str(agency_split_percent)) / Decimal("100"))
+                    * Decimal("0.13")
+                ))
 
         
 
@@ -2642,6 +2640,7 @@ class BillingController(QObject):
         service_matter_display = ", ".join(service_matter_names)
 
         payload = {
+            "invoice": dict(draft),
             "is_draft": is_draft,
             "invoice_number_raw": final_invoice_num if final_invoice_num else self.nextInvoiceNumber(),
             "invoice_number": final_invoice_num if final_invoice_num else draft_num,
@@ -2710,6 +2709,8 @@ class BillingController(QObject):
         cache_key = f"{draft_num}_True_None"
         if cache_key in self._payload_cache:
             import copy
+            if self._draft_svc.get_draft(draft_num):
+                self._build_invoice_payload(draft_num)
             payload = copy.deepcopy(self._payload_cache[cache_key])
             payload["is_draft"] = False
             payload["invoice_number_raw"] = final_invoice_num
@@ -3330,6 +3331,9 @@ class BillingController(QObject):
     def loadFinalizedInvoices(self):
         """Load the directory list in a worker so opening a tab paints immediately."""
         if self._finalized_invoice_load_in_progress:
+            # A finalization/reissue may invalidate the snapshot already being
+            # read. Coalesce refreshes and publish only the replacement read.
+            self._finalized_invoice_refresh_pending = True
             return
         self._finalized_invoice_load_in_progress = True
         worker = Worker(self._list_finalized_invoices_impl, name="loadFinalizedInvoices")
@@ -3338,20 +3342,24 @@ class BillingController(QObject):
         self._start_worker(worker)
 
     def _on_finalized_invoices_loaded(self, worker: Worker, result: Any) -> None:
-        try:
-            self.finalizedInvoicesLoaded.emit(list(result or []))
-        finally:
-            self._finalized_invoice_load_in_progress = False
-            self._release_worker(worker)
+        self._finalized_invoice_load_in_progress = False
+        self._release_worker(worker)
+        if self._finalized_invoice_refresh_pending:
+            self._finalized_invoice_refresh_pending = False
+            self.loadFinalizedInvoices()
+            return
+        self.finalizedInvoicesLoaded.emit(list(result or []))
 
     def _on_finalized_invoices_failed(self, worker: Worker, err_tuple: tuple) -> None:
-        try:
-            _exception_type, value, _traceback = err_tuple
-            self.error.emit(f"Could not list finalized invoices: {value}")
-            self.finalizedInvoicesLoaded.emit([])
-        finally:
-            self._finalized_invoice_load_in_progress = False
-            self._release_worker(worker)
+        self._finalized_invoice_load_in_progress = False
+        self._release_worker(worker)
+        if self._finalized_invoice_refresh_pending:
+            self._finalized_invoice_refresh_pending = False
+            self.loadFinalizedInvoices()
+            return
+        _exception_type, value, _traceback = err_tuple
+        self.error.emit(f"Could not list finalized invoices: {value}")
+        self.finalizedInvoicesLoaded.emit([])
 
     def _list_finalized_invoices_impl(self) -> List[Dict[str, Any]]:
         from repositories.excel_repo import (
@@ -3662,7 +3670,12 @@ class BillingController(QObject):
     def loadInvoiceDirectoryDetails(self, invoice_num):
         """Load an invoice card and its payment history outside the UI thread."""
         invoice = str(invoice_num or "").strip()
-        if not invoice or invoice in self._invoice_directory_detail_requests:
+        if not invoice:
+            return
+        if invoice in self._invoice_directory_detail_requests:
+            # Payments and corrections must not lose their refresh while an
+            # earlier card/history snapshot is still loading.
+            self._invoice_directory_detail_refresh_pending.add(invoice)
             return
         self._invoice_directory_detail_requests.add(invoice)
         worker = Worker(
@@ -3687,15 +3700,17 @@ class BillingController(QObject):
         invoice_num: str,
         result: Any,
     ) -> None:
-        try:
-            payload = dict(result or {})
-            payload["invoiceNum"] = invoice_num
-            payload["summary"] = dict(payload.get("summary") or {})
-            payload["paymentHistory"] = list(payload.get("paymentHistory") or [])
-            self.invoiceDirectoryDetailsLoaded.emit(payload)
-        finally:
-            self._invoice_directory_detail_requests.discard(invoice_num)
-            self._release_worker(worker)
+        self._invoice_directory_detail_requests.discard(invoice_num)
+        self._release_worker(worker)
+        if invoice_num in self._invoice_directory_detail_refresh_pending:
+            self._invoice_directory_detail_refresh_pending.discard(invoice_num)
+            self.loadInvoiceDirectoryDetails(invoice_num)
+            return
+        payload = dict(result or {})
+        payload["invoiceNum"] = invoice_num
+        payload["summary"] = dict(payload.get("summary") or {})
+        payload["paymentHistory"] = list(payload.get("paymentHistory") or [])
+        self.invoiceDirectoryDetailsLoaded.emit(payload)
 
     def _on_invoice_directory_details_failed(
         self,
@@ -3703,14 +3718,16 @@ class BillingController(QObject):
         invoice_num: str,
         err_tuple: tuple,
     ) -> None:
-        try:
-            _exception_type, value, _traceback = err_tuple
-            message = str(value or "Could not load invoice details.")
-            self.error.emit(f"Could not load invoice details: {message}")
-            self.invoiceDirectoryDetailsFailed.emit(invoice_num, message)
-        finally:
-            self._invoice_directory_detail_requests.discard(invoice_num)
-            self._release_worker(worker)
+        self._invoice_directory_detail_requests.discard(invoice_num)
+        self._release_worker(worker)
+        if invoice_num in self._invoice_directory_detail_refresh_pending:
+            self._invoice_directory_detail_refresh_pending.discard(invoice_num)
+            self.loadInvoiceDirectoryDetails(invoice_num)
+            return
+        _exception_type, value, _traceback = err_tuple
+        message = str(value or "Could not load invoice details.")
+        self.error.emit(f"Could not load invoice details: {message}")
+        self.invoiceDirectoryDetailsFailed.emit(invoice_num, message)
 
     @Slot(str, result='QVariantMap')
     def repairFinalizedInvoiceAmounts(self, invoice_num):

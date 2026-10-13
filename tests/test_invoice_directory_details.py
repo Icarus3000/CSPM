@@ -2,6 +2,7 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src" / "python"
@@ -614,6 +615,7 @@ def test_invoice_directory_has_matter_detail_payment_tabs_and_taller_cards():
     assert "function _applyInvoices(rawInvoices)" in source
     assert "root._refreshSelectedInvoiceDetails()" in source
     assert "function onInvoiceDirectoryDetailsLoaded(payload)" in source
+    assert "function onDraftFinalized(result)" in source
     assert 'property string st: loading ? "Loading..."' in source
     assert "function _displayInvoiceStatus(summary)" in source
     assert 'if (raw === "pending" || raw === "unpaid") return "Unpaid"' in source
@@ -675,3 +677,74 @@ def test_invoice_directory_backend_uses_workers_and_single_workbook_bulk_reads()
     assert "_read_table_rows_bulk" in source
     assert "def _start_invoice_reversal_worker(" in source
     assert 'name=f"invoice-{action}"' in source
+
+
+@pytest.mark.parametrize("old_read_failed", [False, True])
+def test_invoice_list_refresh_during_old_read_publishes_only_current_reissue(
+    monkeypatch, old_read_failed
+):
+    controller = BillingController(_InvoiceDirectoryRepo(), None, None)
+    workers, released, published, errors = [], [], [], []
+    monkeypatch.setattr(controller, "_start_worker", workers.append)
+    monkeypatch.setattr(controller, "_release_worker", released.append)
+    controller.finalizedInvoicesLoaded.connect(published.append)
+    controller.error.connect(errors.append)
+
+    controller.loadFinalizedInvoices()
+    old_worker = workers[0]
+    # Finalization and another directory instance both request fresh data
+    # before the pre-reissue snapshot has finished loading.
+    controller.loadFinalizedInvoices()
+    controller.loadFinalizedInvoices()
+    assert len(workers) == 1
+    if old_read_failed:
+        old_worker.signals.error.emit((ValueError, ValueError("old read"), ""))
+    else:
+        old_worker.signals.result.emit([{sc.COL_INV_INVOICE_NUM: "26-0201"}])
+
+    assert published == []
+    assert errors == []
+    assert released == [old_worker]
+    assert len(workers) == 2
+    current = [{sc.COL_INV_INVOICE_NUM: "26-0201", sc.COL_INV_AGGREGATE_BILLED: "1580.02"}]
+    workers[1].signals.result.emit(current)
+    assert published == [current]
+    assert len(workers) == 2
+    assert not controller._finalized_invoice_load_in_progress
+
+
+@pytest.mark.parametrize("old_read_failed", [False, True])
+def test_invoice_details_refresh_during_old_read_publishes_current_balance_and_history(
+    monkeypatch, old_read_failed
+):
+    controller = BillingController(_InvoiceDirectoryRepo(), None, None)
+    workers, released, published, failures, errors = [], [], [], [], []
+    monkeypatch.setattr(controller, "_start_worker", workers.append)
+    monkeypatch.setattr(controller, "_release_worker", released.append)
+    controller.invoiceDirectoryDetailsLoaded.connect(published.append)
+    controller.invoiceDirectoryDetailsFailed.connect(lambda number, message: failures.append((number, message)))
+    controller.error.connect(errors.append)
+
+    controller.loadInvoiceDirectoryDetails("26-0201")
+    old_worker = workers[0]
+    # A payment/correction completes while this card is still reading.
+    controller.loadInvoiceDirectoryDetails("26-0201")
+    controller.loadInvoiceDirectoryDetails("26-0201")
+    assert len(workers) == 1
+    if old_read_failed:
+        old_worker.signals.error.emit((ValueError, ValueError("old read"), ""))
+    else:
+        old_worker.signals.result.emit({"summary": {"BalanceDue": "1106.02"}, "paymentHistory": []})
+
+    assert published == []
+    assert failures == []
+    assert errors == []
+    assert released == [old_worker]
+    assert len(workers) == 2
+    current = {"invoiceNum": "26-0201", "summary": {"BalanceDue": "1580.02"},
+               "paymentHistory": [{"paymentId": "PAY-CURRENT", "amount": 100}]}
+    workers[1].signals.result.emit(current)
+    assert published == [current]
+    assert len(workers) == 2
+    assert not controller._invoice_directory_detail_requests
+    assert not controller._invoice_directory_detail_refresh_pending
