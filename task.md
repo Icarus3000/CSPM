@@ -6,7 +6,7 @@
 - [x] Offer Open/Paid/All statement invoice scopes, paid-only billing clients and inclusive optional invoice-date ranges, with independent Statement Date payment/balance cutoff and checked-only output.
 - [x] Add current-balance numeric search within inclusive +/-10%, combined All/Paid/Partially paid/Balance owing directory filters, visible balance/status and retained filter state/refreshes.
 - [x] Pass 162 focused sandbox-safe regressions, Python compilation, governed QML lint and whitespace checks; pass 72 outside-sandbox native preview layouts.
-- [ ] Commit/push reviewed source, rebuild both executables from clean committed source, verify immutable runtime and run real packaged WebEngine/startup/lifecycle checks.
+- [x] Commit/push reviewed source and the packaged-header initialization follow-up; rebuild both executables from clean `33e328e`, verify matching candidate/installed/repository runtimes and pass real packaged QML/WebEngine/startup/navigation/X-exit checks on disposable read-only fixtures. Preserve verified rollback, private installation files and pre-existing local edits.
 
 Scope and evidence classification: `docs/CSPM_STATEMENT_AND_INVOICE_FILTERS_2026-10-13.md`.
 
