@@ -43,6 +43,59 @@ def sha(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest().upper()
 
 
+def validate_public_trust_bundle(relative: str, path: Path, requirements: bytes,
+                                 *, distribution_lookup=None) -> dict:
+    """Permit only the exact public certifi bundle from the immutable release pin.
+
+    A .pem suffix is otherwise a confidential artifact. Installed dependency
+    metadata identifies its canonical bundle; the package must match every byte
+    and contain certificate blocks without a private-key marker. No application,
+    token cache or user certificate store is opened by this check.
+    """
+    result = dict(path=relative, allowed=False, pinnedVersion=None,
+                  installedVersion=None, sha256=None, canonicalSha256=None,
+                  certificateCount=0, reason="Not the supported public trust bundle path")
+    if relative != "_internal/certifi/cacert.pem":
+        return result
+    try:
+        pins = re.findall(r"^certifi==([^\s;#]+)\s*$", requirements.decode("utf-8-sig"), re.MULTILINE)
+    except (UnicodeError, AttributeError):
+        pins = []
+    if len(pins) != 1:
+        result["reason"] = "No exact immutable certifi dependency pin"
+        return result
+    result["pinnedVersion"] = pins[0]
+    try:
+        if distribution_lookup is None:
+            from importlib.metadata import distribution
+            distribution_lookup = distribution
+        dependency = distribution_lookup("certifi")
+        result["installedVersion"] = dependency.version
+        if dependency.version != pins[0]:
+            result["reason"] = "Installed certifi version differs from the immutable pin"
+            return result
+        canonical_path = Path(dependency.locate_file("certifi/cacert.pem"))
+        canonical_bytes = canonical_path.read_bytes()
+        packaged_bytes = path.read_bytes()
+    except Exception:
+        result["reason"] = "The pinned certifi public bundle is unavailable"
+        return result
+    result["sha256"] = hashlib.sha256(packaged_bytes).hexdigest().upper()
+    result["canonicalSha256"] = hashlib.sha256(canonical_bytes).hexdigest().upper()
+    if packaged_bytes != canonical_bytes:
+        result["reason"] = "Public trust bundle bytes differ from the pinned dependency"
+        return result
+    kinds = re.findall(rb"-----BEGIN ([A-Z0-9 ]+)-----", packaged_bytes)
+    result["certificateCount"] = kinds.count(b"CERTIFICATE")
+    if (not kinds or set(kinds) != {b"CERTIFICATE"}
+            or re.search(rb"PRIVATE[\s_-]*KEY", packaged_bytes, re.IGNORECASE)
+            or packaged_bytes.count(b"-----END CERTIFICATE-----") != result["certificateCount"]):
+        result["reason"] = "Trust bundle does not contain only public certificate blocks"
+        return result
+    result.update(allowed=True, reason="Exact pinned certifi public CA certificates")
+    return result
+
+
 def code_differences(left, right, location="module") -> list[str]:
     """Compare every serialized code field except checkout filenames."""
     if type(left) is not type(right):
@@ -221,12 +274,26 @@ def audit(repo: Path, package: Path, source_sha: str | None = None) -> dict:
             if template.testzip() is not None:
                 failures.append("Approved template ZIP invalid")
         template_checks.append(dict(path=relative, sha256=sha(path), approved=verified))
+    public_trust_bundles = []
+    public_trust_paths = set()
+    if "_internal/certifi/cacert.pem" in files:
+        try:
+            immutable_requirements = source("requirements-release-windows.lock.txt")
+        except Exception:
+            immutable_requirements = b""
+        trust_check = validate_public_trust_bundle(
+            "_internal/certifi/cacert.pem", files["_internal/certifi/cacert.pem"], immutable_requirements,
+        )
+        public_trust_bundles.append(trust_check)
+        if trust_check["allowed"]:
+            public_trust_paths.add(trust_check["path"])
+    result["publicTrustBundles"] = public_trust_bundles
     forbidden_artifacts = []
     for relative, path in files.items():
         parts = tuple(part.lower() for part in Path(relative).parts)
         own = relative.startswith(own_prefixes) or not relative.startswith("_internal/")
         committed_csv = path.suffix.lower() == ".csv" and relative.startswith("_internal/") and relative[len("_internal/"):] in expected_assets
-        if ((path.suffix.lower() in PRIVATE_SUFFIXES and not committed_csv) or ".private." in path.name.lower()
+        if ((path.suffix.lower() in PRIVATE_SUFFIXES and not committed_csv and relative not in public_trust_paths) or ".private." in path.name.lower()
                 or (own and any(part in PRIVATE_DIRS for part in parts[:-1]))):
             forbidden_artifacts.append(relative)
     if forbidden_artifacts:
