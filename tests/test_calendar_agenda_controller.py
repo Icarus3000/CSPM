@@ -221,8 +221,22 @@ def test_disconnect_failure_is_visible_and_retried_at_shutdown(controller):
     assert not instance._disconnect_requested.is_set()
 
 
+def test_current_microsoft_device_page_survives_challenge_and_opens_without_launching_browser(controller, monkeypatch):
+    instance, _, _, _ = controller
+    url = "https://login.microsoft.com/device"
+    opened = []
+    monkeypatch.setattr("backend.controllers.calendar_agenda_controller.QDesktopServices.openUrl", lambda value: opened.append(value.toString()) or True)
+    instance._accept_challenge(instance._revision, {"user_code": "SYNTHETIC", "verification_uri": url})
+    assert instance.snapshot["state"] == "signing-in"
+    assert instance.snapshot["signInUrl"] == url
+    assert instance.openEventLink(instance.snapshot["signInUrl"])
+    assert opened == [url]
+    assert not instance.openEventLink(url + "?code=unexpected")
+    assert opened == [url]
+
+
 @pytest.mark.parametrize("url", [
-    "https://microsoft.com/devicelogin", "https://entra.microsoft.com/",
+    "https://microsoft.com/devicelogin", "https://login.microsoft.com/device", "https://entra.microsoft.com/",
     "https://outlook.office.com/calendar/item/test", "https://teams.microsoft.com/l/meetup-join/test",
     "https://www.hebcal.com/", "https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app",
 ])
@@ -234,6 +248,8 @@ def test_trusted_links_are_openable(url):
     "javascript:alert(1)", "file:///C:/secret", "http://outlook.office.com/test",
     "https://outlook.office.com.evil.test/", "https://evil.test/",
     "https://outlook.office.com:8080/test", "https://name:secret@outlook.office.com/",
+    "https://login.microsoft.com/other", "https://login.microsoft.com/device?code=unexpected",
+    "https://login.microsoft.com/device#unexpected", "https://login.microsoft.com.evil.test/device",
 ])
 def test_unsafe_links_are_rejected(url):
     assert not safe_calendar_link(url)

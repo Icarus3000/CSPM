@@ -1,5 +1,12 @@
 # Implementation History
 
+## 2026-10-14: Current Microsoft device sign-in link accepted
+
+The reported "Microsoft returned an unexpected sign-in address" comes from CSPM's URL allowlist before authentication. A live Microsoft device-challenge request returns `https://login.microsoft.com/device`, while the original guard accepted only `microsoft.com/devicelogin` and its www variant. The diagnostic prints only URI components; it never polls for tokens, completes sign-in or persists a device/user code. This failure does not establish an account/password/consent problem.
+
+Auth and browser-opening paths now share an exact three-endpoint guard. The new Microsoft address reaches challenge display, token polling and protected persistence in synthetic fixtures; altered paths, query/fragment/userinfo, ports, deceptive hosts and malformed values are rejected. Actual MSAL fake-HTTP tests use the current URL. Unsupported-link text explicitly identifies the device link. All 145 focused sandbox-safe tests and changed-Python compilation pass; immutable rebuild/deployment and unrestricted real Windows startup/WebEngine follow. Live account authentication/Outlook coverage remain user gates.
+
+
 ## 2026-10-13: Read-only Microsoft 365 agenda and holiday sources
 
 Daily Operations replaces the capped docket-description meeting queue with the calendar controller's complete scrolling Today/Next 7 days agenda. Graph calendarView supplies recurring instances and readable shared/custom calendars; times use Toronto with UTC transport to preserve repeated-hour instants. Ended, cancelled and declined appointments are excluded; ongoing and all-day entries remain. The Deadline risk card now counts only real deadlines. Calendar work is isolated from workbook startup/readiness and accepted financial-save workers.

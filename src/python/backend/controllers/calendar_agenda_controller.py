@@ -16,6 +16,7 @@ from services.calendar_agenda_service import (
     CalendarAgendaService, empty_snapshot, sanitize_calendar_config,
 )
 from services.holiday_calendar_service import HolidayCalendarService
+from services.calendar_auth import safe_microsoft_device_signin_url
 
 
 def safe_calendar_link(value: str) -> bool:
@@ -27,6 +28,8 @@ def safe_calendar_link(value: str) -> bool:
         if parsed.port not in (None, 443):
             return False
         host = (parsed.hostname or "").lower()
+        if host == "login.microsoft.com":
+            return safe_microsoft_device_signin_url(value)
         return host in {
             "outlook.office.com", "outlook.office365.com", "outlook.live.com",
             "teams.microsoft.com", "teams.live.com", "login.microsoftonline.com",

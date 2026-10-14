@@ -14,6 +14,11 @@ from typing import Callable
 
 
 CALENDAR_SCOPES = ("Calendars.Read", "Calendars.Read.Shared")
+_MICROSOFT_DEVICE_SIGNIN_URLS = frozenset({
+    "https://microsoft.com/devicelogin",
+    "https://www.microsoft.com/devicelogin",
+    "https://login.microsoft.com/device",
+})
 _CACHE_HEADER = b"CSPM-CALENDAR-DPAPI\x01"
 _CACHE_ENTROPY = b"CSPM Microsoft 365 read-only calendar v1"
 
@@ -29,6 +34,11 @@ class CalendarAuthError(Exception):
 class CalendarCancelled(CalendarAuthError):
     def __init__(self):
         super().__init__("Calendar operation cancelled.", "disconnected")
+
+
+def safe_microsoft_device_signin_url(value) -> bool:
+    """Accept only Microsoft's known device-code entry pages, without parameters."""
+    return isinstance(value, str) and value in _MICROSOFT_DEVICE_SIGNIN_URLS
 
 
 def check_cancelled(cancel_event) -> None:
@@ -323,8 +333,8 @@ class CalendarAuth:
                 if not isinstance(flow, dict) or not flow.get("user_code"):
                     raise _safe_auth_failure(flow)
                 uri = flow.get("verification_uri", "")
-                if uri not in {"https://microsoft.com/devicelogin", "https://www.microsoft.com/devicelogin"}:
-                    raise CalendarAuthError("Microsoft returned an unexpected sign-in address.")
+                if not safe_microsoft_device_signin_url(uri):
+                    raise CalendarAuthError("Microsoft returned an unsupported device sign-in link. Please update CSPM.")
                 challenge_callback({
                     "user_code": flow["user_code"], "verification_uri": uri,
                     "expires_in": flow.get("expires_in", 900), "accountEmail": config["accountEmail"],

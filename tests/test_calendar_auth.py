@@ -385,9 +385,48 @@ def test_unexpected_device_signin_url_is_never_shown(tmp_path):
     auth, app, cache, store, calls = fixture_auth(tmp_path)
     app.flow["verification_uri"] = "https://phishing.example.test/signin"
     challenges = []
-    with pytest.raises(CalendarAuthError, match="unexpected"):
+    with pytest.raises(CalendarAuthError, match="unsupported device sign-in link"):
         auth.connect(CONFIG, challenges.append, threading.Event())
     assert challenges == [] and store.saved == []
+
+
+@pytest.mark.parametrize("uri", [
+    "https://login.microsoft.com/device",
+    "https://microsoft.com/devicelogin",
+    "https://www.microsoft.com/devicelogin",
+])
+def test_supported_device_signin_page_reaches_challenge_and_token_polling(tmp_path, uri):
+    auth, app, _, store, _ = fixture_auth(tmp_path)
+    app.flow["verification_uri"] = uri
+    challenges, polled = [], []
+    acquire = app.acquire_token_by_device_flow
+
+    def poll(flow):
+        polled.append(flow["verification_uri"])
+        return acquire(flow)
+
+    app.acquire_token_by_device_flow = poll
+    assert auth.connect(CONFIG, challenges.append, threading.Event())["accountEmail"] == CONFIG["accountEmail"]
+    assert challenges[0]["verification_uri"] == uri
+    assert polled == [uri] and len(store.saved) == 1
+
+
+@pytest.mark.parametrize("uri", [
+    "http://login.microsoft.com/device", "https://login.microsoft.com/other",
+    "https://login.microsoft.com/device?code=unexpected", "https://login.microsoft.com/device#unexpected",
+    "https://user@login.microsoft.com/device", "https://login.microsoft.com:8443/device",
+    "https://login.microsoft.com.evil.test/device", "https://evil.test/device",
+    None, [],
+])
+def test_device_signin_rejects_modified_or_malformed_entry_pages_before_polling(tmp_path, uri):
+    auth, app, cache, store, _ = fixture_auth(tmp_path)
+    app.flow["verification_uri"] = uri
+    original = cache.serialize()
+    challenges = []
+    app.acquire_token_by_device_flow = lambda flow: pytest.fail("Rejected URL must never start token polling")
+    with pytest.raises(CalendarAuthError, match="unsupported device sign-in link"):
+        auth.connect(CONFIG, challenges.append, threading.Event())
+    assert not challenges and not store.saved and cache.serialize() == original
 
 
 def test_actual_msal_device_flow_with_fresh_source_platform_namespace_never_uses_network(tmp_path):
@@ -428,7 +467,7 @@ def test_actual_msal_device_flow_with_fresh_source_platform_namespace_never_uses
                     self.calls.append("devicecode")
                     assert kwargs["params"]["login_hint"] == "synthetic@example.test"
                     assert set(kwargs["data"]["scope"].split()) == {"Calendars.Read", "Calendars.Read.Shared", "openid", "profile", "offline_access"}
-                    return Response({"device_code": "SYNTHETIC-DEVICE-CODE", "user_code": "SYNTHETIC", "verification_uri": "https://microsoft.com/devicelogin", "expires_in": 900})
+                    return Response({"device_code": "SYNTHETIC-DEVICE-CODE", "user_code": "SYNTHETIC", "verification_uri": "https://login.microsoft.com/device", "expires_in": 900})
                 assert url.endswith("/token")
                 self.calls.append("token")
                 return Response({"error": "authorization_declined", "error_description": "SYNTHETIC RAW RESPONSE MUST NOT ESCAPE"})

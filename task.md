@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-14: Microsoft device sign-in URL repair
+
+- [x] Read the actual runtime log and reproduce Microsoft's returned device URL without printing/persisting sign-in codes or acquiring tokens.
+- [x] Accept Microsoft's current `https://login.microsoft.com/device` alongside its two established device entry pages; share the exact endpoint guard with challenge display/browser opening and clarify unsupported-link errors.
+- [x] Pass 145 focused sandbox-safe calendar/auth/controller/offscreen/startup/package-auditor checks and changed-Python compilation; independently review the narrow endpoint policy.
+- [ ] Publish and rebuild the exact fix, verify candidate/installed runtime and real Windows startup/WebEngine, preserve rollback/user settings/workbooks, then update governed writer runtime identity.
+- [ ] User retry: Connect account, open Microsoft sign-in and complete device-code authentication; compare the resulting calendar list with Outlook.
+
+
 ## 2026-10-13: Microsoft 365 Today / Next 7 days agenda
 
 - [x] Replace the home docket-keyword meeting list with a scrolling, source-labelled calendar agenda; preserve the prepared startup snapshot and count only true deadlines in Deadline risk.

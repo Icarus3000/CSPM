@@ -149,6 +149,20 @@ tenant setup/sign-in, actual Outlook calendar coverage and foreground user
 acceptance remain open; no new motion-quality or cloud-freshness claim is made.
 Private registration details, workbooks, reports and PDFs are excluded from Git.
 
+## Device sign-in repair October 14, 2026
+
+The initial live attempt reports "Microsoft returned an unexpected sign-in
+address" because the server now returns `https://login.microsoft.com/device`.
+This error precedes account authentication. The narrowly scoped repair accepts
+that exact endpoint and the two established `microsoft.com/devicelogin` pages
+in both authentication and challenge/browser-opening guards. Modified or
+unrelated addresses remain rejected. The failure is independently reproduced
+using a code-redacted device challenge; no token acquisition occurs.
+
+The 145 focused source tests pass. An expanded legacy productivity run has two
+failures investigated separately against unchanged baseline; no financial code
+is changed by this sign-in repair. Exact release and live retry evidence follow.
+
 Official references:
 
 - [Microsoft calendarView](https://learn.microsoft.com/en-us/graph/api/calendar-list-calendarview?view=graph-rest-1.0)
