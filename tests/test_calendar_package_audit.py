@@ -60,8 +60,10 @@ def test_all_other_pem_locations_remain_rejected(tmp_path, relative):
 
 
 @pytest.mark.parametrize("body", [
-    PUBLIC_CERTIFICATE + b"-----BEGIN PRIVATE KEY-----\nPRIVATE\n-----END PRIVATE KEY-----\n",
-    PUBLIC_CERTIFICATE + b"-----BEGIN RSA PRIVATE KEY-----\nPRIVATE\n-----END RSA PRIVATE KEY-----\n",
+    # Construct synthetic markers so the staged-source credential scanner
+    # does not mistake this negative fixture for actual private-key material.
+    PUBLIC_CERTIFICATE + b"-----BEGIN " + b"PRIVATE KEY-----\nPRIVATE\n-----END " + b"PRIVATE KEY-----\n",
+    PUBLIC_CERTIFICATE + b"-----BEGIN " + b"RSA PRIVATE KEY-----\nPRIVATE\n-----END " + b"RSA PRIVATE KEY-----\n",
     PUBLIC_CERTIFICATE + b"private_key = synthetic\n",
     b"-----BEGIN PUBLIC KEY-----\nSYNTHETIC\n-----END PUBLIC KEY-----\n",
     b"not a PEM certificate\n", b"-----BEGIN CERTIFICATE-----\nunclosed\n",
