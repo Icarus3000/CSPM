@@ -7,7 +7,9 @@
 - [x] Add Canadian/Ontario and U.S. actual/observed holiday dates plus attributed Hebcal diaspora dates, with independent source switches and duplicate holiday suppression.
 - [x] Protect per-user sign-in through current-user DPAPI and atomic ciphertext writes; preserve cancellation/revision ownership and durable Disconnect intent through shutdown and deletion failures.
 - [x] Verify focused sandbox-safe service/auth/controller/holiday/actual offscreen QML tests, existing startup/productivity checks, governed lint, public Hebcal HTTPS and isolated native DPAPI roundtrips.
-- [ ] Finish exact-source frozen packaging, dependency/resource audit and outside-sandbox startup/WebEngine verification before release availability.
+- [x] Publish the feature to cloud main and rebuild both executables from clean `3efca16`; verify all 47 pinned dependencies and exact packaged code/resources/native ABI/privacy.
+- [x] Pass outside-sandbox candidate/installed frozen startup, calendar controls, navigation, one X-close/tray teardown/exit zero and actual packaged WebEngine HTML/JavaScript/PDF.
+- [x] Install all 5,618 runtime files at `C:/Programs/CSPM` and repository dist; verify rollback ZIPs, unchanged workbook/settings/identity/receipt policy, prefilled nonsecret calendar setup and normal writer check-only verification.
 - [ ] User return: finish public-client/read-only consent setup, complete Microsoft sign-in, compare actual Outlook calendar coverage and review Today/Next 7 days/holiday choices in the application.
 
 Scope and setup: `docs/CSPM_MICROSOFT_365_AGENDA_2026-10-13.md`. Registration/account details and generated evidence remain local and ignored; no calendar writes or financial-data changes.

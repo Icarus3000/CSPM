@@ -107,6 +107,48 @@ after the exact build. Live Microsoft account sign-in, tenant consent, exact
 Outlook calendar coverage and the user's foreground acceptance require their
 return. A successful synthetic fixture does not establish those checks.
 
+## Release completed October 14, 2026
+
+Feature commit `3efca16ae727c3ea4fed717620ba90aa265653a6` was pushed to
+cloud main before rebuilding both main and Recovery executables from that clean
+source. Package-auditor follow-ups `8f129c3` and `a67f05b` change only diagnostic
+code/tests. All 47 locked dependencies are validated. Candidate,
+`C:/Programs/CSPM` and repository dist have identical 5,618 runtime files /
+694,009,936 bytes; runtime manifest SHA-256
+`784A40089B53A6189525DE88EF563511AB5CA84BA34A9AC6A1B4AA207EA9CC9A`.
+
+Sandbox-safe source checks pass 107 calendar/startup/productivity tests and 19
+auditor tests, changed-Python compilation, governed lint with zero diagnostics
+and scoped whitespace review. The immutable package audit matches 71 project
+modules, 175 QML-tree files, 253 assets and the accepted native ABI. Dependency
+audits verify compiled MSAL/holiday/time-zone libraries, 732 holiday locales,
+604 zone-data files and native DPAPI. The pinned certifi bundle is proven to be
+canonical public CA certificates; all other PEM/private-artifact rules remain.
+
+Outside sandbox on the real Windows desktop, candidate/installed frozen startup
+passes in 8.404/10.821 seconds with accessible calendar/main controls, existing
+search/navigation, one maximize/restore pair, one X-close, tray release and
+exit zero. Actual packaged calendar code executes synthetic auth/event fixtures
+using strict archive/native/resource origins. Separate real packaged WebEngine
+runs verify HTML, JavaScript and valid 33,846-byte PDFs with Chromium sandbox
+enabled; the actual child helper image belongs to the tested package. These
+matching-Python-host probes do not establish a live Microsoft sign-in.
+
+Previous runtime/configuration is retained in two byte-verified nonlaunchable
+rollback ZIPs. Installed private files, normal authoritative/local workbook
+hashes, existing settings values, machine identity, server receipt, launcher and
+motion preference are preserved. Only nonsecret `calendarAgenda` preferences
+and the normal governed launcher's runtime identity fields change. The supplied
+Microsoft registration is prefilled locally, all three holiday sources are
+enabled, and normal writer check-only verification passes without launching.
+
+Initial private harness failures (empty-practice banner filter/UTF-8 output),
+the CA-bundle audit false positive and the temporary synthetic draft artifact
+are retained as separate failed evidence. Corrected final gates pass. Live
+tenant setup/sign-in, actual Outlook calendar coverage and foreground user
+acceptance remain open; no new motion-quality or cloud-freshness claim is made.
+Private registration details, workbooks, reports and PDFs are excluded from Git.
+
 Official references:
 
 - [Microsoft calendarView](https://learn.microsoft.com/en-us/graph/api/calendar-list-calendarview?view=graph-rest-1.0)
