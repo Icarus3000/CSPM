@@ -159,9 +159,28 @@ in both authentication and challenge/browser-opening guards. Modified or
 unrelated addresses remain rejected. The failure is independently reproduced
 using a code-redacted device challenge; no token acquisition occurs.
 
-The 145 focused source tests pass. An expanded legacy productivity run has two
-failures investigated separately against unchanged baseline; no financial code
-is changed by this sign-in repair. Exact release and live retry evidence follow.
+The 145 focused source tests and all 47 pinned dependencies pass. Two unrelated
+legacy productivity tests reproduce on clean `d5070fe`: their synthetic rows
+omit AmountToYou after the older net-amount calculation change. No financial
+code or fixture is changed by this repair.
+
+Fix `3a65beeb14dd7829a1fe9ade87f605d197170ab5` is published before the clean
+main/Recovery rebuild. Candidate, installed main and repository dist match
+5,618 runtime files / 694,010,303 bytes. Immutable audits verify 71 project
+modules, 175 QML-tree files, resources, public certificate bundle, privacy and
+unchanged native ABI. Sandbox-safe source checks are separate from actual
+outside-sandbox frozen startup (14.6/11.082 seconds), calendar controls,
+search/navigation, one X-close/tray release/exit zero and bundled WebEngine
+HTML/JavaScript/PDF rendering with Chromium sandbox enabled.
+
+Archived auth/browser guards also accept the actual live Microsoft device
+challenge, then cancel immediately before token polling. Codes and tokens
+are never printed or persisted. Previous runtimes/configuration remain in
+two byte-verified rollback ZIPs; normal settings stay byte-identical and all
+protected workbook/machine/receipt/launcher/motion invariants pass. Only
+governed writer runtime identity fields change; normal check-only passes.
+Complete Microsoft authentication and Outlook calendar coverage remain
+pending the user retry.
 
 Official references:
 

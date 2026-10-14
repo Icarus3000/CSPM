@@ -5,7 +5,7 @@
 - [x] Read the actual runtime log and reproduce Microsoft's returned device URL without printing/persisting sign-in codes or acquiring tokens.
 - [x] Accept Microsoft's current `https://login.microsoft.com/device` alongside its two established device entry pages; share the exact endpoint guard with challenge display/browser opening and clarify unsupported-link errors.
 - [x] Pass 145 focused sandbox-safe calendar/auth/controller/offscreen/startup/package-auditor checks and changed-Python compilation; independently review the narrow endpoint policy.
-- [ ] Publish and rebuild the exact fix, verify candidate/installed runtime and real Windows startup/WebEngine, preserve rollback/user settings/workbooks, then update governed writer runtime identity.
+- [x] Publish `3a65bee` to cloud main and rebuild both executables from that clean source; candidate/installed immutable, archived calendar/current device-link, real Windows startup/WebEngine and governed writer checks pass. Verify complete runtime equality, rollback ZIPs and preserved settings/workbooks/identity/receipt policy.
 - [ ] User retry: Connect account, open Microsoft sign-in and complete device-code authentication; compare the resulting calendar list with Outlook.
 
 
