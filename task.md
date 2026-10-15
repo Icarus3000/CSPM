@@ -1,5 +1,15 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-14: Quieter shared invoice continuation headers
+
+- [x] Remove repeated firm/invoice identifiers from the continuation header;
+  retain client/date, first-page presentation and existing footer.
+- [x] Bound long client names and preserve escaped metadata in PDF text.
+- Validation, cloud publication and the local Fedora rebuild are recorded
+  after this source checkpoint in private release evidence.
+
+Scope: `docs/CSPM_INVOICE_CONTINUATION_HEADER_2026-10-14.md`.
+
 ## 2026-10-14: Microsoft device sign-in URL repair
 
 - [x] Read the actual runtime log and reproduce Microsoft's returned device URL without printing/persisting sign-in codes or acquiring tokens.

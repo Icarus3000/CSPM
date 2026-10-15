@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="invoice-meta" data-client="{{ billing_client_name }}" data-invoice="{{ invoice_number_raw }}" data-date="{{ date }}">
+    <meta name="invoice-meta" data-client="{{ billing_client_name|e }}" data-invoice="{{ invoice_number_raw|e }}" data-date="{{ date|e }}">
     <title>Invoice - {{ invoice_number_raw }}</title>
     <style>
         :root {

@@ -2883,93 +2883,6 @@ class BillingController(QObject):
                 QMarginsF(0, 0, 0, 0)
             )
             
-            def _legacy_finalize_merge():
-                try:
-                    from pypdf import PdfReader, PdfWriter
-                    from reportlab.pdfgen import canvas
-                    from reportlab.lib.pagesizes import letter
-                    from reportlab.lib.colors import Color
-                    import re
-                    
-                    reader = PdfReader(pass1_path)
-                    writer = PdfWriter()
-                    total_pages = len(reader.pages)
-                    
-                    # Extract metadata
-                    client_match = re.search(r'data-client="([^"]+)"', html_content)
-                    invoice_match = re.search(r'data-invoice="([^"]+)"', html_content)
-                    date_match = re.search(r'data-date="([^"]+)"', html_content)
-                    
-                    client_name = client_match.group(1).upper() if client_match else ""
-                    invoice_num = invoice_match.group(1).upper() if invoice_match else ""
-                    date_str = date_match.group(1).upper() if date_match else ""
-                    
-                    color_gray = Color(148/255.0, 163/255.0, 184/255.0)
-                    color_navy = Color(15/255.0, 23/255.0, 42/255.0)
-                    
-                    for i in range(total_pages):
-                        page = reader.pages[i]
-                        temp_pdf_path = os.path.join(temp_dir, f"temp_page_{i}.pdf")
-                        
-                        c = canvas.Canvas(temp_pdf_path, pagesize=letter)
-                        
-                        # Draw Page Numbers (all pages)
-                        text = f"PAGE {i+1} OF {total_pages}"
-                        c.setFont("Helvetica", 8)
-                        tw = c.stringWidth(text, "Helvetica", 8)
-                        
-                        c.setFillColor(color_gray)
-                        # fitz y=758 from top -> reportlab y = 792 - 758 = 34 from bottom
-                        c.drawString(554.4 - tw, 34, text)
-                        
-                        # Draw Continuation Header (pages 2+)
-                        if i > 0:
-                            left_text_1 = "CORY SCHNEIDER LAW OFFICE   "
-                            left_text_2 = f"{client_name}"
-                            right_text = f"INVOICE {invoice_num} \u2022 {date_str}"
-                            
-                            y_pos = 792 - 36  # fitz y=36 from top -> 756 from bottom
-                            x_left = 57.6
-                            
-                            c.setFont("Helvetica-Bold", 8.5)
-                            c.setFillColor(color_navy)
-                            c.drawString(x_left, y_pos, left_text_1)
-                            tw_1 = c.stringWidth(left_text_1, "Helvetica-Bold", 8.5)
-                            
-                            c.setFillColor(color_gray)
-                            c.drawString(x_left + tw_1, y_pos, left_text_2)
-                            
-                            tw_r = c.stringWidth(right_text, "Helvetica-Bold", 8.5)
-                            c.drawString(554.4 - tw_r, y_pos, right_text)
-                            
-                        c.save()
-                        
-                        overlay_reader = PdfReader(temp_pdf_path)
-                        page.merge_page(overlay_reader.pages[0])
-                        writer.add_page(page)
-                        
-                        os.remove(temp_pdf_path)
-                        
-                    with open(output_path, "wb") as f:
-                        writer.write(f)
-                    
-                    self.toast.emit(f"Exported to {output_path}")
-                    
-                    self.pdfExportFinished.emit(output_path, True)
-
-                    # Auto-open the PDF
-                    try:
-                        os.startfile(os.path.normpath(output_path))
-                    except Exception as e:
-                        self.error.emit(f"Could not open PDF: {e}")
-                except Exception as e:
-                    self.error.emit(f"Failed to save PDF: {e}")
-                    self.pdfExportFinished.emit(output_path, False)
-                finally:
-                    if os.path.exists(pass1_path):
-                        try: os.remove(pass1_path)
-                        except: pass
-
             def finalize_merge():
                 # Chromium must print on the GUI thread, but pypdf/reportlab
                 # page decoration is CPU and I/O heavy.  Do that work in the
@@ -3011,6 +2924,7 @@ class BillingController(QObject):
     @staticmethod
     def _merge_pdf_export_impl(pass1_path: str, output_path: str, html_content: str) -> Dict[str, Any]:
         """Add CSPM's page treatment without occupying the GUI thread."""
+        from html import unescape
         import os
         import re
         import tempfile
@@ -3028,14 +2942,11 @@ class BillingController(QObject):
             total_pages = len(reader.pages)
 
             client_match = re.search(r'data-client="([^"]+)"', html_content)
-            invoice_match = re.search(r'data-invoice="([^"]+)"', html_content)
             date_match = re.search(r'data-date="([^"]+)"', html_content)
-            client_name = client_match.group(1).upper() if client_match else ""
-            invoice_num = invoice_match.group(1).upper() if invoice_match else ""
-            date_str = date_match.group(1).upper() if date_match else ""
+            client_name = " ".join(unescape(client_match.group(1)).split()) if client_match else ""
+            date_str = " ".join(unescape(date_match.group(1)).split()) if date_match else ""
 
             color_gray = Color(148 / 255.0, 163 / 255.0, 184 / 255.0)
-            color_navy = Color(15 / 255.0, 23 / 255.0, 42 / 255.0)
             for index, rendered_page in enumerate(reader.pages):
                 fd, overlay_path = tempfile.mkstemp(prefix="cspm_invoice_page_", suffix=".pdf")
                 os.close(fd)
@@ -3051,20 +2962,23 @@ class BillingController(QObject):
                     page_label,
                 )
                 if index > 0:
-                    office_label = "CORY SCHNEIDER LAW OFFICE   "
-                    invoice_label = f"INVOICE {invoice_num} • {date_str}"
-                    overlay.setFont("Helvetica-Bold", 8.5)
-                    overlay.setFillColor(color_navy)
-                    overlay.drawString(57.6, 756, office_label)
-                    office_width = overlay.stringWidth(office_label, "Helvetica-Bold", 8.5)
+                    # Firm/invoice identification already appears in the HTML
+                    # footer. Keep continuation pages quiet and reserve a gap
+                    # so even a long billing-client name cannot meet the date.
+                    font_name, font_size = "Helvetica", 8.5
+                    left, right, gutter = 57.6, 554.4, 16
+                    date_width = overlay.stringWidth(date_str, font_name, font_size)
+                    client_width = max(0, right - left - date_width - (gutter if date_str else 0))
+                    client_label = client_name
+                    if overlay.stringWidth(client_label, font_name, font_size) > client_width:
+                        suffix = "…"
+                        while client_label and overlay.stringWidth(client_label + suffix, font_name, font_size) > client_width:
+                            client_label = client_label[:-1]
+                        client_label = client_label.rstrip() + suffix if client_label else ""
+                    overlay.setFont(font_name, font_size)
                     overlay.setFillColor(color_gray)
-                    overlay.drawString(57.6 + office_width, 756, client_name)
-                    overlay.setFillColor(color_navy)
-                    overlay.drawString(
-                        554.4 - overlay.stringWidth(invoice_label, "Helvetica-Bold", 8.5),
-                        756,
-                        invoice_label,
-                    )
+                    overlay.drawString(left, 756, client_label)
+                    overlay.drawRightString(right, 756, date_str)
                 overlay.save()
                 rendered_page.merge_page(PdfReader(overlay_path).pages[0])
                 writer.add_page(rendered_page)

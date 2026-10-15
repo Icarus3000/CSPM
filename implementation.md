@@ -1,5 +1,16 @@
 # Implementation History
 
+## 2026-10-14: Shared invoice continuation header simplification
+
+The cross-platform invoice PDF post-processor now shows only billing-client
+name and date on pages after the first, with regular muted typography and a
+measured gap for long names. Existing first-page content, footer identification,
+page numbering, layout and accounting remain unchanged. Default-template
+metadata is escaped/decoded correctly and the unused duplicate merge renderer
+is removed. Executable PDF regressions cover text regions and layout bounds;
+exact test, publication and installed Fedora evidence is recorded privately
+after packaging. Scope: `docs/CSPM_INVOICE_CONTINUATION_HEADER_2026-10-14.md`.
+
 ## 2026-10-14: Current Microsoft device sign-in link accepted
 
 The reported "Microsoft returned an unexpected sign-in address" comes from CSPM's URL allowlist before authentication. A live Microsoft device-challenge request returns `https://login.microsoft.com/device`, while the original guard accepted only `microsoft.com/devicelogin` and its www variant. The diagnostic prints only URI components; it never polls for tokens, completes sign-in or persists a device/user code. This failure does not establish an account/password/consent problem.
