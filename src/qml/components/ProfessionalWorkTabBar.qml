@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -92,7 +93,7 @@ Rectangle {
                             id: dirtyDot
                             text: tabButton.dirty ? "\u2022" : ""
                             visible: tabButton.dirty
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 9
                             font.weight: Font.Medium
                             color: SemanticTheme.accentPrimary(root.t, root.appStyle)
@@ -103,7 +104,7 @@ Rectangle {
                             id: pinGlyph
                             text: modelData.pinned ? "\uE840" : ""
                             visible: modelData.pinned
-                            font.family: "Segoe MDL2 Assets"
+                            font.family: AppTypography.iconFamily()
                             font.pixelSize: 10
                             color: SemanticTheme.inkSubtle(root.t, root.appStyle)
                             Layout.alignment: Qt.AlignVCenter
@@ -113,7 +114,7 @@ Rectangle {
                             id: tabLabel
                             Layout.fillWidth: true
                             text: String(modelData.title || "Workspace")
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 11
                             font.weight: Font.Medium
                             color: tabButton.active || tabButton.hovered
@@ -126,7 +127,7 @@ Rectangle {
                         Text {
                             id: closeGlyph
                             text: "\uE8BB"
-                            font.family: "Segoe MDL2 Assets"
+                            font.family: AppTypography.iconFamily()
                             font.pixelSize: 9
                             font.weight: Font.Normal
                             color: closeHover.containsMouse

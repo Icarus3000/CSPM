@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -18,7 +19,7 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true; spacing: 4
             RowLayout {
-                Text { text: "🕒"; font.pixelSize: 16; color: theme.accentBlue }
+                Text { text: "🕒"; font.family: AppTypography.symbolFamily(); font.pixelSize: 16; color: theme.accentBlue }
                 Text { text: "Recorded Today"; color: theme.textSecondary; font.pixelSize: 12 }
             }
             Text { text: trayController.recordedTodayFormatted; color: theme.accentBlue; font.bold: true; font.pixelSize: 18 }
@@ -27,16 +28,16 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true; spacing: 4
             RowLayout {
-                Text { text: "⏱"; font.pixelSize: 16; color: theme.timerGreen }
+                Text { text: "⏱"; font.family: AppTypography.symbolFamily(); font.pixelSize: 16; color: theme.timerGreen }
                 Text { text: "Active Now"; color: theme.textSecondary; font.pixelSize: 12 }
             }
-            Text { text: trayController.activeNowFormatted; color: theme.timerGreen; font.bold: true; font.pixelSize: 18; font.family: "Consolas" }
+            Text { text: trayController.activeNowFormatted; color: theme.timerGreen; font.bold: true; font.pixelSize: 18; font.family: AppTypography.monoFamily("Consolas") }
         }
         
         ColumnLayout {
             Layout.fillWidth: true; spacing: 4
             RowLayout {
-                Text { text: "🕔"; font.pixelSize: 16; color: "#6A1B9A" }
+                Text { text: "🕔"; font.family: AppTypography.symbolFamily(); font.pixelSize: 16; color: "#6A1B9A" }
                 Text { text: "Total Today"; color: theme.textSecondary; font.pixelSize: 12 }
             }
             Text { text: trayController.totalTodayFormatted; color: "#6A1B9A"; font.bold: true; font.pixelSize: 18 }

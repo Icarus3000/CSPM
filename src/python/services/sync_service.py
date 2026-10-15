@@ -103,7 +103,10 @@ class SyncService:
         local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
         if local_app_data:
             return Path(local_app_data) / "CSPM" / self.MACHINE_ID_FILE_NAME
-        return self.paths.runtime_dir() / self.MACHINE_ID_FILE_NAME
+        # Linux source and packaged launches may use different runtime roots.
+        # The workstation identity must survive both, and app upgrades, so a
+        # dead local checkout can be recognized without reclaiming another PC.
+        return Path.home() / ".cspm_data" / self.MACHINE_ID_FILE_NAME
 
     @staticmethod
     def _sha256(path: Path) -> str:

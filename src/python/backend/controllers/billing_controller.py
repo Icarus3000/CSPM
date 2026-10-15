@@ -2806,7 +2806,8 @@ class BillingController(QObject):
 
             try:
 
-                os.startfile(output_path)
+                from services.desktop import open_local_file
+                open_local_file(output_path)
 
             except Exception as e:
 
@@ -3039,7 +3040,8 @@ class BillingController(QObject):
             if open_after_export:
                 try:
                     import os
-                    os.startfile(os.path.normpath(saved_path))
+                    from services.desktop import open_local_file
+                    open_local_file(saved_path)
                 except Exception as exc:
                     logger.warning("Could not auto-open exported PDF: %s", exc)
         finally:

@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -1184,6 +1185,7 @@ Item {
                 Button {
                     id: settingsButton
                     text: "⚙" // Gear icon
+                    font.family: AppTypography.symbolFamily()
                     visible: table.tableId === "detail"
                     Layout.preferredWidth: 40
                     font.pixelSize: 16

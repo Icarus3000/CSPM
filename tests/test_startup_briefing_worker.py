@@ -47,5 +47,5 @@ def test_worker_command_bypasses_normal_application_startup(tmp_path):
     )
 
     assert source_command[0] == "python.exe"
-    assert source_command[1].endswith("src\\python\\main.py")
+    assert source_command[1].replace("\\", "/").endswith("src/python/main.py")
     assert packaged_command == ["CSPM.exe", "--startup-briefing-worker", str(request_path), str(result_path)]

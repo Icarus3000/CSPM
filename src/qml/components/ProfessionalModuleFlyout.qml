@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -69,7 +70,7 @@ Item {
 
                 Text {
                     text: String(root.moduleData && root.moduleData.icon ? root.moduleData.icon : "")
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: 22
                     color: SemanticTheme.accentPrimary(root.t, root.appStyle)
                     Layout.alignment: Qt.AlignVCenter
@@ -82,7 +83,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         text: String(root.moduleData && root.moduleData.title ? root.moduleData.title : "Module")
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 16
                         font.weight: Font.DemiBold
                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
@@ -92,7 +93,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         text: String(root.moduleData && root.moduleData.subtitle ? root.moduleData.subtitle : "")
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 11
                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
                         elide: Text.ElideRight
@@ -110,7 +111,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: "x"
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 14
                         font.weight: Font.DemiBold
                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
@@ -155,7 +156,7 @@ Item {
                             Text {
                                 Layout.fillWidth: true
                                 text: String(sectionBlock.modelData.title || "")
-                                font.family: "Segoe UI"
+                                font.family: AppTypography.textFamily()
                                 font.pixelSize: 11
                                 font.weight: Font.DemiBold
                                 color: SemanticTheme.inkMuted(root.t, root.appStyle)
@@ -188,7 +189,7 @@ Item {
                                         anchors.rightMargin: 10
                                         verticalAlignment: Text.AlignVCenter
                                         text: String(flyoutRow.modelData.label || flyoutRow.modelData.title || "")
-                                        font.family: "Segoe UI"
+                                        font.family: AppTypography.textFamily()
                                         font.pixelSize: 13
                                         font.weight: flyoutRow.active ? Font.DemiBold : Font.Medium
                                         color: flyoutRow.active || flyoutRow.hovered

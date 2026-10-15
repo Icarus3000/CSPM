@@ -25,6 +25,7 @@ Window {
     readonly property bool isProMode: appStyle === "Professional"
     property var reportDocument: ({})
     property real zoomScale: 1.0
+    property bool fitWidthEnabled: true
     property string orientationMode: "portrait"
     property int currentPageIndex: 0
     property string findText: ""
@@ -48,6 +49,9 @@ Window {
     readonly property int landscapePageH: 816
     readonly property int pageW: orientationMode === "portrait" ? portraitPageW : landscapePageW
     readonly property int pageH: orientationMode === "portrait" ? portraitPageH : landscapePageH
+    onPageWChanged: {
+        if (fitWidthEnabled) Qt.callLater(root.applyWidthFit)
+    }
     readonly property int detailRowsPerPage: orientationMode === "portrait" ? 15 : 10
     readonly property int summaryRowsPerPage: orientationMode === "portrait" ? 19 : 11
     readonly property int pageMargin: 42
@@ -486,6 +490,7 @@ Window {
     }
 
     function setZoom(value) {
+        fitWidthEnabled = false
         zoomScale = clampZoom(value)
     }
 
@@ -506,8 +511,15 @@ Window {
     }
 
     function fitWidth() {
-        var available = Math.max(1, pageList.width - 48)
-        setZoom(available / pageW)
+        fitWidthEnabled = true
+        applyWidthFit()
+    }
+
+    function applyWidthFit() {
+        var available = pageList.width - 48
+        // Initial visibility may precede layout and the native maximized
+        // configure. Keep readable zoom until an actual viewport is ready.
+        if (fitWidthEnabled && available > 0) zoomScale = clampZoom(available / pageW)
     }
 
     function gotoPage(index) {
@@ -900,6 +912,9 @@ Window {
             spacing: 18
             model: root.pageDocuments()
             onCurrentIndexChanged: root.currentPageIndex = currentIndex
+            onWidthChanged: {
+                if (root.fitWidthEnabled) root.applyWidthFit()
+            }
 
             WheelHandler {
                 acceptedModifiers: Qt.ControlModifier

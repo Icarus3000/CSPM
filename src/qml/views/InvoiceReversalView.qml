@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import "../standards/FilePaths.js" as FilePaths
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import Qt.labs.platform 1.1
@@ -2090,11 +2091,7 @@ Item {
         id: targetFolderDialog
         title: "Select Archive Folder"
         onAccepted: {
-            var p = targetFolderDialog.folder.toString()
-            if (p.indexOf("file:///") === 0) {
-                p = p.substring(8)
-            }
-            reverseDialog.targetDir = decodeURIComponent(p)
+            reverseDialog.targetDir = FilePaths.localPath(targetFolderDialog.folder)
         }
     }
     
@@ -2103,11 +2100,7 @@ Item {
         title: "Select Finalized Invoice PDF"
         nameFilters: ["PDF Files (*.pdf)", "All Files (*)"]
         onAccepted: {
-            var p = sourcePdfDialog.file.toString()
-            if (p.indexOf("file:///") === 0) {
-                p = p.substring(8)
-            }
-            reverseDialog.sourcePdfPath = decodeURIComponent(p)
+            reverseDialog.sourcePdfPath = FilePaths.localPath(sourcePdfDialog.file)
         }
     }
 }

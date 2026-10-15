@@ -1,5 +1,8 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
+import QtCore
+import "../standards/FilePaths.js" as FilePaths
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
@@ -7,7 +10,6 @@ import "../components"
 import "../standards"
 import "../standards/SemanticTheme.js" as SemanticTheme
 import QtWebEngine
-import QtCore
 import QtQuick.Dialogs
 
 Item {
@@ -28,7 +30,7 @@ Item {
     onDraftNumChanged: {
         if (draftNum) {
             _loadDrafts()
-            _selectDraft(draftNum)
+            if (root.selectedDraftNum !== draftNum) _selectDraft(draftNum)
         }
     }
 
@@ -267,8 +269,25 @@ Item {
 
     Component.onCompleted: {
         _loadDrafts()
-        if (draftNum) {
+        if (draftNum && root.selectedDraftNum !== draftNum) {
             _selectDraft(draftNum)
+        }
+    }
+
+    function applyInitialState(state) {
+        if (!state || typeof state !== "object") return
+        var keys = ["draftNum", "draftId", "invoiceDraftId"]
+        for (var i = 0; i < keys.length; ++i) {
+            var requestedDraft = String(state[keys[i]] || "").trim()
+            if (!requestedDraft) continue
+            // Preserve the existing reactive deep-link path. The loader may
+            // deliver the same state after draftNum already selected it.
+            if (root.draftNum !== requestedDraft) {
+                root.draftNum = requestedDraft
+            } else if (root.selectedDraftNum !== requestedDraft) {
+                root._selectDraft(requestedDraft)
+            }
+            return
         }
     }
 
@@ -397,7 +416,7 @@ Item {
         fileName += ".pdf"
         
         // Open the save dialog for the finalize PDF
-        finalizePdfFileDialog.currentFile = "file:///" + fileName
+        finalizePdfFileDialog.selectedFile = FilePaths.suggestedFile(finalizePdfFileDialog.currentFolder, fileName)
         root.pendingFinalizeInvoiceNum = requestedNum
         finalizePdfFileDialog.open()
     }
@@ -549,13 +568,13 @@ Item {
                     text: "Invoice Builder"
                     font.pixelSize: 28
                     font.weight: Font.DemiBold
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     color: textColor
                 }
                 Text {
                     text: "Review draft invoices, apply discounts, and generate final PDFs."
                     font.pixelSize: 14
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     color: mutedColor
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
@@ -1553,7 +1572,7 @@ Item {
                     Layout.preferredWidth: 120
                     Layout.preferredHeight: 32
                     onClicked: {
-                        wordFileDialog.currentFile = "file:///Draft_" + root.selectedDraftNum + ".docx"
+                        wordFileDialog.selectedFile = FilePaths.suggestedFile(wordFileDialog.currentFolder, "Draft_" + root.selectedDraftNum + ".docx")
                         wordFileDialog.open()
                     }
                 }
@@ -1565,7 +1584,7 @@ Item {
                     Layout.preferredWidth: 120
                     Layout.preferredHeight: 32
                     onClicked: {
-                        pdfFileDialog.currentFile = "file:///Draft_" + root.selectedDraftNum + ".pdf"
+                        pdfFileDialog.selectedFile = FilePaths.suggestedFile(pdfFileDialog.currentFolder, "Draft_" + root.selectedDraftNum + ".pdf")
                         pdfFileDialog.open()
                     }
                 }
@@ -1605,12 +1624,13 @@ Item {
         
         FileDialog {
             id: pdfFileDialog
+            currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
             title: "Save Draft PDF"
             nameFilters: ["PDF Files (*.pdf)"]
             fileMode: FileDialog.SaveFile
             defaultSuffix: "pdf"
             onAccepted: {
-                var path = pdfFileDialog.selectedFile.toString().replace("file:///", "")
+                var path = FilePaths.localPath(pdfFileDialog.selectedFile)
                 if (root.billingBackend) {
                     root.billingBackend.exportHtmlToPdf(root.previewHtml, path)
                 }
@@ -1619,12 +1639,13 @@ Item {
         
         FileDialog {
             id: finalizePdfFileDialog
+            currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
             title: "Save Finalized Invoice PDF"
             nameFilters: ["PDF Files (*.pdf)"]
             fileMode: FileDialog.SaveFile
             defaultSuffix: "pdf"
             onAccepted: {
-                var path = finalizePdfFileDialog.selectedFile.toString().replace("file:///", "")
+                var path = FilePaths.localPath(finalizePdfFileDialog.selectedFile)
                 if (root.billingBackend) {
                     root.isFinalizingExport = true
                     root.finalizationStage = "Preparing the finalized invoice…"
@@ -1640,12 +1661,13 @@ Item {
         
         FileDialog {
             id: wordFileDialog
+            currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
             title: "Save Word Document"
             nameFilters: ["Word Documents (*.docx)"]
             fileMode: FileDialog.SaveFile
             defaultSuffix: "docx"
             onAccepted: {
-                var path = wordFileDialog.selectedFile.toString().replace("file:///", "")
+                var path = FilePaths.localPath(wordFileDialog.selectedFile)
                 root.billingBackend.exportDraftToWord(root.selectedDraftNum, root.selectedConcept, path)
             }
         }
@@ -1689,7 +1711,7 @@ Item {
                     text: root.finalizationStage !== "" ? root.finalizationStage : "Finalizing invoice…"
                     font.pixelSize: 22
                     font.weight: Font.DemiBold
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     color: "#FFFFFF"
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
@@ -1736,7 +1758,7 @@ Item {
                 spacing: 16
                 Text {
                     text: root._reservedReissueInvoiceNumber() !== "" ? "Finalize Corrected Invoice" : "Finalize Invoice"
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     font.pixelSize: 18
                     font.weight: Font.DemiBold
                     color: root.textColor
@@ -1745,7 +1767,7 @@ Item {
                     text: root._reservedReissueInvoiceNumber() !== ""
                         ? "CSPM suggests reusing " + root._reservedReissueInvoiceNumber() + " for this corrected invoice. You may replace it with any unused invoice number."
                         : "Enter the final invoice number to issue. The next standard number is suggested below."
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     font.pixelSize: 14
                     color: root.mutedColor
                     wrapMode: Text.WordWrap
@@ -1755,7 +1777,7 @@ Item {
                     id: invNumInput
                     Layout.fillWidth: true
                     text: finalizeInvoiceDialog.inputInvoiceNum
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     font.pixelSize: 14
                     readOnly: false
                     onTextChanged: {
@@ -1766,7 +1788,7 @@ Item {
                     text: finalizeInvoiceDialog.numberGuidance
                     color: root.accentColor
                     font.pixelSize: 12
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     visible: text !== ""
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
@@ -1775,7 +1797,7 @@ Item {
                     text: finalizeInvoiceDialog.validationError
                     color: "red"
                     font.pixelSize: 12
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     visible: finalizeInvoiceDialog.validationError !== ""
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
@@ -1800,7 +1822,7 @@ Item {
                             color: SemanticTheme.surfacePanel(root.t, root.appStyle)
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                         }
                         MouseArea {
                             anchors.fill: parent

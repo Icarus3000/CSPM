@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -45,13 +46,13 @@ Item {
                         text: "Draft Review Workspace"
                         font.pixelSize: 28
                         font.weight: Font.DemiBold
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                         color: textColor
                     }
                     Text {
                         text: "Edit invoice details, apply courtesy discounts, and preview before finalizing."
                         font.pixelSize: 14
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                         color: mutedColor
                     }
                 }
@@ -221,11 +222,11 @@ Item {
                                     anchors.fill: parent
                                     anchors.margins: 16
                                     spacing: 8
-                                    RowLayout { Layout.fillWidth: true; Text { text: "Subtotal:"; color: mutedColor; Layout.fillWidth: true }; Text { text: "$0.00"; color: textColor; font.weight: Font.Medium } }
-                                    RowLayout { Layout.fillWidth: true; Text { text: "Discount:"; color: mutedColor; Layout.fillWidth: true }; Text { text: "$0.00"; color: textColor; font.weight: Font.Medium } }
-                                    RowLayout { Layout.fillWidth: true; Text { text: "Tax:"; color: mutedColor; Layout.fillWidth: true }; Text { text: "$0.00"; color: textColor; font.weight: Font.Medium } }
+                                    RowLayout { Layout.fillWidth: true; Text { text: "Subtotal:"; color: mutedColor; Layout.fillWidth: true } Text { text: "$0.00"; color: textColor; font.weight: Font.Medium } }
+                                    RowLayout { Layout.fillWidth: true; Text { text: "Discount:"; color: mutedColor; Layout.fillWidth: true } Text { text: "$0.00"; color: textColor; font.weight: Font.Medium } }
+                                    RowLayout { Layout.fillWidth: true; Text { text: "Tax:"; color: mutedColor; Layout.fillWidth: true } Text { text: "$0.00"; color: textColor; font.weight: Font.Medium } }
                                     Rectangle { Layout.fillWidth: true; height: 1; color: borderColor }
-                                    RowLayout { Layout.fillWidth: true; Text { text: "Total Due:"; color: textColor; font.weight: Font.Bold; Layout.fillWidth: true }; Text { text: "$0.00"; color: accentColor; font.weight: Font.Bold; font.pixelSize: 16 } }
+                                    RowLayout { Layout.fillWidth: true; Text { text: "Total Due:"; color: textColor; font.weight: Font.Bold; Layout.fillWidth: true } Text { text: "$0.00"; color: accentColor; font.weight: Font.Bold; font.pixelSize: 16 } }
                                 }
                             }
                         }

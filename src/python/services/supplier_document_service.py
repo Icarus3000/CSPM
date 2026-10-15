@@ -11,6 +11,8 @@ import hashlib
 import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -124,6 +126,9 @@ class SupplierDocumentService:
         if self._office_pdf_converter is not None:
             self._office_pdf_converter(source, destination)
             return
+        if os.name != "nt":
+            self._libreoffice_to_pdf(source, destination)
+            return
         try:
             import pythoncom
             import win32com.client
@@ -183,6 +188,47 @@ class SupplierDocumentService:
 
         if not destination.is_file() or destination.stat().st_size <= 0:
             raise SupplierDocumentError("Microsoft Office did not produce a PDF for the selected supplier document.")
+
+    @staticmethod
+    def _libreoffice_to_pdf(source: Path, destination: Path) -> None:
+        executable = shutil.which("libreoffice") or shutil.which("soffice")
+        if not executable:
+            raise SupplierDocumentError("Install LibreOffice to convert Word and Excel supplier documents to PDF.")
+        # An isolated profile avoids attaching to an already-open Office window
+        # and prevents the converter from changing the user's normal settings.
+        with tempfile.TemporaryDirectory(prefix="cspm-office-") as temporary:
+            root = Path(temporary)
+            profile = root / "profile"
+            profile.mkdir()
+            (profile / "registrymodifications.xcu").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<oor:items xmlns:oor="http://openoffice.org/2001/registry">'
+                '<item oor:path="/org.openoffice.Office.Common/Security/Scripting">'
+                '<prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop>'
+                '</item></oor:items>', encoding="utf-8",
+            )
+            env = os.environ.copy()
+            # PyInstaller libraries must not leak into an external system app.
+            if "LD_LIBRARY_PATH_ORIG" in env:
+                env["LD_LIBRARY_PATH"] = env.pop("LD_LIBRARY_PATH_ORIG")
+            else:
+                env.pop("LD_LIBRARY_PATH", None)
+            if getattr(sys, "frozen", False):
+                for name in ("QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QML2_IMPORT_PATH", "QML_IMPORT_PATH"):
+                    env.pop(name, None)
+            try:
+                subprocess.run(
+                    [executable, f"-env:UserInstallation={profile.as_uri()}",
+                     "--headless", "--nologo", "--nodefault", "--norestore",
+                     "--convert-to", "pdf", "--outdir", str(root), str(source.resolve())],
+                    check=True, capture_output=True, timeout=120, env=env,
+                )
+                rendered = root / f"{source.stem}.pdf"
+                if not rendered.is_file() or not rendered.read_bytes().startswith(b"%PDF"):
+                    raise SupplierDocumentError("LibreOffice did not produce a valid PDF for the supplier document.")
+                shutil.copyfile(rendered, destination)
+            except (subprocess.SubprocessError, OSError) as exc:
+                raise SupplierDocumentError(f"CSPM could not convert {source.name} to PDF through LibreOffice.") from exc
 
     def _convert_to_pdf(self, source: Path, destination: Path) -> None:
         extension = source.suffix.lower()

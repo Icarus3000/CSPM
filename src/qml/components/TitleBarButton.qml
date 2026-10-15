@@ -1,4 +1,5 @@
 import QtQuick
+import "../standards/AppTypography.js" as AppTypography
 import "../standards/SemanticTheme.js" as SemanticTheme
 
 Item {
@@ -87,6 +88,7 @@ Item {
     Text {
         anchors.centerIn: parent
         text: control.text
+        font.family: AppTypography.symbolFamily()
         font.pixelSize: control.fontSize > 0 ? control.fontSize : control.autoFontSizePx
         color: (btnMouseArea.containsMouse || btnMouseArea.pressed)
             ? (control.danger ? control.dangerInk : control.hoverIconColor)

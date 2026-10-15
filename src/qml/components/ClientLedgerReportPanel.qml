@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -1191,6 +1192,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "⚙"
+                    font.family: AppTypography.symbolFamily()
                     font.pixelSize: 16
                     color: root._textMuted
                 }

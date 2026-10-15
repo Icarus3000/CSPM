@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "reserve_percent": 15,
+  "max_observation_age_seconds": 120,
+  "context_reserve_percent": 15,
+  "reset_buffer_seconds": 120,
+  "poll_seconds": 300,
+  "retry_initial_seconds": 60,
+  "retry_max_seconds": 3600,
+  "max_resume_checks": 12,
+  "state_directory": ".workspace-usage",
+  "account_command": ["/usr/local/bin/codex", "app-server", "--listen", "stdio://"],
+  "account_timeout_seconds": 25,
+  "client": "codex-vscode-private-app-server",
+  "automatic_resume_supported": false,
+  "automatic_resume_enabled": false,
+  "limitation": "No supported external idle-ownership and resume interface for this IDE conversation has been established. Monitoring never starts model turns."
+}

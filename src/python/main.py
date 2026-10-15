@@ -19,6 +19,10 @@ if "--startup-briefing-worker" in sys.argv:
 
     raise SystemExit(run_from_argv())
 
+if "--restart-after-pid" in sys.argv:
+    from backend.restart_worker import run_from_argv
+    raise SystemExit(run_from_argv(sys.argv))
+
 import re
 import atexit
 import ctypes
@@ -664,6 +668,7 @@ if native_candidate_profile() is not None:
     _SINGLE_INSTANCE_MUTEX_NAME = "Local\\CSPM.NativeMotionCandidate.MainInstance"
     _IPC_SERVER_NAME = "CSPM_NATIVE_MOTION_CANDIDATE_IPC_SERVER"
 _single_instance_mutex_handle = None
+_linux_instance_lock = None
 
 
 def _is_chromium_helper_process(argv = None) -> bool:
@@ -673,6 +678,10 @@ def _is_chromium_helper_process(argv = None) -> bool:
 
 def _release_single_instance_lock() -> None:
     global _single_instance_mutex_handle
+    global _linux_instance_lock
+    if _linux_instance_lock is not None:
+        _linux_instance_lock.unlock()
+        _linux_instance_lock = None
     handle = _single_instance_mutex_handle
     if not handle or not sys.platform.startswith("win"):
         _single_instance_mutex_handle = None
@@ -689,6 +698,14 @@ def _release_single_instance_lock() -> None:
 def _acquire_single_instance_lock() -> bool:
     """Return False when another CSPM GUI process already owns the app mutex."""
     global _single_instance_mutex_handle
+    global _linux_instance_lock
+    if sys.platform.startswith("linux"):
+        from backend.linux_instance import acquire_instance_lock
+        if _linux_instance_lock is None:
+            _linux_instance_lock = acquire_instance_lock(native_candidate_profile() is not None)
+            if _linux_instance_lock is not None:
+                atexit.register(_release_single_instance_lock)
+        return _linux_instance_lock is not None
     if not sys.platform.startswith("win"):
         return True
     if _single_instance_mutex_handle:
@@ -1063,6 +1080,7 @@ class _AppIconSync(QObject):
         self._icon = icon
         self._pending_apply = False
         self._window_events_only = bool(window_events_only)
+        self._attached_windows = set()
 
     def apply_all(self) -> None:
         self._pending_apply = False
@@ -1081,6 +1099,16 @@ class _AppIconSync(QObject):
             windows = []
         for win in windows:
             _apply_app_icon_to_window(win, self._icon)
+            if sys.platform.startswith("linux") and win not in self._attached_windows:
+                # Linux WebEngine creates native QObjects during event delivery.
+                # A Python application-wide filter can recursively wrap one
+                # before construction completes. Filter established windows
+                # only, so Chromium's internal objects stay inside Qt.
+                win.installEventFilter(self)
+                probe = getattr(self._app, "_startup_input_probe", None)
+                if probe is not None:
+                    win.installEventFilter(probe)
+                self._attached_windows.add(win)
 
     def queue_apply_all(self) -> None:
         if self._pending_apply:
@@ -1108,7 +1136,15 @@ def _install_app_icon_sync(app: QApplication, *, window_events_only: bool = Fals
     if icon.isNull():
         return
     icon_sync = _AppIconSync(app, icon, window_events_only=window_events_only)
-    app.installEventFilter(icon_sync)
+    if sys.platform.startswith("linux"):
+        window_timer = QTimer(icon_sync)
+        window_timer.setInterval(250)
+        window_timer.timeout.connect(icon_sync.apply_all)
+        app.aboutToQuit.connect(window_timer.stop)
+        window_timer.start()
+        icon_sync._window_timer = window_timer
+    else:
+        app.installEventFilter(icon_sync)
     try:
         app.focusWindowChanged.connect(lambda _window=None: icon_sync.queue_apply_all())
     except Exception as exc:
@@ -1502,8 +1538,20 @@ def main() -> None:
     # We parse known args so Qt can still parse its own args if any
     args, _ = parser.parse_known_args()
     is_tray_only = args.tray_only
+
+    if sys.platform.startswith("linux"):
+        # Invoice/report WebEngine views may open long after startup. Their
+        # shared GL context must still be configured before QApplication and
+        # the first scene-graph context, as required by QtWebEngineQuick.
+        QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+        _initialize_qt_webengine()
     
     app = QApplication(sys.argv)
+    from backend.application_typography import configure_application_typography
+    configure_application_typography(app, PROJECT_ROOT)
+    if sys.platform.startswith("linux"):
+        app.setDesktopFileName("cspm")
+        app.setApplicationName("CSPM")
 
     _boot_log("QApplication.created")
     startup_launch_context = _capture_startup_launch_context()
@@ -1545,13 +1593,14 @@ def main() -> None:
     app.setQuitOnLastWindowClosed(False)
     # Optional pre-initialization can reduce first-use renderer spikes but may
     # increase time-to-first-frame. Keep disabled by default.
-    if splash_preinit_webengine:
+    if splash_preinit_webengine and not sys.platform.startswith("linux"):
         _initialize_qt_webengine()
     if splash_preinit_webview:
         _initialize_qt_webview()
     try:
         startup_input_probe = _StartupInputProbe(app)
-        app.installEventFilter(startup_input_probe)
+        if not sys.platform.startswith("linux"):
+            app.installEventFilter(startup_input_probe)
         app._startup_input_probe = startup_input_probe  # type: ignore[attr-defined]
     except Exception as exc:
         _report_nonfatal_startup_failure("startup.installInputProbe", exc)
@@ -2309,7 +2358,7 @@ def main() -> None:
         # Keep the native tray affordance available immediately, but do not
         # create TrayRoot's additional QML Windows while the CS splash is the
         # only intended visible surface.
-        app._tray_icon = QSystemTrayIcon(QIcon(str(PROJECT_ROOT / "src" / "assets" / "app_icon.ico")), app)
+        app._tray_icon = QSystemTrayIcon(_load_app_icon(), app)
         tray_menu = QMenu()
         app._tray_menu = tray_menu
         open_action = tray_menu.addAction("Open CSPM")

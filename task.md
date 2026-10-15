@@ -1,5 +1,35 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-14: Fedora latest-main calendar integration
+
+- [x] Preserve original dirty Fedora checkout; integrate all current main updates through `66a9cbe` in an isolated worktree.
+- [x] Retain Microsoft 365 agenda/device sign-in repair and add authenticated Linux token encryption with keys confined to the persistent Secret Service wallet; retain Windows DPAPI and fail closed when the wallet is unavailable.
+- [x] Include governed Linux build/resources, protected Recovery selectors and persistent usage-control source, configuration, tests and instructions.
+- [ ] Complete focused validation, exact clean-source Fedora main/Recovery build, outside-sandbox packaged checks and cloud publication; record immutable artifact/evidence identities after packaging.
+- [ ] User sign-in and foreground Outlook coverage acceptance remain required.
+
+Scope: `docs/FEDORA_CALENDAR_INTEGRATION_2026-10-14.md`.
+
+
+## 2026-10-14: Persistent workspace allowance guard
+
+- [x] Verify documented read-only Codex account allowances against the real
+  client; record both actual window resets and distinguish context capacity.
+- [x] Implement reserve/projected-reserve checks, private atomic checkpoints,
+  locks, bounded eligibility retries, restart recovery and cached-age reporting.
+- [x] Persist rules in root AGENTS.md and install an inspectable systemd user
+  monitor timer; first outside-sandbox account-only scheduled run succeeds.
+- [x] Pass 57 sandbox-safe synthetic tests and real systemd unit validation.
+- [x] Enforce the safe fallback: automatic IDE resume remains unavailable;
+  no supported external ownership/resume interface is established. Use the same
+  IDE conversation and the checkpoint's manual procedure; timer monitors only.
+
+Runbook: `docs/WORKSPACE_USAGE_CONTROL.md`. Private state/checkpoint:
+`.workspace-usage/latest-checkpoint.json`. Config: `usage-control.json`.
+
+
+
+
 ## 2026-10-14: Quieter shared invoice continuation headers
 
 - [x] Remove repeated firm/invoice identifiers from the continuation header;

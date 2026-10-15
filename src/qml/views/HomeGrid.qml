@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -577,7 +578,7 @@ Item {
                         Text {
                             id: omniIcon
                             text: "\uE721"
-                            font.family: "Segoe MDL2 Assets"
+                            font.family: AppTypography.iconFamily()
                             renderType: Text.NativeRendering
                             color: root.alphaText(0.96)
                             font.pixelSize: Math.max(10, root.summaryFontPx)
@@ -1215,7 +1216,7 @@ Item {
                                         anchors.centerIn: parent
                                         // Pencil icon — Segoe MDL2 Assets U+E70F
                                         text: "\uE70F"
-                                        font.family: "Segoe MDL2 Assets"
+                                        font.family: AppTypography.iconFamily()
                                         color: root.alphaText(editQuickActionsBtn.hovered ? 0.90 : 0.40)
                                         font.pixelSize: Math.round(editQuickActionsBtn.width * 0.50)
                                         renderType: Text.NativeRendering
@@ -1357,7 +1358,7 @@ Item {
 
                                             Text {
                                                 text: quickTile.modelData.icon
-                                                font.family: "Segoe MDL2 Assets"
+                                                font.family: AppTypography.iconFamily()
                                                 color: root.readableInk(quickTile.fillColor, 0.96)
                                                 font.pixelSize: root.ratioPx(0.0175, 13)
                                                 renderType: Text.NativeRendering

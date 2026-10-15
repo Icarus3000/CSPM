@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls 2.15
@@ -570,7 +571,7 @@ Rectangle {
 
             Text {
                 text: "\uE8B7"
-                font.family: "Segoe MDL2 Assets"
+                font.family: AppTypography.iconFamily()
                 font.pixelSize: 18
                 color: visualRules.isPro ? root.accentColor : root.accentColor
             }
@@ -581,7 +582,7 @@ Rectangle {
 
                 Text {
                     text: "Legacy Dockets Import"
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 18
                     font.weight: Font.DemiBold
                     color: root.inkColor
@@ -589,7 +590,7 @@ Rectangle {
 
                 Text {
                     text: "Select an import mode to ingest legacy Dockets.xlsm records. Fuzzy matching is automatically applied."
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 11
                     color: root.mutedInkColor
                     wrapMode: Text.WordWrap
@@ -1350,7 +1351,7 @@ Rectangle {
 
                             contentItem: Text {
                                 text: progressMinimizeButton.text
-                                font.family: "Segoe MDL2 Assets"
+                                font.family: AppTypography.iconFamily()
                                 font.pixelSize: 13
                                 color: progressMinimizeButton.hovered ? root.inkColor : root.mutedInkColor
                                 horizontalAlignment: Text.AlignHCenter
@@ -1876,7 +1877,7 @@ Rectangle {
 
                         contentItem: Text {
                             text: duplicateMinimizeButton.text
-                            font.family: "Segoe MDL2 Assets"
+                            font.family: AppTypography.iconFamily()
                             font.pixelSize: 13
                             color: duplicateMinimizeButton.hovered ? root.inkColor : root.mutedInkColor
                             horizontalAlignment: Text.AlignHCenter

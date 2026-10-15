@@ -1,3 +1,4 @@
+import "AppTypography.js" as AppTypography
 import QtQuick
 
 QtObject {
@@ -16,8 +17,8 @@ QtObject {
     readonly property int motionFast: isPro ? 90 : 160
     readonly property int motionNormal: isPro ? 130 : 260
     readonly property int motionSlow: isPro ? 180 : 420
-    readonly property string textFontFamily: "Segoe UI"
-    readonly property string iconFontFamily: "Segoe MDL2 Assets"
+    readonly property string textFontFamily: AppTypography.textFamily()
+    readonly property string iconFontFamily: AppTypography.iconFamily()
     readonly property int proWorkspaceHeaderHeightPx: 44
     readonly property int proWorkspaceHeaderGapPx: 2
     readonly property int proWorkspaceTitleFontPx: 17

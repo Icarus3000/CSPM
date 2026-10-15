@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import "../standards/SemanticTheme.js" as SemanticTheme
 
@@ -41,7 +42,7 @@ Rectangle {
         Accessible.name: root.statusLabel
         textFormat: Text.PlainText
         color: root.statusInk
-        font.family: "Segoe UI"
+        font.family: AppTypography.textFamily()
         font.pixelSize: 12
         font.weight: Font.DemiBold
         wrapMode: Text.WordWrap

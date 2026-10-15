@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import "../standards/SemanticTheme.js" as SemanticTheme
@@ -305,7 +306,7 @@ Item {
                     Layout.fillWidth: true
                     text: "Daily operations"
                     color: root.inkColor
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: root.tight ? 17 : 21
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
@@ -316,7 +317,7 @@ Item {
                     visible: !root.tight
                     text: root.todayLabel() + " · Focus on risk, time, and active work"
                     color: root.mutedInkColor
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 11
                     elide: Text.ElideRight
                 }
@@ -326,7 +327,7 @@ Item {
                 visible: root.loadingBriefing && !root.tight
                 text: "Refreshing…"
                 color: root.mutedInkColor
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 font.pixelSize: 11
             }
         }
@@ -358,7 +359,7 @@ Item {
 
                         Text {
                             text: quickAction.modelData.icon
-                            font.family: "Segoe MDL2 Assets"
+                            font.family: AppTypography.iconFamily()
                             font.pixelSize: root.tight ? 14 : 16
                             color: root.accentColor
                         }
@@ -367,7 +368,7 @@ Item {
                             Layout.fillWidth: true
                             text: quickAction.modelData.label
                             color: root.inkColor
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: root.tight ? 10 : 11
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -413,7 +414,7 @@ Item {
 
                             Text {
                                 text: metricCard.modelData.icon
-                                font.family: "Segoe MDL2 Assets"
+                                font.family: AppTypography.iconFamily()
                                 font.pixelSize: root.tight ? 13 : 16
                                 color: metricCard.modelData.tone === "urgent" ? root.urgentColor
                                     : (metricCard.modelData.tone === "positive" ? root.positiveColor : root.accentColor)
@@ -423,7 +424,7 @@ Item {
                                 Layout.fillWidth: true
                                 text: metricCard.modelData.label
                                 color: root.mutedInkColor
-                                font.family: "Segoe UI"
+                                font.family: AppTypography.textFamily()
                                 font.pixelSize: root.tight ? 10 : 11
                                 elide: Text.ElideRight
                             }
@@ -433,7 +434,7 @@ Item {
                             Layout.fillWidth: true
                             text: metricCard.modelData.value
                             color: root.inkColor
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: root.tight ? 17 : 23
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -443,7 +444,7 @@ Item {
                             Layout.fillWidth: true
                             text: metricCard.modelData.detail
                             color: root.mutedInkColor
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: root.tight ? 9 : 10
                             elide: Text.ElideRight
                         }
@@ -517,7 +518,7 @@ Item {
                                 Layout.fillWidth: true
                                 text: "My productivity"
                                 color: root.inkColor
-                                font.family: "Segoe UI"
+                                font.family: AppTypography.textFamily()
                                 font.pixelSize: root.tight ? 12 : 14
                                 font.weight: Font.DemiBold
                                 elide: Text.ElideRight
@@ -527,7 +528,7 @@ Item {
                                 visible: !root.tight
                                 text: "Open report ›"
                                 color: root.accentColor
-                                font.family: "Segoe UI"
+                                font.family: AppTypography.textFamily()
                                 font.pixelSize: 10
                             }
                         }
@@ -556,7 +557,7 @@ Item {
                                         Layout.fillWidth: true
                                         text: productivityMetricDelegate.modelData.label
                                         color: root.mutedInkColor
-                                        font.family: "Segoe UI"
+                                        font.family: AppTypography.textFamily()
                                         font.pixelSize: root.tight ? 8 : 9
                                         elide: Text.ElideRight
                                     }
@@ -565,7 +566,7 @@ Item {
                                         Layout.fillWidth: true
                                         text: productivityMetricDelegate.modelData.value
                                         color: root.inkColor
-                                        font.family: "Segoe UI"
+                                        font.family: AppTypography.textFamily()
                                         font.pixelSize: root.tight ? 12 : 15
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideRight
@@ -602,7 +603,7 @@ Item {
                             Layout.fillWidth: true
                             text: "Resume work"
                             color: root.inkColor
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: root.tight ? 12 : 14
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -616,7 +617,7 @@ Item {
                                 Layout.fillWidth: true
                                 text: String(modelData.matterName || modelData.description || "Recent work")
                                 color: root.mutedInkColor
-                                font.family: "Segoe UI"
+                                font.family: AppTypography.textFamily()
                                 font.pixelSize: root.tight ? 9 : 10
                                 elide: Text.ElideRight
                             }
@@ -627,7 +628,7 @@ Item {
                             visible: root.entryCount(root.briefing.recentWork) === 0
                             text: "Your recent docket work will appear here."
                             color: root.mutedInkColor
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: root.tight ? 9 : 10
                             elide: Text.ElideRight
                         }

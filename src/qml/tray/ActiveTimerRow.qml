@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -43,6 +44,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: modelData && modelData.isRunning ? "▶" : "⏸"
+                        font.family: AppTypography.symbolFamily()
                         color: modelData && modelData.isRunning ? theme.timerGreen : theme.textSecondary
                         font.pixelSize: 14
                         anchors.horizontalCenterOffset: modelData && modelData.isRunning ? 2 : 0
@@ -56,7 +58,7 @@ Item {
                         color: modelData && modelData.isRunning ? theme.timerGreen : theme.textSecondary
                         font.bold: true
                         font.pixelSize: 18
-                        font.family: "Consolas" // fixed width
+                        font.family: AppTypography.monoFamily("Consolas") // fixed width
                     }
                     Text { 
                         text: modelData && modelData.isRunning ? "Running" : "Paused"
@@ -75,7 +77,7 @@ Item {
                 // Pause/Play Button
                 Rectangle {
                     width: 32; height: 32; radius: 4; border.color: theme.border; color: "transparent"
-                    Text { anchors.centerIn: parent; text: modelData && modelData.isRunning ? "⏸" : "▶"; font.pixelSize: 14; color: theme.textPrimary }
+                    Text { anchors.centerIn: parent; text: modelData && modelData.isRunning ? "⏸" : "▶"; font.family: AppTypography.symbolFamily(); font.pixelSize: 14; color: theme.textPrimary }
                     MouseArea {
                         anchors.fill: parent
                         onClicked: {
@@ -100,6 +102,7 @@ Item {
                 // Chevron
                 Text {
                     text: "⌄"
+                    font.family: AppTypography.symbolFamily()
                     font.pixelSize: 20
                     color: theme.textSecondary
                     rotation: isExpanded ? 180 : 0

@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -36,7 +37,7 @@ Rectangle {
         ColumnLayout {
             anchors.centerIn: parent
             spacing: 4
-            Text { text: actionItemRoot.icon; font.pixelSize: 22; color: actionItemRoot.textColor; Layout.alignment: Qt.AlignHCenter }
+            Text { text: actionItemRoot.icon; font.family: AppTypography.symbolFamily(); font.pixelSize: 22; color: actionItemRoot.textColor; Layout.alignment: Qt.AlignHCenter }
             Text { text: actionItemRoot.text; font.pixelSize: 11; color: actionItemRoot.textColor; Layout.alignment: Qt.AlignHCenter }
         }
         

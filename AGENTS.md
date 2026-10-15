@@ -2,6 +2,37 @@
 
 These instructions are mandatory for AI agents working in this repository.
 
+## Persistent workspace usage control
+
+- Before expensive batches and about every five minutes during sustained work,
+  run `python3 scripts/workspace_usage.py check` for fresh account allowances.
+  The reader uses documented, read-only account RPCs; it never starts a model
+  turn or attaches to the IDE conversation. If sandbox networking blocks it,
+  use governed outside-sandbox execution. Keep approvals/authentication intact.
+- Treat account allowance and conversation context as separate quantities.
+  Never invent percentages, token counts, reset times or context headroom.
+  Saved observations are historical: inspect their timestamp and age.
+- At approximately 15% remaining in either five-hour or weekly allowance,
+  stop launching work. Stop earlier when a batch might use the reserve; an
+  unknown batch estimate stops work within ten percentage points of it.
+  Exit 75 means stop and checkpoint; unavailable/stale data fails closed.
+- Maintain private `.workspace-usage/task-notes.json` with the original
+  objectives, all constraints, completed changes, validation, unresolved
+  problems, tools/child agents, and exact next commands. Never record secrets.
+  Before yielding for usage or low context, settle tools and child agents,
+  update those notes, then run `python3 scripts/workspace_usage.py checkpoint
+  --pause`. Ordinary recovery checkpoints omit `--pause`.
+- Resume no earlier than the ACTUALLY REPORTED pause-time five-hour reset plus
+  120 seconds, with a fresh fully restored five-hour allowance, weekly
+  allowance above reserve, and verified idle ownership. UTC is for scheduling;
+  America/Toronto is for readable times. Unknown reset/ownership blocks resume.
+- This IDE currently has no established supported external resume/idle-owner
+  interface. The systemd timer monitors only; it cannot interrupt or restart
+  this assistant. Do not start another CLI owner, probe private IDE sockets,
+  use repeated model calls, or sleep-loop as a scheduler. Resume manually in
+  this same IDE conversation from `.workspace-usage/latest-checkpoint.json`.
+  Do not claim automatic restart works. See `docs/WORKSPACE_USAGE_CONTROL.md`.
+
 ## Required Startup Reading
 
 Before planning, diagnosing, editing, testing, or responding to an open-ended request

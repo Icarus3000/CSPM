@@ -1,5 +1,8 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
+import QtCore
+import "../standards/FilePaths.js" as FilePaths
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
@@ -112,17 +115,18 @@ Item {
             }
             onPdfPrintingFinished: function(filePath, success) {
                 if (success) {
-                    Qt.openUrlExternally("file:///" + filePath)
+                    Qt.openUrlExternally(FilePaths.fileUrl(filePath))
                 }
             }
         }
 
         FileDialog {
             id: pdfFileDialog
+            currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
             fileMode: FileDialog.SaveFile
             nameFilters: ["PDF Files (*.pdf)"]
             onAccepted: {
-                var path = pdfFileDialog.selectedFile.toString().replace("file:///", "")
+                var path = FilePaths.localPath(pdfFileDialog.selectedFile)
                 if (path.length > 0) {
                     dashboardWebView.printToPdf(path)
                     if (root.sfxBus && root.sfxBus.playUiClick) root.sfxBus.playUiClick("save", 0.4)
@@ -151,7 +155,7 @@ Item {
                 
                 Text {
                     text: "\uE8A6" // Save/Export icon
-                    font.family: "Segoe Fluent Icons"
+                    font.family: AppTypography.fluentIconFamily()
                     font.pixelSize: 14
                     color: SemanticTheme.textOnPrimary(root.t, root.appStyle)
                     Layout.alignment: Qt.AlignVCenter
@@ -172,7 +176,7 @@ Item {
                 onClicked: {
                     if (root.sfxBus && root.sfxBus.playUiClick) root.sfxBus.playUiClick("affirm", 0.38)
                     var defaultName = dashboardWebView.title !== "" ? dashboardWebView.title : "Productivity_Report"
-                    pdfFileDialog.currentFile = "file:///" + defaultName + ".pdf"
+                    pdfFileDialog.selectedFile = FilePaths.suggestedFile(pdfFileDialog.currentFolder, defaultName + ".pdf")
                     pdfFileDialog.open()
                 }
             }
@@ -199,7 +203,7 @@ Item {
                 
                 Text {
                     text: "\uE740" // Expand icon
-                    font.family: "Segoe Fluent Icons"
+                    font.family: AppTypography.fluentIconFamily()
                     font.pixelSize: 14
                     color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                     Layout.alignment: Qt.AlignVCenter

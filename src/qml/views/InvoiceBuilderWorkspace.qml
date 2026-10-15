@@ -1,4 +1,6 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
+import "../standards/FilePaths.js" as FilePaths
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtWebEngine
@@ -88,7 +90,7 @@ Item {
             Text {
                 text: "Invoice Builder"
                 color: host.textColor
-                font.family: "Inter"
+                font.family: AppTypography.interFamily()
                 font.pixelSize: 28
                 font.weight: Font.DemiBold
             }
@@ -96,7 +98,7 @@ Item {
                 Layout.fillWidth: true
                 text: "Review draft invoices, reconcile flat fees, and generate final PDFs."
                 color: host.mutedColor
-                font.family: "Inter"
+                font.family: AppTypography.interFamily()
                 font.pixelSize: 14
                 wrapMode: Text.WordWrap
             }
@@ -745,14 +747,14 @@ Item {
                                 color: host.textColor
                                 font.pixelSize: 24
                                 font.weight: Font.Bold
-                                font.family: "Inter"
+                                font.family: AppTypography.interFamily()
                                 Layout.alignment: Qt.AlignHCenter
                             }
                             Text {
                                 text: "Invoice " + host.finalInvoiceNum + " has been recorded."
                                 color: host.mutedColor
                                 font.pixelSize: 15
-                                font.family: "Inter"
+                                font.family: AppTypography.interFamily()
                                 Layout.alignment: Qt.AlignHCenter
                             }
                         }
@@ -768,7 +770,7 @@ Item {
                                 primary: false
                                 Layout.preferredWidth: 160
                                 Layout.preferredHeight: 40
-                                onClicked: Qt.openUrlExternally("file:///" + host.finalPdfPath)
+                                onClicked: Qt.openUrlExternally(FilePaths.fileUrl(host.finalPdfPath))
                             }
                             
                             PillButton { 

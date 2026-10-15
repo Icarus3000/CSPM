@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -84,7 +85,7 @@ Dialog {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             color: mutedInkColor
-            font.family: "Segoe UI"
+            font.family: AppTypography.textFamily()
             font.pixelSize: 12
             text: "Controls what Practice Briefing shows. Saved in your application settings."
         }

@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import Qt5Compat.GraphicalEffects
@@ -104,7 +105,7 @@ Rectangle {
             Text {
                 width: contentCol.width
                 text: root.iconSource
-                font.family: "Segoe MDL2 Assets"
+                font.family: AppTypography.iconFamily()
                 font.pixelSize: root.root.maximized ? Math.round(root.iconPx * 1.18) : root.iconPx
                 color: root.isHovered ? root.t.accent : t.text
                 opacity: root.isHovered ? 1.0 : 0.95

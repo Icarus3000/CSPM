@@ -14,16 +14,17 @@ from backend.app_controller import (  # noqa: E402
 )
 
 
-def test_source_restart_command_keeps_the_python_entrypoint_and_arguments():
+def test_source_restart_command_keeps_the_python_entrypoint_and_arguments(tmp_path):
+    entrypoint = str(tmp_path / "src/python/main.py")
     command = _restart_command(
         executable=r"C:\Python\python.exe",
-        argv=[r"C:\Projects\__CSPM\src\python\main.py", "--tray-only"],
+        argv=[entrypoint, "--tray-only"],
         frozen=False,
     )
 
     assert command == [
         r"C:\Python\python.exe",
-        r"C:\Projects\__CSPM\src\python\main.py",
+        entrypoint,
         "--tray-only",
     ]
 

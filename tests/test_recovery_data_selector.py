@@ -36,6 +36,14 @@ def test_recovery_entry_preserves_pair_state_and_backup_roots(
 
         monkeypatch.setattr(builtins, "__import__", fixture_import)
 
+    if fallback:
+        # A broken installation must not silently select a different practice.
+        with pytest.raises(ImportError, match="isolated packaged fallback fixture"):
+            runpy.run_path(str(ROOT / "scripts/cspm_recovery.py"), run_name="recovery_selector_fixture")
+        assert not profile.exists()
+        assert not selected.exists()
+        return
+
     module = runpy.run_path(str(ROOT / "scripts/cspm_recovery.py"), run_name="recovery_selector_fixture")
     paths = module["PATHS"]
     engine = module["RecoveryEngine"]()

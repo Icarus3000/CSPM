@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -619,7 +620,7 @@ Item {
 
                 Text {
                     text: "\uE912"
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: 18
                     color: root._text
                 }
@@ -630,7 +631,7 @@ Item {
 
                     Text {
                         text: "Transaction Entry"
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 18
                         font.weight: Font.DemiBold
                         color: root._text
@@ -638,7 +639,7 @@ Item {
 
                     Text {
                         text: "Enter and review financial transactions"
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 11
                         color: root._mutedText
                     }
@@ -776,7 +777,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.max(64, Math.round(root.fieldHeightPx * 1.5))
                 color: root._text
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 wrapMode: Text.Wrap
                 placeholderText: "Expense details"
                 onTextChanged: root._markDirty()
@@ -787,7 +788,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.max(64, Math.round(root.fieldHeightPx * 1.5))
                 color: root._text
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 wrapMode: Text.Wrap
                 placeholderText: "Notes"
                 onTextChanged: root._markDirty()
@@ -818,7 +819,7 @@ Item {
 
                     Text {
                         text: "Recent Transactions"
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 15
                         font.weight: Font.DemiBold
                         color: root._text
@@ -850,11 +851,11 @@ Item {
                                 anchors.leftMargin: 10
                                 anchors.rightMargin: 10
                                 spacing: 8
-                                Text { Layout.preferredWidth: 95; text: _clean(modelData.txnDate); font.family: "Segoe UI"; font.pixelSize: 12; color: root._mutedText; elide: Text.ElideRight }
-                                Text { Layout.preferredWidth: 115; text: _clean(modelData.type); font.family: "Segoe UI"; font.pixelSize: 12; color: root._text; elide: Text.ElideRight }
-                                Text { Layout.fillWidth: true; text: _clean(modelData.payee); font.family: "Segoe UI"; font.pixelSize: 12; color: root._text; elide: Text.ElideRight }
-                                Text { Layout.preferredWidth: 84; horizontalAlignment: Text.AlignRight; text: Number(modelData.amount || 0).toFixed(2); font.family: "Segoe UI"; font.pixelSize: 12; color: root._accent }
-                                Text { Layout.preferredWidth: 88; horizontalAlignment: Text.AlignRight; text: _clean(modelData.status); font.family: "Segoe UI"; font.pixelSize: 12; color: root._mutedText; elide: Text.ElideRight }
+                                Text { Layout.preferredWidth: 95; text: _clean(modelData.txnDate); font.family: AppTypography.textFamily(); font.pixelSize: 12; color: root._mutedText; elide: Text.ElideRight }
+                                Text { Layout.preferredWidth: 115; text: _clean(modelData.type); font.family: AppTypography.textFamily(); font.pixelSize: 12; color: root._text; elide: Text.ElideRight }
+                                Text { Layout.fillWidth: true; text: _clean(modelData.payee); font.family: AppTypography.textFamily(); font.pixelSize: 12; color: root._text; elide: Text.ElideRight }
+                                Text { Layout.preferredWidth: 84; horizontalAlignment: Text.AlignRight; text: Number(modelData.amount || 0).toFixed(2); font.family: AppTypography.textFamily(); font.pixelSize: 12; color: root._accent }
+                                Text { Layout.preferredWidth: 88; horizontalAlignment: Text.AlignRight; text: _clean(modelData.status); font.family: AppTypography.textFamily(); font.pixelSize: 12; color: root._mutedText; elide: Text.ElideRight }
                                 Rectangle {
                                     Layout.preferredWidth: 28
                                     Layout.preferredHeight: 28
@@ -863,7 +864,7 @@ Item {
                                     Text {
                                         anchors.centerIn: parent
                                         text: "\uE74D"  // Trash icon
-                                        font.family: "Segoe Fluent Icons"
+                                        font.family: AppTypography.fluentIconFamily()
                                         font.pixelSize: 16
                                         color: delMouse.containsMouse ? "#FF5252" : SemanticTheme.inkMuted(root.t, root.appStyle)
                                     }

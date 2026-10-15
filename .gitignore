@@ -330,3 +330,9 @@ startup_briefing/
 /data_quality_report.json
 /startup_log*.txt
 /test_output*
+
+# Governed Linux PyInstaller source specifications
+!/packaging/*.spec
+
+# Private usage-control observations, checkpoints and scheduler state
+.workspace-usage/

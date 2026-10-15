@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -696,7 +697,7 @@ Item {
                     spacing: 6
                     Text {
                         text: "\uEA18"
-                        font.family: "Segoe MDL2 Assets"
+                        font.family: AppTypography.iconFamily()
                         font.pixelSize: 18
                         color: root.isProMode ? SemanticTheme.accentPrimary(root.t, root.appStyle) : root._accent
                     }
@@ -705,7 +706,7 @@ Item {
                         text: "Trademark Entry Form"
                         color: root.isProMode ? root.proInk : SemanticTheme.inkPrimary(root.t, root.appStyle)
                         font.pixelSize: 18
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.weight: Font.DemiBold
                     }
                     Text {

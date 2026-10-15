@@ -1,4 +1,4 @@
-"""Read-only Microsoft sign-in with a Windows-user encrypted token cache.
+"""Read-only Microsoft sign-in with an operating-system protected token cache.
 
 MSAL is imported only when calendar sign-in is requested. Tokens never enter
 settings, workbook data, agenda snapshots or application diagnostics.
@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import logging
+import hashlib
+import sys
 from pathlib import Path
 import tempfile
 import threading
@@ -75,13 +77,84 @@ class WindowsUserProtector:
             ) from None
 
 
+class LinuxSecretServiceProtector:
+    """Authenticated ciphertext with its key held by the desktop Secret Service.
+
+    Bind to the persistent default collection explicitly: never fall back to
+    a session collection, plaintext file, or an environment-selected backend.
+    A locked/missing wallet fails safely; the user can unlock it and retry.
+    """
+
+    def __init__(self, profile_dir: Path, *, secret_module=None):
+        self._module = secret_module
+        self._profile = hashlib.sha256(str(Path(profile_dir).resolve()).encode()).hexdigest()
+
+    def _key(self, *, create: bool) -> bytes:
+        connection = None
+        try:
+            if self._module is None:
+                import secretstorage
+                self._module = secretstorage
+            connection = self._module.dbus_init()
+            collection = self._module.get_collection_by_alias(connection, "default")
+            if collection.collection_path.rstrip("/").endswith("/session"):
+                raise ValueError("A session wallet is not persistent")
+            collection.ensure_not_locked()
+            attributes = {"application": "CSPM", "purpose": "calendar-cache-encryption-v1",
+                          "profile": self._profile}
+            items = list(collection.search_items(attributes))
+            if len(items) > 1:
+                raise ValueError("Ambiguous wallet key")
+            if items:
+                return items[0].get_secret()
+            if not create:
+                raise ValueError("The wallet encryption key is missing")
+            from cryptography.fernet import Fernet
+            key = Fernet.generate_key()
+            collection.create_item("CSPM Microsoft 365 calendar encryption", attributes,
+                                   key, replace=False, content_type="application/octet-stream")
+            return key
+        except Exception:
+            raise CalendarAuthError(
+                "The desktop wallet is unavailable or locked. Unlock the default Secret Service wallet and retry calendar sign-in."
+            ) from None
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+
+    def protect(self, payload: bytes) -> bytes:
+        try:
+            from cryptography.fernet import Fernet
+            return Fernet(self._key(create=True)).encrypt(payload)
+        except CalendarAuthError:
+            raise
+        except Exception:
+            raise CalendarAuthError("The desktop wallet could not protect the calendar sign-in cache.") from None
+
+    def unprotect(self, payload: bytes) -> bytes:
+        try:
+            from cryptography.fernet import Fernet
+            return Fernet(self._key(create=False)).decrypt(payload)
+        except CalendarAuthError:
+            raise
+        except Exception:
+            raise CalendarAuthError(
+                "The saved calendar sign-in cannot be opened with this desktop wallet. Disconnect and sign in again."
+            ) from None
+
+
 class EncryptedTokenStore:
     """Atomic encrypted tokens and a nonsecret persistent disconnect marker."""
 
     def __init__(self, profile_dir: Path, protector=None):
-        self.path = Path(profile_dir) / "Microsoft365" / "token_cache.dpapi"
+        linux = protector is None and sys.platform.startswith("linux")
+        self.path = Path(profile_dir) / "Microsoft365" / ("token_cache.secretservice" if linux else "token_cache.dpapi")
         self.marker_path = self.path.with_name("disconnected")
-        self.protector = protector or WindowsUserProtector()
+        self.protector = protector or (LinuxSecretServiceProtector(profile_dir) if linux else WindowsUserProtector())
+        self._header = b"CSPM-CALENDAR-SECRET-SERVICE\x01" if linux else _CACHE_HEADER
 
     def load(self) -> str | None:
         if self.marker_path.exists():
@@ -90,9 +163,9 @@ class EncryptedTokenStore:
             return None
         try:
             blob = self.path.read_bytes()
-            if not blob.startswith(_CACHE_HEADER):
+            if not blob.startswith(self._header):
                 raise ValueError("Unrecognized cache")
-            return self.protector.unprotect(blob[len(_CACHE_HEADER):]).decode("utf-8")
+            return self.protector.unprotect(blob[len(self._header):]).decode("utf-8")
         except CalendarAuthError:
             raise
         except Exception:
@@ -156,7 +229,7 @@ class EncryptedTokenStore:
 
     def save(self, payload: str, cancel_event=None, *, connected=False) -> None:
         check_cancelled(cancel_event)
-        blob = _CACHE_HEADER + self.protector.protect(payload.encode("utf-8"))
+        blob = self._header + self.protector.protect(payload.encode("utf-8"))
         check_cancelled(cancel_event)
         previous = self.checkpoint()
         written = False

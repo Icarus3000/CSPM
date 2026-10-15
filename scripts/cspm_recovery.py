@@ -9,42 +9,67 @@ import tempfile
 import uuid
 import ctypes
 from ctypes import wintypes
+from contextlib import contextmanager
+import socket
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(sys._MEIPASS) if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") else Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT_DIR / "src" / "python"))
 
-# The main application may select data outside its persistent profile. Keep
-# that exact pair/state selection without relocating the backup archive.
-_recovery_data_dir = os.environ.get("CSPM_RECOVERY_DATA_DIR", "").strip()
-RECOVERY_DATA_DIR = Path(_recovery_data_dir).resolve() if _recovery_data_dir else None
+from services.paths import AppPaths
+from services.data_locations import apply_environment_data_settings
+from services.sync_service import SyncService
+from backend import data_verification, native_candidate
 
-try:
-    from services.paths import AppPaths
-    PATHS = AppPaths(ROOT_DIR, override_data_dir=RECOVERY_DATA_DIR)
-except ImportError:
-    print("WARNING: Could not import AppPaths. Using fallback paths.")
-    class FallbackPaths:
-        def _persistent_data_root(self):
-            env_override = os.environ.get("CSPM_DATA_DIR", "").strip()
-            if env_override: return Path(env_override)
-            if getattr(sys, 'frozen', False):
-                lad = os.environ.get("LOCALAPPDATA", "").strip()
-                return Path(lad) / "CSPM" if lad else Path.home() / ".cspm_data"
-            return ROOT_DIR
-        def data_dir(self):
-            return RECOVERY_DATA_DIR if RECOVERY_DATA_DIR is not None else self._persistent_data_root() / "data"
-        def workbook_path(self): return self.data_dir() / "CSPM.xlsm"
-        def dockets_workbook_path(self): return self.data_dir() / "Dockets.xlsm"
-        def state_dir(self): return self.data_dir() / "state"
-        def backups_snapshots_dir(self): return self._persistent_data_root() / "backups" / "CSPM" / "snapshots"
-    PATHS = FallbackPaths()
+
+class RecoveryPaths(AppPaths):
+    def _persistent_data_root(self):
+        # Source and frozen Linux recovery both use the application's durable
+        # profile rather than creating backups beside source/bundled assets.
+        if os.name != "nt" and not os.environ.get("CSPM_DATA_DIR", "").strip():
+            return self.user_settings_path().parent
+        return super()._persistent_data_root()
+
+
+def _load_paths(root: Path) -> AppPaths:
+    paths = RecoveryPaths(root)
+    settings_path = paths.user_settings_path()
+    settings = {}
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            if not isinstance(settings, dict):
+                raise ValueError("Settings must be an object")
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("Recovery cannot identify the configured data folder: user settings are unreadable.") from exc
+    settings = apply_environment_data_settings(settings)
+    settings.update(native_candidate.settings_override())
+    data_verification.configure(settings=settings)
+    for key, attribute in (("localDataDir", "override_data_dir"), ("masterDataDir", "override_master_dir")):
+        value = str(settings.get(key, "") or "").strip()
+        if value:
+            selected = Path(value).expanduser()
+            if not selected.is_absolute():
+                raise RuntimeError(f"Recovery requires an absolute {key} folder valid on this computer.")
+            setattr(paths, attribute, selected)
+    selected = os.environ.get("CSPM_RECOVERY_DATA_DIR", "").strip()
+    if selected:
+        candidate = Path(selected).expanduser()
+        if not candidate.is_absolute():
+            raise RuntimeError("Recovery requires an absolute selected data folder.")
+        paths.override_data_dir = candidate
+    return paths
+
+
+native_candidate.configure()
+PATHS = _load_paths(ROOT_DIR)
+_RECOVERY_CHECKOUT = None
 
 # Approved Roots for Validation
 APPROVED_ROOTS = [str(PATHS.data_dir()), str(PATHS.state_dir()), str(PATHS.backups_snapshots_dir())]
 
 def _is_path_approved(path: Path) -> bool:
-    resolved = str(path.resolve())
-    return any(resolved.startswith(str(Path(r).resolve())) for r in APPROVED_ROOTS)
+    resolved = path.resolve()
+    return any(resolved == Path(root).resolve() or Path(root).resolve() in resolved.parents for root in APPROVED_ROOTS)
 
 def _calc_sha256(path: Path) -> str:
     if not path.exists() or not path.is_file():
@@ -56,9 +81,43 @@ def _calc_sha256(path: Path) -> str:
     return h.hexdigest().upper()
 
 def _is_file_exclusively_locked(filepath: Path) -> bool:
-    """Uses Windows CreateFileW with zero sharing to definitively detect locks."""
+    """Probe Windows sharing locks or Linux advisory/open-file ownership.
+
+    POSIX ordinary opens do not enforce Windows sharing modes. An advisory
+    lock probe alone cannot protect a workbook held open by LibreOffice, so
+    Linux also inspects same-user processes' open file descriptors.
+    """
     if not filepath.exists():
         return False
+    if os.name != "nt":
+        try:
+            import fcntl
+            with filepath.open("rb") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            target = filepath.stat()
+            for process in _linux_processes():
+                try:
+                    for descriptor in (process / "fd").iterdir():
+                        try:
+                            opened = descriptor.stat()
+                            if (opened.st_dev, opened.st_ino) == (target.st_dev, target.st_ino):
+                                return True
+                        except FileNotFoundError:
+                            continue
+                except FileNotFoundError:
+                    continue
+                except PermissionError:
+                    # Non-dumpable desktop/security helpers and sandboxed
+                    # browsers routinely deny /proc fd access. They cannot be
+                    # treated as proof of a workbook lock. Remain conservative
+                    # for an uninspectable CSPM, Python or office process.
+                    name = (process / "comm").read_text().strip().casefold()
+                    if name.startswith(("cspm", "python", "soffice", "libreoffice")):
+                        return True
+            return False
+        except (OSError, ImportError):
+            return True
         
     kernel32 = ctypes.windll.kernel32
     kernel32.CreateFileW.argtypes = [
@@ -98,8 +157,42 @@ def _is_file_exclusively_locked(filepath: Path) -> bool:
     finally:
         kernel32.CloseHandle(handle)
 
+def _linux_processes():
+    """Inspect only this user's live processes, excluding this utility."""
+    proc = Path("/proc")
+    if not proc.is_dir():
+        raise OSError("Process ownership cannot be inspected on this system.")
+    for process in proc.iterdir():
+        if not process.name.isdecimal() or int(process.name) == os.getpid():
+            continue
+        try:
+            if process.stat().st_uid == os.getuid():
+                yield process
+        except FileNotFoundError:
+            continue
+
+
 def _is_cspm_running() -> bool:
     """Uses Windows CreateToolhelp32Snapshot to cleanly detect the CSPM process."""
+    if os.name != "nt":
+        try:
+            for process in _linux_processes():
+                try:
+                    command = (process / "cmdline").read_bytes().decode("utf-8", errors="replace").split("\0")
+                    name = (process / "comm").read_text().strip().casefold()
+                    if name in {"cspm", "cspm.exe"} or (command and Path(command[0]).name.casefold() in {"cspm", "cspm.exe"}):
+                        return True
+                    for argument in command[1:]:
+                        normalized = argument.replace("\\", "/").casefold()
+                        if normalized.endswith("/cspm/src/python/main.py") or (
+                            Path(argument).name == "main.py" and Path(argument).resolve() == ROOT_DIR / "src/python/main.py"
+                        ):
+                            return True
+                except FileNotFoundError:
+                    continue
+            return False
+        except OSError:
+            return True
     TH32CS_SNAPPROCESS = 0x00000002
     class PROCESSENTRY32W(ctypes.Structure):
         _fields_ = [("dwSize", wintypes.DWORD),
@@ -127,7 +220,7 @@ def _is_cspm_running() -> bool:
     invalid_handle = ctypes.c_void_p(-1).value
     
     if snapshot == invalid_handle:
-        return False
+        return True
         
     try:
         pe = PROCESSENTRY32W()
@@ -146,6 +239,66 @@ def _is_cspm_running() -> bool:
     finally:
         kernel32.CloseHandle(snapshot)
 
+def _shared_checkout_locks() -> list:
+    master = PATHS.master_data_dir()
+    if not master:
+        return []
+    marker = master / ".cspm_checkout.json"
+    if not marker.exists() and not marker.is_symlink():
+        return []
+    if _RECOVERY_CHECKOUT is not None:
+        try:
+            if json.loads(marker.read_text()) == _RECOVERY_CHECKOUT:
+                return []
+        except (OSError, ValueError):
+            pass
+    # Recovery never expires, reclaims or removes another session's checkout.
+    return ["Shared data (Active or unreadable checkout marker)"]
+
+
+def _recover_abandoned_recovery_checkout(data_dir: Path):
+    """Recover only this workstation's conclusively dead recovery utility.
+
+    Ordinary CSPM/foreign/unreadable checkout markers are never reclaimed by
+    recovery. A private audit and exclusive recovery guard preserve ownership
+    when a terminated utility must resume its interrupted paired transaction.
+    """
+    master = PATHS.master_data_dir()
+    if master is None or data_verification.enabled():
+        return
+    marker = master / ".cspm_checkout.json"
+    try:
+        previous = json.loads(marker.read_text())
+        if not isinstance(previous, dict) or previous.get("purpose") != "CSPM external recovery exclusive checkout":
+            return
+        if previous.get("computerName") != socket.gethostname() or previous.get("recoveryReplica") != str(data_dir.resolve()):
+            return
+        if SyncService._local_process_is_running(previous.get("processId")):
+            return
+        checkout = str(previous.get("checkoutId", ""))
+        if not checkout or any(character not in "0123456789abcdef" for character in checkout):
+            return
+        guard = master / (".cspm_checkout_recovering_" + checkout)
+        with guard.open("x") as handle:
+            handle.write(str(os.getpid()))
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            if json.loads(marker.read_text()) != previous or SyncService._local_process_is_running(previous.get("processId")):
+                return
+            state = data_dir / "state"
+            state.mkdir(parents=True, exist_ok=True)
+            with (state / ("abandoned_recovery_checkout_" + uuid.uuid4().hex + ".json")).open("x") as handle:
+                json.dump(dict(recoveredAtUtc=datetime.now(timezone.utc).isoformat(), abandonedCheckout=previous), handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            marker.unlink()
+        finally:
+            guard.unlink(missing_ok=True)
+    except (OSError, ValueError, TypeError):
+        return
+
+
 def check_locks(injectable_paths=None) -> list:
     auth_files = injectable_paths or [PATHS.workbook_path(), PATHS.dockets_workbook_path()]
     locks = []
@@ -153,16 +306,63 @@ def check_locks(injectable_paths=None) -> list:
     # 1. Excel lock files
     for p in auth_files:
         lock_path = p.parent / f"~${p.name}"
+        libreoffice_lock = p.parent / f".~lock.{p.name}#"
         if lock_path.exists():
             locks.append(f"{p.name} (Excel Lock File)")
+        elif libreoffice_lock.exists():
+            locks.append(f"{p.name} (LibreOffice Lock File)")
         elif _is_file_exclusively_locked(p):
             locks.append(f"{p.name} (Exclusive Process Lock)")
             
     # 2. CSPM.exe running
     if _is_cspm_running():
-        locks.append("CSPM.exe (Application Running)")
+        locks.append("CSPM (Application Running)")
+    locks.extend(_shared_checkout_locks())
+    if data_verification.enabled():
+        locks.append("Read-only verification (Recovery changes disabled)")
+    master = PATHS.master_data_dir()
+    if master and PATHS.data_dir().resolve() == master.resolve():
+        locks.append("Shared authority is configured as the local replica")
         
     return locks
+
+
+@contextmanager
+def _exclusive_recovery_checkout(data_dir: Path):
+    """Hold the normal shared one-writer marker while recovery replaces data."""
+    global _RECOVERY_CHECKOUT
+    data_verification.assert_writes_allowed()
+    _recover_abandoned_recovery_checkout(data_dir)
+    locks = check_locks([data_dir / "CSPM.xlsm", data_dir / "Dockets.xlsm"])
+    if locks:
+        raise PermissionError(f"Files in use: {', '.join(locks)}")
+    master = PATHS.master_data_dir()
+    marker = master / ".cspm_checkout.json" if master else None
+    payload = dict(schemaVersion=1, machineId="recovery-" + uuid.uuid4().hex,
+                   checkoutId=uuid.uuid4().hex, processId=os.getpid(),
+                   computerName=socket.gethostname(), checkedOutAtUtc=datetime.now(timezone.utc).isoformat(),
+                   purpose="CSPM external recovery exclusive checkout", recoveryReplica=str(data_dir.resolve()))
+    if marker is not None:
+        try:
+            with marker.open("x", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as exc:
+            raise PermissionError("Recovery could not acquire exclusive shared ownership; no workbook was changed.") from exc
+        _RECOVERY_CHECKOUT = payload
+    try:
+        yield
+    finally:
+        if marker is not None:
+            try:
+                try:
+                    if json.loads(marker.read_text()) == payload:
+                        marker.unlink()
+                except FileNotFoundError:
+                    pass
+            finally:
+                _RECOVERY_CHECKOUT = None
 
 def create_safety_backup(reason: str = "Pre-restore safety backup", auth_files=None, backups_dir=None) -> dict:
     auth_files = auth_files or [PATHS.workbook_path(), PATHS.dockets_workbook_path()]
@@ -248,6 +448,7 @@ class RecoveryEngine:
                 if not _is_path_approved(Path(v)):
                     raise Exception(f"Unapproved path detected in journal: {v}")
                     
+        self.state_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.journal_path.with_suffix('.tmp')
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
@@ -300,7 +501,25 @@ class RecoveryEngine:
             return None
         return j
 
+    def _workbook_paths(self):
+        return [self.data_dir / name for name in ("CSPM.xlsm", "Dockets.xlsm")]
+
+    def _validate_destinations(self, j: dict):
+        for name, destination in j.get("destinations", {}).items():
+            if name not in {"CSPM.xlsm", "Dockets.xlsm"}:
+                raise PermissionError("Recovery journal has an unsupported destination.")
+            if Path(destination["target_path"]).resolve() != (self.data_dir / name).resolve():
+                raise PermissionError("Recovery journal does not target the configured local replica.")
+
     def resume_interrupted_transaction(self, j: dict):
+        try:
+            self._validate_destinations(j)
+            with _exclusive_recovery_checkout(self.data_dir):
+                return self._resume_interrupted_transaction(j)
+        except (OSError, ValueError, KeyError) as exc:
+            return {"status": "failed_safe", "message": f"Interrupted recovery refused: {exc}"}
+
+    def _resume_interrupted_transaction(self, j: dict):
         phase = j.get("current_phase")
         print(f"\n[RECOVERY] Resuming interrupted transaction from phase: {phase}")
         
@@ -343,6 +562,10 @@ class RecoveryEngine:
         return {"status": "unresolved_requires_attention", "message": f"Unknown phase: {phase}"}
 
     def _execute_rollback(self, j: dict, reason: str):
+        self._validate_destinations(j)
+        locks = check_locks(self._workbook_paths())
+        if locks:
+            return {"status": "unresolved_requires_attention", "message": f"Rollback refused while data is in use: {', '.join(locks)}"}
         self._write_journal("ROLLBACK_STARTED", j)
         rollback_dir = Path(j.get("rollback_path", ""))
         
@@ -420,6 +643,16 @@ class RecoveryEngine:
         return {"status": "completed", "message": "Restoration verified and successful."}
 
     def perform_restore(self, package_path: Path, manifest: dict, skip_locks=False) -> dict:
+        try:
+            # skip_locks is retained for the legacy caller, but cannot bypass
+            # ownership after a user spends time reviewing the confirmation.
+            with _exclusive_recovery_checkout(self.data_dir):
+                return self._perform_restore(package_path, manifest)
+        except (OSError, ValueError) as exc:
+            self.result_report.update(status="failed_safe", message=f"Recovery refused: {exc}")
+            return self.result_report
+
+    def _perform_restore(self, package_path: Path, manifest: dict) -> dict:
         self.result_report["package_path"] = str(package_path)
         
         def _fail(msg, status="failed_safe"):
@@ -427,10 +660,9 @@ class RecoveryEngine:
             self.result_report["message"] = msg
             return self.result_report
             
-        if not skip_locks:
-            locks = check_locks([PATHS.workbook_path(), PATHS.dockets_workbook_path()])
-            if locks:
-                return _fail(f"Files in use: {', '.join(locks)}", "failed_safe")
+        locks = check_locks(self._workbook_paths())
+        if locks:
+            return _fail(f"Files in use: {', '.join(locks)}", "failed_safe")
                 
         # 1. INIT Journal
         txn_id = str(uuid.uuid4())
@@ -480,7 +712,7 @@ class RecoveryEngine:
                 return _fail(f"Checksum mismatch for {fname}. Expected: {fmeta['sha256']}, Actual: {sha}", "failed_safe")
                 
         # SAFETY BACKUP
-        safety_res = create_safety_backup()
+        safety_res = create_safety_backup(auth_files=self._workbook_paths())
         if not safety_res["ok"]:
             return _fail(f"Safety backup failed: {safety_res['message']}", "failed_safe")
             
@@ -507,7 +739,7 @@ class RecoveryEngine:
             if dest.stat().st_size != fmeta["size"] or _calc_sha256(dest) != fmeta["sha256"]:
                 return _fail(f"Checksum/size mismatch after staging {fmeta['filename']}.", "failed_safe")
                 
-            target = PATHS.workbook_path() if fmeta["filename"] == "CSPM.xlsm" else PATHS.dockets_workbook_path()
+            target = self.data_dir / fmeta["filename"]
             original_hash = _calc_sha256(target) if target.exists() else ""
             
             j["destinations"][fmeta["filename"]] = {
@@ -530,6 +762,9 @@ class RecoveryEngine:
         self._write_journal("STAGED", j)
         
         # REPLACEMENT
+        locks = check_locks(self._workbook_paths())
+        if locks:
+            return _fail(f"Data became unavailable before replacement: {', '.join(locks)}")
         cspm_dest = j["destinations"]["CSPM.xlsm"]
         try:
             os.replace(cspm_dest["staged_path"], cspm_dest["target_path"])
@@ -594,6 +829,20 @@ def cli_main():
     print("==================================================")
     
     engine = RecoveryEngine()
+
+    # Permit packaged/source startup validation without interactive prompts or
+    # journal, checkout, backup or workbook writes.
+    if "--status" in sys.argv[1:]:
+        locks = check_locks()
+        print(json.dumps(dict(data_dir=str(PATHS.data_dir()), master_data_dir=str(PATHS.master_data_dir() or ""),
+                              backups_dir=str(PATHS.backups_snapshots_dir()), locks=locks), indent=2))
+        return
+
+    _recover_abandoned_recovery_checkout(engine.data_dir)
+    locks = check_locks()
+    if locks:
+        print(f"ERROR: Recovery is unavailable while data is in use: {', '.join(locks)}")
+        sys.exit(1)
     
     j = engine.check_interrupted_transaction()
     if j:

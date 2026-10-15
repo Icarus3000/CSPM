@@ -6,6 +6,7 @@ import QtQuick.Window
 import "components"
 import "views"
 import "standards"
+import "standards/AppTypography.js" as AppTypography
 import "standards/ThemeBridge.js" as ThemeBridge
 import "standards/StartupQueueBridge.js" as StartupQueueBridge
 import "standards/PerfTrace.js" as PerfTrace
@@ -115,6 +116,109 @@ Window {
     property alias contentLayerRef: contentLayer
     property int professionalNativeRestorePadding: 0
     property bool professionalNativeGeometrySyncInProgress: false
+
+    // Plasma/KWin owns settled geometry for both styles. Qt's native window
+    // requests also work on Wayland, where assigning global x/y cannot move a
+    // top-level surface. Lifecycle light effects keep their existing scene.
+    readonly property bool linuxDesktopWindowManagement: Qt.platform.os === "linux"
+    property bool linuxCompositorGeometryActive: false
+    property bool linuxCompositorGeometrySyncing: false
+    property int linuxNormalWindowPadding: 0
+    property var linuxNormalWindowRect: null
+    readonly property bool nativeDesktopGeometryOwned: professionalNativeWindowState
+        || linuxCompositorGeometryActive
+
+    function adoptLinuxCompositorGeometry() {
+        if (!linuxDesktopWindowManagement || linuxCompositorGeometryActive) return;
+        linuxNormalWindowPadding = Math.max(0, Math.round(finalX - hostX));
+        linuxCompositorGeometryActive = true;
+        syncLinuxCompositorGeometry();
+    }
+
+    function syncLinuxCompositorGeometry() {
+        if (!linuxCompositorGeometryActive || linuxCompositorGeometrySyncing
+                || animationPhase !== "settled" || isClosing || isMinimizing
+                || isRestoringFromMinimize || !visible || visibility === Window.Minimized) return;
+        linuxCompositorGeometrySyncing = true;
+        try {
+            var gx = Math.round(x), gy = Math.round(y);
+            var gw = Math.max(1, Math.round(width)), gh = Math.max(1, Math.round(height));
+            uiMaximized = visibility === Window.Maximized;
+            var pad = uiMaximized ? 0 : Math.min(linuxNormalWindowPadding,
+                Math.max(0, Math.floor((Math.min(gw, gh) - 1) / 2)));
+            hostX = gx; hostY = gy; hostW = gw; hostH = gh;
+            canvasX = gx; canvasY = gy; canvasW = gw; canvasH = gh;
+            canvasLocalX = 0; canvasLocalY = 0;
+            contentLocalX = pad; contentLocalY = pad;
+            finalX = gx + pad; finalY = gy + pad;
+            finalW = Math.max(1, gw - 2 * pad); finalH = Math.max(1, gh - 2 * pad);
+            // QWindow.screen is authoritative under Wayland; global position
+            // is deliberately unavailable on that protocol.
+            if (mainWin.screen) adoptTargetScreen(mainWin.screen, true);
+            refreshActiveVisibleRect();
+            maximizedOwnerScreen = uiMaximized ? targetScreen : null;
+        } finally {
+            linuxCompositorGeometrySyncing = false;
+        }
+        if (!uiMaximized) rememberRestoreGeometry();
+        linuxWindowLayoutSave.restart();
+    }
+
+    Timer {
+        id: linuxWindowGeometrySync
+        interval: 0
+        repeat: false
+        onTriggered: mainWin.syncLinuxCompositorGeometry()
+    }
+
+    Timer {
+        id: linuxWindowLayoutSave
+        interval: 350
+        repeat: false
+        onTriggered: {
+            if (mainWin.linuxCompositorGeometryActive && !mainWin.detachedMode
+                    && !mainWin.isClosing && !mainWin.isMinimizing
+                    && !mainWin.isRestoringFromMinimize) mainWin.persistMainWindowLayout();
+        }
+    }
+
+    function requestLinuxWindowState(maximized) {
+        if (!linuxDesktopWindowManagement) return false;
+        adoptLinuxCompositorGeometry();
+        if (maximized && !uiMaximized) {
+            // Qt/XWayland can forget its normal placement after a maximized
+            // surface is hidden into the tray. Retain the last native client
+            // rectangle, independently of the lifecycle animation envelope.
+            linuxNormalWindowRect = {"x": Math.round(x), "y": Math.round(y),
+                "w": Math.max(1, Math.round(width)), "h": Math.max(1, Math.round(height))};
+        }
+        // One native command allows KWin's configured maximize/restore effect
+        // to own the complete transition, with no QML snapshot or geometry FX.
+        if (maximized) mainWin.showMaximized();
+        else {
+            var normalRect = linuxNormalWindowRect;
+            mainWin.showNormal();
+            if (normalRect) mainWin.setGeometry(normalRect.x, normalRect.y, normalRect.w, normalRect.h);
+        }
+        linuxWindowGeometrySync.restart();
+        return true;
+    }
+
+    function linuxResizeEdges(handle) {
+        var edges = 0;
+        if (handle.indexOf("w") >= 0) edges |= Qt.LeftEdge;
+        if (handle.indexOf("e") >= 0) edges |= Qt.RightEdge;
+        if (handle.indexOf("n") >= 0) edges |= Qt.TopEdge;
+        if (handle.indexOf("s") >= 0) edges |= Qt.BottomEdge;
+        return edges;
+    }
+
+    function showForLifecycleRestore() {
+        // A tray hide must retain the real maximized state on Linux; showNormal
+        // would restore it before the accepted arrival bloom begins.
+        if (linuxDesktopWindowManagement && uiMaximized) mainWin.showMaximized();
+        else mainWin.showNormal();
+    }
 
     function releaseNativeStateForRestoredInteraction() {
         if (!professionalNativeWindowState || uiMaximized) return;
@@ -698,6 +802,11 @@ Window {
     visible: false
     color: "transparent"  // Only opaque content is the canvas children
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint | Qt.WindowMinimizeButtonHint
+        | (linuxDesktopWindowManagement ? Qt.WindowMaximizeButtonHint : 0)
+    minimumWidth: linuxDesktopWindowManagement
+        ? Math.max(320, resizeMinWidthPx()) + (2 * linuxNormalWindowPadding) : 0
+    minimumHeight: linuxDesktopWindowManagement
+        ? Math.max(240, resizeMinHeightPx()) + (2 * linuxNormalWindowPadding) : 0
     opacity: 1.0
     
     // Native OS window geometry must snap atomically without continuous Behavior animation
@@ -714,10 +823,10 @@ Window {
     // Suspend geometry writes completely while DWM owns the window. Updating
     // hostX before hostW through ordinary bindings otherwise moves a still-
     // small HWND to the maximized origin and cancels native maximized state.
-    Binding { target: mainWin; property: "width"; value: mainWin.hostW; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
-    Binding { target: mainWin; property: "height"; value: mainWin.hostH; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
-    Binding { target: mainWin; property: "x"; value: mainWin.hostX; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
-    Binding { target: mainWin; property: "y"; value: mainWin.hostY; when: !mainWin.professionalNativeWindowState; restoreMode: Binding.RestoreNone }
+    Binding { target: mainWin; property: "width"; value: mainWin.hostW; when: !mainWin.nativeDesktopGeometryOwned; restoreMode: Binding.RestoreNone }
+    Binding { target: mainWin; property: "height"; value: mainWin.hostH; when: !mainWin.nativeDesktopGeometryOwned; restoreMode: Binding.RestoreNone }
+    Binding { target: mainWin; property: "x"; value: mainWin.hostX; when: !mainWin.nativeDesktopGeometryOwned; restoreMode: Binding.RestoreNone }
+    Binding { target: mainWin; property: "y"; value: mainWin.hostY; when: !mainWin.nativeDesktopGeometryOwned; restoreMode: Binding.RestoreNone }
     onHostXChanged: {
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
@@ -743,6 +852,7 @@ Window {
         }
     }
     onXChanged: {
+        if (linuxCompositorGeometryActive) syncLinuxCompositorGeometry();
         if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
@@ -758,6 +868,7 @@ Window {
         }
     }
     onYChanged: {
+        if (linuxCompositorGeometryActive) syncLinuxCompositorGeometry();
         if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
@@ -773,6 +884,7 @@ Window {
         }
     }
     onWidthChanged: {
+        if (linuxCompositorGeometryActive) syncLinuxCompositorGeometry();
         if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
@@ -780,6 +892,7 @@ Window {
         }
     }
     onHeightChanged: {
+        if (linuxCompositorGeometryActive) syncLinuxCompositorGeometry();
         if (professionalNativeWindowState) syncProfessionalNativeWindowGeometry();
         if (mainWin.interactionTraceActive()) {
             mainWin.extendInteractionTrace(120);
@@ -6671,7 +6784,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function enforceWindowScreen(screenObj, reasonTag) {
-        if (professionalNativeWindowState) return false;
+        if (nativeDesktopGeometryOwned) return false;
         if (!screenObj) return false;
         try {
             var before = mainWin.screen;
@@ -6814,7 +6927,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function reassertHostWindowGeometry(reasonTag) {
-        if (professionalNativeWindowState) return false;
+        if (nativeDesktopGeometryOwned) return false;
         if (animationPhase !== "settled" || isClosing || isMinimizing
                 || isRestoringFromMinimize || maximizeAnimInProgress) return false;
         if (userMoveInProgress || userResizeInProgress || systemMoveInProgress || dragFinalizePending || dragStrategy !== "none") return false;
@@ -7573,7 +7686,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function applyHostEnvelopeForTarget() {
-        if (professionalNativeWindowState) return;
+        if (nativeDesktopGeometryOwned) return;
         var rect = activeVisibleRect;
         if (usableW > 0 && usableH > 0) {
             rect = {
@@ -7792,6 +7905,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function maximizeWindowToVisibleRect(screenOverride) {
         if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize || maximizeAnimInProgress) return false;
+        if (linuxDesktopWindowManagement) return requestLinuxWindowState(true);
         if (appStyle === "Professional" && Qt.platform.os === "windows") {
             if (professionalNativeWindowStateEnabled && requestProfessionalNativeState(true, null)) {
                 return true;
@@ -8015,6 +8129,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function restoreFromMaximized(cursorPos, cursorAnchored) {
         if (!uiMaximized || maximizeAnimInProgress) return false;
+        if (linuxDesktopWindowManagement) return requestLinuxWindowState(false);
         if (appStyle === "Professional" && Qt.platform.os === "windows" && !cursorAnchored) {
             if (professionalNativeWindowStateEnabled && requestProfessionalNativeState(false,
                     resolveRestoreRectFromMaximized(null, false))) {
@@ -8184,6 +8299,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     function toggleWindowMaximize() {
         if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize || maximizeAnimInProgress) return false;
         if (userMoveInProgress || userResizeInProgress || systemMoveInProgress) return false;
+        if (linuxDesktopWindowManagement) return requestLinuxWindowState(!uiMaximized);
         if (uiMaximized) {
             phaseLog("RESTORE-MAX", "Toggle requested -> restore from maximized");
             var restored = restoreFromMaximized(null, false);
@@ -8206,6 +8322,9 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function beginHeaderDrag(preDragX, preDragY) {
         if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize || maximizeAnimInProgress) return false;
+        // KWin also owns drag-restore/snap; do not pre-restore or write absolute
+        // cursor coordinates before its native move request.
+        if (linuxDesktopWindowManagement) return beginUserDrag();
         if (uiMaximized) {
             // Windows-style behavior: only trigger restore-on-drag when movement is downward.
             if (typeof preDragY === "number" && preDragY <= 0) {
@@ -8226,6 +8345,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         // docs/DECISIONS/DRAG_PIPELINE_OPTION3.md
         if (animationPhase !== "settled" || isClosing || isMinimizing || isRestoringFromMinimize || maximizeAnimInProgress) return false;
         if (userResizeInProgress) return false;
+        if (linuxDesktopWindowManagement) {
+            adoptLinuxCompositorGeometry();
+            geometryTransitionSuppressed = false;
+            return mainWin.startSystemMove();
+        }
         releaseNativeStateForRestoredInteraction();
         beginInteractionTrace("drag", "beginUserDrag");
         logInteractionTrace("BEGIN-DRAG", "entry", true);
@@ -8362,6 +8486,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         if (uiMaximized) return false;
         if (userMoveInProgress || systemMoveInProgress) return false;
         if (!isResizeHandleValid(handle)) return false;
+        if (linuxDesktopWindowManagement) {
+            adoptLinuxCompositorGeometry();
+            geometryTransitionSuppressed = false;
+            return mainWin.startSystemResize(linuxResizeEdges(handle));
+        }
         releaseNativeStateForRestoredInteraction();
         beginInteractionTrace("resize:" + handle, "beginUserResize");
         logInteractionTrace("BEGIN-RESIZE", "handle=" + handle, true);
@@ -8493,6 +8622,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function finishUserResize() {
+        if (linuxDesktopWindowManagement) {
+            geometryTransitionSuppressed = false;
+            syncLinuxCompositorGeometry();
+            return;
+        }
         if (!userResizeInProgress) return;
 
         updateUserResize(0, 0);
@@ -8517,6 +8651,11 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     }
 
     function finishUserDrag() {
+        if (linuxDesktopWindowManagement) {
+            geometryTransitionSuppressed = false;
+            syncLinuxCompositorGeometry();
+            return;
+        }
         // Drag lifecycle finalization point used by both Option 2 and future Option 3.
         if (!userMoveInProgress && dragStrategy === "none" && !systemMoveInProgress) return;
         if (dragFinalizePending) return;
@@ -9061,6 +9200,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     // Animating contentLocal* causes visible side-shifts during opening->settled handoff.
     
     function updateCanvasGeometry() {
+        if (linuxCompositorGeometryActive) {
+            syncLinuxCompositorGeometry();
+            return;
+        }
         if (professionalNativeWindowState) {
             nativeWindowGeometrySync.restart();
             return;
@@ -9259,6 +9402,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             canvasTransition.start();
             performGlowShrinkage();
         }
+        mainWin.adoptLinuxCompositorGeometry();
         if (!mainWin.detachedMode) {
             if (mainWin.startupAllowsHeavyWork("transitionToSettled.autoCheckpoint")) {
                 autoCheckpointCloseSession("startup-settled");
@@ -11911,7 +12055,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.updateCanvasGeometry();
 
         mainWin.opacity = 1.0;
-        mainWin.showNormal();
+        mainWin.showForLifecycleRestore();
         mainWin.requestActivate();
 
         var targetDistX = (mainWin.finalW / 2.0) + mainWin.glowPadding;
@@ -12018,7 +12162,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         mainWin.updateCanvasGeometry();
 
         mainWin.opacity = 1.0;
-        mainWin.showNormal();
+        mainWin.showForLifecycleRestore();
         mainWin.requestActivate();
 
         var targetDistX = (mainWin.lastMinimizeTargetDistX !== 0.0) ? mainWin.lastMinimizeTargetDistX : ((mainWin.finalW / 2.0) + mainWin.glowPadding);
@@ -12368,7 +12512,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                     color: mainWin.safeColor(mainWin.t.text, "#F5F7FA")
                     textFormat: Text.PlainText
                     wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-                    font.family: "Consolas"
+                    font.family: AppTypography.monoFamily("Consolas")
                     font.pixelSize: mainWin.metricFloorPx(0.0098, 11)
                     lineHeight: 1.15
                 }
@@ -12476,6 +12620,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
     Connections {
         target: mainWin
         function onScreenChanged() {
+            if (mainWin.linuxCompositorGeometryActive) {
+                linuxWindowGeometrySync.restart();
+                return;
+            }
             if (mainWin.professionalNativeWindowState) {
                 nativeWindowGeometrySync.restart();
                 return;
@@ -12529,6 +12677,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
 
         function onVisibilityChanged() {
+            if (mainWin.linuxCompositorGeometryActive) {
+                mainWin.syncLinuxCompositorGeometry();
+                linuxWindowGeometrySync.restart();
+            }
             if (mainWin.professionalNativeWindowState) {
                 mainWin.syncProfessionalNativeWindowGeometry();
                 nativeWindowGeometrySync.restart();
@@ -12798,7 +12950,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 mainWin._pendingTrayNavigation = {"tileIndex": tileIndex, "nodeId": nodeId, "state": state || {}};
                 return;
             }
-            mainWin.showNormal();
+            mainWin.showForLifecycleRestore();
             mainWin.requestActivate();
             if (mainWin.mainContentRef && typeof mainWin.mainContentRef.handleWorkspaceOpenRequested === "function") {
                 mainWin.mainContentRef.handleWorkspaceOpenRequested(tileIndex, nodeId, state || {});
@@ -12809,7 +12961,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                 mainWin._pendingTraySettings = true;
                 return;
             }
-            mainWin.showNormal();
+            mainWin.showForLifecycleRestore();
             mainWin.requestActivate();
             mainWin.openSettingsMenu();
         }

@@ -1,6 +1,7 @@
 import time
 import datetime
 import math
+import sys
 from typing import Optional
 from PySide6.QtCore import QObject, Slot, Property, Signal, QTimer
 from PySide6.QtGui import QCursor, QGuiApplication
@@ -417,7 +418,10 @@ class TrayController(QObject):
                     else:
                         # Window is visible — just bring to front
                         logging.warning("[TRAY-PY] open_cspm: window visible, bringing to front")
-                        win.showNormal()
+                        if sys.platform.startswith("linux") and bool(win.property("uiMaximized")):
+                            win.showMaximized()
+                        else:
+                            win.showNormal()
                         try:
                             if hasattr(self._app_controller, "forceWindowForeground"):
                                 self._app_controller.forceWindowForeground(win)
@@ -592,6 +596,8 @@ class TrayController(QObject):
     def getSystemTrayGeometry(self):
         """Return the global bounding rect of the system tray notification area.
         Returns {x, y, width, height} or empty dict if unavailable."""
+        if not sys.platform.startswith("win"):
+            return self._qt_system_tray_geometry()
         try:
             import ctypes
             from ctypes import wintypes
@@ -619,6 +625,55 @@ class TrayController(QObject):
         except Exception:
             return {}
 
+    def _qt_system_tray_geometry(self):
+        """Use Qt's tray icon position, then a panel-edge estimate for SNI hosts.
+
+        Plasma's StatusNotifier protocol can leave QSystemTrayIcon.geometry()
+        empty. Its reserved screen work area still supplies the panel edge;
+        keep estimated geometry explicitly labelled and never invent a panel
+        when the desktop reports no reserved area.
+        """
+        try:
+            app = QApplication.instance()
+            icon = getattr(app, "_tray_icon", None)
+            if icon is None or not icon.isVisible():
+                return {}
+            rect = icon.geometry()
+            if rect.isValid() and not rect.isEmpty():
+                return {"x": rect.x(), "y": rect.y(), "width": rect.width(),
+                        "height": rect.height(), "source": "qt-tray-icon"}
+            screen = app.primaryScreen()
+            if screen is None:
+                return {}
+            monitor = screen.geometry()
+            work = screen.availableGeometry()
+            insets = {
+                "left": max(0, work.left() - monitor.left()),
+                "top": max(0, work.top() - monitor.top()),
+                "right": max(0, monitor.right() - work.right()),
+                "bottom": max(0, monitor.bottom() - work.bottom()),
+            }
+            edge = max(insets, key=insets.get)
+            size = insets[edge]
+            if size <= 0:
+                return {}
+            # The notification area normally sits at the trailing end of the
+            # panel. Keep its estimated target inside the reserved strip.
+            if edge in ("top", "bottom"):
+                width = min(size, monitor.width())
+                x = monitor.right() - width + 1
+                y = monitor.top() if edge == "top" else monitor.bottom() - size + 1
+                height = size
+            else:
+                height = min(size, monitor.height())
+                x = monitor.left() if edge == "left" else monitor.right() - size + 1
+                y = monitor.bottom() - height + 1
+                width = size
+            return {"x": x, "y": y, "width": width, "height": height,
+                    "source": "panel-edge-estimate"}
+        except (AttributeError, RuntimeError, TypeError):
+            return {}
+
     @Slot(int, int, result='QVariantMap')
     def getTrayFlightInfo(self, winCenterX, winCenterY):
         """Return comprehensive flight geometry for cross-monitor tray animations.
@@ -640,6 +695,8 @@ class TrayController(QObject):
         tray_cy = tray_geo["y"] + tray_geo["height"] // 2
 
         app = QGuiApplication.instance()
+        if app is None:
+            return {"available": False}
         from PySide6.QtCore import QPoint
         tray_screen = app.screenAt(QPoint(tray_cx, tray_cy))
         win_screen = app.screenAt(QPoint(int(winCenterX), int(winCenterY)))
@@ -664,6 +721,7 @@ class TrayController(QObject):
             "vdY": min_y,
             "vdW": max_x - min_x,
             "vdH": max_y - min_y,
+            "source": tray_geo.get("source", "windows-notification-area"),
         }
 
     @Slot(str)

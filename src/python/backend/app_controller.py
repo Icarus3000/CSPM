@@ -20,6 +20,9 @@ from PySide6.QtCore import QObject, Property, QRect, QTimer, QUrl, Signal, Slot,
 from PySide6.QtGui import QCursor, QDesktopServices, QGuiApplication
 from backend.workers import Worker
 from services.paths import AppPaths
+from services.data_locations import (
+    apply_environment_data_settings, fresh_replica_can_checkout,
+)
 from services.sync_service import SyncService
 from services.project_snapshot_service import ProjectSnapshotService
 from services.backup_service import BackupService
@@ -195,7 +198,13 @@ def _schedule_application_restart() -> None:
     command = _restart_command()
     working_dir = os.getcwd()
     if not sys.platform.startswith("win"):
-        subprocess.Popen(command, cwd=working_dir)
+        helper = [sys.executable]
+        if not getattr(sys, "frozen", False):
+            helper.append(str(Path(__file__).resolve().parents[1] / "main.py"))
+        subprocess.Popen(
+            [*helper, "--restart-after-pid", str(os.getpid()), "--", *command],
+            cwd=working_dir, close_fds=True, start_new_session=True,
+        )
         return
 
     script = _powershell_wait_and_launch_script(os.getpid(), command, working_dir)
@@ -377,7 +386,7 @@ class AppController(QObject):
             self._legacy_settings_path,
             self._prefs_settings_path,
         )
-        _init_loaded = _init_payload.get("loaded", {})
+        _init_loaded = apply_environment_data_settings(_init_payload.get("loaded", {}))
         self._calendar_initial_configuration = _init_loaded.get("calendarAgenda") or {}
         self._calendar_controller = None
         from backend.native_candidate import settings_override
@@ -404,16 +413,23 @@ class AppController(QObject):
         project_data_path = self._paths.project_root() / "data"
         frozen_dev_data_path = self._paths.executable_root().parent.parent / "data"
         
+        bootstrap_shared_replica = False
         if _init_local:
             local_path = Path(_init_local)
             if not local_path.exists() or not is_valid_package(local_path):
-                if QApplication.instance():
-                    QMessageBox.critical(
-                        None, 
-                        "Data Unavailable", 
-                        f"The configured active data folder is unavailable or invalid:\n{local_path}\n\nPlease locate it in settings or restore it."
-                    )
-                _sys.exit(1)
+                bootstrap_shared_replica = (
+                    not data_verification.enabled()
+                    and fresh_replica_can_checkout(local_path, Path(_init_master) if _init_master else None)
+                )
+                if not bootstrap_shared_replica:
+                    if QApplication.instance():
+                        QMessageBox.critical(
+                            None,
+                            "Data Unavailable",
+                            f"The configured active data folder is unavailable or invalid:\n{local_path}\n\nPlease locate it in settings or restore it."
+                        )
+                    _sys.exit(1)
+                self._paths.override_data_dir = local_path
             else:
                 self._paths.override_data_dir = local_path
         else:
@@ -462,6 +478,13 @@ class AppController(QObject):
         self._sync_service = SyncService(self._paths)
         self._shutdown_sync_complete = False
         self._shutting_down = False
+        if bootstrap_shared_replica:
+            # Obtain ownership and the verified complete pair before any
+            # repository/controller exists. Never seed a new practice over an
+            # existing governed source or bypass a second computer's checkout.
+            result = self._sync_service.checkout_from_cloud()
+            if not result.get("ok"):
+                raise PermissionError(str(result.get("message", "The shared data checkout failed.")))
 
         
         self._app_version = self._load_app_version()
@@ -1432,6 +1455,30 @@ class AppController(QObject):
     @Slot(result=bool)
     def openRecoveryUtility(self) -> bool:
         try:
+            if not sys.platform.startswith("win"):
+                utility = Path(sys.executable).parent / "CSPM_Recovery" / "CSPM_Recovery"
+                if getattr(sys, "frozen", False) and utility.is_file():
+                    command = [str(utility)]
+                else:
+                    script = self._paths.resource_root() / "scripts/cspm_recovery.py"
+                    if not script.is_file():
+                        self.error.emit("Recovery utility not found.")
+                        return False
+                    command = [sys.executable, str(script)]
+                terminal = shutil.which("konsole")
+                if terminal:
+                    from services.desktop import system_process_environment
+                    subprocess.Popen([terminal, "--hold", "-e", *command], start_new_session=True,
+                                     env={**system_process_environment(), "CSPM_RECOVERY_DATA_DIR": str(self._paths.data_dir().resolve())})
+                    return True
+                terminal = shutil.which("x-terminal-emulator")
+                if terminal:
+                    from services.desktop import system_process_environment
+                    subprocess.Popen([terminal, "-e", *command], start_new_session=True,
+                                     env={**system_process_environment(), "CSPM_RECOVERY_DATA_DIR": str(self._paths.data_dir().resolve())})
+                    return True
+                self.error.emit("No terminal application is available for the recovery utility.")
+                return False
             if getattr(sys, "frozen", False):
                 utility_path = Path(sys.executable).resolve().parent / "CSPM_Recovery" / "CSPM_Recovery.exe"
                 command = [str(utility_path)]
@@ -1574,6 +1621,7 @@ class AppController(QObject):
         loaded = payload.get("loaded")
         if isinstance(loaded, dict):
             self._settings_data.update(loaded)
+        self._settings_data = apply_environment_data_settings(self._settings_data)
         from backend.native_candidate import settings_override
         self._settings_data.update(settings_override())
 
@@ -3118,7 +3166,7 @@ class AppController(QObject):
         if not isinstance(loaded, dict):
             loaded = {}
         self._settings_path = runtime_settings_path
-        self._settings_data = dict(loaded)
+        self._settings_data = apply_environment_data_settings(loaded)
         self._calendar_initial_configuration = self._settings_data.get("calendarAgenda") or {}
         if self._calendar_controller is not None:
             self._calendar_controller.apply_configuration(self._calendar_initial_configuration)
@@ -3464,11 +3512,8 @@ class AppController(QObject):
             raw = str(path_str or "").strip()
             if not raw:
                 return False
-            if raw.lower().startswith("file:///"):
-                raw = raw[8:]
-            elif raw.lower().startswith("file://"):
-                raw = raw[7:]
             raw = raw.strip("\"'")
+            raw = self._strip_file_uri(raw)
             if not raw:
                 return False
 
@@ -4159,9 +4204,11 @@ class AppController(QObject):
         from backend.native_candidate import profile
         if profile() is not None:
             return
+        if not sys.platform.startswith("win"):
+            from services.desktop import configure_linux_autostart
+            configure_linux_autostart(self._run_at_startup)
+            return
         import winreg
-        import sys
-        import os
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
@@ -5547,15 +5594,14 @@ class AppController(QObject):
     # The blocking versions caused UI freezes during large data aggregations.
 
     def _strip_file_uri(self, raw_path: str) -> str:
-        """Strip file:/// prefix that QML FileDialog adds on Windows."""
-        p = raw_path
-        if p.startswith("file:///"):
-            p = p[8:]
-        elif p.startswith("file://"):
-            p = p[7:]
-        elif p.startswith("file:"):
-            p = p[5:]
-        return unquote(p)
+        """Decode a file URL without losing a POSIX root or a Windows drive."""
+        value = str(raw_path or "")
+        if not value.lower().startswith("file:"):
+            return value
+        result = QUrl(value).toLocalFile()
+        if len(result) >= 3 and result[0] == "/" and result[2] == ":":
+            result = result[1:]
+        return result
 
     def _normalize_legacy_dockets_recent_files(self, raw_files: Any) -> list[str]:
         files = raw_files if isinstance(raw_files, list) else []

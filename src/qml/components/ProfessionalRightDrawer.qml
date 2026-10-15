@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import "../standards/SemanticTheme.js" as SemanticTheme
@@ -51,7 +52,7 @@ Rectangle {
                 Text {
                     Layout.fillWidth: true
                     text: root.titleText
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 15
                     font.weight: Font.DemiBold
                     color: SemanticTheme.inkPrimary(root.t, root.appStyle)
@@ -62,7 +63,7 @@ Rectangle {
                     Layout.fillWidth: true
                     visible: root.subtitleText.length > 0
                     text: root.subtitleText
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 11
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
                     elide: Text.ElideRight
@@ -80,7 +81,7 @@ Rectangle {
                 Text {
                     anchors.centerIn: parent
                     text: "x"
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
@@ -122,7 +123,7 @@ Rectangle {
                     Text {
                         Layout.preferredWidth: 112
                         text: String(fieldRow.modelData.label || "")
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 11
                         color: SemanticTheme.inkMuted(root.t, root.appStyle)
                         elide: Text.ElideRight
@@ -131,7 +132,7 @@ Rectangle {
                     Text {
                         Layout.fillWidth: true
                         text: String(fieldRow.modelData.value || "")
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 12
                         color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                         elide: Text.ElideRight

@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import "../standards/SemanticTheme.js" as SemanticTheme
@@ -37,7 +38,7 @@ Rectangle {
                     var itemText = String(root.itemTitle || "")
                     return itemText.length > 0 ? (moduleText + " > " + itemText) : moduleText
                 }
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 font.pixelSize: 13
                 font.weight: Font.Medium
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
@@ -57,7 +58,7 @@ Rectangle {
                     id: dirtyLabel
                     anchors.centerIn: parent
                     text: "Unsaved"
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 10
                     font.weight: Font.Medium
                     color: SemanticTheme.inkPrimary(root.t, root.appStyle)
@@ -68,7 +69,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             text: String(root.subtitle || "")
-            font.family: "Segoe UI"
+            font.family: AppTypography.textFamily()
             font.pixelSize: 10
             color: SemanticTheme.inkMuted(root.t, root.appStyle)
             elide: Text.ElideRight

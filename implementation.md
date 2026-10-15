@@ -1,5 +1,45 @@
 # Implementation History
 
+## 2026-10-14: Latest-main calendar restored to Fedora source
+
+The Fedora integration starts from freshly fetched `66a9cbe`, retaining the
+Microsoft 365 agenda, device sign-in and newer immutable resource/Recovery fixes
+while preserving all older Fedora compatibility changes and original dirty work.
+Linux sign-in cache now uses authenticated ciphertext backed by a persistent
+Secret Service wallet key with no plaintext/session fallback. Windows DPAPI,
+calendar read-only behavior, cancellation rollback and durable Disconnect remain.
+Linux packaging explicitly includes lazy calendar/wallet modules and public
+holiday/time-zone resources. Exact build and publication evidence follows the
+clean source checkpoint; no production workbook or installed runtime changes.
+See `docs/FEDORA_CALENDAR_INTEGRATION_2026-10-14.md`.
+
+
+## 2026-10-14: Workspace allowance monitoring and durable recovery
+
+Added stdlib account-only reader and conservative quota/context policy under
+`scripts/usage_control`, workspace CLI `scripts/workspace_usage.py`, tracked
+`usage-control.json`, and `docs/WORKSPACE_USAGE_CONTROL.md`. Root AGENTS.md
+persists the user's reserve/checkpoint/client-ownership constraints. Runtime
+observations, task notes, atomic checkpoints and bounded scheduler state stay
+private under ignored `.workspace-usage/`; existing dirty work is inventoried
+without reset/stash/cleanup or copying authentication data.
+
+Validation: 57 sandbox-safe simulations cover thresholds, projected batches,
+stale/unavailable responses, real reset +120s, weekly exhaustion, duplicate
+locks, active/unknown ownership, interrupted checkpoint promotion and restart
+recovery. Live documented account reads succeeded outside sandbox with no model
+turn or thread attachment. The installed systemd USER timer is enabled/active;
+its account-only service completed successfully and systemd-analyze verifies
+both units. No WebEngine is required or claimed for this infrastructure work.
+
+Automatic IDE interruption/resume is unavailable: the shared daemon control
+endpoint is absent and no supported external idle/resume interface for this
+private IDE conversation is established. The timer never starts a CLI owner;
+manual continuation stays in this IDE from the latest private checkpoint.
+
+
+
+
 ## 2026-10-14: Shared invoice continuation header simplification
 
 The cross-platform invoice PDF post-processor now shows only billing-client

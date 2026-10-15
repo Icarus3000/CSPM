@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -45,7 +46,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: "CS"
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 font.pixelSize: 11
                 font.weight: Font.Medium
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
@@ -99,7 +100,7 @@ Rectangle {
                 Text {
                     anchors.centerIn: parent
                     text: String(railButton.modelData.icon || "")
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: 16
                     color: railButton.active || railButton.hovered || railButton.flyoutActive
                         ? SemanticTheme.inkPrimary(root.t, root.appStyle)
@@ -155,7 +156,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: "FAVS"
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 font.pixelSize: 9
                 font.weight: Font.Bold
                 color: SemanticTheme.inkMuted(root.t, root.appStyle)
@@ -205,7 +206,7 @@ Rectangle {
                         Text {
                             anchors.centerIn: parent
                             text: String(favDelegateRoot.modelData.icon || "\uE82D") // Use document if no icon
-                            font.family: "Segoe MDL2 Assets"
+                            font.family: AppTypography.iconFamily()
                             font.pixelSize: 16
                             color: favHover.containsMouse
                                 ? SemanticTheme.inkPrimary(root.t, root.appStyle)

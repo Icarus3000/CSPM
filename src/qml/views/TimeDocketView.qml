@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -4794,7 +4795,7 @@ Behavior on border.color {
                                     : (root.isProMode
                                         ? root.proInk
                                         : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.94))
-                                font.family: root.isProMode ? visualRules.textFontFamily : "Consolas"
+                                font.family: root.isProMode ? visualRules.textFontFamily : AppTypography.monoFamily("Consolas")
                                 font.pixelSize: root.isProMode ? 20 : 22
                                 font.weight: Font.Bold
                             }
@@ -5343,7 +5344,7 @@ Behavior on border.color {
                                         ? root._accent
                                         : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.96)
                                     horizontalAlignment: Text.AlignHCenter
-                                    font.family: root.isProMode ? visualRules.textFontFamily : "Courier New"
+                                    font.family: root.isProMode ? visualRules.textFontFamily : AppTypography.monoFamily("Courier New")
                                     font.pixelSize: root.ratioPx(root.scaleRatios.timerFontPct * 1.55, root.metricFloor("fontFloorBodyPx", 22))
                                     font.weight: Font.Bold
                                     elide: Text.ElideRight
@@ -6592,10 +6593,11 @@ Behavior on border.color {
                     }
                 }
 
-                RowLayout {
+                Flow {
                     Layout.fillWidth: true
                     Layout.topMargin: 4
-                    Layout.preferredHeight: 40
+                    Layout.preferredHeight: visible ? implicitHeight : 0
+                    objectName: "timeDocketActions"
                     visible: root.activeIsLiveDocket()
                     enabled: visible
                     spacing: 10
@@ -6607,8 +6609,8 @@ Behavior on border.color {
                         text: "Set Draft"
                         primary: false
                         enabled: root.canSetDraft()
-                        Layout.preferredWidth: root.moduleRatioPxW(root.scaleRatios.cancelBtnWidthPct, 72, 200)
-                        Layout.preferredHeight: 44
+                        width: root.moduleRatioPxW(root.scaleRatios.cancelBtnWidthPct, 72, 200)
+                        height: 44
                         onClicked: root.setDraftStatus()
                     }
 
@@ -6619,8 +6621,8 @@ Behavior on border.color {
                         text: "Mark Ready"
                         primary: false
                         enabled: root.canMarkReadyForBilling()
-                        Layout.preferredWidth: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 94, 220)
-                        Layout.preferredHeight: 44
+                        width: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 94, 220)
+                        height: 44
                         onClicked: root.markReadyForBilling()
                     }
 
@@ -6631,8 +6633,8 @@ Behavior on border.color {
                         text: "Mark Billed"
                         primary: true
                         enabled: root.canMarkBilled()
-                        Layout.preferredWidth: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 94, 220)
-                        Layout.preferredHeight: 44
+                        width: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 94, 220)
+                        height: 44
                         onClicked: root.markBilled()
                     }
 
@@ -6643,8 +6645,8 @@ Behavior on border.color {
                         text: "Unlink Invoice"
                         primary: false
                         visible: root.lastSavedEntryId.length > 0 && root.isBucketLocked()
-                        Layout.preferredWidth: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 94, 220)
-                        Layout.preferredHeight: 44
+                        width: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 94, 220)
+                        height: 44
                         onClicked: unlinkInvoiceConfirmationPopup.open()
                     }
 
@@ -6655,8 +6657,8 @@ Behavior on border.color {
                         text: "Delete"
                         primary: false
                         visible: root.lastSavedEntryId.length > 0 && !root.isBucketLocked()
-                        Layout.preferredWidth: root.moduleRatioPxW(root.scaleRatios.cancelBtnWidthPct, 70, 200)
-                        Layout.preferredHeight: 44
+                        width: root.moduleRatioPxW(root.scaleRatios.cancelBtnWidthPct, 70, 200)
+                        height: 44
                         onClicked: deleteConfirmationPopup.open()
                     }
 
@@ -6666,8 +6668,8 @@ Behavior on border.color {
                         sfxBus: root.sfxBus
                         text: "Recent Entries"
                         primary: false
-                        Layout.preferredWidth: 120
-                        Layout.preferredHeight: 44
+                        width: 120
+                        height: 44
                         onClicked: {
                             if (root.appRef && root.appRef.docketing) {
                                 var resString = root.appRef.docketing.getDocketEntriesSync({
@@ -6721,8 +6723,8 @@ Behavior on border.color {
                         sfxBus: root.sfxBus
                         text: "+ New Entry"
                         primary: false
-                        Layout.preferredWidth: 100
-                        Layout.preferredHeight: 44
+                        width: 100
+                        height: 44
                         onClicked: root.clearDocketForm()
                     }
 
@@ -6733,8 +6735,8 @@ Behavior on border.color {
                         text: "Save Docket"
                         primary: true
                         enabled: !root.isBucketLocked()
-                        Layout.preferredWidth: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 90, 220)
-                        Layout.preferredHeight: 44
+                        width: root.moduleRatioPxW(root.scaleRatios.saveBtnWidthPct, 90, 220)
+                        height: 44
                         onClicked: root.requestSaveToDatabaseIfNeeded("manual-save")
                     }
 
@@ -6744,12 +6746,10 @@ Behavior on border.color {
                         sfxBus: root.sfxBus
                         text: root.detachedWindow ? "Close" : "Cancel"
                         primary: false
-                        Layout.preferredWidth: root.moduleRatioPxW(root.scaleRatios.cancelBtnWidthPct, 70, 200)
-                        Layout.preferredHeight: 44
+                        width: root.moduleRatioPxW(root.scaleRatios.cancelBtnWidthPct, 70, 200)
+                        height: 44
                         onClicked: root.returnToCallerOrClose()
                     }
-
-                    Item { Layout.fillWidth: true }
 
                     PillButton {
                         visible: !(root.externalNavigationShell && root.isProMode)
@@ -6759,14 +6759,14 @@ Behavior on border.color {
                         sfxBus: root.sfxBus
                         text: root.detachedWindow ? "Return to Dock" : "Undock"
                         primary: true
-                        Layout.preferredWidth: visible
+                        width: visible
                             ? root.moduleRatioPxW(
                                 root.detachedWindow ? root.scaleRatios.dockBtnWidthPct : root.scaleRatios.tearBtnWidthPct,
                                 138,
                                 240
                             )
                             : 0
-                        Layout.preferredHeight: 44
+                        height: 44
                         onClicked: root.detachRequested(root.snapshotState())
                     }
                 }

@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -244,7 +245,7 @@ Rectangle {
             Layout.fillWidth: true
             text: "Cory Schneider Law Office Practice Management"
             color: topHeaderRoot.headerInk
-            font.family: "Segoe UI"
+            font.family: AppTypography.textFamily()
             font.pixelSize: topHeaderRoot.titlePixelSize
             font.weight: Font.Medium
             elide: Text.ElideRight
@@ -270,7 +271,7 @@ Rectangle {
 
                 Text {
                     text: "\uE721" // Search icon
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: 13
                     color: topHeaderRoot.headerMutedInk
                     Layout.leftMargin: 4
@@ -284,7 +285,7 @@ Rectangle {
                     Layout.fillHeight: true
                     verticalAlignment: TextInput.AlignVCenter
                     color: topHeaderRoot.headerInk
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 12
                     selectByMouse: true
                     clip: true
@@ -326,7 +327,7 @@ Rectangle {
                 Text {
                     id: enterSearchGlyph
                     text: "\uE71B" // Arrow/Enter glyph
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: 13
                     color: enterSearchHover.containsMouse ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
                     Layout.rightMargin: 4
@@ -374,7 +375,7 @@ Rectangle {
                     spacing: 5
                     Text {
                         text: "\uE72B"
-                        font.family: "Segoe MDL2 Assets"
+                        font.family: AppTypography.iconFamily()
                         font.pixelSize: 13
                         color: returnDockButton.hovered ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
                         Layout.alignment: Qt.AlignVCenter
@@ -382,7 +383,7 @@ Rectangle {
                     Text {
                         Layout.fillWidth: true
                         text: returnDockButton.text
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 12
                         font.weight: Font.Medium
                         color: returnDockButton.hovered ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
@@ -414,7 +415,7 @@ Rectangle {
                 }
                 contentItem: Text {
                     text: settingsButton.text
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
                     color: settingsButton.hovered ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
                     horizontalAlignment: Text.AlignHCenter
@@ -448,7 +449,7 @@ Rectangle {
                 Text {
                     anchors.centerIn: parent
                     text: "\uE921"
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
                     color: (minimizeMouseArea.containsMouse || minimizeMouseArea.pressed)
                         ? topHeaderRoot.controlHoverInk : topHeaderRoot.headerMutedInk
@@ -503,7 +504,7 @@ Rectangle {
                 }
                 contentItem: Text {
                     text: maximizeButton.text
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
                     color: (maximizeButton.hovered || maximizeButton.down)
                         ? topHeaderRoot.controlHoverInk : topHeaderRoot.headerMutedInk
@@ -537,7 +538,7 @@ Rectangle {
                 }
                 contentItem: Text {
                     text: closeButton.text
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: topHeaderRoot.controlGlyphSizePx
                     color: (closeButton.hovered || closeButton.down)
                         ? topHeaderRoot.closeHoverInk : topHeaderRoot.headerMutedInk

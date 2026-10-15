@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -1548,7 +1549,7 @@ Item {
                             text: selectedClientFilter || "All Clients"
                             color: textColor
                             font.pixelSize: 13
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
@@ -1591,7 +1592,7 @@ Item {
                                     anchors.margins: 4
                                     placeholderText: "Search..."
                                     font.pixelSize: 13
-                                    font.family: "Inter"
+                                    font.family: AppTypography.interFamily()
                                     color: root.textColor
                                     background: Rectangle { color: SemanticTheme.surfaceInput(root.t, root.appStyle); border.color: root.borderColor; radius: 4 }
                                     onVisibleChanged: {
@@ -1633,7 +1634,7 @@ Item {
                                         Text {
                                             text: clientFilterDelegate.selectedRow ? "\uE73E" : ""
                                             color: root.accentColor
-                                            font.family: "Segoe MDL2 Assets"
+                                            font.family: AppTypography.iconFamily()
                                             font.pixelSize: 12
                                             Layout.preferredWidth: 16
                                             horizontalAlignment: Text.AlignHCenter
@@ -1643,7 +1644,7 @@ Item {
                                             text: clientFilterDelegate.optionText
                                             color: root.textColor
                                             font.pixelSize: 13
-                                            font.family: "Inter"
+                                            font.family: AppTypography.interFamily()
                                             elide: Text.ElideRight
                                             verticalAlignment: Text.AlignVCenter
                                             Layout.fillWidth: true
@@ -1686,7 +1687,7 @@ Item {
                             text: selectedBillingClientFilter || "All Billing Clients"
                             color: textColor
                             font.pixelSize: 13
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
@@ -1729,7 +1730,7 @@ Item {
                                     anchors.margins: 4
                                     placeholderText: "Search..."
                                     font.pixelSize: 13
-                                    font.family: "Inter"
+                                    font.family: AppTypography.interFamily()
                                     color: root.textColor
                                     background: Rectangle { color: SemanticTheme.surfaceInput(root.t, root.appStyle); border.color: root.borderColor; radius: 4 }
                                     onVisibleChanged: {
@@ -1771,7 +1772,7 @@ Item {
                                         Text {
                                             text: billingClientFilterDelegate.selectedRow ? "\uE73E" : ""
                                             color: root.accentColor
-                                            font.family: "Segoe MDL2 Assets"
+                                            font.family: AppTypography.iconFamily()
                                             font.pixelSize: 12
                                             Layout.preferredWidth: 16
                                             horizontalAlignment: Text.AlignHCenter
@@ -1781,7 +1782,7 @@ Item {
                                             text: billingClientFilterDelegate.optionText
                                             color: root.textColor
                                             font.pixelSize: 13
-                                            font.family: "Inter"
+                                            font.family: AppTypography.interFamily()
                                             elide: Text.ElideRight
                                             verticalAlignment: Text.AlignVCenter
                                             Layout.fillWidth: true
@@ -1815,7 +1816,7 @@ Item {
                         color: accentColor
                         font.pixelSize: 12
                         font.weight: Font.Medium
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                     }
                     MouseArea {
                         anchors.fill: parent
@@ -1836,7 +1837,7 @@ Item {
                         color: mutedColor
                         font.pixelSize: 12
                         font.weight: Font.Medium
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                     }
                     MouseArea {
                         anchors.fill: parent
@@ -1849,7 +1850,7 @@ Item {
                     text: root.wipStatusText
                     color: root.mutedColor
                     font.pixelSize: 12
-                    font.family: "Inter"
+                    font.family: AppTypography.interFamily()
                     elide: Text.ElideRight
                     Layout.maximumWidth: 300
                     verticalAlignment: Text.AlignVCenter
@@ -1887,6 +1888,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: "⛶"
+                        font.family: AppTypography.symbolFamily()
                         color: root.textColor
                         font.pixelSize: 18
                         font.weight: Font.Medium
@@ -1914,7 +1916,7 @@ Item {
                         color: root.mutedColor
                         font.pixelSize: 12
                         font.weight: Font.Medium
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                         verticalAlignment: Text.AlignVCenter
                     }
 
@@ -1941,7 +1943,7 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 font.pixelSize: 12
-                                font.family: "Inter"
+                                font.family: AppTypography.interFamily()
                                 color: root.textColor
                                 placeholderText: "From (YYYY-MM-DD)"
                                 placeholderTextColor: root.mutedColor
@@ -1991,6 +1993,7 @@ Item {
 
                             Text {
                                 text: "📅"
+                                font.family: AppTypography.symbolFamily()
                                 font.pixelSize: 13
                                 Layout.preferredWidth: 20
                                 horizontalAlignment: Text.AlignHCenter
@@ -2045,7 +2048,7 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 font.pixelSize: 12
-                                font.family: "Inter"
+                                font.family: AppTypography.interFamily()
                                 color: root.textColor
                                 placeholderText: "To (YYYY-MM-DD)"
                                 placeholderTextColor: root.mutedColor
@@ -2095,6 +2098,7 @@ Item {
 
                             Text {
                                 text: "📅"
+                                font.family: AppTypography.symbolFamily()
                                 font.pixelSize: 13
                                 Layout.preferredWidth: 20
                                 horizontalAlignment: Text.AlignHCenter
@@ -2148,7 +2152,7 @@ Item {
                                 : (toDateMouse.containsMouse ? root.textColor : root.mutedColor)
                             font.pixelSize: 12
                             font.weight: root.activeDatePreset === "toDate" ? Font.DemiBold : Font.Normal
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                         }
 
                         MouseArea {
@@ -2183,7 +2187,7 @@ Item {
                                 : (lastMonthMouse.containsMouse ? root.textColor : root.mutedColor)
                             font.pixelSize: 12
                             font.weight: root.activeDatePreset === "lastMonth" ? Font.DemiBold : Font.Normal
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                         }
 
                         MouseArea {
@@ -2218,7 +2222,7 @@ Item {
                                 : (allDatesMouse.containsMouse ? root.textColor : root.mutedColor)
                             font.pixelSize: 12
                             font.weight: root.activeDatePreset === "all" ? Font.DemiBold : Font.Normal
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                         }
 
                         MouseArea {
@@ -2239,7 +2243,7 @@ Item {
                         text: "Showing " + root.filteredItems.length + " of " + (root.wipItems ? root.wipItems.length : 0) + " entries"
                         color: root.mutedColor
                         font.pixelSize: 12
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                         verticalAlignment: Text.AlignVCenter
                     }
                 }
@@ -2304,7 +2308,7 @@ Item {
                                 text: root.wipStatusText || "Loading unbilled WIP..."
                                 color: root.mutedColor
                                 font.pixelSize: 14
-                                font.family: "Inter"
+                                font.family: AppTypography.interFamily()
                                 Layout.alignment: Qt.AlignHCenter
                             }
                         }
@@ -2321,7 +2325,7 @@ Item {
                                 text: "No unbilled WIP found"
                                 color: mutedColor
                                 font.pixelSize: 16
-                                font.family: "Inter"
+                                font.family: AppTypography.interFamily()
                                 font.weight: Font.Medium
                                 Layout.alignment: Qt.AlignHCenter
                             }
@@ -2329,7 +2333,7 @@ Item {
                                 text: "No unbilled time, fee, or client-disbursement entries match these filters."
                                 color: mutedColor
                                 font.pixelSize: 13
-                                font.family: "Inter"
+                                font.family: AppTypography.interFamily()
                                 Layout.alignment: Qt.AlignHCenter
                             }
                         }
@@ -2477,7 +2481,7 @@ Item {
                                                     horizontalAlignment: bodyCell.modelData.align === "right" ? Text.AlignRight : (bodyCell.modelData.align === "center" ? Text.AlignHCenter : Text.AlignLeft)
                                                     elide: Text.ElideRight
                                                     font.pixelSize: Math.max(9, Math.round(13 * tableHeader.tableScale))
-                                                    font.family: "Inter"
+                                                    font.family: AppTypography.interFamily()
                                                     color: bodyCell.modelData.key === "matter" ? root.mutedColor : root.textColor
                                                     font.weight: bodyCell.modelData.key === "amount" ? Font.Medium : Font.Normal
                                                     
@@ -2519,7 +2523,7 @@ Item {
                         text: root.selectedCount + " entries selected"
                         color: textColor
                         font.pixelSize: 14
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                         font.weight: Font.Medium
                     }
                     Rectangle {
@@ -2529,7 +2533,7 @@ Item {
                         text: "Total: $" + root.selectedTotal.toLocaleString(Qt.locale("en_CA"), 'f', 2)
                         color: accentColor
                         font.pixelSize: 16
-                        font.family: "Inter"
+                        font.family: AppTypography.interFamily()
                         font.weight: Font.DemiBold
                     }
                     Item { Layout.fillWidth: true }
@@ -2547,7 +2551,7 @@ Item {
                             color: root.selectedCount > 0 && !root.isReconcilingWip ? root.textColor : root.mutedColor
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                         }
                         MouseArea {
                             anchors.fill: parent
@@ -2568,7 +2572,7 @@ Item {
                             color: !root.isBuildingInvoice ? SemanticTheme.textOnPrimary(root.t, root.appStyle) : SemanticTheme.inkMuted(root.t, root.appStyle)
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
-                            font.family: "Inter"
+                            font.family: AppTypography.interFamily()
                         }
                         MouseArea {
                             anchors.fill: parent

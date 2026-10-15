@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -972,14 +973,14 @@ Item {
                             Layout.fillWidth: true
                             text: "Open invoices"
                             color: root._text
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 14
                             font.weight: Font.DemiBold
                         }
                         Text {
                             text: String(root.invoiceRows.length || 0) + " invoices  ·  " + root.money(root.outstandingTotal()) + " outstanding"
                             color: root._mutedText
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 12
                         }
                     }
@@ -1077,7 +1078,7 @@ Item {
                                         Layout.preferredWidth: modelData.fill === true ? 1 : Number(modelData.width || 80)
                                         text: root.invoiceCellText(rowData, modelData)
                                         color: root.invoiceCellColor(modelData)
-                                        font.family: "Segoe UI"
+                                        font.family: AppTypography.textFamily()
                                         font.pixelSize: 12
                                         font.weight: root._clean(modelData.key) === "balance" ? Font.DemiBold : Font.Normal
                                         horizontalAlignment: root.invoiceColumnAlignment(modelData)
@@ -1129,7 +1130,7 @@ Item {
                                 ? ((root.editingPaymentId ? "Edit payment — Invoice " : "Invoice ") + root.selectedValue("invoice", ""))
                                 : "Select an open invoice"
                             color: root._text
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 16
                             font.weight: Font.DemiBold
                             elide: Text.ElideRight
@@ -1161,8 +1162,8 @@ Item {
                                         anchors.fill: parent
                                         anchors.margins: 5
                                         spacing: 1
-                                        Text { width: parent.width; text: modelData.label; color: root._mutedText; font.family: "Segoe UI"; font.pixelSize: 10; elide: Text.ElideRight }
-                                        Text { width: parent.width; text: root._clean(modelData.value); color: root._text; font.family: "Segoe UI"; font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
+                                        Text { width: parent.width; text: modelData.label; color: root._mutedText; font.family: AppTypography.textFamily(); font.pixelSize: 10; elide: Text.ElideRight }
+                                        Text { width: parent.width; text: root._clean(modelData.value); color: root._text; font.family: AppTypography.textFamily(); font.pixelSize: 12; font.weight: Font.DemiBold; elide: Text.ElideRight }
                                     }
                                 }
                             }
@@ -1276,7 +1277,7 @@ Item {
                             placeholderText: "Notes"
                             placeholderTextColor: root._mutedText
                             wrapMode: Text.Wrap
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 12
                             onTextChanged: root._markDirty()
                             background: Rectangle {
@@ -1303,14 +1304,14 @@ Item {
                                     Layout.fillWidth: true
                                     text: root.editingPaymentId ? "Projected balance after update" : "Projected balance after posting"
                                     color: root._text
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
                                 }
                                 Text {
                                     text: root.money(Math.max(0, Number(root.selectedValue("balance", 0) || 0) + root.editingOriginalPaymentAmount + root.editingOriginalAdjustmentAmount - root._num(amountInput.text, 0) - root._num(adjustmentAmountInput.text, 0)))
                                     color: root._accent
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 14
                                     font.weight: Font.DemiBold
                                 }
@@ -1364,7 +1365,7 @@ Item {
                                 color: root.lastSaveOk
                                     ? SemanticTheme.tone(root.t, "success", root.appStyle)
                                     : SemanticTheme.tone(root.t, "error", root.appStyle)
-                                font.family: "Segoe UI"
+                                font.family: AppTypography.textFamily()
                                 font.pixelSize: 13
                                 font.weight: Font.DemiBold
                                 wrapMode: Text.WordWrap
@@ -1376,7 +1377,7 @@ Item {
                             Layout.fillWidth: true
                             text: "Recent payment evidence"
                             color: root._text
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
                         }

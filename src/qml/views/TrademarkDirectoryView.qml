@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import "../components"
@@ -213,7 +214,7 @@ Item {
                 spacing: 6
                 Text {
                     text: "\uEA18"
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: 18
                     color: root.isProMode ? SemanticTheme.accentPrimary(root.t, root.appStyle) : root._accent
                 }
@@ -222,14 +223,14 @@ Item {
                     text: "Trademark Directory"
                     color: root.isProMode ? root.proInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.95)
                     font.pixelSize: 18
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.weight: Font.DemiBold
                 }
                 Text {
                     text: String(root.directoryRows.length) + " results"
                     color: root.isProMode ? root.proMutedInk : Qt.rgba(root._text.r, root._text.g, root._text.b, 0.78)
                     font.pixelSize: 11
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                 }
             }
 

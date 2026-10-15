@@ -1,3 +1,4 @@
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -48,7 +49,7 @@ Item {
             // Restart Button
             Rectangle {
                 width: 32; height: 32; radius: 4; border.color: theme.border; color: "transparent"
-                Text { anchors.centerIn: parent; text: "▶"; font.pixelSize: 14; color: theme.timerGreen }
+                Text { anchors.centerIn: parent; text: "▶"; font.family: AppTypography.symbolFamily(); font.pixelSize: 14; color: theme.timerGreen }
                 MouseArea {
                     anchors.fill: parent
                     onClicked: if(modelData) trayController.restart_recorded_timer(modelData.id)
@@ -58,6 +59,7 @@ Item {
             // Chevron
             Text {
                 text: "⌄"
+                font.family: AppTypography.symbolFamily()
                 font.pixelSize: 20
                 color: theme.textSecondary
                 rotation: isExpanded ? 180 : 0

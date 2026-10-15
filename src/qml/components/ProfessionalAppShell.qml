@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import "../standards"
@@ -275,7 +276,7 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: "Unsaved changes"
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 16
                     font.weight: Font.DemiBold
                     color: SemanticTheme.inkPrimary(root.t, root.appStyle)
@@ -285,7 +286,7 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: root.closeGuardMessage
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 12
                     color: SemanticTheme.inkMuted(root.t, root.appStyle)
                     wrapMode: Text.WordWrap

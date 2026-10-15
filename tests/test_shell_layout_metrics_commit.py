@@ -126,6 +126,10 @@ QtObject {
             harness = harness.replace(stub, actual)
         harness = harness.replace("    property var targetScreen: null", """    property var targetScreen: ({virtualX: 0, virtualY: 0, width: 1920, height: 1080})
     property bool professionalNativeWindowState: false
+    // This fixture exercises Windows' application-owned geometry path.
+    property bool linuxCompositorGeometryActive: false
+    readonly property bool nativeDesktopGeometryOwned: professionalNativeWindowState
+        || linuxCompositorGeometryActive
     property bool detachedMode: false
     property string startupPhase: "settled"
     property bool maximizeAnimInProgress: false

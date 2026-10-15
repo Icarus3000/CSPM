@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
@@ -1189,7 +1190,7 @@ Item {
                             color: _textColor(0.6)
                             font.weight: Font.DemiBold
                             font.pixelSize: root.tableHeaderFontPx
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             id: reportHeaderHours
@@ -1202,7 +1203,7 @@ Item {
                             color: _textColor(0.6)
                             font.weight: Font.DemiBold
                             font.pixelSize: root.tableHeaderFontPx
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             id: reportHeaderDate
@@ -1300,7 +1301,7 @@ Item {
                                     width: root.tableGrossWidth
                                     horizontalAlignment: Text.AlignLeft
                                     color: _textPrimary
-                                    font.family: "Courier New"
+                                    font.family: AppTypography.monoFamily("Courier New")
                                     font.pixelSize: root.tableBodyFontPx
                                 }
                                 Text {
@@ -1313,7 +1314,7 @@ Item {
                                     width: root.tableHoursWidth
                                     horizontalAlignment: Text.AlignLeft
                                     color: _textPrimary
-                                    font.family: "Courier New"
+                                    font.family: AppTypography.monoFamily("Courier New")
                                     font.pixelSize: root.tableBodyFontPx
                                 }
 
@@ -1411,7 +1412,7 @@ Item {
                             color: _textColor(0.6)
                             font.pixelSize: root.tableHeaderFontPx
                             font.weight: Font.DemiBold
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             id: summaryHoursHeader
@@ -1424,7 +1425,7 @@ Item {
                             color: _textColor(0.6)
                             font.pixelSize: root.tableHeaderFontPx
                             font.weight: Font.DemiBold
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             id: summaryEntriesHeader
@@ -1437,7 +1438,7 @@ Item {
                             color: _textColor(0.6)
                             font.pixelSize: root.tableHeaderFontPx
                             font.weight: Font.DemiBold
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             text: "Summary by Matter"
@@ -1486,7 +1487,7 @@ Item {
                                     horizontalAlignment: Text.AlignLeft
                                     color: _textPrimary
                                     font.pixelSize: root.tableSummaryFontPx
-                                    font.family: "Courier New"
+                                    font.family: AppTypography.monoFamily("Courier New")
                                 }
                                 Text {
                                     id: summaryRowHours
@@ -1498,7 +1499,7 @@ Item {
                                     horizontalAlignment: Text.AlignLeft
                                     color: _textPrimary
                                     font.pixelSize: root.tableSummaryFontPx
-                                    font.family: "Courier New"
+                                    font.family: AppTypography.monoFamily("Courier New")
                                 }
                                 Text {
                                     id: summaryRowEntries
@@ -1510,7 +1511,7 @@ Item {
                                     horizontalAlignment: Text.AlignLeft
                                     color: _textPrimary
                                     font.pixelSize: root.tableSummaryFontPx
-                                    font.family: "Courier New"
+                                    font.family: AppTypography.monoFamily("Courier New")
                                 }
                                 Text {
                                     text: matterName + "  [" + clientName + "]"
@@ -1553,7 +1554,7 @@ Item {
                             horizontalAlignment: Text.AlignLeft
                             color: _textPrimary
                             font.pixelSize: root.tableSummaryFontPx
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             id: aggregateHours
@@ -1565,7 +1566,7 @@ Item {
                             horizontalAlignment: Text.AlignLeft
                             color: _textPrimary
                             font.pixelSize: root.tableSummaryFontPx
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             id: aggregateEntries
@@ -1577,7 +1578,7 @@ Item {
                             horizontalAlignment: Text.AlignLeft
                             color: _textPrimary
                             font.pixelSize: root.tableSummaryFontPx
-                            font.family: "Courier New"
+                            font.family: AppTypography.monoFamily("Courier New")
                         }
                         Text {
                             text: "TOTAL AGGREGATE"

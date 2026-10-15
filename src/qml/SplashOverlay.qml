@@ -1,3 +1,4 @@
+import "standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Window
@@ -768,7 +769,7 @@ ApplicationWindow {
             visible: splashWin.isPro && !splashWin.logoRenderGateOpen
             anchors.centerIn: parent
             text: "CSPM"
-            font.family: "Segoe UI"
+            font.family: AppTypography.textFamily()
             font.pixelSize: 42
             font.letterSpacing: 6
             font.weight: Font.Light

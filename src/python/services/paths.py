@@ -65,7 +65,8 @@ class AppPaths:
             return None
         if self.override_master_dir and str(self.override_master_dir).strip():
             return self.override_master_dir
-        return None
+        from services.data_locations import environment_data_path
+        return environment_data_path("CSPM_MASTER_DATA_DIR")
 
     def data_dir(self) -> Path:
         from backend.native_candidate import profile
@@ -74,6 +75,10 @@ class AppPaths:
             return candidate / "working" / "data"
         if self.override_data_dir and str(self.override_data_dir).strip():
             return self.override_data_dir
+        from services.data_locations import environment_data_path
+        selected = environment_data_path("CSPM_LOCAL_DATA_DIR")
+        if selected is not None:
+            return selected
         return self._persistent_data_root() / "data"
 
     def workbook_path(self) -> Path:

@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -587,7 +588,7 @@ Window {
                         Layout.fillWidth: true
                         text: "Billing Client A/R Collection"
                         color: dialog._text
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 19
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
@@ -596,7 +597,7 @@ Window {
                         Layout.fillWidth: true
                         text: "Record one received payment and allocate it across the billing client's invoices."
                         color: dialog._mutedText
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 12
                         elide: Text.ElideRight
                     }
@@ -636,7 +637,7 @@ Window {
                     anchors.margins: 9
                     text: "General account only — trust receipts and trust-to-general transfers are not implemented in this workflow."
                     color: SemanticTheme.tone(dialog.t, "warning", dialog.appStyle)
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 11
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
@@ -727,7 +728,7 @@ Window {
                     placeholderText: "Receipt notes"
                     placeholderTextColor: dialog._mutedText
                     wrapMode: Text.Wrap
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 12
                     background: Rectangle {
                         color: dialog._input
@@ -756,7 +757,7 @@ Window {
                             + " open invoices · Shown A/R " + dialog.money(dialog.filteredOutstanding()))
                         : "Select a billing client to load open A/R."
                     color: dialog._text
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 13
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
@@ -888,7 +889,7 @@ Window {
                                     horizontalAlignment: Text.AlignRight
                                     selectByMouse: true
                                     color: dialog._text
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 12
                                     validator: DoubleValidator { bottom: 0; decimals: 2 }
                                     activeFocusOnTab: true
@@ -929,7 +930,7 @@ Window {
                         ? "This billing client has no open invoices for client “" + dialog.selectedWorkClient + "”."
                         : "This billing client has no open invoices."
                     color: dialog._mutedText
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 13
                 }
             }
@@ -987,7 +988,7 @@ Window {
                         Layout.fillWidth: true
                         text: dialog.resultMessage
                         color: SemanticTheme.tone(dialog.t, dialog.resultOk ? "success" : "error", dialog.appStyle)
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                         wrapMode: Text.WordWrap
@@ -1024,7 +1025,7 @@ Window {
                     Layout.fillWidth: true
                     text: "Posting creates one receipt transaction and " + dialog.positiveAllocationCount() + " invoice allocation record(s)."
                     color: dialog._mutedText
-                    font.family: "Segoe UI"
+                    font.family: AppTypography.textFamily()
                     font.pixelSize: 11
                     elide: Text.ElideRight
                 }

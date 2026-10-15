@@ -171,8 +171,10 @@ def test_professional_maximize_restore_keeps_frameless_host_and_frozen_surface_h
     )
     assert 'color: "transparent"' in window_setup
     assert "Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint" in window_setup
-    assert 'property: "width"; value: mainWin.hostW; when: !mainWin.professionalNativeWindowState' in window_setup
-    assert 'property: "height"; value: mainWin.hostH; when: !mainWin.professionalNativeWindowState' in window_setup
+    assert 'property: "width"; value: mainWin.hostW; when: !mainWin.nativeDesktopGeometryOwned' in window_setup
+    assert 'property: "height"; value: mainWin.hostH; when: !mainWin.nativeDesktopGeometryOwned' in window_setup
+    assert "readonly property bool nativeDesktopGeometryOwned: professionalNativeWindowState" in shell
+    assert "|| linuxCompositorGeometryActive" in shell
     assert "professionalWindowMotion" not in window_setup
 
     startup_show = _function_body(

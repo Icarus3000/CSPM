@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -267,7 +268,7 @@ Rectangle {
 
                 Text {
                     text: "\uE80F"
-                    font.family: "Segoe MDL2 Assets"
+                    font.family: AppTypography.iconFamily()
                     font.pixelSize: root.ratioPx(0.024, 18)
                     color: root.accentColor
                 }
@@ -278,7 +279,7 @@ Rectangle {
 
                     Text {
                         text: "Practice Briefing"
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: root.ratioPx(0.025, 18)
                         font.weight: Font.DemiBold
                         color: root.inkColor
@@ -288,7 +289,7 @@ Rectangle {
                         text: briefing.asOfDate
                             ? ("As of " + String(briefing.asOfDate || ""))
                             : "Loading today's priorities..."
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: root.ratioPx(0.014, 11)
                         color: root.mutedInkColor
                     }
@@ -371,7 +372,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 10
                                     color: root.mutedInkColor
                                     text: parent.formatMetrics("Today", root.briefing.productivitySummary ? root.briefing.productivitySummary.today : null)
@@ -380,7 +381,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 10
                                     color: root.mutedInkColor
                                     text: parent.formatMetrics("WTD", root.briefing.productivitySummary ? root.briefing.productivitySummary.wtd : null)
@@ -389,7 +390,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 10
                                     color: root.mutedInkColor
                                     text: parent.formatMetrics("7-Day", root.briefing.productivitySummary ? root.briefing.productivitySummary.last7 : null)
@@ -398,7 +399,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 10
                                     color: root.mutedInkColor
                                     text: parent.formatMetrics("90-Day", root.briefing.productivitySummary ? root.briefing.productivitySummary.last90 : null)
@@ -407,7 +408,7 @@ Rectangle {
                                 Text {
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
-                                    font.family: "Segoe UI"
+                                    font.family: AppTypography.textFamily()
                                     font.pixelSize: 10
                                     color: root.mutedInkColor
                                     text: parent.formatMetrics("YTD", root.briefing.productivitySummary ? root.briefing.productivitySummary.ytd : null)
@@ -565,7 +566,7 @@ Rectangle {
 
             Text {
                 text: value
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 font.pixelSize: 16
                 font.weight: Font.DemiBold
                 color: inkColor
@@ -573,7 +574,7 @@ Rectangle {
             }
             Text {
                 text: label
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 font.pixelSize: 11
                 color: mutedInkColor
                 Layout.alignment: Qt.AlignHCenter
@@ -626,7 +627,7 @@ Rectangle {
                         id: titleLabel
                         anchors.fill: parent
                         text: card.title
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 15
                         font.weight: Font.DemiBold
                         color: titleHover.containsMouse ? card.accentColor : card.inkColor
@@ -655,7 +656,7 @@ Rectangle {
                         id: countBadge
                         anchors.centerIn: parent
                         text: String(card.count)
-                        font.family: "Segoe UI"
+                        font.family: AppTypography.textFamily()
                         font.pixelSize: 11
                         font.weight: Font.Medium
                         color: card.accentColor
@@ -724,7 +725,7 @@ Rectangle {
                         Text {
                             Layout.fillWidth: true
                             text: parent.parent.itemTitle || "Item"
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 12
                             color: card.inkColor
                             elide: Text.ElideRight
@@ -732,7 +733,7 @@ Rectangle {
                         Text {
                             Layout.fillWidth: true
                             text: parent.parent.itemDetail
-                            font.family: "Segoe UI"
+                            font.family: AppTypography.textFamily()
                             font.pixelSize: 11
                             color: card.mutedInkColor
                             elide: Text.ElideRight
@@ -748,7 +749,7 @@ Rectangle {
                 text: card.emptyText
                 wrapMode: Text.WordWrap
                 verticalAlignment: Text.AlignVCenter
-                font.family: "Segoe UI"
+                font.family: AppTypography.textFamily()
                 font.pixelSize: 12
                 color: card.mutedInkColor
             }

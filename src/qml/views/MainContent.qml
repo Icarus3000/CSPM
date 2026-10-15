@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import "../standards/AppTypography.js" as AppTypography
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Effects
@@ -4636,7 +4637,7 @@ Item {
 
                     Text {
                         text: "\uE7C3"
-                        font.family: "Segoe MDL2 Assets"
+                        font.family: AppTypography.iconFamily()
                         color: root.readableInk(undockTabGlass.color)
                         font.pixelSize: root.ratioPx(0.016, 10)
                         Layout.alignment: Qt.AlignVCenter

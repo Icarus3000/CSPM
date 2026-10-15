@@ -69,6 +69,8 @@ def test_relative_asset_keeps_subdirectories_when_profile_is_separate(installed)
 
 @pytest.mark.parametrize("present", [True, False])
 def test_frozen_recovery_uses_sibling_executable_without_relaunching_main(installed, monkeypatch, present):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr("backend.app_controller.subprocess.CREATE_NEW_CONSOLE", 16, raising=False)
     package, _, runtime, paths = installed
     active_data = runtime.parent / "selected-practice"
     paths.override_data_dir = active_data
@@ -95,6 +97,8 @@ def test_frozen_recovery_uses_sibling_executable_without_relaunching_main(instal
 
 
 def test_development_recovery_uses_injected_source_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr("backend.app_controller.subprocess.CREATE_NEW_CONSOLE", 16, raising=False)
     monkeypatch.delattr(sys, "frozen", raising=False)
     script = tmp_path / "scripts" / "cspm_recovery.py"
     script.parent.mkdir()
@@ -108,3 +112,25 @@ def test_development_recovery_uses_injected_source_root(tmp_path, monkeypatch):
     assert calls[0][0] == ([sys.executable, str(script)],)
     assert calls[0][1]["env"]["CSPM_RECOVERY_DATA_DIR"] == str(active_data.resolve())
     assert calls[0][1]["env"]["CSPM_DATA_DIR"] == str(tmp_path / "profile")
+
+
+@pytest.mark.parametrize("terminal", ["konsole", "x-terminal-emulator", None])
+def test_linux_frozen_recovery_preserves_active_selector(installed, monkeypatch, terminal):
+    package, _, runtime, paths = installed
+    monkeypatch.setattr(sys, "platform", "linux")
+    recovery = package / "CSPM_Recovery/CSPM_Recovery"
+    recovery.parent.mkdir()
+    recovery.write_bytes(b"fixture")
+    active_data = runtime.parent / "active-linux-practice"
+    paths.override_data_dir = active_data
+    calls, errors = [], []
+    monkeypatch.setattr("backend.app_controller.shutil.which",
+                        lambda name: "/usr/bin/" + name if name == terminal else None)
+    monkeypatch.setattr("backend.app_controller.subprocess.Popen", lambda *args, **kwargs: calls.append((args, kwargs)))
+    controller = SimpleNamespace(_paths=paths, error=SimpleNamespace(emit=errors.append))
+    assert AppController.openRecoveryUtility(controller) is bool(terminal)
+    if terminal:
+        assert calls[0][0][0][-1] == str(recovery)
+        assert calls[0][1]["env"]["CSPM_RECOVERY_DATA_DIR"] == str(active_data.resolve())
+    else:
+        assert not calls and errors == ["No terminal application is available for the recovery utility."]
