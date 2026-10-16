@@ -5,7 +5,7 @@
 - [x] Preserve original dirty Fedora checkout; integrate all current main updates through `66a9cbe` in an isolated worktree.
 - [x] Retain Microsoft 365 agenda/device sign-in repair and add authenticated Linux token encryption with keys confined to the persistent Secret Service wallet; retain Windows DPAPI and fail closed when the wallet is unavailable.
 - [x] Include governed Linux build/resources, protected Recovery selectors and persistent usage-control source, configuration, tests and instructions.
-- [ ] Complete focused validation, exact clean-source Fedora main/Recovery build, outside-sandbox packaged checks and cloud publication; record immutable artifact/evidence identities after packaging.
+- [x] Complete 363 focused checks, governed QML lint, clean `202af1f` Fedora main/Recovery build, real candidate/installed desktop and WebEngine validation, verified rollback/deployment and cloud main/preservation-branch publication. October 16 release evidence is recorded in the scoped integration document.
 - [ ] User sign-in and foreground Outlook coverage acceptance remain required.
 
 Scope: `docs/FEDORA_CALENDAR_INTEGRATION_2026-10-14.md`.

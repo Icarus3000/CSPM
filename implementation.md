@@ -1,5 +1,22 @@
 # Implementation History
 
+## 2026-10-16: Fedora calendar release deployed and published
+
+Recovered preserved source `202af1f` into a durable independent worktree after
+the temporary build directory disappeared. Fresh 363 focused checks and governed
+whole-QML lint pass. The clean source is published by normal fast-forward to
+main with a preservation branch; main/Recovery are rebuilt and every installed
+runtime file matches the 5,866-record candidate manifest. Real Fedora candidate
+and normal-launcher startup/calendar/native-window/Invoice-Builder WebEngine
+HTML+JavaScript/normal-exit checks pass on read-only synthetic workbooks; exact
+bundled Qt renders a valid 14,100-byte PDF with its sandbox enabled. The default
+persistent desktop wallet is available/unlocked without reading credentials.
+Verified read-only rollback and unchanged original dirty source/settings/four
+workbooks preserve existing work. Live Microsoft sign-in and Outlook coverage
+remain user acceptance. Full source/runtime identity, evidence distinctions and
+remaining limits: `docs/FEDORA_CALENDAR_INTEGRATION_2026-10-14.md`.
+
+
 ## 2026-10-14: Latest-main calendar restored to Fedora source
 
 The Fedora integration starts from freshly fetched `66a9cbe`, retaining the
