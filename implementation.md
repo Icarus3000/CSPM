@@ -1,5 +1,15 @@
 # Implementation History
 
+## 2026-10-18: Microsoft 365 Device-Code Auto-Clipboard & Persistent Post-Change Delivery Gate
+
+1. **Microsoft 365 Device-Code Auto-Clipboard (`CalendarAgendaController` & `CalendarConnectionDialog.qml`)**:
+   - Updated `src/python/backend/controllers/calendar_agenda_controller.py` to expose `@Slot(str, result=bool) copyToClipboard(text)` and automatically copy the trimmed `user_code` to `QGuiApplication.clipboard()` as soon as `_accept_challenge` receives the device-flow challenge on the Qt GUI thread, as well as when `openEventLink` opens the Microsoft device sign-in page.
+   - Updated `src/qml/components/CalendarConnectionDialog.qml` to trigger `copySignInCode()` reactively when `calendarSignInCode` changes or becomes visible, re-copy on clicking the code text or `"Open Microsoft sign-in"`, and display `"Copied to clipboard — press Ctrl+V on Microsoft’s page"`.
+   - Verified with `py_compile`, `scripts/qmllint.ps1`, and 38 passing tests across `tests/test_calendar_agenda_controller.py` and `tests/test_calendar_agenda_qml.py`.
+2. **Persistent Post-Change Delivery Gate (`./scripts/build_and_push.py` & `./.agent/rules/post_change_pipeline.md`)**:
+   - Created portable `./scripts/build_and_push.py` to run `py_compile`, `qmllint`, and targeted pytest suites, stage and commit source/schema/test/doc changes, recompile `./dist/CSPM/CSPM.exe` (and deploy), and push to `origin`.
+   - Documented the mandatory delivery gate at the top of `./GEMINI.md` and in `./.agent/rules/post_change_pipeline.md`.
+
 ## 2026-10-17: Multi-Biller Cutover (`SOLE_PROP` vs. `PC`), Shareholder Loan Ledger (`GIFI 2781`) & Tax Compliance Suite
 
 Implemented full dual-schema (Excel `openpyxl` + SQLite prototype) support for the November 1, 2026 operational cutover from **Cory Schneider** (`SOLE_PROP`, operating through October 31, 2026) to **Cory Schneider Law Professional Corporation** (`PC`, `OCN: 1001781977`, `BIN: 1001782016`, `Company Key: 448389332`, incorporated October 17, 2026, operating effective November 1, 2026, fiscal year-end December 31):

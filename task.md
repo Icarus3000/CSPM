@@ -1,5 +1,12 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-18: Microsoft 365 Device-Code Auto-Clipboard & Persistent Post-Change Delivery Gate
+
+- [x] Auto-copy Microsoft 365 device-flow `user_code` to the system clipboard on the Qt GUI thread (`QGuiApplication.clipboard().setText(...)`) in `src/python/backend/controllers/calendar_agenda_controller.py` (`_accept_challenge`, `openEventLink`, and `@Slot(str, result=bool) copyToClipboard`).
+- [x] Update `src/qml/components/CalendarConnectionDialog.qml` with reactive clipboard auto-copy (`onTextChanged`, `onVisibleChanged`, `onOpened`, and click-to-copy `TapHandler` on `calendarSignInCode`) plus inline confirmation label (`"Copied to clipboard — press Ctrl+V on Microsoft’s page"`).
+- [x] Add and pass unit and offscreen QML tests in `tests/test_calendar_agenda_controller.py` and `tests/test_calendar_agenda_qml.py` (`38 passed`).
+- [x] Create portable `./scripts/build_and_push.py` (`Verify -> Commit -> Recompile .exe -> Push to Git Cloud`) and persist the **Mandatory Post-Change Delivery Gate** rule in `./GEMINI.md` and `./.agent/rules/post_change_pipeline.md`.
+
 ## 2026-10-17: Multi-Biller (SOLE_PROP vs. PC), Shareholder Loan Ledger (GIFI 2781) & Tax Compliance Suite
 
 - [x] Author portable `./GEMINI.md` at repository root with the Architecture & Schema Map (relative paths only), Dual-Schema SQLite rules, and Corporate & Tax Ground Truth for `CORY SCHNEIDER LAW PROFESSIONAL CORPORATION` (`OCN: 1001781977`, `BIN: 1001782016`, `Company Key: 448389332`, incorporated `2026-10-17`, fiscal year-end `December 31`, `100 Class 1 Common Shares` at `$1.00` via OBCA s. 23(3) set-off, `100 Class A1 Fixed Value Special Shares (Voting)` on `2026-11-01` s. 85(1) rollover at `$100.00` FMV / `$1.00` elected amount, and 5 Oct 17, 2026 Shareholder Loan rows totaling `$794.45` net `GIFI 2781`).

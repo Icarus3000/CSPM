@@ -1,5 +1,13 @@
 # CSPM (`__CSPM`) — Architecture, Schema Map & Corporate/Tax Ground Truth
 
+> **Mandatory Post-Change Delivery Gate (Verify -> Recompile `.exe` -> Push to Git Cloud):**
+> Whenever any Python (`.py`), QML (`.qml`), schema (`.yml` / `.sql`), or template file is created or modified, Antigravity MUST automatically complete all three steps before finishing the turn—even if the user's prompt does not explicitly ask for a build or push:
+> 1. Run `py_compile`, `qmllint`, and targeted verification tests.
+> 2. Recompile the local standalone `.exe` so the desktop executable immediately reflects the latest code.
+> 3. Commit all source/test/doc changes and run `git push` to synchronize with Git cloud.
+>
+> *(Automated via `./scripts/build_and_push.py`; see `./.agent/rules/post_change_pipeline.md`.)*
+
 > **PORTABILITY & DUAL-SCHEMA MANDATE:**
 > 1. **No Hardcoded Machine Paths:** Always use `PathService` (`./src/python/services/paths.py`), environment variables (`%LOCALAPPDATA%/CSPM`), or repository-relative paths (`./...`). Never hardcode drive letters or workstation usernames.
 > 2. **SQLite-First Dual-Schema Parity:** CSPM currently persists live runtime data in structured Excel tables (`CSPM.xlsm` via `openpyxl` with `keep_vba=True`), while an active migration path to **SQLite (`./src/python/prototypes/sqlite_architecture/`)** is maintained in lockstep. Every table or column added to `./schema/workbook_schema.yml`, `./schema/workbook_schema.ap.yml`, or `./src/python/domain/schema_constants.py` **MUST** also be added to:

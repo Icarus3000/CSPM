@@ -1,11 +1,14 @@
 """Calendar worker ownership, settings, cancellation and GUI-thread contracts."""
+import os
 import sys
 import threading
 import time
 from pathlib import Path
 
 import pytest
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QCoreApplication, QThread
+from PySide6.QtGui import QGuiApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src/python"))
 from backend.controllers.calendar_agenda_controller import CalendarAgendaController, safe_calendar_link
@@ -55,7 +58,7 @@ def wait_for(predicate, timeout=3):
 
 @pytest.fixture
 def controller(tmp_path):
-    qt = QCoreApplication.instance() or QCoreApplication([])
+    qt = QGuiApplication.instance() or QGuiApplication([])
     service = FakeService()
     saved = []
     def save(config):
@@ -233,6 +236,40 @@ def test_current_microsoft_device_page_survives_challenge_and_opens_without_laun
     assert opened == [url]
     assert not instance.openEventLink(url + "?code=unexpected")
     assert opened == [url]
+
+
+def test_device_challenge_and_open_microsoft_signin_copy_user_code_to_clipboard(controller, monkeypatch):
+    instance, _, _, qt = controller
+    if not isinstance(qt, QGuiApplication):
+        from types import SimpleNamespace
+        state = {"text": ""}
+        fake_clipboard = SimpleNamespace(
+            setText=lambda value: state.__setitem__("text", str(value)),
+            text=lambda: state["text"],
+        )
+        monkeypatch.setattr(QGuiApplication, "clipboard", staticmethod(lambda: fake_clipboard))
+    else:
+        QGuiApplication.clipboard().setText("")
+
+    url = "https://login.microsoft.com/device"
+    opened = []
+    monkeypatch.setattr("backend.controllers.calendar_agenda_controller.QDesktopServices.openUrl", lambda value: opened.append(value.toString()) or True)
+
+    instance._accept_challenge(instance._revision, {"user_code": "  F5CHSERFA  ", "verification_uri": url})
+    assert instance.snapshot["signInCode"] == "F5CHSERFA"
+    assert QGuiApplication.clipboard().text() == "F5CHSERFA"
+
+    QGuiApplication.clipboard().setText("OVERWRITTEN")
+    assert QGuiApplication.clipboard().text() == "OVERWRITTEN"
+
+    assert instance.openEventLink(instance.snapshot["signInUrl"])
+    assert opened == [url]
+    assert QGuiApplication.clipboard().text() == "F5CHSERFA"
+
+    assert instance.copyToClipboard("  MANUAL99  ") is True
+    assert QGuiApplication.clipboard().text() == "MANUAL99"
+    assert instance.copyToClipboard("   ") is False
+
 
 
 @pytest.mark.parametrize("url", [

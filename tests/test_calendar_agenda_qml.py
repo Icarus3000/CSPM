@@ -132,6 +132,14 @@ def run_probe():
             self.links.append(link)
             return True
 
+        @Slot(str, result=bool)
+        def copyToClipboard(self, text):
+            cleaned = str(text or "").strip()
+            if not cleaned:
+                return False
+            QGuiApplication.clipboard().setText(cleaned)
+            return True
+
     class AppRef(QObject):
         startupReadinessChanged = Signal()
 
@@ -248,11 +256,21 @@ def run_probe():
         assert controller.refresh_count == 2
 
         assert panel.findChild(QObject, "calendarConnectionDialog") is None
+        application.clipboard().setText("")
         evaluate(panel, "openConnectionSettings()")
         QTest.qWait(100)
         dialog = panel.findChild(QObject, "calendarConnectionDialog")
         assert dialog is not None, "Management dialog remains available from the panel"
         assert dialog.property("visible") is True
+        assert application.clipboard().text() == "EXAMPLE12"
+        assert dialog.property("signInCodeCopied") is True
+        copied_label = dialog.findChild(QObject, "calendarSignInCodeCopiedLabel")
+        assert copied_label is not None and copied_label.property("visible") is True
+        assert "Copied to clipboard" in copied_label.property("text")
+        controller._snapshot["signInCode"] = "F5CHSERFA"
+        controller.snapshotChanged.emit()
+        application.processEvents()
+        assert application.clipboard().text() == "F5CHSERFA"
         evaluate(dialog, "loadConfiguration()")
         field = dialog.findChild(QObject, "calendarAccountEmailField")
         assert field.property("text") == "test@example.com"
@@ -272,8 +290,10 @@ def run_probe():
         assert controller.saved[-1]["disabledCalendarIds"] == ["shared"], "Re-enabled holidays must not stay hidden by the legacy calendar-ID setting"
         evaluate(dialog, 'setCalendarSelected("shared", false)')
         assert controller.toggles == [("shared", False)]
+        application.clipboard().setText("OVERWRITTEN")
         evaluate(dialog, "openMicrosoftSignIn()")
         assert controller.links == ["https://microsoft.com/devicelogin"]
+        assert application.clipboard().text() == "F5CHSERFA"
         evaluate(dialog, "disconnectCalendarAccount()")
         assert controller.disconnect_count == 1
         controller._busy = True

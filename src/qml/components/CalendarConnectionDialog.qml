@@ -13,6 +13,7 @@ Dialog {
     property var controller: null
     property string appStyle: "Professional"
     property string saveError: ""
+    property bool signInCodeCopied: false
     readonly property var agenda: root.controller && root.controller.snapshot ? root.controller.snapshot : ({})
     readonly property var configuration: root.controller && root.controller.configuration
         ? root.controller.configuration : ({})
@@ -84,12 +85,36 @@ Dialog {
         if (root.controller && !root.busy) root.controller.setCalendarEnabled(String(calendarId), enabled)
     }
 
+    function copySignInCode() {
+        var code = String(root.agenda.signInCode || "").trim()
+        if (!code) {
+            root.signInCodeCopied = false
+            return false
+        }
+        var copied = false
+        if (root.controller && root.controller.copyToClipboard)
+            copied = !!root.controller.copyToClipboard(code)
+        if (!copied && signInCodeField) {
+            signInCodeField.selectAll()
+            signInCodeField.copy()
+            signInCodeField.deselect()
+            copied = true
+        }
+        root.signInCodeCopied = copied
+        return copied
+    }
+
     function openMicrosoftSignIn() {
+        root.copySignInCode()
         if (root.controller && root.agenda.signInUrl)
             root.controller.openEventLink(String(root.agenda.signInUrl))
     }
 
-    onOpened: root.loadConfiguration()
+    onOpened: {
+        root.loadConfiguration()
+        if (root.agenda.signInCode)
+            root.copySignInCode()
+    }
 
     background: Rectangle {
         radius: 5
@@ -146,6 +171,10 @@ Dialog {
                 visible: !!root.agenda.signInCode
                 color: SemanticTheme.surfaceInput(root.t, root.appStyle)
                 radius: 4
+                onVisibleChanged: {
+                    if (visible && root.agenda.signInCode)
+                        root.copySignInCode()
+                }
                 ColumnLayout {
                     id: signInColumn
                     anchors.fill: parent
@@ -157,15 +186,37 @@ Dialog {
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
                     }
-                    TextEdit {
-                        objectName: "calendarSignInCode"
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: String(root.agenda.signInCode || "")
-                        color: root.accentColor
-                        font.pixelSize: 21
-                        font.weight: Font.DemiBold
-                        readOnly: true
-                        selectByMouse: true
+                        spacing: 12
+                        TextEdit {
+                            id: signInCodeField
+                            objectName: "calendarSignInCode"
+                            text: String(root.agenda.signInCode || "")
+                            color: root.accentColor
+                            font.pixelSize: 21
+                            font.weight: Font.DemiBold
+                            readOnly: true
+                            selectByMouse: true
+                            onTextChanged: {
+                                if (text.trim().length > 0)
+                                    root.copySignInCode()
+                                else
+                                    root.signInCodeCopied = false
+                            }
+                            TapHandler {
+                                onTapped: root.copySignInCode()
+                            }
+                        }
+                        Text {
+                            objectName: "calendarSignInCodeCopiedLabel"
+                            Layout.fillWidth: true
+                            visible: !!root.agenda.signInCode && root.signInCodeCopied
+                            text: "Copied to clipboard — press Ctrl+V on Microsoft’s page"
+                            color: root.mutedInkColor
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
                     }
                     PillButton {
                         objectName: "calendarMicrosoftSignInButton"

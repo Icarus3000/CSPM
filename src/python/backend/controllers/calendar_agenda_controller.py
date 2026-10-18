@@ -8,7 +8,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, Property, QThreadPool, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from shiboken6 import isValid
 
 from backend.workers import Worker
@@ -248,12 +248,34 @@ class CalendarAgendaController(QObject):
                 "asOf": self._snapshot.get("asOf", "")}
         self._publish(snapshot)
 
+    @Slot(str, result=bool)
+    def copyToClipboard(self, text):
+        if self._closed:
+            return False
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return False
+        app = QGuiApplication.instance()
+        if (
+            app is not None
+            and not isinstance(app, QGuiApplication)
+            and getattr(QGuiApplication.clipboard, "__module__", "") == "PySide6.QtGui"
+        ):
+            return False
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:
+            return False
+        clipboard.setText(cleaned)
+        return True
+
     @Slot(int, object)
     def _accept_challenge(self, revision, challenge):
         if self._closed or revision != self._revision:
             return
-        code = str(challenge.get("user_code") or challenge.get("signInCode") or "")
+        code = str(challenge.get("user_code") or challenge.get("signInCode") or "").strip()
         url = str(challenge.get("verification_uri") or challenge.get("signInUrl") or "")
+        if code:
+            self.copyToClipboard(code)
         self._publish({**self._snapshot, "state": "signing-in",
             "message": "Open Microsoft sign-in, enter this code, and use your configured account.",
             "signInCode": code, "signInUrl": url if safe_calendar_link(url) else ""})
@@ -262,6 +284,12 @@ class CalendarAgendaController(QObject):
     def openEventLink(self, value):
         if self._closed or not safe_calendar_link(value):
             return False
+        active_code = str(self._snapshot.get("signInCode") or "").strip()
+        if active_code and (
+            value == self._snapshot.get("signInUrl")
+            or safe_microsoft_device_signin_url(value)
+        ):
+            self.copyToClipboard(active_code)
         return bool(QDesktopServices.openUrl(QUrl(value)))
 
     @Slot()
