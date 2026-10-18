@@ -244,6 +244,22 @@ Rectangle {
                 Layout.preferredHeight: root.fieldHeightPx
                 onClicked: root.gotoNode("D17")
             }
+
+            PillButton {
+                t: root.t
+                metrics: root.responsiveMetrics
+                sfxBus: root.sfxBus
+                text: "Open KYC Vault"
+                primary: false
+                visible: root.selectedClientId.length > 0
+                Layout.preferredWidth: root.ratioPxW(0.118, 120)
+                Layout.preferredHeight: root.fieldHeightPx
+                onClicked: {
+                    if (root.appRef && root.appRef.openClientKYCVaultFolder) {
+                        root.appRef.openClientKYCVaultFolder(root.selectedClientId)
+                    }
+                }
+            }
         }
 
         Text {
@@ -341,13 +357,27 @@ Rectangle {
                                         text: String(leftCard.entry && leftCard.entry.value ? leftCard.entry.value : "[blank]")
                                         elide: Text.ElideNone
                                         Layout.fillWidth: true
-                                        color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+                                        color: (leftCard.entry && leftCard.entry.label === "KYC Status" && text !== "[blank]")
+                                            ? SemanticTheme.accentPrimary(root.t, root.appStyle)
+                                            : SemanticTheme.inkPrimary(root.t, root.appStyle)
                                         property HiddenFontGate cspmFontGate: HiddenFontGate {
                                             inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                             active: !root.layoutRepairEnabled || leftValueText.visible
                                         }
                                         font.pixelSize: cspmFontGate.pixelSize
+                                        font.underline: (leftCard.entry && leftCard.entry.label === "KYC Status" && text !== "[blank]")
                                         wrapMode: Text.Wrap
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: !!leftCard.entry && leftCard.entry.label === "KYC Status" && root.selectedClientId.length > 0
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (root.appRef && root.appRef.openClientKYCVaultFolder) {
+                                            root.appRef.openClientKYCVaultFolder(root.selectedClientId)
+                                        }
                                     }
                                 }
                             }
@@ -400,13 +430,27 @@ Rectangle {
                                         text: String(rightCard.entry && rightCard.entry.value ? rightCard.entry.value : "[blank]")
                                         elide: Text.ElideNone
                                         Layout.fillWidth: true
-                                        color: SemanticTheme.inkPrimary(root.t, root.appStyle)
+                                        color: (rightCard.entry && rightCard.entry.label === "KYC Status" && text !== "[blank]")
+                                            ? SemanticTheme.accentPrimary(root.t, root.appStyle)
+                                            : SemanticTheme.inkPrimary(root.t, root.appStyle)
                                         property HiddenFontGate cspmFontGate: HiddenFontGate {
                                             inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                             active: !root.layoutRepairEnabled || rightValueText.visible
                                         }
                                         font.pixelSize: cspmFontGate.pixelSize
+                                        font.underline: (rightCard.entry && rightCard.entry.label === "KYC Status" && text !== "[blank]")
                                         wrapMode: Text.Wrap
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: !!rightCard.entry && rightCard.entry.label === "KYC Status" && root.selectedClientId.length > 0
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (root.appRef && root.appRef.openClientKYCVaultFolder) {
+                                            root.appRef.openClientKYCVaultFolder(root.selectedClientId)
+                                        }
                                     }
                                 }
                             }

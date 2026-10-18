@@ -5057,12 +5057,27 @@ class AppController(QObject):
             self._paths.master_data_dir(), self._paths.data_dir()
         )
 
+    def _vault_service(self):
+        from services.vault_service import VaultService
+
+        return VaultService(self._paths)
+
     @Slot(str, result=bool)
     def openMatterDocument(self, saved_path):
         try:
-            document_path = self._matter_document_service().resolve(saved_path)
-            if not document_path.is_file():
-                raise FileNotFoundError(f"Matter document was not found: {document_path}")
+            document_path = None
+            raw = str(saved_path or "").strip()
+            if raw:
+                try:
+                    cand = self._matter_document_service().resolve(raw)
+                    if cand.is_file():
+                        document_path = cand
+                except Exception:
+                    document_path = None
+                if document_path is None:
+                    document_path = self._vault_service().resolve_document_path(raw)
+            if document_path is None or not document_path.is_file():
+                raise FileNotFoundError(f"Matter document was not found: {raw}")
             opened = bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(document_path))))
             if not opened:
                 raise OSError(f"Windows could not open the matter document: {document_path}")
@@ -5074,6 +5089,184 @@ class AppController(QObject):
                 exc=exc,
             )
             return False
+
+    @Slot(str, result=bool)
+    def openVaultDocument(self, doc_ref: str) -> bool:
+        try:
+            raw = str(doc_ref or "").strip()
+            if not raw:
+                raise FileNotFoundError("Document reference is empty.")
+            resolved = self._vault_service().resolve_document_path(raw)
+            if resolved is None:
+                try:
+                    cand = self._matter_document_service().resolve(raw)
+                    if cand.is_file():
+                        resolved = cand
+                except Exception:
+                    resolved = None
+            if resolved is None or not resolved.is_file():
+                raise FileNotFoundError(f"Vault document was not found: {raw}")
+            opened = bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved))))
+            if not opened:
+                raise OSError(f"OS could not open Vault document: {resolved}")
+            self.toast.emit(f"Opened document: {resolved.name}")
+            return True
+        except Exception as exc:
+            self._report_failure(
+                "Could not open Vault document",
+                context="vault.document.open",
+                exc=exc,
+            )
+            return False
+
+    @Slot(str, result=bool)
+    def openMatterRetainer(self, matter_id_or_number: str) -> bool:
+        try:
+            key = str(matter_id_or_number or "").strip()
+            if not key:
+                self.toast.emit("Select a matter first to open its retainer agreement.")
+                return False
+
+            matter: dict[str, Any] = {}
+            try:
+                if getattr(self, "_excel_repo", None) is not None:
+                    res = self._excel_repo.get_matter_profile(key)
+                    if isinstance(res, dict) and res.get("ok") and isinstance(res.get("matter"), dict):
+                        matter = res["matter"]
+            except Exception:
+                matter = {}
+
+            matter_number = str(matter.get("matterNumber") or key).strip()
+            client_id = str(matter.get("clientId") or "").strip()
+            doc_ref = str(matter.get("jointEngagementDocument") or "").strip()
+            notes = str(matter.get("notes") or "").strip()
+
+            if not doc_ref and notes:
+                note_match = re.search(
+                    r"((?:Vault|Matter_Documents|Clients \(CS\))[\\/][^\r\n\"'|;]+?\.(?:pdf|docx|doc))",
+                    notes,
+                    flags=re.IGNORECASE,
+                )
+                if note_match:
+                    doc_ref = note_match.group(1).strip()
+
+            vault = self._vault_service()
+            resolved = vault.resolve_document_path(
+                doc_ref,
+                matter_number=matter_number,
+                client_id=client_id,
+            )
+            if resolved is None and matter_number != key:
+                resolved = vault.resolve_document_path(
+                    doc_ref,
+                    matter_number=key,
+                    client_id=client_id,
+                )
+            if resolved is None and doc_ref:
+                try:
+                    cand = self._matter_document_service().resolve(doc_ref)
+                    if cand.is_file():
+                        resolved = cand
+                except Exception:
+                    resolved = None
+
+            if resolved is None or not resolved.is_file():
+                msg = f"No retainer agreement file is linked yet for {matter_number or key}."
+                self.toast.emit(msg)
+                return False
+
+            opened = bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved))))
+            if not opened:
+                raise OSError(f"OS could not open retainer agreement: {resolved}")
+            self.toast.emit(f"Opened retainer: {resolved.name}")
+            return True
+        except Exception as exc:
+            self._report_failure(
+                "Could not open matter retainer",
+                context="vault.matter.retainer.open",
+                exc=exc,
+            )
+            return False
+
+    @Slot(str, result=bool)
+    def openMatterVaultFolder(self, matter_number: str) -> bool:
+        try:
+            key = str(matter_number or "").strip()
+            if not key:
+                self.toast.emit("Select a matter first to open its Vault folder.")
+                return False
+
+            resolved_number = key
+            try:
+                if getattr(self, "_excel_repo", None) is not None:
+                    res = self._excel_repo.get_matter_profile(key)
+                    if isinstance(res, dict) and res.get("ok") and isinstance(res.get("matter"), dict):
+                        m_num = str(res["matter"].get("matterNumber") or "").strip()
+                        if m_num:
+                            resolved_number = m_num
+            except Exception:
+                pass
+
+            folder = self._vault_service().get_matter_vault_folder(resolved_number)
+            opened = bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))))
+            if not opened:
+                raise OSError(f"OS could not open Matter Vault folder: {folder}")
+            self.toast.emit(f"Opened Matter Vault: {folder.name}")
+            return True
+        except Exception as exc:
+            self._report_failure(
+                "Could not open Matter Vault folder",
+                context="vault.matter.folder.open",
+                exc=exc,
+            )
+            return False
+
+    @Slot(str, result=bool)
+    def openClientKYCVaultFolder(self, client_id: str) -> bool:
+        try:
+            key = str(client_id or "").strip()
+            if not key:
+                self.toast.emit("Select a client first to open its KYC Vault folder.")
+                return False
+
+            folder = self._vault_service().get_client_kyc_folder(key)
+            opened = bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))))
+            if not opened:
+                raise OSError(f"OS could not open Client KYC Vault folder: {folder}")
+            self.toast.emit(f"Opened KYC Vault: {key}")
+            return True
+        except Exception as exc:
+            self._report_failure(
+                "Could not open Client KYC Vault folder",
+                context="vault.client.kyc.open",
+                exc=exc,
+            )
+            return False
+
+    @Slot(str, str, str, str, result=str)
+    def ingestDocumentToVault(
+        self,
+        scope_type: str,
+        scope_id: str,
+        category: str,
+        source_file_path: str,
+    ) -> str:
+        try:
+            rel_path = self._vault_service().ingest_document(
+                scope_type=scope_type,
+                scope_id=scope_id,
+                category=category,
+                source_path=Path(source_file_path),
+            )
+            self.toast.emit(f"Saved to Vault: {rel_path}")
+            return rel_path
+        except Exception as exc:
+            self._report_failure(
+                "Could not ingest document to Vault",
+                context="vault.document.ingest",
+                exc=exc,
+            )
+            return ""
 
     @Slot("QVariantMap", result=dict)
     def runConflictCheck(self, payload):

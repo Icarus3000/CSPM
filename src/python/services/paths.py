@@ -87,6 +87,52 @@ class AppPaths:
     def dockets_workbook_path(self) -> Path:
         return self.data_dir() / "Dockets.xlsm"
 
+    def local_vault_dir(self) -> Path:
+        """Resolve <data_dir>/Vault (e.g. %LOCALAPPDATA%/CSPM/data/Vault)."""
+        return self.data_dir() / "Vault"
+
+    def shared_vault_dir(self) -> Path:
+        """Resolve <masterDataDir>/Vault (e.g. %OneDrive%/CSPM_Shared_Data/Vault)."""
+        master = self.master_data_dir()
+        if master is not None:
+            return master / "Vault"
+
+        # Check user_settings.json if masterDataDir is configured there
+        try:
+            import json
+            settings_file = self.user_settings_path()
+            if settings_file.is_file():
+                payload = json.loads(settings_file.read_text(encoding="utf-8"))
+                master_setting = str(payload.get("masterDataDir", "") or "").strip()
+                if master_setting:
+                    expanded = Path(os.path.expandvars(master_setting)).expanduser()
+                    if expanded.is_absolute():
+                        return expanded / "Vault"
+        except Exception:
+            pass
+
+        # Discover %OneDriveCommercial% / %OneDrive% / ~/OneDrive* CSPM_Shared_Data
+        for env_key in ("OneDriveCommercial", "OneDrive", "OneDriveConsumer"):
+            env_val = os.environ.get(env_key, "").strip()
+            if env_val:
+                od_shared = Path(os.path.expandvars(env_val)).expanduser() / "CSPM_Shared_Data"
+                if od_shared.exists():
+                    return od_shared / "Vault"
+
+        try:
+            for match in sorted(Path.home().glob("OneDrive*")):
+                if match.is_dir() and (match / "CSPM_Shared_Data").exists():
+                    return match / "CSPM_Shared_Data" / "Vault"
+        except OSError:
+            pass
+
+        for env_key in ("OneDriveCommercial", "OneDrive", "OneDriveConsumer"):
+            env_val = os.environ.get(env_key, "").strip()
+            if env_val:
+                return Path(os.path.expandvars(env_val)).expanduser() / "CSPM_Shared_Data" / "Vault"
+
+        return self.local_vault_dir()
+
     def state_dir(self) -> Path:
         return self.data_dir() / "state"
 

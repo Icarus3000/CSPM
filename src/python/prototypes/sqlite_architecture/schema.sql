@@ -12,7 +12,26 @@ PRAGMA busy_timeout = 5000;
 CREATE TABLE IF NOT EXISTS Client (
     client_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    legal_name TEXT DEFAULT '',
+    display_name TEXT DEFAULT '',
+    entity_type TEXT DEFAULT 'Corporation',
+    primary_contact TEXT DEFAULT '',
+    address TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    default_billing_rate REAL DEFAULT 0.0,
+    default_billing_rate_cents INTEGER DEFAULT 0,
+    hst_exempt INTEGER DEFAULT 0,
+    tax_exemption_reason TEXT DEFAULT '',
     status TEXT DEFAULT 'Active',
+    active INTEGER DEFAULT 1,
+    opening_date TEXT DEFAULT '',
+    kyc_status TEXT DEFAULT 'Pending',
+    kyc_verified_date TEXT DEFAULT '',
+    kyc_method TEXT DEFAULT '',
+    kyc_notes TEXT DEFAULT '',
+    referred_by TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     legacy_id TEXT
@@ -20,23 +39,120 @@ CREATE TABLE IF NOT EXISTS Client (
 
 CREATE TABLE IF NOT EXISTS ClientProfile (
     client_id TEXT PRIMARY KEY,
-    billing_address TEXT,
-    tax_number TEXT,
-    payment_terms TEXT,
+    display_name TEXT DEFAULT '',
+    legal_name TEXT DEFAULT '',
+    first_name TEXT DEFAULT '',
+    middle_name TEXT DEFAULT '',
+    last_name TEXT DEFAULT '',
+    entity_type TEXT DEFAULT 'Corporation',
+    principal_name TEXT DEFAULT '',
+    principal_position TEXT DEFAULT '',
+    primary_email TEXT DEFAULT '',
+    primary_phone TEXT DEFAULT '',
+    secondary_contact_name TEXT DEFAULT '',
+    secondary_contact_position TEXT DEFAULT '',
+    secondary_contact_email TEXT DEFAULT '',
+    secondary_contact_phone TEXT DEFAULT '',
+    address_line1 TEXT DEFAULT '',
+    address_line2 TEXT DEFAULT '',
+    city TEXT DEFAULT '',
+    state_province TEXT DEFAULT '',
+    postal_code TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    full_address TEXT DEFAULT '',
+    billing_address TEXT DEFAULT '',
+    parent_client_id TEXT DEFAULT '',
+    parent_client_name TEXT DEFAULT '',
+    website TEXT DEFAULT '',
+    tax_number TEXT DEFAULT '',
+    industry TEXT DEFAULT '',
+    billing_email TEXT DEFAULT '',
+    default_billing_rate REAL DEFAULT 0.0,
+    default_billing_rate_cents INTEGER DEFAULT 0,
+    hst_exempt INTEGER DEFAULT 0,
+    tax_exemption_reason TEXT DEFAULT '',
+    kyc_status TEXT DEFAULT 'Pending',
+    kyc_verified_date TEXT DEFAULT '',
+    kyc_method TEXT DEFAULT '',
+    kyc_notes TEXT DEFAULT '',
+    onboarding_status TEXT DEFAULT 'Prospect',
+    retainer_required INTEGER DEFAULT 0,
+    retainer_amount REAL DEFAULT 0.0,
+    engagement_start_date TEXT DEFAULT '',
+    opening_date TEXT DEFAULT '',
+    date_client_added TEXT DEFAULT '',
+    birthday TEXT DEFAULT '',
+    referral_from TEXT DEFAULT '',
+    referred_by TEXT DEFAULT '',
+    conflict_notes TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    payment_terms TEXT DEFAULT '',
+    created_at TEXT DEFAULT '',
+    updated_at TEXT DEFAULT '',
     FOREIGN KEY (client_id) REFERENCES Client(client_id) ON DELETE CASCADE
 );
 
 -- 2. Matters Domain
 CREATE TABLE IF NOT EXISTS Matter (
     matter_id TEXT PRIMARY KEY,
+    matter_number TEXT DEFAULT '',
+    matter_name TEXT DEFAULT '',
+    display_name TEXT DEFAULT '',
     client_id TEXT NOT NULL,
+    client_name TEXT DEFAULT '',
+    parent_id TEXT DEFAULT '',
+    parent_name TEXT DEFAULT '',
+    matter_type TEXT DEFAULT 'General',
+    practice_area TEXT DEFAULT '',
     description TEXT NOT NULL,
-    status TEXT DEFAULT 'Open',
-    default_biller TEXT DEFAULT 'PC',
+    status TEXT DEFAULT 'Active',
+    responsible_lawyer TEXT DEFAULT '',
+    billing_arrangement TEXT DEFAULT 'Hourly',
+    billing_contact TEXT DEFAULT '',
+    billing_email TEXT DEFAULT '',
+    default_rate REAL DEFAULT 0.0,
+    default_rate_cents INTEGER DEFAULT 0,
+    hourly_rate REAL DEFAULT 0.0,
+    hourly_rate_cents INTEGER DEFAULT 0,
+    fee_estimate REAL DEFAULT 0.0,
+    fee_estimate_cents INTEGER DEFAULT 0,
+    default_share_pct REAL DEFAULT 100.0,
+    rate_history TEXT DEFAULT '[]',
+    date_of_engagement TEXT DEFAULT '',
+    date_opened TEXT DEFAULT '',
+    target_completion_date TEXT DEFAULT '',
+    date_closed TEXT DEFAULT '',
+    court_file_number TEXT DEFAULT '',
+    opposing_party TEXT DEFAULT '',
+    referral_from TEXT DEFAULT '',
+    referred_by TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    representation_mode TEXT DEFAULT 'Single Client',
+    joint_no_confidentiality_confirmed INTEGER DEFAULT 0,
+    joint_instructions_require_all INTEGER DEFAULT 0,
+    joint_engagement_document TEXT DEFAULT '',
+    default_biller TEXT DEFAULT 'SOLE_PROP',
+    default_biller_entity TEXT DEFAULT 'SOLE_PROP',
+    kyc_completed INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     legacy_id TEXT,
     FOREIGN KEY (client_id) REFERENCES Client(client_id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS matter_parties (
+    party_id TEXT PRIMARY KEY,
+    matter_id TEXT NOT NULL,
+    client_id TEXT DEFAULT '',
+    client_name TEXT NOT NULL,
+    party_role TEXT NOT NULL,
+    is_file_anchor INTEGER DEFAULT 0,
+    is_billing_recipient INTEGER DEFAULT 0,
+    fee_share_pct REAL DEFAULT 0.0,
+    sort_order INTEGER DEFAULT 1,
+    notes TEXT DEFAULT '',
+    added_at TEXT DEFAULT '',
+    FOREIGN KEY (matter_id) REFERENCES Matter(matter_id) ON DELETE CASCADE
 );
 
 -- 3. Time & Tasks Domain
@@ -473,3 +589,51 @@ CREATE TABLE IF NOT EXISTS AuditEvent (
     user_id TEXT,
     details TEXT
 );
+
+-- 10. Canonical Snake-Case Compatibility Views (Dual-Schema Parity)
+DROP VIEW IF EXISTS clients;
+CREATE VIEW clients AS
+SELECT
+    c.client_id,
+    c.name AS client_name,
+    COALESCE(NULLIF(p.display_name, ''), NULLIF(c.display_name, ''), c.name) AS display_name,
+    COALESCE(NULLIF(p.legal_name, ''), NULLIF(c.legal_name, ''), c.name) AS legal_name,
+    COALESCE(NULLIF(p.entity_type, ''), NULLIF(c.entity_type, ''), 'Corporation') AS entity_type,
+    COALESCE(NULLIF(c.primary_contact, ''), NULLIF(p.principal_name, '')) AS primary_contact,
+    COALESCE(NULLIF(p.full_address, ''), NULLIF(c.address, ''), NULLIF(p.billing_address, '')) AS address,
+    COALESCE(NULLIF(p.primary_email, ''), NULLIF(c.email, '')) AS email,
+    COALESCE(NULLIF(p.primary_phone, ''), NULLIF(c.phone, '')) AS phone,
+    COALESCE(p.default_billing_rate, c.default_billing_rate, 0.0) AS default_billing_rate,
+    COALESCE(p.default_billing_rate_cents, c.default_billing_rate_cents, 0) AS default_billing_rate_cents,
+    COALESCE(p.hst_exempt, c.hst_exempt, 0) AS hst_exempt,
+    COALESCE(NULLIF(p.tax_exemption_reason, ''), NULLIF(c.tax_exemption_reason, '')) AS tax_exemption_reason,
+    c.status,
+    COALESCE(c.active, 1) AS active,
+    COALESCE(NULLIF(p.opening_date, ''), NULLIF(c.opening_date, ''), NULLIF(p.date_client_added, '')) AS opening_date,
+    COALESCE(NULLIF(p.kyc_status, ''), NULLIF(c.kyc_status, ''), 'Pending') AS kyc_status,
+    COALESCE(NULLIF(p.kyc_verified_date, ''), NULLIF(c.kyc_verified_date, '')) AS kyc_verified_date,
+    COALESCE(NULLIF(p.kyc_method, ''), NULLIF(c.kyc_method, '')) AS kyc_method,
+    COALESCE(NULLIF(p.kyc_notes, ''), NULLIF(c.kyc_notes, '')) AS kyc_notes,
+    COALESCE(NULLIF(p.referred_by, ''), NULLIF(c.referred_by, ''), NULLIF(p.referral_from, '')) AS referred_by,
+    COALESCE(NULLIF(p.referral_from, ''), NULLIF(p.referred_by, ''), NULLIF(c.referred_by, '')) AS referral_from,
+    COALESCE(NULLIF(p.notes, ''), NULLIF(c.notes, '')) AS notes,
+    c.created_at,
+    c.updated_at
+FROM Client c
+LEFT JOIN ClientProfile p ON c.client_id = p.client_id;
+
+DROP VIEW IF EXISTS client_profiles;
+CREATE VIEW client_profiles AS SELECT * FROM ClientProfile;
+
+DROP VIEW IF EXISTS matters;
+CREATE VIEW matters AS SELECT * FROM Matter;
+
+DROP VIEW IF EXISTS corporate_entities;
+CREATE VIEW corporate_entities AS SELECT * FROM corp_entities;
+
+DROP VIEW IF EXISTS corporate_relationships;
+CREATE VIEW corporate_relationships AS SELECT * FROM corp_relationships;
+
+DROP VIEW IF EXISTS corporate_transactions;
+CREATE VIEW corporate_transactions AS SELECT * FROM corp_transactions;
+

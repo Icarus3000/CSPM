@@ -168,7 +168,10 @@ def _stop_running_executable(exe_name: str = "CSPM.exe") -> bool:
 def stage_and_commit(message: str | None) -> bool:
     print("\n=== [2/4] Staging Safe Source/Schema/Test/Doc Changes ===")
     changed = _git_changed_files()
-    stageable = [rel for rel in changed if _is_safe_to_stage(rel)]
+    rule_file = ROOT_DIR / ".agent" / "rules" / "post_change_pipeline.md"
+    if rule_file.is_file() and ".agent/rules/post_change_pipeline.md" not in changed:
+        changed.append(".agent/rules/post_change_pipeline.md")
+    stageable = [rel for rel in changed if _is_safe_to_stage(rel) and (ROOT_DIR / rel).exists()]
     if not stageable:
         print("[git] Working tree has no uncommitted stageable source changes.")
         return False
@@ -176,7 +179,7 @@ def stage_and_commit(message: str | None) -> bool:
     print(f"[git] Staging {len(stageable)} file(s):")
     for rel in stageable:
         print(f"  + {rel}")
-    subprocess.run(["git", "add", "--", *stageable], cwd=ROOT_DIR, check=True)
+    subprocess.run(["git", "add", "-f", "--", *stageable], cwd=ROOT_DIR, check=True)
 
     staged_check = subprocess.check_output(
         ["git", "diff", "--cached", "--name-only"],
@@ -247,26 +250,54 @@ def push_to_remote() -> str:
     return sha
 
 
+CORE_BUILD_PREFIXES = (
+    "src/python/",
+    "src/qml/",
+    "src/templates/",
+    "schema/",
+)
+CORE_BUILD_FILES = {
+    "CSPM.spec",
+    "scripts/build_release.py",
+}
+
+
+def _has_core_code_changes(changed_files: list[str]) -> bool:
+    for rel in changed_files:
+        norm = rel.replace("\\", "/").lstrip("./")
+        if norm in CORE_BUILD_FILES:
+            return True
+        if any(norm.startswith(prefix) for prefix in CORE_BUILD_PREFIXES):
+            return True
+    return False
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Verify, build standalone .exe, and push to Git cloud.")
+    parser = argparse.ArgumentParser(description="Verify, optionally build standalone .exe on core code changes, and push to Git cloud.")
     parser.add_argument("-m", "--message", help="Commit message for staged source/schema/test/doc changes")
     parser.add_argument("--tests", nargs="*", default=[], help="Targeted pytest files to execute in the verification gate")
     parser.add_argument("--restart-running", action="store_true", help="Stop running CSPM.exe before build/deploy and relaunch afterward")
     parser.add_argument("--no-deploy", action="store_true", help="Build ./dist/CSPM/CSPM.exe without deploying to external program folder")
     parser.add_argument("--skip-build", action="store_true", help="Run verification and git sync without recompiling .exe")
+    parser.add_argument("--force-build", action="store_true", help="Force recompiling .exe even when no core application code files changed")
     parser.add_argument("--skip-push", action="store_true", help="Run verification, build, and local commit without git push")
     args = parser.parse_args()
 
     changed = _git_changed_files()
+    core_changed = _has_core_code_changes(changed)
     verify_changes(changed, args.tests)
     stage_and_commit(args.message)
 
     dist_exe = ROOT_DIR / DIST_EXE_REL
-    if not args.skip_build:
+    should_build = args.force_build or (not args.skip_build and core_changed)
+    if should_build:
         dist_exe = build_standalone_exe(
             restart_running=args.restart_running,
             no_deploy=args.no_deploy,
         )
+    else:
+        reason = "--skip-build passed" if args.skip_build else "no core application code changes detected"
+        print(f"\n=== [3/4] Skipping Standalone .exe Rebuild ({reason}) ===")
 
     if not args.skip_push:
         sha = push_to_remote()

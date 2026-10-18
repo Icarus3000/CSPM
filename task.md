@@ -1,5 +1,13 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-18: Compliance Vault Service (`VaultService`), 1-Click Retainer/KYC Open in QML & Core-Code-Only `.exe` Build Rule
+
+- [x] Refine the **Mandatory Post-Change Delivery Gate** in `./GEMINI.md` and `./.agent/rules/post_change_pipeline.md` to explicitly separate **Core Code / UI / Schema Changes** (must run `py_compile`/`qmllint`/tests, recompile `.exe`, and `git push`) from **Data-Only / Matter Intake / Document Operations** (must NOT recompile `CSPM.exe`).
+- [x] Extend `AppPaths` in `./src/python/services/paths.py` with `shared_vault_dir()` (`<masterDataDir>/Vault`) and `local_vault_dir()` (`<data_dir>/Vault`), and implement `./src/python/services/vault_service.py` (`VaultService`) with `resolve_document_path`, `ingest_document`, `get_matter_vault_folder`, and `get_client_kyc_folder` (including fallback resolution to `%OneDrive%\Clients (CS)\...`).
+- [x] Expose `@Slot` methods on `AppController` in `./src/python/backend/app_controller.py`: `openMatterRetainer`, `openVaultDocument`, `openMatterVaultFolder`, `openClientKYCVaultFolder`, and `ingestDocumentToVault`.
+- [x] Wire 1-click `"Open Retainer"`, clickable retainer agreement cards, and `"Open Matter Vault"` / `"Open KYC Vault"` buttons in `./src/qml/views/placeholder/MatterProfilePanel.qml`, `./src/qml/views/placeholder/ClientProfilePanel.qml`, and `./src/qml/views/PlaceholderSubmenuView.qml`.
+- [x] Add isolated `tmp_path` unit tests in `./tests/test_vault_service_and_slots.py` (without touching live `.xlsm` workbooks), recompile standalone `CSPM.exe`, and push to Git cloud via `./scripts/build_and_push.py`.
+
 ## 2026-10-18: Microsoft 365 Device-Code Auto-Clipboard & Persistent Post-Change Delivery Gate
 
 - [x] Auto-copy Microsoft 365 device-flow `user_code` to the system clipboard on the Qt GUI thread (`QGuiApplication.clipboard().setText(...)`) in `src/python/backend/controllers/calendar_agenda_controller.py` (`_accept_challenge`, `openEventLink`, and `@Slot(str, result=bool) copyToClipboard`).

@@ -1,5 +1,17 @@
 # Implementation History
 
+## 2026-10-18: Compliance Vault Service (`VaultService`), 1-Click Retainer/KYC Open in QML & Core-Code-Only `.exe` Build Rule
+
+1. **Core-Code-Only vs. Data-Only Delivery Gate (`./GEMINI.md` & `./.agent/rules/post_change_pipeline.md`)**:
+   - Refined the **Mandatory Post-Change Delivery Gate** so **Core Code / UI / Schema Changes** (`./src/python/`, `./src/qml/`, `./schema/`, `./src/templates/`, `CSPM.spec`, or build scripts) require `py_compile`/`qmllint`/tests + standalone `.exe` rebuild + `git push`, whereas **Data-Only / Matter Intake / Document Operations** (`CSPM.xlsm`, `Dockets.xlsm`, `Vault/` copies, or `.docx` generation) must NOT recompile `CSPM.exe`.
+2. **Portable Compliance Vault Service (`./src/python/services/paths.py` & `./src/python/services/vault_service.py`)**:
+   - Added `shared_vault_dir()` and `local_vault_dir()` to `AppPaths` in `./src/python/services/paths.py`.
+   - Created `VaultService` in `./src/python/services/vault_service.py` with `resolve_document_path(doc_ref, matter_number, client_id)`, `ingest_document(scope_type, scope_id, category, source_path)`, `get_matter_vault_folder(matter_number)`, and `get_client_kyc_folder(client_id)`, including ordered fallback resolution across shared/local `Vault/`, `Vault/Matters/<matter_number>/Retainer/`, `Vault/Clients/<client_id>/KYC/`, and `%OneDrive%\Clients (CS)\...` (specifically resolving `MEGA-COR-26-0093`'s signed joint retainer).
+3. **AppController Vault Slots & QML 1-Click Actions (`./src/python/backend/app_controller.py` & `./src/qml/`)**:
+   - Added `@Slot` methods `openMatterRetainer`, `openVaultDocument`, `openMatterVaultFolder`, `openClientKYCVaultFolder`, and `ingestDocumentToVault` on `AppController`.
+   - Updated `./src/qml/views/placeholder/MatterProfilePanel.qml`, `./src/qml/views/placeholder/ClientProfilePanel.qml`, and `./src/qml/views/PlaceholderSubmenuView.qml` with 1-click `"Open Retainer"`, clickable retainer cards, `"Open Matter Vault"`, and `"Open KYC Vault"` buttons.
+   - Added isolated `tmp_path` unit tests in `./tests/test_vault_service_and_slots.py`.
+
 ## 2026-10-18: Microsoft 365 Device-Code Auto-Clipboard & Persistent Post-Change Delivery Gate
 
 1. **Microsoft 365 Device-Code Auto-Clipboard (`CalendarAgendaController` & `CalendarConnectionDialog.qml`)**:

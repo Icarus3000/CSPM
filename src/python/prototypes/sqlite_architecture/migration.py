@@ -52,6 +52,7 @@ from domain.ap_schema import AP_BILLS_TABLE
 from domain.schema_constants import (
     TBL_BILLING_ENTITIES,
     TBL_CCA_ASSETS,
+    TBL_CLIENT_PROFILES,
     TBL_CLIENTS,
     TBL_CORP_ENTITIES,
     TBL_CORP_RELATIONSHIPS,
@@ -61,6 +62,7 @@ from domain.schema_constants import (
     TBL_HST_LOG,
     TBL_INVOICE_LOG,
     TBL_LEDGER,
+    TBL_MATTER_PARTIES,
     TBL_MATTERS,
     TBL_RECEIVABLES,
     TBL_SHAREHOLDER_LOAN_LEDGER,
@@ -288,8 +290,15 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
             )
         counts["transaction_categories"] = len(cat_rows)
 
-        # 5. Clients & Matters
+        # 5. Clients, ClientProfiles, Matters & MatterParties
         legacy_clients = _read_rows(TBL_CLIENTS)
+        legacy_profiles = _read_rows(TBL_CLIENT_PROFILES)
+        profile_by_cid: Dict[str, Dict[str, Any]] = {}
+        for prow in legacy_profiles:
+            pcid = str(prow.get("ClientID") or "").strip()
+            if pcid:
+                profile_by_cid[pcid] = prow
+
         client_id_map: Dict[str, str] = {}
         for row in legacy_clients:
             legacy_id = str(row.get("ClientID") or "").strip()
@@ -297,16 +306,126 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
             cid = legacy_id or generate_id("CLI")
             client_id_map[legacy_id] = cid
             client_id_map[name] = cid
+            prow = profile_by_cid.get(cid, {})
+            status_val = str(row.get("Status") or "Active").strip() or "Active"
+            active_flag = 0 if str(row.get("Active", "1")).strip().lower() in ("0", "false", "no") else 1
+            entity_type = str(row.get("EntityType") or prow.get("EntityType") or "Corporate").strip()
+            addr = str(row.get("Address") or prow.get("FullAddress") or "").strip()
+            primary_contact = str(row.get("PrimaryContact") or prow.get("PrincipalName") or "").strip()
+            email = str(row.get("Email") or prow.get("PrimaryEmail") or "").strip()
+            phone = str(row.get("Phone") or prow.get("PrimaryPhone") or "").strip()
+            default_rate_dec = to_decimal(row.get("DefaultBillingRate") or prow.get("DefaultBillingRate") or 0)
+            default_rate = float(default_rate_dec)
+            default_rate_cents = to_cents(default_rate_dec)
+            hst_exempt = 1 if str(row.get("HSTExempt") or prow.get("HSTExempt") or "0").strip().lower() in ("1", "true", "yes") else 0
+            tax_exempt_reason = str(row.get("TaxExemptionReason") or prow.get("TaxExemptionReason") or "").strip()
+            opening_date = normalize_iso_date(row.get("OpeningDate") or prow.get("OpeningDate") or prow.get("EngagementStartDate"))
+            kyc_status = str(row.get("KYCStatus") or prow.get("KYCStatus") or "").strip()
+            kyc_verified_date = normalize_iso_date(row.get("KYCVerifiedDate") or prow.get("KYCVerifiedDate"))
+            kyc_method = str(row.get("KYCMethod") or prow.get("KYCMethod") or "").strip()
+            kyc_notes = str(row.get("KYCNotes") or prow.get("KYCNotes") or "").strip()
+            referred_by = str(row.get("ReferredBy") or prow.get("ReferredBy") or prow.get("ReferralFrom") or "").strip()
+            referral_from = str(prow.get("ReferralFrom") or referred_by).strip()
+            parent_id = str(row.get("ParentID") or prow.get("ParentClientID") or "").strip()
+            parent_name = str(row.get("ParentName") or prow.get("ParentClientName") or "").strip()
+            display_name = str(prow.get("DisplayName") or name).strip()
+            legal_name = str(prow.get("LegalName") or display_name or name).strip()
+            notes_val = str(prow.get("Notes") or row.get("Notes") or "").strip()
+
             conn.execute(
-                "INSERT OR REPLACE INTO Client (client_id, name, status, created_at, updated_at, legacy_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (cid, name, str(row.get("Status") or "Active"), now, now, legacy_id or None),
+                """INSERT OR REPLACE INTO Client (
+                       client_id, name, legal_name, display_name, entity_type,
+                       primary_contact, address, email, phone,
+                       default_billing_rate, default_billing_rate_cents,
+                       hst_exempt, tax_exemption_reason, status, active,
+                       opening_date, kyc_status, kyc_verified_date, kyc_method,
+                       kyc_notes, referred_by, notes,
+                       created_at, updated_at, legacy_id
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    cid, name, legal_name, display_name, entity_type,
+                    primary_contact, addr, email, phone,
+                    default_rate, default_rate_cents,
+                    hst_exempt, tax_exempt_reason, status_val, active_flag,
+                    opening_date, kyc_status, kyc_verified_date, kyc_method,
+                    kyc_notes, referred_by, notes_val,
+                    now, now, legacy_id or None,
+                ),
+            )
+
+            conn.execute(
+                """INSERT OR REPLACE INTO ClientProfile (
+                       client_id, display_name, legal_name, first_name, middle_name, last_name,
+                       entity_type, principal_name, principal_position,
+                       primary_email, primary_phone,
+                       secondary_contact_name, secondary_contact_position,
+                       secondary_contact_email, secondary_contact_phone,
+                       address_line1, address_line2, city, state_province, postal_code, country,
+                       full_address, billing_address,
+                       parent_client_id, parent_client_name,
+                       website, tax_number, industry, billing_email,
+                       default_billing_rate, default_billing_rate_cents,
+                       hst_exempt, tax_exemption_reason,
+                       kyc_status, kyc_verified_date, kyc_method, kyc_notes,
+                       onboarding_status, retainer_required, retainer_amount,
+                       engagement_start_date, opening_date, date_client_added, birthday,
+                       referral_from, referred_by, conflict_notes, notes, payment_terms,
+                       created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    cid, display_name, legal_name,
+                    str(prow.get("FirstName") or "").strip(),
+                    str(prow.get("MiddleName") or "").strip(),
+                    str(prow.get("LastName") or "").strip(),
+                    entity_type,
+                    str(prow.get("PrincipalName") or primary_contact).strip(),
+                    str(prow.get("PrincipalPosition") or "").strip(),
+                    email, phone,
+                    str(prow.get("SecondaryContactName") or "").strip(),
+                    str(prow.get("SecondaryContactPosition") or "").strip(),
+                    str(prow.get("SecondaryContactEmail") or "").strip(),
+                    str(prow.get("SecondaryContactPhone") or "").strip(),
+                    str(prow.get("AddressLine1") or "").strip(),
+                    str(prow.get("AddressLine2") or "").strip(),
+                    str(prow.get("City") or "").strip(),
+                    str(prow.get("StateProvince") or "").strip(),
+                    str(prow.get("PostalCode") or "").strip(),
+                    str(prow.get("Country") or "").strip(),
+                    addr, addr,
+                    parent_id, parent_name,
+                    str(prow.get("Website") or "").strip(),
+                    str(prow.get("TaxID") or "").strip(),
+                    str(prow.get("Industry") or "").strip(),
+                    str(prow.get("BillingEmail") or email).strip(),
+                    default_rate, default_rate_cents,
+                    hst_exempt, tax_exempt_reason,
+                    kyc_status, kyc_verified_date, kyc_method, kyc_notes,
+                    str(prow.get("OnboardingStatus") or "").strip(),
+                    1 if str(prow.get("RetainerRequired", "0")).strip().lower() in ("1", "true", "yes") else 0,
+                    float(to_decimal(prow.get("RetainerAmount", 0))),
+                    normalize_iso_date(prow.get("EngagementStartDate") or opening_date),
+                    opening_date,
+                    normalize_iso_date(prow.get("DateClientAdded") or opening_date),
+                    normalize_iso_date(prow.get("Birthday")),
+                    referral_from, referred_by,
+                    str(prow.get("ConflictNotes") or "").strip(),
+                    notes_val,
+                    str(prow.get("PaymentTerms") or "Net 30"),
+                    now, str(prow.get("UpdatedAt") or now),
+                ),
             )
         counts["clients"] = len(legacy_clients)
+        counts["client_profiles"] = len(legacy_clients)
 
+        # Clean up any stale duplicate MEGA-CRP-26-0209 matter IDs before inserting
+        conn.execute(
+            "DELETE FROM Matter WHERE matter_number = 'MEGA-CRP-26-0209' AND matter_id != 'M_megatech_s86_2026'"
+        )
         legacy_matters = _read_rows(TBL_MATTERS)
         matter_id_map: Dict[str, str] = {}
         for row in legacy_matters:
             mid = str(row.get("MatterID") or "").strip() or generate_id("MAT")
+            matter_num = str(row.get("MatterNumber") or "").strip()
             legacy_client_id = str(row.get("ClientID") or row.get("ClientName") or "").strip()
             cid = client_id_map.get(legacy_client_id)
             if not cid:
@@ -316,16 +435,120 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
                     (cid, str(row.get("ClientName") or "Orphan Recovery Client"), now, now, legacy_client_id or None),
                 )
                 client_id_map[legacy_client_id] = cid
-            desc = str(row.get("Description") or row.get("MatterName") or row.get("DisplayName") or "No Description")
-            default_biller = str(row.get("DefaultBiller") or "PC").strip().upper() or "PC"
+            matter_name = str(row.get("MatterName") or row.get("DisplayName") or row.get("Description") or "No Description").strip()
+            display_name = str(row.get("DisplayName") or matter_name).strip()
+            desc = str(row.get("Description") or display_name or matter_name or "No Description").strip()
+            status_val = str(row.get("Status") or "Open").strip() or "Open"
+            default_biller = str(row.get("DefaultBillerEntity") or row.get("DefaultBiller") or "SOLE_PROP").strip().upper() or "SOLE_PROP"
+            referred_by = str(row.get("ReferredBy") or row.get("ReferralFrom") or "").strip()
+            referral_from = str(row.get("ReferralFrom") or referred_by).strip()
+            rep_mode = str(row.get("RepresentationMode") or "Single Client").strip()
+            def_rate_dec = to_decimal(row.get("DefaultRate", row.get("HourlyRate", 0)))
+            hr_rate_dec = to_decimal(row.get("HourlyRate", def_rate_dec))
+            fee_est_dec = to_decimal(row.get("FeeEstimate", 0))
+            kyc_completed = 1 if str(row.get("KYCCompleted", "0")).strip().lower() in ("1", "true", "yes") else 0
+            open_date_val = normalize_iso_date(row.get("DateOpened") or row.get("OpenDate") or row.get("DateOfEngagement"))
+            eng_date_val = normalize_iso_date(row.get("DateOfEngagement") or open_date_val)
+            close_date_val = normalize_iso_date(row.get("DateClosed") or row.get("CloseDate"))
+            joint_doc_val = str(row.get("JointEngagementDocument") or "").strip()
             conn.execute(
-                """INSERT OR REPLACE INTO Matter
-                   (matter_id, client_id, description, status, default_biller, created_at, updated_at, legacy_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (mid, cid, desc, str(row.get("Status") or "Open"), default_biller, now, now, mid),
+                """INSERT OR REPLACE INTO Matter (
+                       matter_id, matter_number, matter_name, display_name,
+                       client_id, client_name, parent_id, parent_name,
+                       matter_type, practice_area, description, status,
+                       responsible_lawyer, billing_arrangement, billing_contact, billing_email,
+                       default_rate, default_rate_cents, hourly_rate, hourly_rate_cents,
+                       fee_estimate, fee_estimate_cents, default_share_pct, rate_history,
+                       date_of_engagement, date_opened, target_completion_date, date_closed,
+                       court_file_number, opposing_party, referral_from, referred_by, notes,
+                       representation_mode, joint_no_confidentiality_confirmed,
+                       joint_instructions_require_all, joint_engagement_document,
+                       default_biller, default_biller_entity, kyc_completed,
+                       created_at, updated_at, legacy_id
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mid,
+                    matter_num,
+                    matter_name,
+                    display_name,
+                    cid,
+                    str(row.get("ClientName") or "").strip(),
+                    str(row.get("ParentID") or "").strip(),
+                    str(row.get("ParentName") or "").strip(),
+                    str(row.get("MatterType") or "General").strip(),
+                    str(row.get("PracticeArea") or "").strip(),
+                    desc,
+                    status_val,
+                    str(row.get("ResponsibleLawyer") or "").strip(),
+                    str(row.get("BillingArrangement") or "Hourly").strip(),
+                    str(row.get("BillingContact") or "").strip(),
+                    str(row.get("BillingEmail") or "").strip(),
+                    float(def_rate_dec),
+                    to_cents(def_rate_dec),
+                    float(hr_rate_dec),
+                    to_cents(hr_rate_dec),
+                    float(fee_est_dec),
+                    to_cents(fee_est_dec),
+                    float(to_decimal(row.get("DefaultSharePct", 100))),
+                    str(row.get("RateHistory") or "[]").strip(),
+                    eng_date_val,
+                    open_date_val,
+                    normalize_iso_date(row.get("TargetCompletionDate")),
+                    close_date_val,
+                    str(row.get("CourtFileNumber") or "").strip(),
+                    str(row.get("OpposingParty") or "").strip(),
+                    referral_from,
+                    referred_by,
+                    str(row.get("Notes") or "").strip(),
+                    rep_mode,
+                    1 if str(row.get("JointNoConfidentialityConfirmed", "0")).strip().lower() in ("1", "true", "yes") else 0,
+                    1 if str(row.get("JointInstructionsRequireAll", "0")).strip().lower() in ("1", "true", "yes") else 0,
+                    joint_doc_val,
+                    default_biller,
+                    default_biller,
+                    kyc_completed,
+                    now,
+                    str(row.get("UpdatedAt") or now),
+                    mid,
+                ),
             )
             matter_id_map[mid] = mid
         counts["matters"] = len(legacy_matters)
+
+        # 5b. Matter Parties
+        conn.execute("DELETE FROM matter_parties")
+        party_rows = _read_rows(TBL_MATTER_PARTIES)
+        for idx, row in enumerate(party_rows, start=1):
+            pid = str(row.get("MatterPartyID") or row.get("PartyID") or "").strip() or f"MP-{idx:05d}"
+            mid = str(row.get("MatterID") or "").strip()
+            if not mid:
+                continue
+            party_cid = str(row.get("ClientID") or row.get("PartyClientID") or "").strip()
+            party_name = str(row.get("ClientName") or row.get("PartyName") or "").strip()
+            party_role = str(row.get("Role") or row.get("PartyRole") or "").strip()
+            is_anchor = 1 if str(row.get("IsFileAnchor", row.get("IsClientParty", "0"))).strip().lower() in ("1", "true", "yes") else 0
+            is_billing = 1 if str(row.get("IsBillingRecipient", row.get("IsBillingParty", "0"))).strip().lower() in ("1", "true", "yes") else 0
+            conn.execute(
+                """INSERT OR REPLACE INTO matter_parties (
+                       party_id, matter_id, client_id, client_name, party_role,
+                       is_file_anchor, is_billing_recipient, fee_share_pct,
+                       sort_order, notes, added_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    pid,
+                    mid,
+                    party_cid,
+                    party_name,
+                    party_role,
+                    is_anchor,
+                    is_billing,
+                    float(to_decimal(row.get("FeeSharePct", 100.0 if is_billing else 0.0))),
+                    int(to_decimal(row.get("SortOrder", idx))),
+                    str(row.get("Notes") or "").strip(),
+                    str(row.get("CreatedAt") or row.get("UpdatedAt") or now),
+                ),
+            )
+        counts["matter_parties"] = len(party_rows)
 
         # 6. Time Entries
         time_rows = _read_rows(TBL_TIME_ENTRIES)
@@ -710,8 +933,17 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
             )
         counts["hst_log"] = len(hst_rows)
 
-        # 12. Corporate Entities, Relationships & Share Transactions
-        corp_entities = _read_rows(TBL_CORP_ENTITIES)
+        # 12. Corporate Entities, Relationships & Share Transactions (Firm Corporate Records Only)
+        conn.execute("DELETE FROM corp_entities")
+        conn.execute("DELETE FROM corp_relationships")
+        conn.execute("DELETE FROM corp_transactions")
+        corp_entities = [
+            row
+            for row in _read_rows(TBL_CORP_ENTITIES)
+            if "MEGATECH" not in str(row.get("LegalName") or "").upper()
+            and "HAMILTON" not in str(row.get("LegalName") or "").upper()
+            and str(row.get("ClientID") or "").strip().upper() not in ("MEGA", "HAMI")
+        ]
         for row in corp_entities:
             eid = str(row.get("EntityID") or "").strip() or generate_id("ENT")
             conn.execute(
@@ -732,7 +964,11 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
             )
         counts["corp_entities"] = len(corp_entities)
 
-        corp_rels = _read_rows(TBL_CORP_RELATIONSHIPS)
+        corp_rels = [
+            row
+            for row in _read_rows(TBL_CORP_RELATIONSHIPS)
+            if not str(row.get("RelationshipID") or "").upper().startswith("CR-MEGA")
+        ]
         for row in corp_rels:
             rid = str(row.get("RelationshipID") or "").strip() or generate_id("REL")
             conn.execute(
@@ -756,7 +992,11 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
             )
         counts["corp_relationships"] = len(corp_rels)
 
-        corp_txns = _read_rows(TBL_CORP_TRANSACTIONS)
+        corp_txns = [
+            row
+            for row in _read_rows(TBL_CORP_TRANSACTIONS)
+            if not str(row.get("TransactionID") or "").upper().startswith("CT-MEGA")
+        ]
         for row in corp_txns:
             ctid = str(row.get("TransactionID") or "").strip() or generate_id("CTX")
             tot_val = to_decimal(row.get("TotalValue", 0))

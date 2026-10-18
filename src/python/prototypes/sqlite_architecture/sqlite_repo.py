@@ -191,9 +191,29 @@ class SqliteClientRepo:
         conn = get_connection()
         query = """
         SELECT c.client_id, c.name as client_name, c.status,
-               p.billing_address, p.tax_number, p.payment_terms
+               c.legal_name as c_legal_name, c.display_name as c_display_name,
+               c.entity_type as c_entity_type, c.address as c_address,
+               c.primary_contact as c_primary_contact, c.email as c_email, c.phone as c_phone,
+               c.default_billing_rate as c_rate, c.hst_exempt as c_hst_exempt,
+               c.tax_exemption_reason as c_tax_reason, c.opening_date as c_opening_date,
+               c.kyc_status as c_kyc_status, c.kyc_verified_date as c_kyc_verified_date,
+               c.kyc_method as c_kyc_method, c.kyc_notes as c_kyc_notes,
+               c.referred_by as c_referred_by, c.updated_at as c_updated_at,
+               p.display_name, p.legal_name, p.first_name, p.middle_name, p.last_name,
+               p.entity_type as p_entity_type, p.billing_address, p.full_address,
+               p.tax_number, p.payment_terms,
+               p.principal_name, p.principal_position, p.primary_email, p.primary_phone,
+               p.address_line1, p.address_line2, p.city, p.state_province, p.postal_code, p.country,
+               p.parent_client_id, p.parent_client_name,
+               p.referral_from, p.referred_by as p_referred_by,
+               p.default_billing_rate as p_rate, p.hst_exempt as p_hst_exempt,
+               p.tax_exemption_reason as p_tax_reason, p.opening_date as p_opening_date,
+               p.onboarding_status, p.kyc_status as p_kyc_status,
+               p.kyc_verified_date as p_kyc_verified_date, p.kyc_method as p_kyc_method,
+               p.kyc_notes as p_kyc_notes, p.updated_at as p_updated_at
         FROM Client c
         LEFT JOIN ClientProfile p ON c.client_id = p.client_id
+        ORDER BY c.name COLLATE NOCASE ASC
         """
         cursor = conn.execute(query)
         rows = cursor.fetchall()
@@ -201,27 +221,80 @@ class SqliteClientRepo:
         directory = []
         for row in rows:
             client_id = row["client_id"]
-            client_name = row["client_name"]
+            client_name = row["client_name"] or ""
+            display_name = row["display_name"] or row["c_display_name"] or client_name
+            legal_name = row["legal_name"] or row["c_legal_name"] or display_name or client_name
+            entity_type = row["p_entity_type"] or row["c_entity_type"] or "Corporate"
+            status = row["status"] or "Active"
+            active = 1 if status.lower() == "active" else 0
+            primary_contact = row["c_primary_contact"] or row["principal_name"] or ""
+            primary_email = row["primary_email"] or row["c_email"] or ""
+            primary_phone = row["primary_phone"] or row["c_phone"] or ""
+            address = row["full_address"] or row["billing_address"] or row["c_address"] or ""
+            default_rate = float(row["p_rate"] if row["p_rate"] is not None and float(row["p_rate"] or 0) > 0 else (row["c_rate"] or 0.0))
+            hst_exempt = int(row["p_hst_exempt"] if row["p_hst_exempt"] is not None else (row["c_hst_exempt"] or 0))
+            tax_reason = row["p_tax_reason"] or row["c_tax_reason"] or ""
+            opening_date = row["p_opening_date"] or row["c_opening_date"] or ""
+            kyc_status = row["p_kyc_status"] or row["c_kyc_status"] or ""
+            kyc_verified_date = row["p_kyc_verified_date"] or row["c_kyc_verified_date"] or ""
+            kyc_method = row["p_kyc_method"] or row["c_kyc_method"] or ""
+            kyc_notes = row["p_kyc_notes"] or row["c_kyc_notes"] or ""
+            referred_by = row["p_referred_by"] or row["c_referred_by"] or row["referral_from"] or ""
+            referral_from = row["referral_from"] or referred_by
+            updated_at = row["p_updated_at"] or row["c_updated_at"] or ""
+            search_chunks = [
+                client_id, client_name, display_name, legal_name, entity_type,
+                primary_contact, primary_email, primary_phone, address,
+                referred_by, kyc_status, kyc_method
+            ]
             directory.append({
                 "clientId": client_id,
                 "clientName": client_name,
-                "displayName": client_name,
-                "legalName": client_name,
-                "firstName": "",
-                "middleName": "",
-                "lastName": "",
-                "entityType": "Corporate",
-                "status": row["status"],
-                "active": 1 if row["status"] == "Active" else 0,
-                "primaryEmail": "",
-                "primaryPhone": "",
-                "parentClientName": "",
-                "onboardingStatus": "",
-                "kycStatus": "",
-                "updatedAt": "",
-                "searchText": f"{client_id} {client_name}".lower(),
+                "displayName": display_name,
+                "legalName": legal_name,
+                "firstName": row["first_name"] or "",
+                "middleName": row["middle_name"] or "",
+                "lastName": row["last_name"] or "",
+                "entityType": entity_type,
+                "status": status,
+                "active": active,
+                "primaryContact": primary_contact,
+                "primaryContactName": primary_contact,
+                "primaryEmail": primary_email,
+                "primaryPhone": primary_phone,
+                "address": address,
+                "fullAddress": address,
+                "parentId": row["parent_client_id"] or "",
+                "parentClientName": row["parent_client_name"] or "",
+                "defaultBillingRate": default_rate,
+                "hstExempt": hst_exempt,
+                "taxExemptionReason": tax_reason,
+                "openingDate": opening_date,
+                "onboardingStatus": row["onboarding_status"] or "",
+                "kycStatus": kyc_status,
+                "kycVerifiedDate": kyc_verified_date,
+                "kycMethod": kyc_method,
+                "kycNotes": kyc_notes,
+                "referredBy": referred_by,
+                "referralFrom": referral_from,
+                "updatedAt": updated_at,
+                "searchText": " ".join(c for c in search_chunks if c).lower(),
             })
         return directory
+
+    def get_client_profile(self, client_key: str) -> Dict[str, Any]:
+        lookup = str(client_key or "").strip().lower()
+        if not lookup:
+            return {"ok": False, "message": "Client key is required.", "client": {}}
+        for item in self.list_client_directory():
+            if (
+                str(item.get("clientId") or "").lower() == lookup
+                or str(item.get("clientName") or "").lower() == lookup
+                or str(item.get("displayName") or "").lower() == lookup
+                or str(item.get("legalName") or "").lower() == lookup
+            ):
+                return {"ok": True, "message": "Client loaded.", "client": item}
+        return {"ok": False, "message": f"Client not found: {client_key}", "client": {}}
 
     def list_parent_names(self) -> List[str]:
         return []
@@ -258,29 +331,154 @@ class SqliteClientRepo:
 
 
 class SqliteMatterRepo:
+    def list_matter_parties(self, matter_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        conn = get_connection()
+        if matter_id:
+            cursor = conn.execute(
+                "SELECT * FROM matter_parties WHERE matter_id = ? ORDER BY sort_order ASC, party_id ASC",
+                (str(matter_id).strip(),),
+            )
+        else:
+            cursor = conn.execute("SELECT * FROM matter_parties ORDER BY matter_id ASC, sort_order ASC, party_id ASC")
+        results: List[Dict[str, Any]] = []
+        for r in cursor.fetchall():
+            pid = r["party_id"]
+            mid = r["matter_id"]
+            cid = r["client_id"] or ""
+            cname = r["client_name"] or ""
+            role = r["party_role"] or ""
+            is_anchor = int(r["is_file_anchor"] or 0)
+            is_billing = int(r["is_billing_recipient"] or 0)
+            is_client_party = 1 if (cid or is_anchor) else 0
+            results.append({
+                "matterPartyId": pid,
+                "partyId": pid,
+                "PartyID": pid,
+                "MatterPartyID": pid,
+                "matterId": mid,
+                "MatterID": mid,
+                "clientId": cid,
+                "partyClientId": cid,
+                "PartyClientID": cid,
+                "ClientID": cid,
+                "clientName": cname,
+                "partyName": cname,
+                "PartyName": cname,
+                "ClientName": cname,
+                "role": role,
+                "partyRole": role,
+                "PartyRole": role,
+                "Role": role,
+                "isFileAnchor": is_anchor,
+                "isClientParty": is_client_party,
+                "IsClientParty": is_client_party,
+                "isBillingRecipient": is_billing,
+                "isBillingParty": is_billing,
+                "IsBillingParty": is_billing,
+                "sortOrder": int(r["sort_order"] or 0),
+                "feeSharePct": float(r["fee_share_pct"] or 0.0),
+                "notes": r["notes"] or "",
+                "Notes": r["notes"] or "",
+                "addedAt": r["added_at"] or "",
+            })
+        return results
+
     def list_matter_directory(self) -> List[Dict[str, Any]]:
         conn = get_connection()
         query = """
-        SELECT m.matter_id, m.description, m.status, m.default_biller, c.name as client_name, c.client_id
+        SELECT m.*, c.name as c_client_name
         FROM Matter m
-        JOIN Client c ON m.client_id = c.client_id
+        LEFT JOIN Client c ON m.client_id = c.client_id
+        ORDER BY COALESCE(m.display_name, m.matter_name, m.description) COLLATE NOCASE ASC
         """
         cursor = conn.execute(query)
         rows = cursor.fetchall()
 
         directory = []
         for row in rows:
+            mid = row["matter_id"]
+            matter_num = row["matter_number"] or ""
+            client_id = row["client_id"] or ""
+            client_name = row["client_name"] or row["c_client_name"] or ""
+            matter_name = row["matter_name"] or row["description"] or ""
+            display_name = row["display_name"] or matter_name
+            desc = row["description"] or display_name
+            status = row["status"] or "Open"
+            active = 1 if status.lower() in ("open", "active") else 0
+            referred_by = row["referred_by"] or row["referral_from"] or ""
+            referral_from = row["referral_from"] or referred_by
+            default_biller = row["default_biller_entity"] or row["default_biller"] or "SOLE_PROP"
+            rep_mode = row["representation_mode"] or "Single Client"
+            is_joint = 1 if rep_mode.lower() == "joint retainer" else 0
+            kyc_completed = int(row["kyc_completed"] or 0)
+            open_date = row["date_opened"] or row["date_of_engagement"] or ""
+            joint_doc = row["joint_engagement_document"] or ""
+            search_chunks = [
+                mid, matter_num, client_id, client_name, matter_name, display_name,
+                desc, row["practice_area"] or "", row["matter_type"] or "",
+                referred_by, joint_doc
+            ]
             directory.append({
-                "matterId": row["matter_id"],
-                "clientId": row["client_id"],
-                "clientName": row["client_name"],
-                "description": row["description"],
-                "status": row["status"],
-                "defaultBiller": row["default_biller"] or "PC",
-                "active": 1 if row["status"] == "Open" else 0,
-                "searchText": f"{row['matter_id']} {row['client_name']} {row['description']}".lower(),
+                "matterId": mid,
+                "matterNumber": matter_num,
+                "matterName": matter_name,
+                "displayName": display_name,
+                "description": desc,
+                "clientId": client_id,
+                "clientName": client_name,
+                "parentId": row["parent_id"] or "",
+                "parentName": row["parent_name"] or "",
+                "practiceArea": row["practice_area"] or "",
+                "matterType": row["matter_type"] or "",
+                "status": status,
+                "active": active,
+                "openDate": open_date,
+                "dateOpened": open_date,
+                "dateOfEngagement": row["date_of_engagement"] or open_date,
+                "closeDate": row["date_closed"] or "",
+                "dateClosed": row["date_closed"] or "",
+                "targetCompletionDate": row["target_completion_date"] or "",
+                "billingArrangement": row["billing_arrangement"] or "",
+                "defaultRate": float(row["default_rate"] or 0.0),
+                "hourlyRate": float(row["hourly_rate"] or row["default_rate"] or 0.0),
+                "feeEstimate": float(row["fee_estimate"] or 0.0),
+                "responsibleLawyer": row["responsible_lawyer"] or "",
+                "originatingLawyer": row["responsible_lawyer"] or "",
+                "referredBy": referred_by,
+                "referralFrom": referral_from,
+                "representationMode": rep_mode,
+                "isJointRetainer": is_joint,
+                "jointEngagementStatus": "Signed" if joint_doc else "",
+                "jointEngagementDocument": joint_doc,
+                "conflictCheckStatus": "Cleared" if is_joint else "",
+                "conflictCheckDate": open_date if is_joint else "",
+                "kycCompleted": kyc_completed,
+                "kycStatus": "Completed" if kyc_completed else "",
+                "kycVerifiedDate": open_date if kyc_completed else "",
+                "defaultBiller": default_biller,
+                "defaultBillerEntity": default_biller,
+                "notes": row["notes"] or "",
+                "updatedAt": row["updated_at"] or "",
+                "searchText": " ".join(c for c in search_chunks if c).lower(),
             })
         return directory
+
+    def get_matter_profile(self, matter_key: str) -> Dict[str, Any]:
+        lookup = str(matter_key or "").strip().lower()
+        if not lookup:
+            return {"ok": False, "message": "Matter key is required.", "matter": {}}
+        for item in self.list_matter_directory():
+            if (
+                str(item.get("matterId") or "").lower() == lookup
+                or str(item.get("matterNumber") or "").lower() == lookup
+                or str(item.get("matterName") or "").lower() == lookup
+                or str(item.get("displayName") or "").lower() == lookup
+            ):
+                parties = self.list_matter_parties(item["matterId"])
+                payload = dict(item)
+                payload["parties"] = parties
+                return {"ok": True, "message": "Matter loaded.", "matter": payload}
+        return {"ok": False, "message": f"Matter not found: {matter_key}", "matter": {}}
 
     def get_matters_for_client(self, client_id: str) -> List[Dict[str, Any]]:
         conn = get_connection()

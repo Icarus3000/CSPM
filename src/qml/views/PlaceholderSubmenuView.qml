@@ -5874,18 +5874,44 @@ Behavior on border.color {
                                 t: root.t
                                 metrics: root.responsiveMetrics
                                 sfxBus: root.sfxBus
-                                text: "Open"
+                                text: "Open Retainer"
                                 primary: false
                                 enabled: root.matterEngagementDocumentSourcePath.length > 0
                                     || root.matterEngagementDocumentStoredPath.length > 0
-                                Layout.preferredWidth: root.ratioPxW(0.078, 72)
+                                    || String(matterNumberInput.text || "").trim().length > 0
+                                Layout.preferredWidth: root.ratioPxW(0.104, 108)
                                 Layout.preferredHeight: root.fieldHeightPx
                                 onClicked: {
                                     var target = root.matterEngagementDocumentSourcePath.length > 0
                                         ? root.matterEngagementDocumentSourcePath
                                         : root.matterEngagementDocumentStoredPath
-                                    if (root.appRef && root.appRef.openMatterDocument) {
+                                    var opened = false
+                                    var mNum = String(matterNumberInput.text || root.selectedMatterId || "").trim()
+                                    if (target.length > 0 && root.appRef && root.appRef.openVaultDocument) {
+                                        opened = Boolean(root.appRef.openVaultDocument(target))
+                                    }
+                                    if (!opened && mNum.length > 0 && root.appRef && root.appRef.openMatterRetainer) {
+                                        opened = Boolean(root.appRef.openMatterRetainer(mNum))
+                                    }
+                                    if (!opened && target.length > 0 && root.appRef && root.appRef.openMatterDocument) {
                                         root.appRef.openMatterDocument(target)
+                                    }
+                                }
+                            }
+
+                            PillButton {
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                sfxBus: root.sfxBus
+                                text: "Open Matter Vault"
+                                primary: false
+                                enabled: String(matterNumberInput.text || root.selectedMatterId || "").trim().length > 0
+                                Layout.preferredWidth: root.ratioPxW(0.118, 128)
+                                Layout.preferredHeight: root.fieldHeightPx
+                                onClicked: {
+                                    var mNum = String(matterNumberInput.text || root.selectedMatterId || "").trim()
+                                    if (mNum.length > 0 && root.appRef && root.appRef.openMatterVaultFolder) {
+                                        root.appRef.openMatterVaultFolder(mNum)
                                     }
                                 }
                             }

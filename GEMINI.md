@@ -1,10 +1,8 @@
 # CSPM (`__CSPM`) — Architecture, Schema Map & Corporate/Tax Ground Truth
 
-> **Mandatory Post-Change Delivery Gate (Verify -> Recompile `.exe` -> Push to Git Cloud):**
-> Whenever any Python (`.py`), QML (`.qml`), schema (`.yml` / `.sql`), or template file is created or modified, Antigravity MUST automatically complete all three steps before finishing the turn—even if the user's prompt does not explicitly ask for a build or push:
-> 1. Run `py_compile`, `qmllint`, and targeted verification tests.
-> 2. Recompile the local standalone `.exe` so the desktop executable immediately reflects the latest code.
-> 3. Commit all source/test/doc changes and run `git push` to synchronize with Git cloud.
+> **Mandatory Post-Change Delivery Gate (Core Code Changes vs. File/Matter Data Entry):**
+> - **Core Code / UI / Schema Changes** (creating or modifying files in `./src/python/`, `./src/qml/`, `./schema/`, `./src/templates/`, `CSPM.spec`, or build scripts) $\rightarrow$ **MUST** run `py_compile`/`qmllint`/tests, recompile the standalone `.exe` via `./scripts/build_and_push.py`, and commit/push to Git cloud.
+> - **Data-Only / Matter Intake / Document Operations** (onboarding clients or matters into `CSPM.xlsm` or `Dockets.xlsm`, logging dockets/disbursements, copying files into `Vault/`, or generating client `.docx` checklists/drafts) $\rightarrow$ **MUST NOT** recompile `CSPM.exe` unless core repository code was also modified. Persist the data directly to the workbook/SQLite/Vault storage, run targeted verification (`--skip-build`), and push any stageable test/doc updates.
 >
 > *(Automated via `./scripts/build_and_push.py`; see `./.agent/rules/post_change_pipeline.md`.)*
 
@@ -101,7 +99,8 @@ Pre-seeded into `tblShareholderLoanLedger` / `shareholder_loan_ledger` (matching
   - `./src/python/domain/ap_schema.py` — Accounts Payable (`tblAPBills`, `tblAPPayments`) schema definitions.
   - `./src/python/domain/tax_rules.py` — CRA deductibility and ITC factor rules (e.g., 50% Meals & Entertainment).
 - **Domain Services (`./src/python/services/`):**
-  - `./src/python/services/paths.py` — Portable path resolution (`PathService`).
+  - `./src/python/services/paths.py` — Portable path resolution (`PathService` / `AppPaths`, including `shared_vault_dir()` and `local_vault_dir()`).
+  - `./src/python/services/vault_service.py` — Portable Compliance Vault document ingestion, multi-path fallback resolution (`Vault/` + `%OneDrive%\Clients (CS)\...`), and 1-click folder/document access (`VaultService`).
   - `./src/python/services/sync_service.py` — Shared workbook checkout/lock synchronization (`cspm.lock`).
   - `./src/python/services/invoice_draft_service.py` — Draft invoice math, finalization, and void/reissue lifecycle.
   - `./src/python/services/invoice_document_service.py` — Jinja2 HTML & `docxtpl` invoice rendering.

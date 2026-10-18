@@ -39,8 +39,56 @@ class MatterDocumentService:
 
     def __init__(self, shared_data_dir: Path | str | None, local_data_dir: Path | str):
         shared = Path(shared_data_dir) if shared_data_dir else None
-        self.base = shared if shared else Path(local_data_dir)
+        self.shared_base = shared
+        self.local_base = Path(local_data_dir)
+        self.base = shared if shared else self.local_base
         self.root = self.base / self.FOLDER_NAME
+
+    @classmethod
+    def discover_onedrive_roots(cls, shared_data_dir: Path | str | None = None) -> list[Path]:
+        """Discover OneDrive roots on the active workstation without hardcoding folder names."""
+        candidates: list[Path] = []
+        if shared_data_dir:
+            shared_path = Path(shared_data_dir)
+            if shared_path.parent.exists():
+                candidates.append(shared_path.parent)
+        for env_key in ("OneDriveCommercial", "OneDrive", "OneDriveConsumer"):
+            env_val = os.environ.get(env_key, "").strip()
+            if env_val:
+                candidates.append(Path(env_val))
+        try:
+            home = Path.home()
+            for match in sorted(home.glob("OneDrive*")):
+                if match.is_dir():
+                    candidates.append(match)
+        except OSError:
+            pass
+
+        unique_roots: list[Path] = []
+        seen: set[str] = set()
+        for root in candidates:
+            try:
+                norm = str(root.resolve()).casefold()
+            except OSError:
+                norm = str(root).casefold()
+            if norm not in seen and root.exists():
+                seen.add(norm)
+                unique_roots.append(root)
+        return unique_roots
+
+    @classmethod
+    def find_onedrive_file(
+        cls,
+        relative_subpath: str | Path,
+        shared_data_dir: Path | str | None = None,
+    ) -> Path | None:
+        """Locate a file inside any OneDrive root on the current workstation by its OneDrive-relative path."""
+        rel = Path(str(relative_subpath).lstrip("/\\"))
+        for root in cls.discover_onedrive_roots(shared_data_dir):
+            candidate = root / rel
+            if candidate.is_file():
+                return candidate
+        return None
 
     @staticmethod
     def _source_path(value: Any) -> Path:
@@ -58,7 +106,7 @@ class MatterDocumentService:
             raise MatterDocumentError(
                 "Choose a local or OneDrive-synced agreement file, rather than a web link."
             )
-        return Path(text)
+        return Path(os.path.expandvars(text)).expanduser()
 
     @classmethod
     def _safe_part(cls, value: Any, fallback: str) -> str:
@@ -105,10 +153,14 @@ class MatterDocumentService:
         self,
         source: Any,
         *,
-        matter_number: Any,
-        matter_name: Any,
+        matter_number: Any = "",
+        matter_name: Any = "",
     ) -> dict[str, str]:
         source_path = self._source_path(source)
+        if not source_path.is_file():
+            onedrive_match = self.find_onedrive_file(source_path, self.shared_base)
+            if onedrive_match is not None:
+                source_path = onedrive_match
         if not source_path.is_file():
             raise MatterDocumentError(f"Retainer agreement was not found: {source_path}")
         if source_path.stat().st_size <= 0:
@@ -133,8 +185,18 @@ class MatterDocumentService:
         destination_dir.mkdir(parents=True, exist_ok=True)
         if not destination_dir.resolve().is_relative_to(self.root.resolve()):
             raise MatterDocumentError("The matter document folder escapes the configured storage root.")
-        destination = destination_dir / f"{name_part}--{checksum[:12]}{extension}"
+        filename = f"{name_part}--{checksum[:12]}{extension}"
+        destination = destination_dir / filename
         self._copy_verified(source_path, destination, checksum)
+
+        # Also mirror into local_base/Matter_Documents if shared_base is active so offline local runs resolve too
+        if self.shared_base is not None and self.local_base != self.shared_base:
+            try:
+                local_dest_dir = (self.local_base / self.FOLDER_NAME / matter_part)
+                local_dest_dir.mkdir(parents=True, exist_ok=True)
+                self._copy_verified(source_path, local_dest_dir / filename, checksum)
+            except Exception:
+                pass
 
         return {
             "DocumentPath": destination.relative_to(self.base).as_posix(),
@@ -146,15 +208,37 @@ class MatterDocumentService:
     def resolve(self, saved_path: Any) -> Path:
         candidate = self._source_path(saved_path)
         # Preserve compatibility with historic records that contain an
-        # absolute path. New attachments are always portable relative paths.
+        # absolute path, including rebasing OneDrive paths across workstations.
         if candidate.is_absolute():
+            if candidate.is_file():
+                return candidate
+            parts = candidate.parts
+            for idx, part in enumerate(parts):
+                if part.lower().startswith("onedrive") and idx + 1 < len(parts):
+                    rel_under_od = Path(*parts[idx + 1 :])
+                    rebased = self.find_onedrive_file(rel_under_od, self.shared_base)
+                    if rebased is not None:
+                        return rebased
             return candidate
         if candidate.drive or candidate.root or ".." in candidate.parts:
             raise MatterDocumentError("The saved matter document path is not valid.")
         resolved = (self.base / candidate).resolve()
         root = self.root.resolve()
         if root not in resolved.parents and resolved != root:
+            onedrive_match = self.find_onedrive_file(candidate, self.shared_base)
+            if onedrive_match is not None:
+                return onedrive_match.resolve()
             raise MatterDocumentError(
                 "The saved matter document path escapes the governed document folder."
             )
+        if resolved.is_file():
+            return resolved
+        # Fallback: check local_base and discovered OneDrive CSPM_Shared_Data folders
+        alt_bases: list[Path] = [self.local_base]
+        for od_root in self.discover_onedrive_roots(self.shared_base):
+            alt_bases.append(od_root / "CSPM_Shared_Data")
+        for alt_base in alt_bases:
+            alt_candidate = (alt_base / candidate)
+            if alt_candidate.is_file():
+                return alt_candidate.resolve()
         return resolved

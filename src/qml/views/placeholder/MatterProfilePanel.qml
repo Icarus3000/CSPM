@@ -259,36 +259,88 @@ Rectangle {
                 root.selectedMatterProfile
                     ? root.selectedMatterProfile.jointEngagementDocument || "" : ""
             )
-            visible: documentPath.length > 0
+            property string activeMatterKey: String(
+                (root.selectedMatterProfile && root.selectedMatterProfile.matterNumber)
+                    ? root.selectedMatterProfile.matterNumber
+                    : (root.selectedMatterId || "")
+            )
+            function triggerOpenRetainer() {
+                var opened = false
+                if (root.appRef && root.appRef.openMatterRetainer && savedAgreementRow.activeMatterKey.length > 0) {
+                    opened = Boolean(root.appRef.openMatterRetainer(savedAgreementRow.activeMatterKey))
+                }
+                if (!opened && savedAgreementRow.documentPath.length > 0 && root.appRef) {
+                    if (root.appRef.openVaultDocument) {
+                        opened = Boolean(root.appRef.openVaultDocument(savedAgreementRow.documentPath))
+                    } else if (root.appRef.openMatterDocument) {
+                        opened = Boolean(root.appRef.openMatterDocument(savedAgreementRow.documentPath))
+                    }
+                }
+                if (!opened) {
+                    root.matterProfileLookupMessage = "No retainer agreement file is linked yet for this matter."
+                }
+            }
+            visible: savedAgreementRow.activeMatterKey.length > 0 || savedAgreementRow.documentPath.length > 0
             Layout.fillWidth: true
             spacing: 8
 
-            Text {
-                id: cspmFontOwner2
+            Item {
                 Layout.fillWidth: true
-                text: "Retainer / engagement agreement: "
-                    + root.filenameFromPath(savedAgreementRow.documentPath)
-                color: SemanticTheme.inkPrimary(root.t, root.appStyle)
-                property HiddenFontGate cspmFontGate: HiddenFontGate {
-                    inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct,
-                    root.metricFloor("fontFloorBodyPx", 10))
-                    active: !root.layoutRepairEnabled || cspmFontOwner2.visible
+                Layout.preferredHeight: Math.max(28, cspmFontOwner2.implicitHeight + 4)
+
+                Text {
+                    id: cspmFontOwner2
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: savedAgreementRow.documentPath.length > 0
+                        ? ("Retainer / engagement agreement: " + root.filenameFromPath(savedAgreementRow.documentPath))
+                        : "Retainer / engagement agreement: (click Open Retainer to resolve from Vault)"
+                    color: savedAgreementRow.documentPath.length > 0
+                        ? SemanticTheme.accentPrimary(root.t, root.appStyle)
+                        : SemanticTheme.inkPrimary(root.t, root.appStyle)
+                    property HiddenFontGate cspmFontGate: HiddenFontGate {
+                        inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct,
+                        root.metricFloor("fontFloorBodyPx", 10))
+                        active: !root.layoutRepairEnabled || cspmFontOwner2.visible
+                    }
+                    font.pixelSize: cspmFontGate.pixelSize
+                    font.underline: savedAgreementRow.documentPath.length > 0 && agreementTextMouse.containsMouse
+                    elide: Text.ElideMiddle
                 }
-                font.pixelSize: cspmFontGate.pixelSize
-                elide: Text.ElideMiddle
+
+                MouseArea {
+                    id: agreementTextMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: savedAgreementRow.triggerOpenRetainer()
+                }
             }
 
             PillButton {
                 t: root.t
                 metrics: root.responsiveMetrics
                 sfxBus: root.sfxBus
-                text: "Open Agreement"
+                text: "Open Retainer"
                 primary: false
                 Layout.preferredWidth: root.ratioPxW(0.128, 132)
                 Layout.preferredHeight: 40
+                onClicked: savedAgreementRow.triggerOpenRetainer()
+            }
+
+            PillButton {
+                t: root.t
+                metrics: root.responsiveMetrics
+                sfxBus: root.sfxBus
+                text: "Open Matter Vault"
+                primary: false
+                visible: savedAgreementRow.activeMatterKey.length > 0
+                Layout.preferredWidth: root.ratioPxW(0.138, 146)
+                Layout.preferredHeight: 40
                 onClicked: {
-                    if (root.appRef && root.appRef.openMatterDocument) {
-                        root.appRef.openMatterDocument(savedAgreementRow.documentPath)
+                    if (root.appRef && root.appRef.openMatterVaultFolder) {
+                        root.appRef.openMatterVaultFolder(savedAgreementRow.activeMatterKey)
                     }
                 }
             }
@@ -569,25 +621,31 @@ Rectangle {
                                     Layout.fillWidth: true
 
                                     text: String(matterLeftCard.entry && matterLeftCard.entry.value ? matterLeftCard.entry.value : "[blank]")
-                                    color: (matterLeftCard.entry && matterLeftCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
+                                    color: (matterLeftCard.entry && (matterLeftCard.entry.label === "Client" || matterLeftCard.entry.label === "Retainer / Engagement Agreement") && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
                                     property HiddenFontGate cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                         active: !root.layoutRepairEnabled || matterLeftValueText.visible
                                     }
                                     font.pixelSize: cspmFontGate.pixelSize
-                                    font.underline: (matterLeftCard.entry && matterLeftCard.entry.label === "Client" && text !== "[blank]")
+                                    font.underline: (matterLeftCard.entry && (matterLeftCard.entry.label === "Client" || matterLeftCard.entry.label === "Retainer / Engagement Agreement") && text !== "[blank]")
                                     wrapMode: Text.WordWrap
                                 }
                             }
 
                             MouseArea {
                                 anchors.fill: parent
-                                enabled: !!matterLeftCard.entry && matterLeftCard.entry.label === "Client" && matterLeftCard.entry.value !== "[blank]"
+                                enabled: !!matterLeftCard.entry
+                                    && (matterLeftCard.entry.label === "Client" || matterLeftCard.entry.label === "Retainer / Engagement Agreement")
+                                    && matterLeftCard.entry.value !== "[blank]"
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    root.selectedClientName = matterLeftCard.entry.value
-                                    root.gotoNode("A10")
-                                    root.loadSelectedClientProfile(matterLeftCard.entry.value)
+                                    if (matterLeftCard.entry.label === "Retainer / Engagement Agreement") {
+                                        savedAgreementRow.triggerOpenRetainer()
+                                    } else {
+                                        root.selectedClientName = matterLeftCard.entry.value
+                                        root.gotoNode("A10")
+                                        root.loadSelectedClientProfile(matterLeftCard.entry.value)
+                                    }
                                 }
                             }
                         }
@@ -644,25 +702,31 @@ Rectangle {
                                     Layout.fillWidth: true
 
                                     text: String(matterRightCard.entry && matterRightCard.entry.value ? matterRightCard.entry.value : "[blank]")
-                                    color: (matterRightCard.entry && matterRightCard.entry.label === "Client" && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
+                                    color: (matterRightCard.entry && (matterRightCard.entry.label === "Client" || matterRightCard.entry.label === "Retainer / Engagement Agreement") && text !== "[blank]") ? SemanticTheme.accentPrimary(root.t, root.appStyle) : SemanticTheme.inkPrimary(root.t, root.appStyle)
                                     property HiddenFontGate cspmFontGate: HiddenFontGate {
                                         inputPixelSize: root.ratioPx(root.scaleRatios.descFontPct * 0.86, root.metricFloor("fontFloorBodyPx", 9))
                                         active: !root.layoutRepairEnabled || matterRightValueText.visible
                                     }
                                     font.pixelSize: cspmFontGate.pixelSize
-                                    font.underline: (matterRightCard.entry && matterRightCard.entry.label === "Client" && text !== "[blank]")
+                                    font.underline: (matterRightCard.entry && (matterRightCard.entry.label === "Client" || matterRightCard.entry.label === "Retainer / Engagement Agreement") && text !== "[blank]")
                                     wrapMode: Text.WordWrap
                                 }
                             }
 
                             MouseArea {
                                 anchors.fill: parent
-                                enabled: !!matterRightCard.entry && matterRightCard.entry.label === "Client" && matterRightCard.entry.value !== "[blank]"
+                                enabled: !!matterRightCard.entry
+                                    && (matterRightCard.entry.label === "Client" || matterRightCard.entry.label === "Retainer / Engagement Agreement")
+                                    && matterRightCard.entry.value !== "[blank]"
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    root.selectedClientName = matterRightCard.entry.value
-                                    root.gotoNode("A10")
-                                    root.loadSelectedClientProfile(matterRightCard.entry.value)
+                                    if (matterRightCard.entry.label === "Retainer / Engagement Agreement") {
+                                        savedAgreementRow.triggerOpenRetainer()
+                                    } else {
+                                        root.selectedClientName = matterRightCard.entry.value
+                                        root.gotoNode("A10")
+                                        root.loadSelectedClientProfile(matterRightCard.entry.value)
+                                    }
                                 }
                             }
                         }
