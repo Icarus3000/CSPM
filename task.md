@@ -1,5 +1,15 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-17: Multi-Biller (SOLE_PROP vs. PC), Shareholder Loan Ledger (GIFI 2781) & Tax Compliance Suite
+
+- [x] Author portable `./GEMINI.md` at repository root with the Architecture & Schema Map (relative paths only), Dual-Schema SQLite rules, and Corporate & Tax Ground Truth for `CORY SCHNEIDER LAW PROFESSIONAL CORPORATION` (`OCN: 1001781977`, `BIN: 1001782016`, `Company Key: 448389332`, incorporated `2026-10-17`, fiscal year-end `December 31`, `100 Class 1 Common Shares` at `$1.00` via OBCA s. 23(3) set-off, `100 Class A1 Fixed Value Special Shares (Voting)` on `2026-11-01` s. 85(1) rollover at `$100.00` FMV / `$1.00` elected amount, and 5 Oct 17, 2026 Shareholder Loan rows totaling `$794.45` net `GIFI 2781`).
+- [x] Update Dual-Schema definitions across `schema/workbook_schema.yml`, `schema/workbook_schema.ap.yml`, `schema/workbook_schema.transactions_master.patch.yml`, `schema/transactions_master.categories.seed.csv`, `schema/transactions_master.accounts.seed.csv`, `src/python/domain/schema_constants.py`, `src/python/domain/ap_schema.py`, `src/python/prototypes/sqlite_architecture/` (`schema.sql`, `sqlite_repo.py`, `migration.py`), `src/python/repositories/excel_repo.py`, `src/python/repositories/finance_repo.py`, `src/python/services/ap_orchestration_service.py`, `src/python/services/dockets_import_service.py`, and `src/python/services/financial_sync_service.py`.
+- [x] Implement Multi-Biller Invoice Numbering (`YY-NNNN` for `SOLE_PROP` vs. `YY-NNNN-PC` for `PC` sharing a global sequential counter `NNNN`), Per-Invoice Biller & Address Selector (`14 Parsons Court, Thornhill, ON L4K 6Z4` vs. `7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7` vs. custom override), and mixed-biller WIP guard/split in `src/python/services/invoice_draft_service.py`, `src/python/backend/controllers/billing_controller.py`, `src/templates/invoices/` (`Concept_A2.html`, `Standard_Elite.html`, `LIHDC_Format.html`), and `src/qml/views/` (`InvoiceBuilderView.qml`, `InvoiceBuilderWorkspace.qml`, `WIPBillingWizardView.qml`).
+- [x] Create `src/python/services/tax_compliance_service.py`, wire `@Slot`s into `src/python/backend/app_controller.py`, create `src/qml/views/ShareholderLoanLedgerView.qml` (`C19`), `src/qml/views/HSTReturnHelperView.qml` (`D20`), and `src/qml/views/IncomeTaxHelperView.qml` (`D21`), and wire navigation pathways in `src/qml/standards/ModulePathways.js` and `src/qml/views/PlaceholderSubmenuView.qml`.
+- [x] Sandbox-safe validation: `python -m py_compile` across all modified/created Python files, `scripts/qmllint.ps1` across all 7 modified/created QML views (exit 0), live `%LOCALAPPDATA%/CSPM/data/CSPM.xlsm` seeding & verification (`SHL GIFI 2781 = $794.45`, `PC ITC = $45.50`, `T2 Sch125 = $749.95`, `Next Invoice = 26-0122 / 26-0122-PC`), HTML template rendering (`Concept_A2`, `Standard_Elite`, `LIHDC_Format`), and SQLite migration dry-run parity (`ALL_VERIFICATIONS_PASSED`).
+- [x] Rebuild and deploy standalone `C:\Programs\CSPM\CSPM.exe` (`2026-10-18`): backed up existing installation to `to_delete/installed__before_multibiller_rebuild_20261018_094527` and prior dist to `to_delete/dist__replaced_release_20261018_095217`, built `CSPM.exe` + `CSPM_Recovery.exe` via `scripts/build_release.py`, and deployed to `C:\Programs\CSPM\CSPM.exe` (`13,011,361` bytes, modified `2026-10-18T09:50:17.9212295-04:00`, SHA-256 `C754FD4BF2B96187C0E707C527979862E83A8CD606A8077D4B53EDDD7D5D0EC2`, 16/16 new QML/schema/template assets + `services.tax_compliance_service` verified in bundle).
+- [ ] User foreground verification: review pathways `C19` (Shareholder Loan Ledger), `D20` (HST Return & ITC Helper), `D21` (T2125 & T2 Tax Helper), and the Invoice Builder Biller & Address Selector in the live application.
+
 ## 2026-10-14: Fedora latest-main calendar integration
 
 - [x] Preserve original dirty Fedora checkout; integrate all current main updates through `66a9cbe` in an isolated worktree.
@@ -26,9 +36,6 @@ Scope: `docs/FEDORA_CALENDAR_INTEGRATION_2026-10-14.md`.
 
 Runbook: `docs/WORKSPACE_USAGE_CONTROL.md`. Private state/checkpoint:
 `.workspace-usage/latest-checkpoint.json`. Config: `usage-control.json`.
-
-
-
 
 ## 2026-10-14: Quieter shared invoice continuation headers
 
@@ -112,6 +119,19 @@ Scope and evidence classification: `docs/CSPM_STATEMENT_AND_INVOICE_FILTERS_2026
 - [ ] User foreground acceptance: reopen the corrected invoice and LIHDC outstanding A/R in the rebuilt installed application.
 
 Scoped implementation and private evidence boundary: `docs/CSPM_INVOICE_ACCOUNTING_INTEGRITY_2026-10-13.md`.
+
+## 2026-10-12: Desktop complete build, installation and data check
+
+- [x] Fetch and fast-forward Desktop's clean local main to exact canonical source `466876796563d245ee0d0e6aba1f6cb61cc318b9`; preserve other branches/worktrees.
+- [x] Rebuild the native DLL and both executables with CPython 3.14.7 / exact locked dependencies; native contracts, approved-template and confidentiality gates pass.
+- [x] Preserve verified rollback runtime/configuration; deploy and reverify the complete 4,254-file / 677,639,356-byte package at `C:/Programs/CSPM`; repair stale Start-menu/taskbar targets.
+- [x] Preserve Desktop's own identity, normal writer selectors and local working replica. No schema migration is required. Local/shared/archive/common-ancestor hashes match both workbooks.
+- [x] Sandbox-safe validation: 131 focused tests, all 101 runtime Python compilations, native ABI/contracts, immutable package/source/privacy and data/hash checks pass.
+- [x] Outside-sandbox validation: isolated rollback/candidate/installed startup and lifecycle; actual candidate/installed WebEngine HTML/JavaScript/PDF; normal Desktop no-edit writer checkout and orderly shutdown/release. Both final installed motion directions complete natively; earlier diagnostic failures and safe recoveries remain disclosed.
+- [x] Final local/shared workbook and machine-identity hashes remain unchanged; the shared checkout is released and installed runtime still matches. Preserve the distinction between locally matching OneDrive files and authenticated server/physical OmniBook evidence.
+- [x] Fresh post-session Cloud Files observation at 20:07:57–58 EDT marks both workbooks and the release manifest in sync, with all bytes validated and zero modified bytes; exact local/shared workbook hashes still match.
+
+Deployment and evidence scope: `docs/CSPM_DESKTOP_BUILD_AND_DATA_CHECK_2026-10-12.md`. This Desktop check does not resolve the separate OmniBook server-authentication/production-activation gate below.
 
 ## 2026-10-12: Governed production-write activation gate
 

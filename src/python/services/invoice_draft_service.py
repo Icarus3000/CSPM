@@ -462,6 +462,13 @@ class InvoiceDraftService:
         """Provide document and accounting totals from one read-only calculator."""
         return self._recalculate_draft_totals_in_memory(dict(draft), time_entries, disb_entries)
 
+    @staticmethod
+    def _base_invoice_stem(invoice_num: str) -> str:
+        text = str(invoice_num or "").strip().upper()
+        if text.endswith("-PC"):
+            return text[:-3]
+        return text
+
     def _assert_invoice_number_available(self, invoice_num: str) -> None:
         """Reject a final number already used by a live financial record.
 
@@ -472,6 +479,7 @@ class InvoiceDraftService:
         target = self._text(invoice_num).casefold()
         if not target:
             raise ValueError("A final invoice number is required.")
+        target_stem = self._base_invoice_stem(invoice_num).casefold()
 
         checks = (
             (sc.TBL_INVOICE_LOG, sc.COL_INV_INVOICE_NUM, "Invoice Log"),
@@ -481,9 +489,12 @@ class InvoiceDraftService:
         )
         for table, column, label in checks:
             for row in self.repo._read_table_rows(table):
-                if self._text(row.get(column)).casefold() == target:
+                existing = self._text(row.get(column))
+                if not existing:
+                    continue
+                if existing.casefold() == target or self._base_invoice_stem(existing).casefold() == target_stem:
                     raise ValueError(
-                        f"Invoice number {invoice_num} is already in use in {label}."
+                        f"Invoice number {invoice_num} (or its sequential counter {existing}) is already in use in {label}."
                     )
 
     def invoice_number_reuse_status(self, invoice_num: str) -> Dict[str, Any]:
@@ -497,6 +508,7 @@ class InvoiceDraftService:
         """
         invoice_num = self._text(invoice_num)
         invoice_key = invoice_num.casefold()
+        invoice_stem = self._base_invoice_stem(invoice_num).casefold()
         if not invoice_num:
             return {
                 "state": "invalid",
@@ -504,21 +516,27 @@ class InvoiceDraftService:
                 "message": "Invoice number cannot be empty.",
             }
 
+        def _matches_num_or_stem(val: Any) -> bool:
+            txt = self._text(val)
+            if not txt:
+                return False
+            return txt.casefold() == invoice_key or self._base_invoice_stem(txt).casefold() == invoice_stem
+
         invoice_rows = [
             row for row in self.repo._read_table_rows(sc.TBL_INVOICE_LOG)
-            if self._text(row.get(sc.COL_INV_INVOICE_NUM)).casefold() == invoice_key
+            if _matches_num_or_stem(row.get(sc.COL_INV_INVOICE_NUM))
         ]
         receivable_rows = [
             row for row in self.repo._read_table_rows(sc.TBL_RECEIVABLES)
-            if self._text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold() == invoice_key
+            if _matches_num_or_stem(row.get(sc.COL_RECV_INVOICE_NUM))
         ]
         linked_time = [
             row for row in self.repo._read_table_rows(sc.TBL_TIME)
-            if self._text(row.get(sc.COL_TIME_INVOICE_REF)).casefold() == invoice_key
+            if _matches_num_or_stem(row.get(sc.COL_TIME_INVOICE_REF))
         ]
         linked_disbursements = [
             row for row in self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
-            if self._text(row.get(sc.COL_DISB_INVOICE_REF)).casefold() == invoice_key
+            if _matches_num_or_stem(row.get(sc.COL_DISB_INVOICE_REF))
         ]
 
         if not invoice_rows and not receivable_rows and not linked_time and not linked_disbursements:
@@ -866,6 +884,63 @@ class InvoiceDraftService:
                 separators=(",", ":"),
             )
 
+        # Resolve BillerEntity, BillerAddressOverride, and BillerHSTOverride
+        explicit_biller = self._text(
+            (billing_recipient or {}).get("billerEntity")
+            or (billing_recipient or {}).get("BillerEntity")
+        ).upper()
+        if explicit_biller in {"SOLE_PROP", "PC"}:
+            biller_entity = explicit_biller
+        else:
+            wip_billers = set()
+            for row in time_entries:
+                if str(row.get(sc.COL_TIME_ENTRY_ID) or "").strip() in time_entry_ids_str:
+                    b = self._text(row.get(sc.COL_TIME_BILLER_ENTITY)).upper()
+                    if b not in {"SOLE_PROP", "PC"}:
+                        d_str = self._text(row.get(sc.COL_TIME_DATE))[:10]
+                        b = "PC" if (d_str and d_str >= "2026-11-01") else "SOLE_PROP"
+                    wip_billers.add(b)
+            for row in disb_entries:
+                if str(row.get(sc.COL_DISB_ID) or "").strip() in disb_ids_str:
+                    b = self._text(row.get(sc.COL_DISB_BILLER_ENTITY)).upper()
+                    if b not in {"SOLE_PROP", "PC"}:
+                        d_str = self._text(row.get(sc.COL_DISB_DATE))[:10]
+                        b = "PC" if (d_str and d_str >= "2026-11-01") else "SOLE_PROP"
+                    wip_billers.add(b)
+            if wip_billers == {"SOLE_PROP"}:
+                biller_entity = "SOLE_PROP"
+            elif wip_billers == {"PC"}:
+                biller_entity = "PC"
+            else:
+                biller_entity = "PC" if str(draft_date)[:10] >= "2026-11-01" else "SOLE_PROP"
+
+        entity_profile: Dict[str, Any] = {}
+        get_biller_fn = getattr(self.repo, "get_billing_entity", None)
+        if callable(get_biller_fn):
+            try:
+                entity_profile = dict(get_biller_fn(biller_entity) or {})
+            except Exception:
+                entity_profile = {}
+
+        biller_address_override = (
+            self._text((billing_recipient or {}).get("billerAddressOverride"))
+            or self._text(entity_profile.get("defaultAddressLine"))
+            or (
+                "7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7"
+                if biller_entity == "PC"
+                else "14 Parsons Court, Thornhill, ON L4K 6Z4"
+            )
+        )
+        biller_hst_override = (
+            self._text((billing_recipient or {}).get("billerHstOverride"))
+            or self._text(entity_profile.get("hstNumber"))
+            or (
+                "Pending CRA BN (Effective Nov 1, 2026)"
+                if biller_entity == "PC"
+                else "78621 8222 RT0001"
+            )
+        )
+
         # 3. Create Draft Record
         draft_record = {
             sc.COL_DRAFT_ID: draft_id,
@@ -889,6 +964,9 @@ class InvoiceDraftService:
             sc.COL_DRAFT_BILL_TO_SNAPSHOT: bill_to_snapshot,
             sc.COL_DRAFT_CREATED_AT: now_str,
             sc.COL_DRAFT_UPDATED_AT: now_str,
+            sc.COL_DRAFT_BILLER_ENTITY: biller_entity,
+            sc.COL_DRAFT_BILLER_ADDRESS_OVERRIDE: biller_address_override,
+            sc.COL_DRAFT_BILLER_HST_OVERRIDE: biller_hst_override,
         }
         
         drafts = self.repo._read_table_rows(sc.TBL_DRAFT_INVOICES)
@@ -914,8 +992,117 @@ class InvoiceDraftService:
         drafts.append(draft_record)
         self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
             
-        logger.info(f"[CREATE DRAFT] Success. Draft {draft_num} created.")
+        logger.info(f"[CREATE DRAFT] Success. Draft {draft_num} created (BillerEntity={biller_entity}).")
         return draft_num
+
+    def check_mixed_biller_wip(self, entry_ids: List[str]) -> Dict[str, Any]:
+        """Inspect selected WIP entry IDs and report whether they span SOLE_PROP and PC."""
+        ids_set = {str(x).strip() for x in (entry_ids or []) if str(x).strip()}
+        sole_prop_ids: List[str] = []
+        pc_ids: List[str] = []
+        if not ids_set:
+            return {
+                "isMixed": False,
+                "solePropIds": [],
+                "pcIds": [],
+                "solePropCount": 0,
+                "pcCount": 0,
+                "recommendedBiller": "SOLE_PROP",
+            }
+        time_entries = self.repo._read_table_rows(sc.TBL_TIME)
+        disb_entries = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
+        for row in time_entries:
+            eid = self._text(row.get(sc.COL_TIME_ENTRY_ID))
+            if eid not in ids_set:
+                continue
+            b = self._text(row.get(sc.COL_TIME_BILLER_ENTITY)).upper()
+            if b not in {"SOLE_PROP", "PC"}:
+                d_str = self._text(row.get(sc.COL_TIME_DATE))[:10]
+                b = "PC" if (d_str and d_str >= "2026-11-01") else "SOLE_PROP"
+            if b == "PC":
+                pc_ids.append(eid)
+            else:
+                sole_prop_ids.append(eid)
+        for row in disb_entries:
+            eid = self._text(row.get(sc.COL_DISB_ID))
+            if eid not in ids_set:
+                continue
+            b = self._text(row.get(sc.COL_DISB_BILLER_ENTITY)).upper()
+            if b not in {"SOLE_PROP", "PC"}:
+                d_str = self._text(row.get(sc.COL_DISB_DATE))[:10]
+                b = "PC" if (d_str and d_str >= "2026-11-01") else "SOLE_PROP"
+            if b == "PC":
+                pc_ids.append(eid)
+            else:
+                sole_prop_ids.append(eid)
+        is_mixed = bool(sole_prop_ids and pc_ids)
+        recommended = "PC" if (pc_ids and not sole_prop_ids) else "SOLE_PROP"
+        return {
+            "isMixed": is_mixed,
+            "solePropIds": sole_prop_ids,
+            "pcIds": pc_ids,
+            "solePropCount": len(sole_prop_ids),
+            "pcCount": len(pc_ids),
+            "recommendedBiller": recommended,
+        }
+
+    def split_mixed_biller_wip(
+        self,
+        client_id: str,
+        client_name: str,
+        entry_ids: List[str],
+        grouping_pref: str = "matter",
+        billing_recipient: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Split mixed pre-Nov 1 (SOLE_PROP) and Nov 1+ (PC) WIP into two separate invoice drafts."""
+        check = self.check_mixed_biller_wip(entry_ids)
+        sole_ids = list(check.get("solePropIds") or [])
+        pc_ids = list(check.get("pcIds") or [])
+        disb_rows = self.repo._read_table_rows(sc.TBL_DISBURSEMENTS)
+        all_disb_ids = {self._text(r.get(sc.COL_DISB_ID)) for r in disb_rows if self._text(r.get(sc.COL_DISB_ID))}
+
+        created_drafts: List[str] = []
+        sole_draft = ""
+        pc_draft = ""
+        base_recipient = dict(billing_recipient or {})
+
+        if sole_ids:
+            sole_time = [eid for eid in sole_ids if eid not in all_disb_ids]
+            sole_disb = [eid for eid in sole_ids if eid in all_disb_ids]
+            rec_sole = dict(base_recipient)
+            rec_sole["billerEntity"] = "SOLE_PROP"
+            sole_draft = self.create_draft(
+                client_id,
+                client_name,
+                sole_time,
+                sole_disb,
+                grouping_pref,
+                rec_sole,
+            )
+            created_drafts.append(sole_draft)
+
+        if pc_ids:
+            pc_time = [eid for eid in pc_ids if eid not in all_disb_ids]
+            pc_disb = [eid for eid in pc_ids if eid in all_disb_ids]
+            rec_pc = dict(base_recipient)
+            rec_pc["billerEntity"] = "PC"
+            pc_draft = self.create_draft(
+                client_id,
+                client_name,
+                pc_time,
+                pc_disb,
+                grouping_pref,
+                rec_pc,
+            )
+            created_drafts.append(pc_draft)
+
+        return {
+            "ok": bool(created_drafts),
+            "draftNums": created_drafts,
+            "solePropDraftNum": sole_draft,
+            "pcDraftNum": pc_draft,
+            "draftNum": created_drafts[0] if created_drafts else "",
+        }
 
     def apply_discount(self, draft_num: str, discount_type: str, discount_value: Decimal):
         """
@@ -966,6 +1153,14 @@ class InvoiceDraftService:
                     row[sc.COL_DRAFT_RECONCILIATION_MODE] = str(meta["reconciliationMode"])
                 if "showTotalHours" in meta:
                     row[sc.COL_DRAFT_SHOW_TOTAL_HOURS] = str(meta["showTotalHours"])
+                if "billerEntity" in meta:
+                    b_ent = str(meta["billerEntity"] or "").strip().upper()
+                    if b_ent in {"SOLE_PROP", "PC"}:
+                        row[sc.COL_DRAFT_BILLER_ENTITY] = b_ent
+                if "billerAddressOverride" in meta:
+                    row[sc.COL_DRAFT_BILLER_ADDRESS_OVERRIDE] = str(meta["billerAddressOverride"] or "").strip()
+                if "billerHstOverride" in meta:
+                    row[sc.COL_DRAFT_BILLER_HST_OVERRIDE] = str(meta["billerHstOverride"] or "").strip()
                 row[sc.COL_DRAFT_UPDATED_AT] = now_str
                 break
         self.repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
@@ -1916,6 +2111,38 @@ class InvoiceDraftService:
             
         now_str = datetime.now().astimezone().isoformat()
         date_str = draft.get(sc.COL_DRAFT_DATE) or now_str
+        biller_entity = self._text(draft.get(sc.COL_DRAFT_BILLER_ENTITY)).upper()
+        if biller_entity not in {"SOLE_PROP", "PC"}:
+            biller_entity = (
+                "PC"
+                if (final_invoice_num.upper().endswith("-PC") or str(date_str)[:10] >= "2026-11-01")
+                else "SOLE_PROP"
+            )
+        entity_profile: Dict[str, Any] = {}
+        get_biller_fn = getattr(self.repo, "get_billing_entity", None)
+        if callable(get_biller_fn):
+            try:
+                entity_profile = dict(get_biller_fn(biller_entity) or {})
+            except Exception:
+                entity_profile = {}
+        biller_address_override = (
+            self._text(draft.get(sc.COL_DRAFT_BILLER_ADDRESS_OVERRIDE))
+            or self._text(entity_profile.get("defaultAddressLine"))
+            or (
+                "7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7"
+                if biller_entity == "PC"
+                else "14 Parsons Court, Thornhill, ON L4K 6Z4"
+            )
+        )
+        biller_hst_override = (
+            self._text(draft.get(sc.COL_DRAFT_BILLER_HST_OVERRIDE))
+            or self._text(entity_profile.get("hstNumber"))
+            or (
+                "Pending CRA BN (Effective Nov 1, 2026)"
+                if biller_entity == "PC"
+                else "78621 8222 RT0001"
+            )
+        )
         
         # 1. Update Time Entries
         for row in time_entries:
@@ -1930,6 +2157,7 @@ class InvoiceDraftService:
                 row[sc.COL_TIME_INVOICE_AMOUNT_PAID] = "0.00"
                 row[sc.COL_TIME_INVOICE_BALANCE_DUE] = str(final_invoice_total)
                 row[sc.COL_TIME_REISSUE_INVOICE_NUM] = ""
+                row[sc.COL_TIME_BILLER_ENTITY] = biller_entity
                 if custom_fee_markers is not None:
                     row[sc.COL_TIME_LOCK_AUDIT] = self._custom_fee_lock_audit(
                         draft_id=custom_fee_markers["draftownerid"],
@@ -2049,6 +2277,7 @@ class InvoiceDraftService:
                     sc.COL_TIME_REISSUE_INVOICE_NUM: "",
                     sc.COL_TIME_LOCK_AUDIT: audit,
                     sc.COL_TIME_CREATED: now_str,
+                    sc.COL_TIME_BILLER_ENTITY: biller_entity,
                 })
         else:
             discount_val = Decimal(str(draft.get(sc.COL_DRAFT_DISCOUNT_VALUE) or 0))
@@ -2086,6 +2315,7 @@ class InvoiceDraftService:
                     sc.COL_TIME_INVOICE_STATUS: "Billed",
                     sc.COL_TIME_STATUS: "Billed",
                     sc.COL_TIME_INVOICE_DATE: date_str,
+                    sc.COL_TIME_BILLER_ENTITY: biller_entity,
                 })
 
         # 2. Update Disbursements
@@ -2093,6 +2323,7 @@ class InvoiceDraftService:
             if row.get(sc.COL_DISB_INVOICE_REF) == draft_num:
                 row[sc.COL_DISB_INVOICE_REF] = final_invoice_num
                 row[sc.COL_DISB_REISSUE_INVOICE_NUM] = ""
+                row[sc.COL_DISB_BILLER_ENTITY] = biller_entity
         # A correction can be split deliberately.  Work moved into another
         # draft must become ordinary WIP once this correction is finalized;
         # it is not part of the replacement and must not keep its old-number
@@ -2196,6 +2427,7 @@ class InvoiceDraftService:
             sc.COL_RECV_BALANCE_DUE: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_RECV_STATUS: "Unpaid",
             sc.COL_RECV_WORK_CLIENT: work_client_name,
+            sc.COL_RECV_BILLER_ENTITY: biller_entity,
         }
         receivables.append(finalized_receivable)
         # 4. Create Invoice Log entry
@@ -2211,6 +2443,9 @@ class InvoiceDraftService:
             sc.COL_INV_AGGREGATE_BILLED: draft.get(sc.COL_DRAFT_TOTAL_DUE),
             sc.COL_INV_BILL_TO_CLIENT: bill_to_client_name,
             sc.COL_INV_BILL_TO_SNAPSHOT: bill_to_snapshot,
+            sc.COL_INV_BILLER_ENTITY: biller_entity,
+            sc.COL_INV_BILLER_ADDRESS_OVERRIDE: biller_address_override,
+            sc.COL_INV_BILLER_HST_OVERRIDE: biller_hst_override,
         }
         invoice_log.append(finalized_invoice_log)
         # 4b. Create Ledger Entry for Revenue
@@ -3137,3 +3372,36 @@ class InvoiceDraftService:
             [str(row.get(sc.COL_TIME_ENTRY_ID) or "") for row in linked_time],
             [str(row.get(sc.COL_DISB_ID) or "") for row in linked_disbursements],
         )
+
+    def generate_next_invoice_number(self, year: int = 2026, biller_entity: str = "SOLE_PROP") -> str:
+        """Suggest the next invoice number sharing a global YY-NNNN counter across SOLE_PROP and PC."""
+        biller = self._text(biller_entity).upper()
+        if biller not in {"SOLE_PROP", "PC"}:
+            biller = "PC" if datetime.now().strftime("%Y-%m-%d") >= "2026-11-01" else "SOLE_PROP"
+
+        suffix = "-PC" if biller == "PC" else ""
+        try:
+            ent = self.repo.get_billing_entity(biller)
+            if ent and "invoiceNumberSuffix" in ent:
+                suffix = str(ent.get("invoiceNumberSuffix") or ("-PC" if biller == "PC" else ""))
+        except Exception:
+            pass
+
+        yr_prefix = str(year or datetime.now().year)[-2:]
+        pattern = re.compile(rf"^{yr_prefix}-(\d+)(?:-[A-Z])?(?:-PC)?$", re.IGNORECASE)
+        max_num = 0
+
+        for row in self.repo._read_table_rows(sc.TBL_INVOICE_LOG):
+            inv = self._text(row.get(sc.COL_INV_INVOICE_NUM))
+            m = pattern.match(inv)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+
+        for row in self.repo._read_table_rows(sc.TBL_TIME):
+            inv = self._text(row.get(sc.COL_TIME_INVOICE_REF))
+            m = pattern.match(inv)
+            if m:
+                max_num = max(max_num, int(m.group(1)))
+
+        return f"{yr_prefix}-{max_num + 1:04d}{suffix}"
+

@@ -214,6 +214,32 @@ Item {
         return ["true", "1", "yes", "y", "on"].indexOf(String(value).trim().toLowerCase()) >= 0
     }
 
+    function _draftBillerEntity() {
+        if (!root.selectedDraftData) return "SOLE_PROP"
+        var raw = String(root.selectedDraftData.BillerEntity || root.selectedDraftData.billerEntity || "SOLE_PROP").trim().toUpperCase()
+        return raw === "PC" ? "PC" : "SOLE_PROP"
+    }
+
+    function _draftBillerAddressOverride() {
+        if (!root.selectedDraftData) return ""
+        return String(root.selectedDraftData.BillerAddressOverride || root.selectedDraftData.billerAddressOverride || "").trim()
+    }
+
+    function _draftBillerHstOverride() {
+        if (!root.selectedDraftData) return ""
+        return String(root.selectedDraftData.BillerHSTOverride || root.selectedDraftData.billerHstOverride || "").trim()
+    }
+
+    function updateDraftBillerSettings(billerCode, addressOverride, hstOverride) {
+        if (!root.billingBackend || !root.selectedDraftNum) return
+        root.billingBackend.updateDraftBiller(
+            root.selectedDraftNum,
+            String(billerCode || root._draftBillerEntity()),
+            String(addressOverride !== undefined ? addressOverride : root._draftBillerAddressOverride()),
+            String(hstOverride !== undefined ? hstOverride : root._draftBillerHstOverride())
+        )
+    }
+
     function _clearSelection() {
         root.selectedDraftNum = ""
         root.selectedDraftData = null
@@ -331,7 +357,11 @@ Item {
         finalizeInvoiceDialog.inputInvoiceNum = reservedNumber
         finalizeInvoiceDialog.visible = true
         if (reservedNumber === "") {
-            billingBackend.loadNextInvoiceNumber()
+            if (typeof billingBackend.loadNextInvoiceNumberForDraft === "function") {
+                billingBackend.loadNextInvoiceNumberForDraft(selectedDraftNum)
+            } else {
+                billingBackend.loadNextInvoiceNumber()
+            }
         }
     }
 

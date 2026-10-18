@@ -356,6 +356,7 @@ Item {
         property string clientIdToDraft: ""
         property string clientNameToDraft: ""
         property string groupingToDraft: "matter"
+        property string billerModeToDraft: ""
         property var recipientOptions: []
         property var selectedRecipient: ({})
 
@@ -429,16 +430,131 @@ Item {
                         onClicked: {
                             var recipient = jointBillToPromptDialog.selectedRecipient || ({})
                             if (!recipient.clientId) return
-                            root.isBuildingInvoice = true
-                            root.billingBackend.createDraftWithGroupingAndBillTo(
+                            root._executeDraftCreation(
                                 jointBillToPromptDialog.clientIdToDraft,
                                 jointBillToPromptDialog.clientNameToDraft,
                                 jointBillToPromptDialog.idsToDraft,
                                 jointBillToPromptDialog.groupingToDraft,
-                                recipient
+                                recipient,
+                                jointBillToPromptDialog.billerModeToDraft
                             )
-                            if (root.isZenMode) root.isZenMode = false
                             jointBillToPromptDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: mixedBillerPromptDialog
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
+        width: 620
+        height: 295
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+
+        property var idsToDraft: []
+        property string clientIdToDraft: ""
+        property string clientNameToDraft: ""
+        property string groupingToDraft: "matter"
+        property int solePropCount: 0
+        property int pcCount: 0
+
+        background: Rectangle {
+            color: root.panelColor
+            border.color: root.borderColor
+            border.width: 1
+            radius: 8
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 12
+
+            Text {
+                text: "Mixed Billing Entities Selected (SOLE_PROP + PC)"
+                color: root.textColor
+                font.pixelSize: 18
+                font.weight: Font.DemiBold
+                Layout.fillWidth: true
+            }
+
+            Text {
+                text: "Your selection spans pre-Nov 1, 2026 Sole Proprietorship WIP (" + mixedBillerPromptDialog.solePropCount + " entries) and Nov 1, 2026+ Professional Corporation WIP (" + mixedBillerPromptDialog.pcCount + " entries).\n\nUnder the Section 85 cutover rules, pre-Nov 1 WIP belongs to SOLE_PROP (T2125) and Nov 1+ WIP belongs to PC (T2). How would you like to proceed?"
+                color: root.textColor
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
+            Item { Layout.fillHeight: true }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                Rectangle {
+                    Layout.preferredWidth: 86; Layout.preferredHeight: 36; radius: 4; border.color: root.borderColor; color: "transparent"; border.width: 1
+                    Text { anchors.centerIn: parent; text: "Cancel"; color: root.textColor; font.pixelSize: 13 }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: mixedBillerPromptDialog.close() }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Rectangle {
+                    Layout.preferredWidth: 138; Layout.preferredHeight: 36; radius: 4; border.color: root.borderColor; color: "transparent"; border.width: 1
+                    Text { anchors.centerIn: parent; text: "Bill All as SOLE_PROP"; color: root.textColor; font.pixelSize: 12; font.weight: Font.Medium }
+                    MouseArea {
+                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            mixedBillerPromptDialog.close()
+                            root._beginDraft(
+                                mixedBillerPromptDialog.clientIdToDraft,
+                                mixedBillerPromptDialog.clientNameToDraft,
+                                mixedBillerPromptDialog.idsToDraft,
+                                mixedBillerPromptDialog.groupingToDraft,
+                                "SOLE_PROP"
+                            )
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 112; Layout.preferredHeight: 36; radius: 4; border.color: root.borderColor; color: "transparent"; border.width: 1
+                    Text { anchors.centerIn: parent; text: "Bill All as PC"; color: root.textColor; font.pixelSize: 12; font.weight: Font.Medium }
+                    MouseArea {
+                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            mixedBillerPromptDialog.close()
+                            root._beginDraft(
+                                mixedBillerPromptDialog.clientIdToDraft,
+                                mixedBillerPromptDialog.clientNameToDraft,
+                                mixedBillerPromptDialog.idsToDraft,
+                                mixedBillerPromptDialog.groupingToDraft,
+                                "PC"
+                            )
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 196; Layout.preferredHeight: 36; radius: 4; color: root.accentColor
+                    Text { anchors.centerIn: parent; text: "Split into 2 Drafts (Recommended)"; color: SemanticTheme.textOnAccent(root.t, root.appStyle); font.weight: Font.DemiBold; font.pixelSize: 12 }
+                    MouseArea {
+                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            mixedBillerPromptDialog.close()
+                            root._beginDraft(
+                                mixedBillerPromptDialog.clientIdToDraft,
+                                mixedBillerPromptDialog.clientNameToDraft,
+                                mixedBillerPromptDialog.idsToDraft,
+                                mixedBillerPromptDialog.groupingToDraft,
+                                "SPLIT"
+                            )
                         }
                     }
                 }
@@ -714,6 +830,7 @@ Item {
     property string wipStatusText: "Preparing WIP workbench…"
     property string selectedClientFilter: ""
     property string selectedBillingClientFilter: ""
+    property string selectedBillerFilter: ""
     property string _pendingClientIdToFilter: ""
     property bool isZenMode: false
 
@@ -884,7 +1001,7 @@ Item {
 
     // Computed: filtered items
     property var filteredItems: {
-        if (!selectedClientFilter && !selectedBillingClientFilter && !root.fromDateFilter && !root.toDateFilter)
+        if (!selectedClientFilter && !selectedBillingClientFilter && !selectedBillerFilter && !root.fromDateFilter && !root.toDateFilter)
             return wipItems
         var out = []
         for (var i = 0; i < wipItems.length; i++) {
@@ -898,10 +1015,12 @@ Item {
             }
             var cname = item.clientName || item.clientId || ""
             var bname = item.parentName || item.parentId || ""
+            var itemBiller = String(item.billerEntity || "SOLE_PROP").toUpperCase()
             var matchClient = (!selectedClientFilter || selectedClientFilter === "All Clients" || cname === selectedClientFilter)
             var matchBilling = (!selectedBillingClientFilter || selectedBillingClientFilter === "All Billing Clients" || bname === selectedBillingClientFilter)
+            var matchBiller = (!selectedBillerFilter || selectedBillerFilter === "All Billers" || itemBiller === selectedBillerFilter)
             
-            if (matchClient && matchBilling) {
+            if (matchClient && matchBilling && matchBiller) {
                 out.push(item)
             }
         }
@@ -920,10 +1039,11 @@ Item {
     property var columnModel: [
         { key: "selection", label: "✓", width: 40, minWidth: 40, align: "center", resizable: false, fill: false, visible: true },
         { key: "date", label: "DATE", width: 100, minWidth: 60, align: "left", resizable: true, fill: false, visible: true },
+        { key: "biller", label: "BILLER", width: 92, minWidth: 74, align: "center", resizable: true, fill: false, visible: true },
         { key: "client", label: "CLIENT", width: 180, minWidth: 100, align: "left", resizable: true, fill: false, visible: true },
         { key: "billing_client", label: "BILLING CLIENT", width: 180, minWidth: 100, align: "left", resizable: true, fill: false, visible: true },
         { key: "matter", label: "MATTER", width: 180, minWidth: 100, align: "left", resizable: true, fill: false, visible: true },
-        { key: "description", label: "DESCRIPTION", width: 350, minWidth: 100, align: "left", resizable: true, fill: true, visible: true },
+        { key: "description", label: "DESCRIPTION", width: 320, minWidth: 100, align: "left", resizable: true, fill: true, visible: true },
         { key: "hours", label: "HOURS", width: 70, minWidth: 70, align: "right", resizable: true, fill: false, visible: true },
         { key: "amount", label: "AMOUNT", width: 100, minWidth: 70, align: "right", resizable: true, fill: false, visible: true }
     ]
@@ -937,6 +1057,9 @@ Item {
         }
         if (state.selectedBillingClientFilter !== undefined) {
             root.selectedBillingClientFilter = String(state.selectedBillingClientFilter || "");
+        }
+        if (state.selectedBillerFilter !== undefined) {
+            root.selectedBillerFilter = String(state.selectedBillerFilter || "");
         }
         if (state.clientIdToDraft !== undefined && state.clientIdToDraft !== "ALL") {
             root._pendingClientIdToFilter = String(state.clientIdToDraft);
@@ -966,6 +1089,7 @@ Item {
         return {
             "selectedClientFilter": root.selectedClientFilter,
             "selectedBillingClientFilter": root.selectedBillingClientFilter,
+            "selectedBillerFilter": root.selectedBillerFilter,
             "clientIdToDraft": root._pendingClientIdToFilter || "ALL",
             "matterId": root.selectedMatterId,
             "fromDate": root.fromDateFilter,
@@ -984,6 +1108,7 @@ Item {
         copy.sort(function(a, b) {
             var valA = ""; var valB = "";
             if (sortCol === "date") { valA = a.date || ""; valB = b.date || ""; }
+            else if (sortCol === "biller") { valA = (a.billerEntity || "SOLE_PROP").toLowerCase(); valB = (b.billerEntity || "SOLE_PROP").toLowerCase(); }
             else if (sortCol === "client") { valA = (a.clientName || a.clientId || "").toLowerCase(); valB = (b.clientName || b.clientId || "").toLowerCase(); }
             else if (sortCol === "billing_client") { valA = (a.parentName || a.parentId || "").toLowerCase(); valB = (b.parentName || b.parentId || "").toLowerCase(); }
             else if (sortCol === "matter") { valA = (a.matterName || a.matterId || "").toLowerCase(); valB = (b.matterName || b.matterId || "").toLowerCase(); }
@@ -1172,7 +1297,53 @@ Item {
         autoCheckFilterMatch()
     }
 
-    function _beginDraft(clientId, clientName, ids, grouping) {
+    function _executeDraftCreation(clientId, clientName, ids, grouping, recipientObj, billerMode) {
+        var mode = String(billerMode || "").toUpperCase()
+        var rec = ({})
+        if (recipientObj) {
+            for (var k in recipientObj) rec[k] = recipientObj[k]
+        }
+        root.isBuildingInvoice = true
+        if (mode === "SPLIT" && billingBackend && typeof billingBackend.createSplitBillerDrafts === "function") {
+            billingBackend.createSplitBillerDrafts(clientId, clientName, ids, grouping, rec)
+        } else if (mode === "SOLE_PROP" || mode === "PC" || rec.clientId) {
+            if (mode === "SOLE_PROP" || mode === "PC") {
+                rec["billerEntity"] = mode
+            }
+            billingBackend.createDraftWithGroupingAndBillTo(clientId, clientName, ids, grouping, rec)
+        } else {
+            billingBackend.createDraftWithGrouping(clientId, clientName, ids, grouping)
+        }
+        if (root.isZenMode) root.isZenMode = false
+    }
+
+    function _beginDraft(clientId, clientName, ids, grouping, billerMode) {
+        var resolvedMode = String(billerMode || "").toUpperCase()
+        if (!resolvedMode) {
+            var spCount = 0
+            var pcCount = 0
+            var idMap = ({})
+            for (var idx = 0; idx < ids.length; idx++) idMap[String(ids[idx])] = true
+            for (var j = 0; j < wipItems.length; j++) {
+                var item = wipItems[j] || ({})
+                if (idMap[String(item.entryId || "")]) {
+                    var b = String(item.billerEntity || "SOLE_PROP").toUpperCase()
+                    if (b === "PC") pcCount++
+                    else spCount++
+                }
+            }
+            if (spCount > 0 && pcCount > 0) {
+                mixedBillerPromptDialog.idsToDraft = ids
+                mixedBillerPromptDialog.clientIdToDraft = String(clientId || "")
+                mixedBillerPromptDialog.clientNameToDraft = String(clientName || "")
+                mixedBillerPromptDialog.groupingToDraft = String(grouping || "matter")
+                mixedBillerPromptDialog.solePropCount = spCount
+                mixedBillerPromptDialog.pcCount = pcCount
+                mixedBillerPromptDialog.open()
+                return
+            }
+        }
+
         var recipients = []
         try {
             recipients = billingBackend && billingBackend.invoiceBillToOptions
@@ -1186,15 +1357,14 @@ Item {
             jointBillToPromptDialog.clientIdToDraft = String(clientId || "")
             jointBillToPromptDialog.clientNameToDraft = String(clientName || "")
             jointBillToPromptDialog.groupingToDraft = String(grouping || "matter")
+            jointBillToPromptDialog.billerModeToDraft = resolvedMode
             jointBillToPromptDialog.recipientOptions = recipients
             jointBillToPromptDialog.selectedRecipient = recipients[0] || ({})
             jointBillToRecipientCombo.currentIndex = 0
             jointBillToPromptDialog.open()
             return
         }
-        root.isBuildingInvoice = true
-        billingBackend.createDraftWithGrouping(clientId, clientName, ids, grouping)
-        if (root.isZenMode) root.isZenMode = false
+        root._executeDraftCreation(clientId, clientName, ids, grouping, ({}), resolvedMode)
     }
 
     function _createDraft() {
@@ -2236,6 +2406,68 @@ Item {
                         ToolTip.text: "Show entries across all dates without date restrictions"
                     }
 
+                    // Divider
+                    Rectangle {
+                        width: 1
+                        height: 20
+                        color: root.borderColor
+                        Layout.leftMargin: 4
+                        Layout.rightMargin: 4
+                    }
+
+                    Text {
+                        text: "Biller:"
+                        color: root.mutedColor
+                        font.pixelSize: 12
+                        font.weight: Font.Medium
+                        font.family: "Inter"
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    Repeater {
+                        model: [
+                            { code: "", label: "All Billers" },
+                            { code: "SOLE_PROP", label: "SOLE_PROP" },
+                            { code: "PC", label: "PC (-PC)" }
+                        ]
+                        delegate: Rectangle {
+                            id: billerFilterBtn
+                            required property var modelData
+                            readonly property bool isCurrentBiller: root.selectedBillerFilter === String(modelData.code || "")
+                            height: 34
+                            width: billerFilterText.implicitWidth + 20
+                            radius: 6
+                            color: isCurrentBiller
+                                ? SemanticTheme.alpha(root.accentColor, 0.15)
+                                : (billerFilterMouse.containsMouse ? SemanticTheme.buttonHover(root.t, root.appStyle) : "transparent")
+                            border.color: isCurrentBiller ? root.accentColor : root.borderColor
+                            border.width: isCurrentBiller ? 1.5 : 1
+
+                            Text {
+                                id: billerFilterText
+                                anchors.centerIn: parent
+                                text: String(billerFilterBtn.modelData.label || "")
+                                color: billerFilterBtn.isCurrentBiller
+                                    ? root.accentColor
+                                    : (billerFilterMouse.containsMouse ? root.textColor : root.mutedColor)
+                                font.pixelSize: 11
+                                font.weight: billerFilterBtn.isCurrentBiller ? Font.DemiBold : Font.Normal
+                                font.family: "Inter"
+                            }
+
+                            MouseArea {
+                                id: billerFilterMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.selectedBillerFilter = String(billerFilterBtn.modelData.code || "")
+                                    root.autoCheckFilterMatch()
+                                }
+                            }
+                        }
+                    }
+
                     Item { Layout.fillWidth: true }
 
                     // Counter of filtered entries
@@ -2442,6 +2674,30 @@ Item {
                                                     }
                                                 }
 
+                                                // Biller Badge
+                                                Rectangle {
+                                                    visible: bodyCell.modelData.key === "biller"
+                                                    anchors.centerIn: parent
+                                                    width: Math.min(parent.width - 6, billerCellText.implicitWidth + 12)
+                                                    height: 20
+                                                    radius: 4
+                                                    readonly property bool isPcBiller: String(rowDelegate.modelData.billerEntity || "SOLE_PROP").toUpperCase() === "PC"
+                                                    color: isPcBiller
+                                                        ? SemanticTheme.alpha(root.accentColor, 0.16)
+                                                        : SemanticTheme.surfaceInput(root.t, root.appStyle)
+                                                    border.color: isPcBiller ? root.accentColor : root.borderColor
+                                                    border.width: 1
+                                                    Text {
+                                                        id: billerCellText
+                                                        anchors.centerIn: parent
+                                                        text: String(rowDelegate.modelData.billerEntity || "SOLE_PROP").toUpperCase()
+                                                        color: parent.isPcBiller ? root.accentColor : root.mutedColor
+                                                        font.pixelSize: 10
+                                                        font.weight: Font.Bold
+                                                        font.family: "Inter"
+                                                    }
+                                                }
+
                                                 // Draft Badge
                                                 Rectangle {
                                                     id: draftBadge
@@ -2473,7 +2729,7 @@ Item {
 
                                                 // 2. Text data
                                                 Text {
-                                                    visible: bodyCell.modelData.key !== "selection"
+                                                    visible: bodyCell.modelData.key !== "selection" && bodyCell.modelData.key !== "biller"
                                                     anchors.fill: parent
                                                     anchors.leftMargin: (bodyCell.modelData.key === "description" && !!rowDelegate.modelData.invoiceRef) ? (draftBadge.width + 6) : 0
                                                     anchors.rightMargin: (bodyCell.modelData.align === "right") ? ((bodyCell.modelData.resizable !== false && bodyCell.index < root.columnModel.length - 1) ? 21 : 7) : 0

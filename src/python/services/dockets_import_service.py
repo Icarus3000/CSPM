@@ -363,7 +363,7 @@ class DocketsImportService:
             return default
 
     def _is_actual_invoice_ref(self, value) -> bool:
-        return bool(re.match(r"^\d{2}-\d{4}(?:-[A-Z])?$", self._clean(value)))
+        return bool(re.match(r"^\d{2}-\d{4}(?:-[A-Z])?(?:-PC)?$", self._clean(value)))
 
     def _invoice_marker_bucket(self, value) -> str:
         text = self._clean(value)

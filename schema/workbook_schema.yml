@@ -1,5 +1,5 @@
-schema_version: 2
-updated_utc: '2026-08-30T00:00:00Z'
+schema_version: 3
+updated_utc: '2026-10-17T00:00:00Z'
 status: canonical-pre-conflict
 notes:
 - This file is the canonical workbook contract for Excel-first mode.
@@ -230,6 +230,8 @@ tables:
     type: datetime
   - name: UpdatedAt
     type: datetime
+  - name: DefaultBiller
+    type: text
 - sheet: TimeEntries
   table: tblTimeEntries
   primary_key: EntryID
@@ -285,6 +287,8 @@ tables:
     type: text
   - name: CreatedAt
     type: datetime
+  - name: BillerEntity
+    type: text
 - sheet: Trademarks
   table: tblTrademarks
   primary_key: TrademarkID
@@ -459,6 +463,8 @@ tables:
     type: datetime
   - name: UpdatedAt
     type: datetime
+  - name: BillerEntity
+    type: text
 - sheet: TransactionAccounts
   table: tblTransactionAccounts
   primary_key: AccountCode
@@ -505,6 +511,18 @@ tables:
     type: int
   - name: Notes
     type: text
+  - name: T2125LineNumber
+    type: text
+  - name: T2125LineLabel
+    type: text
+  - name: GIFISchedule125Code
+    type: text
+  - name: GIFISchedule125Label
+    type: text
+  - name: DeductiblePct
+    type: number
+  - name: ITCClaimablePct
+    type: number
 - sheet: TransactionBusinessUnits
   table: tblTransactionBusinessUnits
   primary_key: BusinessUnit
@@ -584,6 +602,8 @@ tables:
     type: text
   - name: DocumentPath
     type: text
+  - name: BillerEntity
+    type: text
 - sheet: Ledger
   table: tblLedger
   primary_key: LedgerID
@@ -625,6 +645,8 @@ tables:
     type: text
   - name: CreatedAt
     type: datetime
+  - name: BillerEntity
+    type: text
 - sheet: Receivables
   table: tblReceivables
   primary_key: null
@@ -647,6 +669,8 @@ tables:
   - name: Status
     type: text
   - name: WorkClient
+    type: text
+  - name: BillerEntity
     type: text
 - sheet: InvoiceLog
   table: tblInvoiceLog
@@ -675,6 +699,12 @@ tables:
     type: text
   - name: FilePath
     type: text
+  - name: BillerEntity
+    type: text
+  - name: BillerAddressOverride
+    type: text
+  - name: BillerHSTOverride
+    type: text
 - sheet: HSTLog
   table: tblHSTLog
   primary_key: PeriodID
@@ -695,6 +725,30 @@ tables:
   - name: PaidDate
     type: date
   - name: PaymentRef
+    type: text
+  - name: BillerEntity
+    type: text
+  - name: Line101Sales
+    type: number
+  - name: Line103HSTCollected
+    type: number
+  - name: Line104Adjustments
+    type: number
+  - name: Line105TotalHST
+    type: number
+  - name: Line106ITCs
+    type: number
+  - name: Line107ITCAdjustments
+    type: number
+  - name: Line108TotalITCs
+    type: number
+  - name: Line110Instalments
+    type: number
+  - name: Line113Balance
+    type: number
+  - name: Status
+    type: text
+  - name: Notes
     type: text
 - sheet: DraftInvoices
   table: tblDraftInvoices
@@ -747,6 +801,12 @@ tables:
     type: datetime
   - name: UpdatedAt
     type: datetime
+  - name: BillerEntity
+    type: text
+  - name: BillerAddressOverride
+    type: text
+  - name: BillerHSTOverride
+    type: text
 - sheet: CorpEntities
   table: tblCorpEntities
   primary_key: EntityID
@@ -927,6 +987,8 @@ tables:
     type: bool-int
   - name: AdoptedAt
     type: datetime
+  - name: BillerEntity
+    type: text
 - sheet: APPayments
   table: tblAPPayments
   primary_key: APPaymentID
@@ -972,6 +1034,135 @@ tables:
     type: text
   - name: HistoricalPayment
     type: bool-int
+- sheet: Billing_Entities
+  table: tblBillingEntities
+  primary_key: BillerCode
+  identity_policy: stable_primary_key
+  columns:
+  - name: BillerCode
+    type: text
+  - name: LegalName
+    type: text
+  - name: PracticeName
+    type: text
+  - name: OCN
+    type: text
+  - name: BIN
+    type: text
+  - name: HSTNumber
+    type: text
+  - name: EffectiveFrom
+    type: date
+  - name: EffectiveTo
+    type: date
+  - name: DefaultAddressLine
+    type: text
+  - name: AltAddressLine
+    type: text
+  - name: Phone
+    type: text
+  - name: Email
+    type: text
+  - name: PayableToName
+    type: text
+  - name: ETransferEmail
+    type: text
+  - name: BankAccountCode
+    type: text
+  - name: InvoiceNumberSuffix
+    type: text
+  - name: FooterDisclosureText
+    type: text
+  - name: IsDefault
+    type: bool-int
+  - name: Active
+    type: bool-int
+- sheet: Shareholder_Loan_Ledger
+  table: tblShareholderLoanLedger
+  primary_key: EntryID
+  identity_policy: stable_primary_key
+  columns:
+  - name: EntryID
+    type: text
+  - name: Date
+    type: date
+  - name: EntryType
+    type: text
+  - name: Description
+    type: text
+  - name: VendorOrCounterparty
+    type: text
+  - name: SourceAccount
+    type: text
+  - name: CategoryCode
+    type: text
+  - name: PreTaxAmount
+    type: number
+  - name: HSTAmount
+    type: number
+  - name: GrossAmount
+    type: number
+  - name: LoanDelta
+    type: number
+  - name: RunningBalance
+    type: number
+  - name: LinkedTransactionID
+    type: text
+  - name: LinkedAPBillID
+    type: text
+  - name: ReceiptRef
+    type: text
+  - name: GIFICode
+    type: text
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
+- sheet: CCA_Assets
+  table: tblCCAAssets
+  primary_key: AssetID
+  identity_policy: stable_primary_key
+  columns:
+  - name: AssetID
+    type: text
+  - name: BillerEntity
+    type: text
+  - name: CCAClass
+    type: text
+  - name: CCARatePct
+    type: number
+  - name: Description
+    type: text
+  - name: AcquisitionDate
+    type: date
+  - name: OriginalCost
+    type: number
+  - name: OpeningUCC
+    type: number
+  - name: Additions
+    type: number
+  - name: DispositionsProceeds
+    type: number
+  - name: HalfYearRuleApplies
+    type: bool-int
+  - name: ImmediateExpensingApplies
+    type: bool-int
+  - name: CCAClaimed
+    type: number
+  - name: ClosingUCC
+    type: number
+  - name: RolloverFromAssetID
+    type: text
+  - name: TaxYear
+    type: int
+  - name: Notes
+    type: text
+  - name: CreatedAt
+    type: datetime
+  - name: UpdatedAt
+    type: datetime
 migration_to_sql:
   strategy: adapter-swap
   mapping_rule: 1:1 table and column names where possible

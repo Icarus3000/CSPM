@@ -12,3 +12,6 @@ HOME_TRUST_MORTGAGE,Home Trust Mortgage,mortgage,Joint,1,
 CASH_DEBORAH,Cash - Deborah,cash,Deborah,1,
 CASH_CORY,Cash - Cory,cash,Cory,1,
 AP_PAYABLE,Accounts Payable,accounts-payable,,1,
+PC_OPERATING,PC Operating Account,chequing,PC,1,"Corporate Operating,PC Bank"
+CORY_PERSONAL,Cory Personal Card / Account,credit-card,Cory,1,"Cory Personal"
+SHAREHOLDER_LOAN,Due to Shareholder (GIFI 2781),loan,Cory,1,"Shareholder Loan"

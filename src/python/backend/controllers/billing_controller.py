@@ -472,11 +472,19 @@ class BillingController(QObject):
 
                 parent_name = client_map.get(parent_id, parent_id)
 
+            raw_time_date = str(row.get(sc.COL_TIME_DATE) or "").strip()
+            raw_time_biller = str(row.get(sc.COL_TIME_BILLER_ENTITY) or "").strip().upper()
+            time_biller = (
+                raw_time_biller
+                if raw_time_biller in {"SOLE_PROP", "PC"}
+                else ("PC" if raw_time_date[:10] >= "2026-11-01" else "SOLE_PROP")
+            )
+
             wip_rows.append({
 
                 "entryId": str(row.get(sc.COL_TIME_ENTRY_ID) or ""),
 
-                "date": str(row.get(sc.COL_TIME_DATE) or ""),
+                "date": raw_time_date,
 
                 "clientId": client_id,
 
@@ -511,6 +519,8 @@ class BillingController(QObject):
                 "grossToClient": float(self._excel_repo._parse_float(row.get(sc.COL_TIME_GROSS)) or 0.0),
                 
                 "rawSeconds": int(self._excel_repo._parse_float(row.get(sc.COL_TIME_SECONDS)) or 0),
+
+                "billerEntity": time_biller,
 
             })
 
@@ -619,6 +629,13 @@ class BillingController(QObject):
                     else "Client disbursement"
                 )
 
+            raw_disb_biller = str(row.get(sc.COL_DISB_BILLER_ENTITY) or "").strip().upper()
+            disb_biller = (
+                raw_disb_biller
+                if raw_disb_biller in {"SOLE_PROP", "PC"}
+                else ("PC" if date_text[:10] >= "2026-11-01" else "SOLE_PROP")
+            )
+
             wip_rows.append({
                 "entryId": str(row.get(sc.COL_DISB_ID) or ""),
                 "date": date_text,
@@ -639,6 +656,7 @@ class BillingController(QObject):
                 "sharePct": 100.0,
                 "grossToClient": net,
                 "rawSeconds": 0,
+                "billerEntity": disb_biller,
             })
 
         # Sort by client, then date
@@ -770,6 +788,65 @@ class BillingController(QObject):
         except Exception as exc:
             self.error.emit(f"Could not load invoice bill-to choices: {exc}")
             return []
+
+    @Slot('QVariantList', result='QVariantMap')
+    def checkMixedBillerWip(self, work_entry_ids):
+        """Return whether selected WIP spans pre-Nov 1 SOLE_PROP and Nov 1+ PC."""
+        try:
+            return dict(self._draft_svc.check_mixed_biller_wip([str(x) for x in (work_entry_ids or [])]))
+        except Exception as exc:
+            self.error.emit(f"Could not check WIP biller entities: {exc}")
+            return {"isMixed": False, "solePropIds": [], "pcIds": [], "solePropCount": 0, "pcCount": 0, "recommendedBiller": "SOLE_PROP"}
+
+    @Slot(str, str, 'QVariantList', str, 'QVariantMap')
+    def createSplitBillerDrafts(
+        self,
+        client_id,
+        client_name,
+        time_entry_ids,
+        grouping_pref,
+        billing_recipient,
+    ):
+        """Split mixed pre-Nov 1 SOLE_PROP and Nov 1+ PC WIP into two separate invoice drafts."""
+        py_all_ids = [str(x) for x in (time_entry_ids or []) if str(x).strip()]
+        if not py_all_ids:
+            message = "Select at least one time docket, fee entry, or disbursement before creating a draft invoice."
+            self.toast.emit(message)
+            self.draftCreated.emit({"ok": False, "message": message})
+            return
+        worker = Worker(
+            self._draft_svc.split_mixed_biller_wip,
+            str(client_id),
+            str(client_name),
+            py_all_ids,
+            str(grouping_pref or "matter"),
+            dict(billing_recipient or {}),
+            name="createSplitBillerDrafts",
+        )
+        worker.signals.result.connect(partial(self._on_split_drafts_created, worker))
+        worker.signals.error.connect(partial(self._on_draft_error, worker))
+        self._start_worker(worker)
+
+    def _on_split_drafts_created(self, worker, result):
+        try:
+            payload = dict(result or {})
+            draft_nums = list(payload.get("draftNums") or [])
+            if draft_nums:
+                self.toast.emit(f"Created split biller drafts: {', '.join(draft_nums)}")
+                self.draftCreated.emit({
+                    "ok": True,
+                    "draftNum": draft_nums[0],
+                    "draftNums": draft_nums,
+                    "solePropDraftNum": payload.get("solePropDraftNum", ""),
+                    "pcDraftNum": payload.get("pcDraftNum", ""),
+                })
+            else:
+                self.draftCreated.emit({"ok": False, "message": "No drafts were created."})
+        except Exception as exc:
+            self.error.emit(f"Failed to process split drafts: {exc}")
+            self.draftCreated.emit({"ok": False, "message": str(exc)})
+        finally:
+            self._release_worker(worker)
 
     def _create_draft_with_grouping(
         self,
@@ -1341,15 +1418,80 @@ class BillingController(QObject):
                         )
                     if "docketDisplayMode" in meta_changes:
                         d["DocketDisplayMode"] = str(meta_changes["docketDisplayMode"])
+                    if "billerEntity" in meta_changes:
+                        b_ent = str(meta_changes["billerEntity"] or "").strip().upper()
+                        if b_ent in {"SOLE_PROP", "PC"}:
+                            d[sc.COL_DRAFT_BILLER_ENTITY] = b_ent
+                    if "billerAddressOverride" in meta_changes:
+                        d[sc.COL_DRAFT_BILLER_ADDRESS_OVERRIDE] = str(meta_changes["billerAddressOverride"] or "").strip()
+                    if "billerHstOverride" in meta_changes:
+                        d[sc.COL_DRAFT_BILLER_HST_OVERRIDE] = str(meta_changes["billerHstOverride"] or "").strip()
                     updated = True
                     break
             if updated:
                 self._excel_repo._write_table_rows(sc.TBL_DRAFT_INVOICES, drafts)
-                self.draftUpdated.emit({})
+                refreshed_draft = self._draft_svc.get_draft(str(draft_num))
+                self.draftUpdated.emit(dict(refreshed_draft) if refreshed_draft else {})
         except (KeyError, TypeError, ValueError) as e:
             self.error.emit(f"Failed to update draft metadata: {e}")
         except Exception as e:
             logger.exception(f"Failed to update draft meta: {e}")
+
+    @Slot(result='QVariantList')
+    def listBillingEntities(self):
+        """Return all active billing entities (SOLE_PROP and PC)."""
+        try:
+            return list(self._excel_repo.list_billing_entities(include_inactive=False))
+        except Exception as exc:
+            self.error.emit(f"Could not list billing entities: {exc}")
+            return []
+
+    @Slot(str, result='QVariantMap')
+    def getBillingEntity(self, biller_code):
+        """Return one billing entity profile by code."""
+        try:
+            return dict(self._excel_repo.get_billing_entity(str(biller_code or "")) or {})
+        except Exception as exc:
+            self.error.emit(f"Could not load billing entity: {exc}")
+            return {}
+
+    @Slot('QVariantMap', result='QVariantMap')
+    def saveBillingEntity(self, payload):
+        """Update a billing entity (e.g., setting the PC CRA HST number once issued)."""
+        try:
+            res = dict(self._excel_repo.save_billing_entity(dict(payload or {})) or {})
+            self._payload_cache.clear()
+            if res.get("ok"):
+                self.toast.emit(f"Saved billing entity {res.get('billerCode', '')}.")
+            return res
+        except Exception as exc:
+            self.error.emit(f"Could not save billing entity: {exc}")
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(str, str, str, str)
+    def updateDraftBiller(self, draft_num, biller_code, address_override="", hst_override=""):
+        """Update the billing entity, address override, and HST override for a draft invoice."""
+        self._payload_cache.clear()
+        try:
+            code = str(biller_code or "").strip().upper()
+            if code not in {"SOLE_PROP", "PC"}:
+                code = "SOLE_PROP"
+            entity = dict(self._excel_repo.get_billing_entity(code) or {})
+            addr = str(address_override or "").strip() or str(entity.get("defaultAddressLine") or "").strip()
+            hst = str(hst_override or "").strip() or str(entity.get("hstNumber") or "").strip()
+            self._draft_svc.update_draft_meta(
+                str(draft_num),
+                {
+                    "billerEntity": code,
+                    "billerAddressOverride": addr,
+                    "billerHstOverride": hst,
+                },
+            )
+            refreshed = self._draft_svc.get_draft(str(draft_num))
+            self.toast.emit(f"Draft biller updated to {code}")
+            self.draftUpdated.emit(dict(refreshed) if refreshed else {})
+        except Exception as exc:
+            self.error.emit(f"Could not update draft biller: {exc}")
 
     @staticmethod
     def _normalize_discount_type(discount_type):
@@ -2639,11 +2781,96 @@ class BillingController(QObject):
         service_client_display = ", ".join(service_client_names)
         service_matter_display = ", ".join(service_matter_names)
 
+        # Resolve Multi-Biller identity (SOLE_PROP vs PC) & per-invoice address / HST overrides
+        draft_biller = str(draft.get(sc.COL_DRAFT_BILLER_ENTITY) or "").strip().upper()
+        if draft_biller not in {"SOLE_PROP", "PC"}:
+            if final_invoice_num and str(final_invoice_num).strip().upper().endswith("-PC"):
+                draft_biller = "PC"
+            elif str(draft.get(sc.COL_DRAFT_DATE) or "")[:10] >= "2026-11-01":
+                draft_biller = "PC"
+            else:
+                draft_biller = "SOLE_PROP"
+
+        try:
+            biller_profile = dict(self._excel_repo.get_billing_entity(draft_biller) or {})
+        except Exception:
+            biller_profile = {}
+
+        biller_legal_name = str(
+            biller_profile.get("legalName")
+            or ("Cory Schneider Law Professional Corporation" if draft_biller == "PC" else "Cory Schneider")
+        ).strip()
+        biller_practice_name = str(biller_profile.get("practiceName") or "Cory Schneider Law Office").strip()
+        biller_address_line = str(
+            draft.get(sc.COL_DRAFT_BILLER_ADDRESS_OVERRIDE)
+            or biller_profile.get("defaultAddressLine")
+            or (
+                "7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7"
+                if draft_biller == "PC"
+                else "14 Parsons Court, Thornhill, ON L4K 6Z4"
+            )
+        ).strip()
+
+        if "\n" in biller_address_line:
+            biller_address_lines = [line.strip() for line in biller_address_line.splitlines() if line.strip()]
+        else:
+            parts = [p.strip() for p in biller_address_line.split(",") if p.strip()]
+            if len(parts) >= 3:
+                biller_address_lines = [", ".join(parts[:-2]), ", ".join(parts[-2:])]
+            elif len(parts) == 2:
+                biller_address_lines = [parts[0], parts[1]]
+            else:
+                biller_address_lines = [biller_address_line] if biller_address_line else []
+
+        biller_hst_number = str(
+            draft.get(sc.COL_DRAFT_BILLER_HST_OVERRIDE)
+            or biller_profile.get("hstNumber")
+            or (
+                "Pending CRA BN (Effective Nov 1, 2026)"
+                if draft_biller == "PC"
+                else "78621 8222 RT0001"
+            )
+        ).strip()
+        biller_payable_to = str(
+            biller_profile.get("payableToName")
+            or ("CORY SCHNEIDER LAW PROFESSIONAL CORPORATION" if draft_biller == "PC" else "CORY SCHNEIDER")
+        ).strip()
+        biller_etransfer_email = str(
+            biller_profile.get("eTransferEmail") or "cory@coryschneiderlaw.ca"
+        ).strip()
+        biller_phone = str(biller_profile.get("phone") or "416-725-9364").strip()
+        biller_email = str(biller_profile.get("email") or "cory@coryschneiderlaw.ca").strip()
+        biller_footer_disclosure = str(
+            biller_profile.get("footerDisclosureText")
+            or (
+                "Cory Schneider Law Office is the registered business name (BIN: 1001782016) of Cory Schneider Law Professional Corporation (OCN: 1001781977)."
+                if draft_biller == "PC"
+                else ""
+            )
+        ).strip()
+
+        suggested_raw_num = (
+            final_invoice_num
+            if final_invoice_num
+            else self.nextInvoiceNumberForBiller(draft_biller)
+        )
+
         payload = {
             "invoice": dict(draft),
             "is_draft": is_draft,
-            "invoice_number_raw": final_invoice_num if final_invoice_num else self.nextInvoiceNumber(),
+            "invoice_number_raw": suggested_raw_num,
             "invoice_number": final_invoice_num if final_invoice_num else draft_num,
+            "biller_code": draft_biller,
+            "biller_legal_name": biller_legal_name,
+            "biller_practice_name": biller_practice_name,
+            "biller_address_line": biller_address_line,
+            "biller_address_lines": biller_address_lines,
+            "biller_hst_number": biller_hst_number,
+            "biller_payable_to": biller_payable_to,
+            "biller_etransfer_email": biller_etransfer_email,
+            "biller_phone": biller_phone,
+            "biller_email": biller_email,
+            "biller_footer_disclosure": biller_footer_disclosure,
             "client_name": str(draft.get(sc.COL_DRAFT_CLIENT_NAME) or ""),
             "billing_client_name": billing_client_name,
             "agency_short_name": agency_short_name,
@@ -2687,8 +2914,6 @@ class BillingController(QObject):
             "reconciliation_mode": reconciliation_mode,
             "show_total_hours": str(draft.get(sc.COL_DRAFT_SHOW_TOTAL_HOURS) or "True").lower() == "true",
         }
-
-        
 
         self._payload_cache[cache_key] = payload
         return payload
@@ -3713,74 +3938,98 @@ class BillingController(QObject):
 
     # ── Next Invoice Number ──────────────────────────────────────────────────
 
-    @Slot(result=str)
-
-    def nextInvoiceNumber(self):
-
-        """Suggest the next invoice number based on existing invoices."""
-
+    @Slot(str, result=str)
+    def nextInvoiceNumberForBiller(self, biller_entity: str = "") -> str:
+        """Suggest the next invoice number sharing a global YY-NNNN counter across SOLE_PROP and PC."""
         try:
-
-            from repositories.excel_repo import TBL_INVOICE_LOG
-
-            rows = self._excel_repo._read_table_rows(TBL_INVOICE_LOG)
-
-            max_num = 0
-
             import re
-
             from datetime import datetime
+            from repositories.excel_repo import TBL_INVOICE_LOG, TBL_TIME
+
+            biller = str(biller_entity or "").strip().upper()
+            if biller not in ("SOLE_PROP", "PC"):
+                biller = self._excel_repo.default_biller_for_date(datetime.now().strftime("%Y-%m-%d"))
+
+            suffix = "-PC" if biller == "PC" else ""
+            try:
+                ent = self._excel_repo.get_billing_entity(biller)
+                if ent and "InvoiceNumberSuffix" in ent:
+                    suffix = str(ent.get("InvoiceNumberSuffix") or ("-PC" if biller == "PC" else ""))
+            except Exception:
+                pass
 
             current_year_prefix = str(datetime.now().year)[-2:]
+            pattern = re.compile(rf"^{current_year_prefix}-(\d+)(?:-[A-Z])?(?:-PC)?$", re.IGNORECASE)
+            max_num = 0
 
+            rows = self._excel_repo._read_table_rows(TBL_INVOICE_LOG)
             for row in rows:
-
                 inv = str(row.get(sc.COL_INV_INVOICE_NUM) or "").strip()
-
-                match = re.search(f'^{current_year_prefix}-(\\d+)$', inv)
-
+                match = pattern.match(inv)
                 if match:
-
                     num = int(match.group(1))
-
                     if num > max_num:
-
                         max_num = num
 
-            # Also check time entries for legacy invoice refs
-
-            from repositories.excel_repo import TBL_TIME
-
             time_rows = self._excel_repo._read_table_rows(TBL_TIME)
-
             for row in time_rows:
-
                 inv = str(row.get(sc.COL_TIME_INVOICE_REF) or "").strip()
-
-                match = re.search(f'^{current_year_prefix}-(\\d+)$', inv)
-
+                match = pattern.match(inv)
                 if match:
-
                     num = int(match.group(1))
-
                     if num > max_num:
-
                         max_num = num
 
             next_num = max_num + 1
-
-            return f"{current_year_prefix}-{next_num:04d}"
-
+            return f"{current_year_prefix}-{next_num:04d}{suffix}"
         except Exception as exc:
+            logger.error("nextInvoiceNumberForBiller error: %s", exc, exc_info=True)
+            biller_norm = str(biller_entity or "").strip().upper()
+            return "26-0001-PC" if biller_norm == "PC" else "26-0001"
 
-            logger.error("nextInvoiceNumber error: %s", exc, exc_info=True)
-
-            return "26-0001"
+    @Slot(result=str)
+    def nextInvoiceNumber(self):
+        """Suggest the next invoice number based on existing invoices and active default biller."""
+        return self.nextInvoiceNumberForBiller("")
 
     @Slot()
     def loadNextInvoiceNumber(self):
         """Find the next invoice number without holding up the Finalize dialog."""
         worker = Worker(self.nextInvoiceNumber, name="loadNextInvoiceNumber")
+        worker.signals.result.connect(partial(self._on_next_invoice_number_loaded, worker))
+        worker.signals.error.connect(partial(self._on_next_invoice_number_failed, worker))
+        self._start_worker(worker)
+
+    @Slot(str)
+    def loadNextInvoiceNumberForBiller(self, biller_entity: str):
+        """Find the next invoice number for a specific biller entity asynchronously."""
+        worker = Worker(
+            self.nextInvoiceNumberForBiller,
+            str(biller_entity or ""),
+            name="loadNextInvoiceNumberForBiller",
+        )
+        worker.signals.result.connect(partial(self._on_next_invoice_number_loaded, worker))
+        worker.signals.error.connect(partial(self._on_next_invoice_number_failed, worker))
+        self._start_worker(worker)
+
+    @Slot(str)
+    def loadNextInvoiceNumberForDraft(self, draft_id: str):
+        """Find the next invoice number matching the draft's BillerEntity asynchronously."""
+        def _resolve_for_draft(d_id: str) -> str:
+            biller = ""
+            try:
+                bundle = self._draft_svc.get_draft_bundle(str(d_id or ""))
+                if bundle and bundle.get("draft"):
+                    biller = str(bundle["draft"].get(sc.COL_DRF_BILLER_ENTITY) or "").strip()
+            except Exception:
+                pass
+            return self.nextInvoiceNumberForBiller(biller)
+
+        worker = Worker(
+            _resolve_for_draft,
+            str(draft_id or ""),
+            name="loadNextInvoiceNumberForDraft",
+        )
         worker.signals.result.connect(partial(self._on_next_invoice_number_loaded, worker))
         worker.signals.error.connect(partial(self._on_next_invoice_number_failed, worker))
         self._start_worker(worker)

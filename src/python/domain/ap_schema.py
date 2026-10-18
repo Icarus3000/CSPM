@@ -16,7 +16,7 @@ AP_BILLS_HEADERS = (
     "FXRateDate", "FXSource", "ClientTaxExempt", "BillClaimPct", "MatterID",
     "ClientID", "ParentID", "DisbursementID", "DocumentPath", "DocumentHash",
     "DocumentOriginalName", "DocumentOriginalPath", "DocumentOriginalHash",
-    "DocumentStorageFormat", "HistoricalAdoption", "AdoptedAt",
+    "DocumentStorageFormat", "HistoricalAdoption", "AdoptedAt", "BillerEntity",
 )
 AP_PAYMENTS_SHEET = "APPayments"
 AP_PAYMENTS_TABLE = "tblAPPayments"

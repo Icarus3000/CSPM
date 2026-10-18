@@ -322,6 +322,8 @@ startup_briefing/
 
 # Promotion keeps production datasets and local evidence outside the source tree.
 /data/
+data/backups_*
+data/backups_*/
 /deliverables/
 /report_branding/logo_cache/
 /build_release*_output.txt

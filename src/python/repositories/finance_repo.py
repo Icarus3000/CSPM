@@ -448,6 +448,12 @@ class FinanceRepo:
                     "active": active,
                     "sortOrder": self.db._parse_int(row.get(sc.COL_TXN_CATEGORY_LKP_SORT_ORDER)) or 0,
                     "notes": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_NOTES)),
+                    "t2125LineNumber": _clean_text(row.get(sc.COL_TXN_CAT_T2125_LINE)),
+                    "t2125LineLabel": _clean_text(row.get(sc.COL_TXN_CAT_T2125_LABEL)),
+                    "gifiSchedule125Code": _clean_text(row.get(sc.COL_TXN_CAT_GIFI_CODE)),
+                    "gifiSchedule125Label": _clean_text(row.get(sc.COL_TXN_CAT_GIFI_LABEL)),
+                    "deductiblePct": float(self.db._parse_float(row.get(sc.COL_TXN_CAT_DEDUCTIBLE_PCT)) or 100.0),
+                    "itcClaimablePct": float(self.db._parse_float(row.get(sc.COL_TXN_CAT_ITC_PCT)) or 100.0),
                 }
             )
         out.sort(
@@ -503,754 +509,31 @@ class FinanceRepo:
         return out
 
     def list_transactions(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        f = dict(filters or {})
-        query = _normalize_search_text(f.get("query", ""))
-        class_filter = _normalize_search_text(f.get("class") or f.get("txnClass"))
-        type_filter = _normalize_search_text(f.get("type") or f.get("txnType"))
-        status_filter = _normalize_search_text(f.get("status"))
-        business_unit_filter = _normalize_search_text(f.get("businessUnit"))
-        parent_filter = _normalize_search_text(f.get("parent"))
-        client_filter = _normalize_search_text(f.get("client"))
-        matter_filter = _normalize_search_text(f.get("matter"))
-        include_void = self.db._to_bool_int(f.get("includeVoid"), default=1) == 1
-
-        date_from = _clean_text(
-            f.get("dateFrom") or f.get("fromDate") or f.get("startDate")
-        )
-        date_to = _clean_text(
-            f.get("dateTo") or f.get("toDate") or f.get("endDate")
-        )
-        if date_from and not _is_valid_iso_date(date_from):
-            raise ValueError("dateFrom must be in YYYY-MM-DD format.")
-        if date_to and not _is_valid_iso_date(date_to):
-            raise ValueError("dateTo must be in YYYY-MM-DD format.")
-
-        rows = [
-            self.db._canonicalize_transaction_row(r)
-            for r in self.db._read_table_rows(TBL_TRANSACTIONS_MASTER)
-        ]
-        out: List[Dict[str, Any]] = []
-        for row in rows:
-            row_date = _clean_text(row.get(sc.COL_TXN_DATE))
-            row_class = _normalize_search_text(row.get(sc.COL_TXN_CLASS))
-            row_type = _normalize_search_text(row.get(sc.COL_TXN_TYPE))
-            row_status = _normalize_search_text(row.get(sc.COL_TXN_STATUS))
-            row_business_unit = _normalize_search_text(row.get(sc.COL_TXN_BUSINESS_UNIT))
-            row_parent = _normalize_search_text(row.get(sc.COL_TXN_PARENT))
-            row_client = _normalize_search_text(row.get(sc.COL_TXN_CLIENT))
-            row_matter = _normalize_search_text(row.get(sc.COL_TXN_MATTER))
-
-            if class_filter and row_class != class_filter:
-                continue
-            if type_filter and row_type != type_filter:
-                continue
-            if status_filter and row_status != status_filter:
-                continue
-            if business_unit_filter and business_unit_filter not in row_business_unit:
-                continue
-            if parent_filter and parent_filter not in row_parent:
-                continue
-            if client_filter and client_filter not in row_client:
-                continue
-            if matter_filter and matter_filter not in row_matter:
-                continue
-            if not include_void and row_status == "void":
-                continue
-
-            if date_from and row_date and row_date < date_from:
-                continue
-            if date_to and row_date and row_date > date_to:
-                continue
-
-            if query:
-                haystack = " | ".join(_normalize_search_text(v) for v in row.values() if _clean_text(v))
-                if query not in haystack:
-                    continue
-
-            out.append(
-                {
-                    "transactionId": _clean_text(row.get(sc.COL_TXN_ID)),
-                    "txnDate": row_date,
-                    "class": _clean_text(row.get(sc.COL_TXN_CLASS)),
-                    "businessUnit": _clean_text(row.get(sc.COL_TXN_BUSINESS_UNIT)),
-                    "type": _clean_text(row.get(sc.COL_TXN_TYPE)),
-                    "fromAccount": _clean_text(row.get(sc.COL_TXN_FROM_ACCOUNT)),
-                    "toAccount": _clean_text(row.get(sc.COL_TXN_TO_ACCOUNT)),
-                    "payee": _clean_text(row.get(sc.COL_TXN_PAYEE)),
-                    "parent": _clean_text(row.get(sc.COL_TXN_PARENT)),
-                    "client": _clean_text(row.get(sc.COL_TXN_CLIENT)),
-                    "matter": _clean_text(row.get(sc.COL_TXN_MATTER)),
-                    "categoryCode": _clean_text(row.get(sc.COL_TXN_CATEGORY_CODE)),
-                    "categoryName": _clean_text(row.get(sc.COL_TXN_CATEGORY_NAME)),
-                    "member": _clean_text(row.get(sc.COL_TXN_MEMBER)),
-                    "amount": round(float(self.db._parse_float(row.get(sc.COL_TXN_AMOUNT)) or 0.0), 2),
-                    "taxAmount": round(float(self.db._parse_float(row.get(sc.COL_TXN_TAX_AMOUNT)) or 0.0), 2),
-                    "taxFlag": _clean_text(row.get(sc.COL_TXN_TAX_FLAG)),
-                    "hstExempt": self.db._to_bool_int(row.get(sc.COL_TXN_HST_EXEMPT), default=0),
-                    "generalOfficeExpense": self.db._to_bool_int(
-                        row.get(sc.COL_TXN_GENERAL_OFFICE_EXPENSE), default=0
-                    ),
-                    "shadow": self.db._to_bool_int(row.get(sc.COL_TXN_SHADOW), default=0),
-                    "invoiceRef": _clean_text(row.get(sc.COL_TXN_INVOICE_REF)),
-                    "billClaimPct": round(float(self.db._parse_float(row.get(sc.COL_TXN_BILL_CLAIM_PCT)) or 0.0), 2),
-                    "totalClaimAmount": round(
-                        float(self.db._parse_float(row.get(sc.COL_TXN_TOTAL_CLAIM_AMOUNT)) or 0.0), 2
-                    ),
-                    "expenseDetails": _clean_text(row.get(sc.COL_TXN_EXPENSE_DETAILS)),
-                    "notes": _clean_text(row.get(sc.COL_TXN_NOTES)),
-                    "status": _clean_text(row.get(sc.COL_TXN_STATUS)),
-                    "currency": _clean_text(row.get(sc.COL_TXN_CURRENCY)),
-                    "voidReason": _clean_text(row.get(sc.COL_TXN_VOID_REASON)),
-                    "clearedAt": _clean_text(row.get(sc.COL_TXN_CLEARED_AT)),
-                    "reconciledAt": _clean_text(row.get(sc.COL_TXN_RECONCILED_AT)),
-                    "createdAt": _clean_text(row.get(sc.COL_TXN_CREATED_AT)),
-                    "updatedAt": _clean_text(row.get(sc.COL_TXN_UPDATED_AT)),
-                }
-            )
-
-        out.sort(
-            key=lambda row: (
-                _clean_text(row.get("txnDate")),
-                _clean_text(row.get("updatedAt")),
-                _clean_text(row.get("transactionId")),
-            ),
-            reverse=True,
-        )
-        return out
+        return self.db.list_transactions(filters)
 
     def save_transaction(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        self.db.ensure_schema()
-        normalized = self._normalize_transaction_payload(payload)
-
-        txn_id = _clean_text(normalized.get("transactionId"))
-        existing_row: Optional[Dict[str, Any]] = self._find_transaction_row(txn_id) if txn_id else None
-        self._validate_transaction_status_transition(
-            old_status=_clean_text((existing_row or {}).get(sc.COL_TXN_STATUS)),
-            new_status=_clean_text(normalized.get("status")),
-            has_existing=existing_row is not None,
-        )
-        if not txn_id:
-            txn_id = self.db._new_id("TXN")
-
-        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        created_at = (
-            _clean_text(normalized.get("createdAt"))
-            or _clean_text((existing_row or {}).get(sc.COL_TXN_CREATED_AT))
-            or now_stamp
-        )
-
-        transaction_row = {
-            sc.COL_TXN_ID: txn_id,
-            sc.COL_TXN_DATE: normalized["txnDate"],
-            sc.COL_TXN_CLASS: normalized["class"],
-            sc.COL_TXN_BUSINESS_UNIT: normalized["businessUnit"],
-            sc.COL_TXN_TYPE: normalized["type"],
-            sc.COL_TXN_FROM_ACCOUNT: normalized["fromAccount"],
-            sc.COL_TXN_TO_ACCOUNT: normalized["toAccount"],
-            sc.COL_TXN_PAYEE: normalized["payee"],
-            sc.COL_TXN_PARENT: normalized["parent"],
-            sc.COL_TXN_CLIENT: normalized["client"],
-            sc.COL_TXN_MATTER: normalized["matter"],
-            sc.COL_TXN_CATEGORY_CODE: normalized["categoryCode"],
-            sc.COL_TXN_CATEGORY_NAME: normalized["categoryName"],
-            sc.COL_TXN_MEMBER: normalized["member"],
-            sc.COL_TXN_AMOUNT: round(float(normalized["amount"]), 2),
-            sc.COL_TXN_TAX_AMOUNT: round(float(normalized["taxAmount"]), 2),
-            sc.COL_TXN_TAX_FLAG: normalized["taxFlag"],
-            sc.COL_TXN_HST_EXEMPT: normalized["hstExempt"],
-            sc.COL_TXN_GENERAL_OFFICE_EXPENSE: normalized["generalOfficeExpense"],
-            sc.COL_TXN_SHADOW: normalized["shadow"],
-            sc.COL_TXN_INVOICE_REF: normalized["invoiceRef"],
-            sc.COL_TXN_BILL_CLAIM_PCT: round(float(normalized["billClaimPct"]), 2),
-            sc.COL_TXN_TOTAL_CLAIM_AMOUNT: round(float(normalized["totalClaimAmount"]), 2),
-            sc.COL_TXN_EXPENSE_DETAILS: normalized["expenseDetails"],
-            sc.COL_TXN_NOTES: normalized["notes"],
-            sc.COL_TXN_STATUS: normalized["status"],
-            sc.COL_TXN_CURRENCY: normalized["currency"],
-            sc.COL_TXN_VOID_REASON: normalized["voidReason"],
-            sc.COL_TXN_CLEARED_AT: normalized["clearedAt"],
-            sc.COL_TXN_RECONCILED_AT: normalized["reconciledAt"],
-            sc.COL_TXN_CREATED_AT: created_at,
-            sc.COL_TXN_UPDATED_AT: now_stamp,
-        }
-
-        self.db._upsert_row_by_key(TBL_TRANSACTIONS_MASTER, sc.COL_TXN_ID, txn_id, transaction_row)
-        persisted = self._find_transaction_row(txn_id)
-        verified = self.db._compare_transaction_rows_loose(transaction_row, persisted)
-
-        warnings = list(normalized.get("warnings", []))
-        if verified and warnings:
-            message = "Transaction saved with warnings: " + "; ".join(warnings)
-        elif verified:
-            message = ""
-        else:
-            message = "Transaction verification failed."
-
-        return {
-            "ok": bool(verified),
-            "verifiedExact": bool(verified),
-            "transactionId": txn_id,
-            "savedRow": transaction_row,
-            "warnings": warnings,
-            "message": message,
-        }
+        return self.db.save_transaction(payload)
 
     def _canonicalize_transaction_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        txn_id = _clean_text(self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_ID))
-        if not txn_id:
-            txn_id = self.db._new_id("TXN")
-
-        txn_date = _clean_text(self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_DATE))
-        if not _is_valid_iso_date(txn_date):
-            txn_date = datetime.now().strftime("%Y-%m-%d")
-
-        txn_class = _normalize_choice(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_CLASS),
-            self.db.TXN_CLASS_OPTIONS,
-            "Family",
-        )
-        if not txn_class:
-            txn_class = "Family"
-
-        txn_type = _normalize_choice(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_TYPE),
-            self.db.TXN_TYPE_OPTIONS,
-            "Expense",
-        )
-        if not txn_type:
-            txn_type = "Expense"
-
-        member = _normalize_choice(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_MEMBER),
-            self.db.TXN_MEMBER_OPTIONS,
-            "Joint",
-        )
-        if not member:
-            member = "Joint"
-
-        tax_flag = _normalize_choice(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_TAX_FLAG),
-            self.db.TXN_TAX_FLAG_OPTIONS,
-            "None",
-        )
-        if not tax_flag:
-            tax_flag = "None"
-
-        status = _normalize_choice(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_STATUS),
-            self.db.TXN_STATUS_OPTIONS,
-            "Pending",
-        )
-        if not status:
-            status = "Pending"
-
-        currency = _normalize_choice(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_CURRENCY),
-            self.db.TXN_CURRENCY_OPTIONS,
-            "CAD",
-        )
-        if not currency:
-            currency = "CAD"
-
-        amount = float(
-            self.db._parse_float(self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_AMOUNT))
-            or 0.0
-        )
-        tax_amount = float(
-            self.db._parse_float(self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_TAX_AMOUNT))
-            or 0.0
-        )
-        bill_claim_pct = float(
-            self.db._parse_float(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_BILL_CLAIM_PCT)
-            )
-            or 0.0
-        )
-        if bill_claim_pct < 0:
-            bill_claim_pct = 0.0
-        if bill_claim_pct > 100:
-            bill_claim_pct = 100.0
-
-        hst_exempt = self.db._to_bool_int(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_HST_EXEMPT),
-            default=0,
-        )
-        if hst_exempt == 1:
-            tax_amount = 0.0
-
-        total_claim_existing = self.db._parse_float(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_TOTAL_CLAIM_AMOUNT)
-        )
-        total_claim_amount = (
-            float(total_claim_existing)
-            if total_claim_existing is not None
-            else round((amount + tax_amount) * (bill_claim_pct / 100.0), 2)
-        )
-
-        created_at = _clean_text(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_CREATED_AT)
-        )
-        if not created_at:
-            created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        updated_at = _clean_text(
-            self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_UPDATED_AT)
-        )
-        if not updated_at:
-            updated_at = created_at
-
-        return {
-            sc.COL_TXN_ID: txn_id,
-            sc.COL_TXN_DATE: txn_date,
-            sc.COL_TXN_CLASS: txn_class,
-            sc.COL_TXN_BUSINESS_UNIT: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_BUSINESS_UNIT)
-            ),
-            sc.COL_TXN_TYPE: txn_type,
-            sc.COL_TXN_FROM_ACCOUNT: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_FROM_ACCOUNT)
-            ),
-            sc.COL_TXN_TO_ACCOUNT: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_TO_ACCOUNT)
-            ),
-            sc.COL_TXN_PAYEE: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_PAYEE)
-            ),
-            sc.COL_TXN_PARENT: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_PARENT)
-            ),
-            sc.COL_TXN_CLIENT: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_CLIENT)
-            ),
-            sc.COL_TXN_MATTER: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_MATTER)
-            ),
-            sc.COL_TXN_CATEGORY_CODE: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_CATEGORY_CODE)
-            ),
-            sc.COL_TXN_CATEGORY_NAME: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_CATEGORY_NAME)
-            ),
-            sc.COL_TXN_MEMBER: member,
-            sc.COL_TXN_AMOUNT: round(amount, 2),
-            sc.COL_TXN_TAX_AMOUNT: round(tax_amount, 2),
-            sc.COL_TXN_TAX_FLAG: tax_flag,
-            sc.COL_TXN_HST_EXEMPT: hst_exempt,
-            sc.COL_TXN_GENERAL_OFFICE_EXPENSE: self.db._to_bool_int(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_GENERAL_OFFICE_EXPENSE),
-                default=0,
-            ),
-            sc.COL_TXN_SHADOW: self.db._to_bool_int(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_SHADOW),
-                default=0,
-            ),
-            sc.COL_TXN_INVOICE_REF: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_INVOICE_REF)
-            ),
-            sc.COL_TXN_BILL_CLAIM_PCT: round(bill_claim_pct, 2),
-            sc.COL_TXN_TOTAL_CLAIM_AMOUNT: round(float(total_claim_amount), 2),
-            sc.COL_TXN_EXPENSE_DETAILS: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_EXPENSE_DETAILS)
-            ),
-            sc.COL_TXN_NOTES: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_NOTES)
-            ),
-            sc.COL_TXN_STATUS: status,
-            sc.COL_TXN_CURRENCY: currency,
-            sc.COL_TXN_VOID_REASON: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_VOID_REASON)
-            ),
-            sc.COL_TXN_CLEARED_AT: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_CLEARED_AT)
-            ),
-            sc.COL_TXN_RECONCILED_AT: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_RECONCILED_AT)
-            ),
-            sc.COL_TXN_CREATED_AT: created_at,
-            sc.COL_TXN_UPDATED_AT: updated_at,
-        }
+        return self.db._canonicalize_transaction_row(row)
 
     def _canonicalize_transaction_account_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        account_code = _clean_text(
-            self.db._value_with_alias(TBL_TRANSACTION_ACCOUNTS.table, row, sc.COL_TXN_ACCOUNT_CODE)
-        )
-        account_name = _clean_text(
-            self.db._value_with_alias(TBL_TRANSACTION_ACCOUNTS.table, row, sc.COL_TXN_ACCOUNT_NAME)
-        )
-        if not account_code:
-            account_code = _to_code_token(account_name, fallback="ACCOUNT")
-        if not account_name:
-            account_name = account_code
-
-        return {
-            sc.COL_TXN_ACCOUNT_CODE: account_code,
-            sc.COL_TXN_ACCOUNT_NAME: account_name,
-            sc.COL_TXN_ACCOUNT_KIND: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTION_ACCOUNTS.table, row, sc.COL_TXN_ACCOUNT_KIND)
-            ).lower(),
-            sc.COL_TXN_ACCOUNT_OWNER: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTION_ACCOUNTS.table, row, sc.COL_TXN_ACCOUNT_OWNER)
-            ),
-            sc.COL_TXN_ACCOUNT_ACTIVE: self.db._to_bool_int(
-                self.db._value_with_alias(TBL_TRANSACTION_ACCOUNTS.table, row, sc.COL_TXN_ACCOUNT_ACTIVE),
-                default=1,
-            ),
-            sc.COL_TXN_ACCOUNT_ALIASES: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTION_ACCOUNTS.table, row, sc.COL_TXN_ACCOUNT_ALIASES)
-            ),
-        }
+        return self.db._canonicalize_transaction_account_row(row)
 
     def _canonicalize_transaction_category_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        code = _clean_text(
-            self.db._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_CODE)
-        )
-        name = _clean_text(
-            self.db._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_NAME)
-        )
-        if not code:
-            code = _to_code_token(name, fallback="CATEGORY")
-        if not name:
-            name = code
-
-        sort_order = self.db._parse_int(
-            self.db._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_SORT_ORDER)
-        )
-        if sort_order is None:
-            sort_order = 0
-
-        return {
-            sc.COL_TXN_CATEGORY_LKP_CODE: code,
-            sc.COL_TXN_CATEGORY_LKP_NAME: name,
-            sc.COL_TXN_CATEGORY_LKP_TYPE: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_TYPE)
-            ),
-            sc.COL_TXN_CATEGORY_LKP_CLASS_SCOPE: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_CLASS_SCOPE)
-            ),
-            sc.COL_TXN_CATEGORY_LKP_TAX_FLAG_DEFAULT: _clean_text(
-                self.db._value_with_alias(
-                    TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_TAX_FLAG_DEFAULT
-                )
-            ),
-            sc.COL_TXN_CATEGORY_LKP_BILLABLE_ALLOWED: self.db._to_bool_int(
-                self.db._value_with_alias(
-                    TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_BILLABLE_ALLOWED
-                ),
-                default=0,
-            ),
-            sc.COL_TXN_CATEGORY_LKP_MEDICAL_ELIGIBLE: self.db._to_bool_int(
-                self.db._value_with_alias(
-                    TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_MEDICAL_ELIGIBLE
-                ),
-                default=0,
-            ),
-            sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_ELIGIBLE: self.db._to_bool_int(
-                self.db._value_with_alias(
-                    TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_ELIGIBLE
-                ),
-                default=0,
-            ),
-            sc.COL_TXN_CATEGORY_LKP_BUSINESS_DEDUCTIBLE_ELIGIBLE: self.db._to_bool_int(
-                self.db._value_with_alias(
-                    TBL_TRANSACTION_CATEGORIES.table,
-                    row,
-                    sc.COL_TXN_CATEGORY_LKP_BUSINESS_DEDUCTIBLE_ELIGIBLE,
-                ),
-                default=0,
-            ),
-            sc.COL_TXN_CATEGORY_LKP_ACTIVE: self.db._to_bool_int(
-                self.db._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_ACTIVE),
-                default=1,
-            ),
-            sc.COL_TXN_CATEGORY_LKP_SORT_ORDER: int(sort_order),
-            sc.COL_TXN_CATEGORY_LKP_NOTES: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_NOTES)
-            ),
-        }
+        return self.db._canonicalize_transaction_category_row(row)
 
     def _canonicalize_transaction_business_unit_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        unit_name = _clean_text(
-            self.db._value_with_alias(TBL_TRANSACTION_BUSINESS_UNITS.table, row, sc.COL_TXN_BUSINESS_UNIT_NAME)
-        )
-        if not unit_name:
-            unit_name = "Unassigned"
-        return {
-            sc.COL_TXN_BUSINESS_UNIT_NAME: unit_name,
-            sc.COL_TXN_BUSINESS_UNIT_OWNER: _clean_text(
-                self.db._value_with_alias(TBL_TRANSACTION_BUSINESS_UNITS.table, row, sc.COL_TXN_BUSINESS_UNIT_OWNER)
-            ),
-            sc.COL_TXN_BUSINESS_UNIT_ACTIVE: self.db._to_bool_int(
-                self.db._value_with_alias(TBL_TRANSACTION_BUSINESS_UNITS.table, row, sc.COL_TXN_BUSINESS_UNIT_ACTIVE),
-                default=1,
-            ),
-        }
+        return self.db._canonicalize_transaction_business_unit_row(row)
 
     def _canonicalize_transaction_payee_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        payee_name = _clean_text(self.db._value_with_alias(TBL_TRANSACTION_PAYEES.table, row, sc.COL_TXN_PAYEE_NAME))
-        if not payee_name:
-            payee_name = "Unknown Payee"
-        return {
-            sc.COL_TXN_PAYEE_NAME: payee_name,
-            sc.COL_TXN_PAYEE_DEFAULT_CATEGORY_CODE: _clean_text(
-                self.db._value_with_alias(
-                    TBL_TRANSACTION_PAYEES.table, row, sc.COL_TXN_PAYEE_DEFAULT_CATEGORY_CODE
-                )
-            ),
-            sc.COL_TXN_PAYEE_ACTIVE: self.db._to_bool_int(
-                self.db._value_with_alias(TBL_TRANSACTION_PAYEES.table, row, sc.COL_TXN_PAYEE_ACTIVE),
-                default=1,
-            ),
-        }
+        return self.db._canonicalize_transaction_payee_row(row)
 
     def _txn_scope_match(self, source_scope: str, expected: str) -> bool:
-        expected_norm = _normalize_search_text(expected)
-        source_norm = _normalize_search_text(source_scope)
-        if not expected_norm:
-            return True
-        if not source_norm:
-            return True
-        if source_norm in ("all", "any", "both", "*"):
-            return True
-        tokens = [tok.strip() for tok in re.split(r"[|,;/]", source_norm) if tok.strip()]
-        if not tokens:
-            tokens = [source_norm]
-        return expected_norm in tokens
+        return self.db._txn_scope_match(source_scope, expected)
 
     def _normalize_transaction_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        warnings: List[str] = []
-        today_iso = datetime.now().strftime("%Y-%m-%d")
-
-        txn_id = self.db._pick_text(payload, ["transactionId", "txnId", sc.COL_TXN_ID, "TransactionID"])
-        txn_date = self.db._pick_text(payload, ["txnDate", "date", "dateText", sc.COL_TXN_DATE])
-        if not txn_date:
-            txn_date = today_iso
-        if not _is_valid_iso_date(txn_date):
-            raise ValueError("TxnDate must be in YYYY-MM-DD format.")
-
-        txn_class = _normalize_choice(
-            self.db._pick_text(payload, ["class", "txnClass", sc.COL_TXN_CLASS]),
-            self.db.TXN_CLASS_OPTIONS,
-            "Family",
-        )
-        if not txn_class:
-            raise ValueError(f"Class must be one of: {', '.join(self.db.TXN_CLASS_OPTIONS)}")
-
-        txn_type = _normalize_choice(
-            self.db._pick_text(payload, ["type", "txnType", sc.COL_TXN_TYPE]),
-            self.db.TXN_TYPE_OPTIONS,
-            "Expense",
-        )
-        if not txn_type:
-            raise ValueError(f"Type must be one of: {', '.join(self.db.TXN_TYPE_OPTIONS)}")
-
-        business_unit = self.db._pick_text(payload, ["businessUnit", "bu", sc.COL_TXN_BUSINESS_UNIT])
-        if txn_class == "Business" and not business_unit:
-            raise ValueError("BusinessUnit is required when Class is Business.")
-
-        from_account = self.db._pick_text(payload, ["fromAccount", "sourceAccount", sc.COL_TXN_FROM_ACCOUNT])
-        to_account = self.db._pick_text(payload, ["toAccount", "destinationAccount", sc.COL_TXN_TO_ACCOUNT])
-        if not from_account:
-            raise ValueError("FromAccount is required.")
-
-        txn_type_lc = txn_type.lower()
-        movement_type = txn_type_lc in self.db.TXN_MOVEMENT_TYPES
-        if movement_type and not to_account:
-            raise ValueError("ToAccount is required for Transfer and Debt Repayment.")
-        if movement_type and to_account and from_account.lower() == to_account.lower():
-            raise ValueError("FromAccount and ToAccount must differ for Transfer and Debt Repayment.")
-
-        business_unit, from_account, to_account = self.db._canonical_transaction_references(
-            business_unit=business_unit,
-            from_account=from_account,
-            to_account=to_account,
-        )
-
-        payee = self.db._pick_text(payload, ["payee", "vendor", sc.COL_TXN_PAYEE])
-        if txn_type_lc != "transfer" and not payee:
-            raise ValueError("Payee is required for non-transfer transactions.")
-
-        member = _normalize_choice(
-            self.db._pick_text(payload, ["member", sc.COL_TXN_MEMBER]),
-            self.db.TXN_MEMBER_OPTIONS,
-            "Joint",
-        )
-        if not member:
-            raise ValueError(f"Member must be one of: {', '.join(self.db.TXN_MEMBER_OPTIONS)}")
-
-        tax_flag = _normalize_choice(
-            self.db._pick_text(payload, ["taxFlag", "taxCategory", sc.COL_TXN_TAX_FLAG]),
-            self.db.TXN_TAX_FLAG_OPTIONS,
-            "None",
-        )
-        if not tax_flag:
-            raise ValueError(f"TaxFlag must be one of: {', '.join(self.db.TXN_TAX_FLAG_OPTIONS)}")
-
-        status = _normalize_choice(
-            self.db._pick_text(payload, ["status", sc.COL_TXN_STATUS]),
-            self.db.TXN_STATUS_OPTIONS,
-            "Pending",
-        )
-        if not status:
-            raise ValueError(f"Status must be one of: {', '.join(self.db.TXN_STATUS_OPTIONS)}")
-
-        currency = _normalize_choice(
-            self.db._pick_text(payload, ["currency", sc.COL_TXN_CURRENCY]),
-            self.db.TXN_CURRENCY_OPTIONS,
-            "CAD",
-        )
-        if not currency:
-            raise ValueError(f"Currency must be one of: {', '.join(self.db.TXN_CURRENCY_OPTIONS)}")
-
-        amount = self.db._pick_float(payload, ["amount", sc.COL_TXN_AMOUNT])
-        if amount is None:
-            raise ValueError("Amount is required.")
-        amount = float(amount)
-        if amount <= 0:
-            raise ValueError("Amount must be greater than 0.")
-
-        tax_amount = self.db._pick_float(payload, ["taxAmount", "tax", "hstAmount", sc.COL_TXN_TAX_AMOUNT])
-        if tax_amount is None:
-            tax_amount = 0.0
-        tax_amount = float(tax_amount)
-        if tax_amount < 0:
-            raise ValueError("TaxAmount must be >= 0.")
-
-        hst_exempt = self.db._to_bool_int(self.db._pick_value(payload, ["hstExempt", sc.COL_TXN_HST_EXEMPT]), default=0)
-        if hst_exempt == 1 and abs(tax_amount) > 0.0001:
-            tax_amount = 0.0
-            warnings.append("HSTExempt=1 forced TaxAmount to 0.00")
-
-        general_office_expense = self.db._to_bool_int(
-            self.db._pick_value(payload, ["generalOfficeExpense", "officeExpense", sc.COL_TXN_GENERAL_OFFICE_EXPENSE]),
-            default=0,
-        )
-        shadow = self.db._to_bool_int(self.db._pick_value(payload, ["shadow", sc.COL_TXN_SHADOW]), default=0)
-
-        parent = self.db._pick_text(payload, ["parent", "parentName", sc.COL_TXN_PARENT])
-        client = self.db._pick_text(payload, ["client", "clientName", sc.COL_TXN_CLIENT])
-        matter = self.db._pick_text(payload, ["matter", "matterName", sc.COL_TXN_MATTER])
-
-        bill_claim_pct = self.db._pick_float(payload, ["billClaimPct", "claimPct", sc.COL_TXN_BILL_CLAIM_PCT])
-        if bill_claim_pct is None:
-            bill_claim_pct = 0.0
-        bill_claim_pct = float(bill_claim_pct)
-        if bill_claim_pct < 0 or bill_claim_pct > 100:
-            raise ValueError("BillClaimPct must be between 0 and 100.")
-
-        if general_office_expense == 1:
-            if parent or client or matter:
-                raise ValueError("GeneralOfficeExpense cannot include Parent/Client/Matter context.")
-            if abs(bill_claim_pct) > 0.0001:
-                raise ValueError("GeneralOfficeExpense cannot have BillClaimPct > 0.")
-            bill_claim_pct = 0.0
-
-        if txn_type_lc == "expense" and bill_claim_pct > 0:
-            if not parent or not client or not matter:
-                raise ValueError("Select a client and matter before saving a recoverable expense. The selected client/matter record is incomplete and cannot be billed.")
-            
-            profile = self.db.get_matter_profile(matter)
-            if not profile or not profile.get("matter"):
-                raise ValueError("The selected matter could not be resolved.")
-                
-            resolved_matter = profile.get("matter", {})
-            resolved_client = resolved_matter.get("clientId") or resolved_matter.get("clientName")
-            resolved_parent = resolved_matter.get("parentId") or resolved_matter.get("parentName")
-            
-            if not resolved_client or (client != resolved_matter.get("clientId") and client != resolved_matter.get("clientName")):
-                raise ValueError("The selected matter could not be linked to its client. Re-select the matter or refresh the client list.")
-                
-            if resolved_parent and parent != resolved_matter.get("parentId") and parent != resolved_matter.get("parentName"):
-                raise ValueError("The selected client/matter record is incomplete and cannot be billed.")
-
-        total_claim_amount = round((amount + tax_amount) * (bill_claim_pct / 100.0), 2)
-
-        category_code = self.db._pick_text(payload, ["categoryCode", "catCode", sc.COL_TXN_CATEGORY_CODE])
-        category_name = self.db._pick_text(payload, ["categoryName", "category", sc.COL_TXN_CATEGORY_NAME])
-        category_by_code, category_by_name = self._transaction_category_lookup_maps()
-        if category_code and not category_name:
-            found = category_by_code.get(category_code.lower())
-            if found:
-                category_name = _clean_text(found.get("categoryName"))
-        if category_name and not category_code:
-            found = category_by_name.get(category_name.lower())
-            if found:
-                category_code = _clean_text(found.get("categoryCode"))
-        if category_code and category_by_code.get(category_code.lower()):
-            canonical_name = _clean_text(category_by_code[category_code.lower()].get("categoryName"))
-            if canonical_name:
-                category_name = canonical_name
-        if not category_code:
-            raise ValueError("CategoryCode is required.")
-        if not category_name:
-            raise ValueError("CategoryName is required.")
-
-        if txn_type_lc == "debt repayment":
-            account_kind_map = self.db._transaction_account_kind_lookup()
-            if account_kind_map:
-                to_kind = _clean_text(account_kind_map.get(to_account.lower(), "")).lower()
-                if not to_kind:
-                    raise ValueError("Debt Repayment ToAccount must exist in transaction account lookup.")
-                if to_kind not in self.db.TXN_DEBT_DEST_ACCOUNT_KINDS:
-                    allowed = ", ".join(sorted(self.db.TXN_DEBT_DEST_ACCOUNT_KINDS))
-                    raise ValueError(f"Debt Repayment ToAccount must be a debt account kind ({allowed}).")
-
-        invoice_ref = self.db._pick_text(payload, ["invoiceRef", "invoice", sc.COL_TXN_INVOICE_REF])
-        expense_details = self.db._pick_text(payload, ["expenseDetails", "details", sc.COL_TXN_EXPENSE_DETAILS])
-        notes = self.db._pick_text(payload, ["notes", "notesText", sc.COL_TXN_NOTES])
-
-        void_reason = self.db._pick_text(payload, ["voidReason", "voidNotes", sc.COL_TXN_VOID_REASON])
-        cleared_at = self.db._pick_text(payload, ["clearedAt", "clearedDate", sc.COL_TXN_CLEARED_AT])
-        reconciled_at = self.db._pick_text(payload, ["reconciledAt", "reconciledDate", sc.COL_TXN_RECONCILED_AT])
-
-        if status == "Void" and not void_reason:
-            raise ValueError("VoidReason is required when Status is Void.")
-
-        if status in ("Cleared", "Reconciled") and not cleared_at:
-            cleared_at = today_iso
-        if status == "Reconciled" and not reconciled_at:
-            reconciled_at = today_iso
-
-        if cleared_at and not _is_valid_iso_date(cleared_at):
-            raise ValueError("ClearedAt must be in YYYY-MM-DD format.")
-        if reconciled_at and not _is_valid_iso_date(reconciled_at):
-            raise ValueError("ReconciledAt must be in YYYY-MM-DD format.")
-
-        if status == "Reconciled" and (not cleared_at or not reconciled_at):
-            raise ValueError("Reconciled status requires ClearedAt and ReconciledAt.")
-
-        return {
-            "transactionId": txn_id,
-            "txnDate": txn_date,
-            "class": txn_class,
-            "businessUnit": business_unit,
-            "type": txn_type,
-            "fromAccount": from_account,
-            "toAccount": to_account,
-            "payee": payee,
-            "parent": parent,
-            "client": client,
-            "matter": matter,
-            "categoryCode": category_code,
-            "categoryName": category_name,
-            "member": member,
-            "amount": amount,
-            "taxAmount": tax_amount,
-            "taxFlag": tax_flag,
-            "hstExempt": hst_exempt,
-            "generalOfficeExpense": general_office_expense,
-            "shadow": shadow,
-            "invoiceRef": invoice_ref,
-            "billClaimPct": bill_claim_pct,
-            "totalClaimAmount": total_claim_amount,
-            "expenseDetails": expense_details,
-            "notes": notes,
-            "status": status,
-            "currency": currency,
-            "voidReason": void_reason,
-            "clearedAt": cleared_at,
-            "reconciledAt": reconciled_at,
-            "createdAt": self.db._pick_text(payload, ["createdAt", sc.COL_TXN_CREATED_AT]),
-            "warnings": warnings,
-        }
+        return self.db._normalize_transaction_payload(payload)
 
     def _validate_transaction_status_transition(
         self,
@@ -1258,55 +541,54 @@ class FinanceRepo:
         new_status: str,
         has_existing: bool,
     ) -> None:
-        if not has_existing:
-            return
-
-        previous = _clean_text(old_status)
-        target = _clean_text(new_status)
-        if not previous or not target or previous == target:
-            return
-
-        allowed_transitions = {
-            "Pending": {"Pending", "Cleared", "Void"},
-            "Cleared": {"Cleared", "Reconciled", "Void"},
-            "Reconciled": {"Reconciled", "Void"},
-            "Void": {"Void"},
-        }
-        if previous not in allowed_transitions:
-            return
-
-        allowed = allowed_transitions[previous]
-        if target not in allowed:
-            raise ValueError(
-                f"Invalid Status transition: {previous} -> {target}. "
-                f"Allowed next statuses: {', '.join(sorted(allowed))}."
-            )
+        return self.db._validate_transaction_status_transition(old_status, new_status, has_existing)
 
     def _find_transaction_row(self, transaction_key: str) -> Optional[Dict[str, Any]]:
-        target = _clean_text(transaction_key)
-        if not target:
-            return None
-        target_lc = target.lower()
-        rows = [
-            self.db._canonicalize_transaction_row(r)
-            for r in self.db._read_table_rows(TBL_TRANSACTIONS_MASTER)
-        ]
-        for row in rows:
-            if _clean_text(row.get(sc.COL_TXN_ID)).lower() == target_lc:
-                return row
-        return None
-
+        return self.db._find_transaction_row(transaction_key)
 
     def _transaction_category_lookup_maps(self) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
-        by_code: Dict[str, Dict[str, Any]] = {}
-        by_name: Dict[str, Dict[str, Any]] = {}
-        rows = self.list_transaction_categories(txn_type="", txn_class="", include_inactive=True)
-        for row in rows:
-            code = _clean_text(row.get("categoryCode")).lower()
-            name = _clean_text(row.get("categoryName")).lower()
-            if code:
-                by_code[code] = row
-            if name:
-                by_name[name] = row
-        return by_code, by_name
+        return self.db._transaction_category_lookup_maps()
+
+    def list_billing_entities(self) -> List[Dict[str, Any]]:
+        return self.db.list_billing_entities()
+
+    def get_billing_entity(self, biller_code: str) -> Optional[Dict[str, Any]]:
+        return self.db.get_billing_entity(biller_code)
+
+    def save_billing_entity(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.db.save_billing_entity(payload)
+
+    def list_shareholder_loan_entries(self, biller_entity: str = "PC") -> List[Dict[str, Any]]:
+        return self.db.list_shareholder_loan_entries(biller_entity)
+
+    def append_shareholder_loan_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.db.append_shareholder_loan_entry(payload)
+
+    def list_cca_assets(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self.db.list_cca_assets(biller_entity)
+
+    def save_cca_asset(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.db.save_cca_asset(payload)
+
+    def record_equipment_ucc_rollover(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.db.record_equipment_ucc_rollover(payload)
+
+    def list_hst_log(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self.db.list_hst_log(biller_entity)
+
+    def save_hst_filing_record(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.db.save_hst_filing_record(payload)
+
+    def list_invoices(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self.db.list_invoices(biller_entity)
+
+    def list_disbursements(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self.db.list_disbursements(biller_entity)
+
+    def list_receivables(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self.db.list_receivables(biller_entity)
+
+    def list_ap_bills(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self.db.list_ap_bills(biller_entity)
+
 

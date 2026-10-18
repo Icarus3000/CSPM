@@ -7,9 +7,9 @@ tables:
     table: tblAPBills
     authority: supplier_obligation
     row_policy: initially_empty
-    columns: [APBillID, Vendor, VendorInvoiceNumber, InvoiceDate, DueDate, Subtotal, TaxAmount, Total, AmountPaid, Balance, Status, Currency, ExpenseTransactionID, DuplicateKey, Notes, CreatedAt, UpdatedAt, ExpenseTreatment, CategoryCode, CategoryName, SourceAccount]
+    columns: [APBillID, Vendor, VendorInvoiceNumber, InvoiceDate, DueDate, Subtotal, TaxAmount, Total, AmountPaid, Balance, Status, Currency, ExpenseTransactionID, DuplicateKey, Notes, CreatedAt, UpdatedAt, ExpenseTreatment, CategoryCode, CategoryName, SourceAccount, OriginalCurrency, OriginalSubtotal, OriginalTaxAmount, OriginalTotal, BaseCurrency, BaseSubtotal, BaseTaxAmount, BaseTotal, FXRate, FXRateDate, FXSource, ClientTaxExempt, BillClaimPct, MatterID, ClientID, ParentID, DisbursementID, DocumentPath, DocumentHash, DocumentOriginalName, DocumentOriginalPath, DocumentOriginalHash, DocumentStorageFormat, HistoricalAdoption, AdoptedAt, BillerEntity]
   - sheet: APPayments
     table: tblAPPayments
     authority: outgoing_payment_application
     row_policy: initially_empty
-    columns: [APPaymentID, APBillID, PaymentDate, Amount, FromAccount, Method, Reference, Status, ReversalOfPaymentID, ReversalReason, Notes, CreatedAt, UpdatedAt]
+    columns: [APPaymentID, APBillID, PaymentDate, Amount, FromAccount, Method, Reference, Status, ReversalOfPaymentID, ReversalReason, Notes, CreatedAt, UpdatedAt, BaseAmount, FXRate, PaymentTransactionID, DocumentPath, DocumentHash, DocumentOriginalName, HistoricalPayment]

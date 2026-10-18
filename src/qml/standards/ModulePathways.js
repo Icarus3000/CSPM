@@ -220,7 +220,8 @@ var MODULE_CONFIGS = [
                 "title": "Accounts & Expenses",
                 "items": [
                     { "id": "C18", "label": "Accounts Payable (Expenses)", "route": "/billing/accounts-payable", "tabType": "ap_setoff", "singleInstance": false },
-                    { "id": "C11", "label": "Expenses & Banking", "route": "/billing/transactions-master", "tabType": "transaction", "singleInstance": false, "saveCommand": "transaction" }
+                    { "id": "C11", "label": "Expenses & Banking", "route": "/billing/transactions-master", "tabType": "transaction", "singleInstance": false, "saveCommand": "transaction" },
+                    { "id": "C19", "label": "HST Return Helper (RT0001)", "route": "/billing/hst-return-helper", "tabType": "report" }
                 ]
             }
         ]
@@ -247,7 +248,9 @@ var MODULE_CONFIGS = [
                     { "id": "D07", "label": "Client Ledger Report", "route": "/reports/client-ledger", "tabType": "report" },
                     { "id": "D18", "label": "Matter Time Ledger", "route": "/reports/matter-time-ledger", "tabType": "report", "singleInstanceKey": "report:D18" },
                     { "id": "D17", "label": "Statement of Account", "route": "/reports/statement", "tabType": "report" },
-                    { "id": "D06", "label": "A/R Aging & Detail", "route": "/reports/ar-aging", "tabType": "report" }
+                    { "id": "D06", "label": "A/R Aging & Detail", "route": "/reports/ar-aging", "tabType": "report" },
+                    { "id": "D20", "label": "Shareholder Loan Ledger (GIFI 2781)", "route": "/finance/shareholder-loan-ledger", "tabType": "report" },
+                    { "id": "D21", "label": "Income Tax Helper (T2125 / T2 / T2057)", "route": "/finance/income-tax-helper", "tabType": "report" }
                 ]
             },
             {

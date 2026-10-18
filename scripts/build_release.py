@@ -481,6 +481,7 @@ def main():
         "--hidden-import=msal",
         "--hidden-import=holidays.countries.canada",
         "--hidden-import=holidays.countries.united_states",
+        "--hidden-import=services.tax_compliance_service",
         "--collect-data=holidays",
         "--collect-data=tzdata",
         "--distpath", str(dist_dir),

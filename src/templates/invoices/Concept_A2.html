@@ -221,9 +221,8 @@
                     <div class="firm-name">Cory Schneider</div>
                     <div class="firm-sub">Law Office</div>
                     <div class="firm-contact-top">
-                        14 Parsons Court<br>
-                        Thornhill, ON L4K 6Z4<br>
-                        416-725-9364 | cory@coryschneiderlaw.ca
+                        {% if biller_address_lines %}{% for line in biller_address_lines %}{{ line }}<br>{% endfor %}{% else %}{{ biller_address_line|default("14 Parsons Court, Thornhill, ON L4K 6Z4") }}<br>{% endif %}
+                        {{ biller_phone|default("416-725-9364") }} | {{ biller_email|default("cory@coryschneiderlaw.ca") }}
                     </div>
                 </div>
             </div>
@@ -496,17 +495,23 @@
                         Payment Information
                     </div>
                     <div style="display: grid; grid-template-columns: 1.2in 1fr; gap: 0.06in 0.2in; font-size: 8pt; color: #475569; line-height: 1.4;">
+                        <div style="font-weight: 500;">Payable To:</div>
+                        <div><strong>{{ biller_payable_to|default("CORY SCHNEIDER") }}</strong></div>
+
                         <div style="font-weight: 500;">Preferred Method:</div>
-                        <div>E-transfer to <strong>cory@coryschneiderlaw.ca</strong></div>
+                        <div>E-transfer to <strong>{{ biller_etransfer_email|default("cory@coryschneiderlaw.ca") }}</strong></div>
                         
                         <div style="font-weight: 500;">Other Methods:</div>
                         <div>For wire, cheque, or other payment arrangements, please contact the firm.</div>
                         
                         <div style="font-weight: 500;">HST Number:</div>
-                        <div>78621 8222 RT0001</div>
+                        <div>{{ biller_hst_number|default("78621 8222 RT0001") }}</div>
                     </div>
-                    <div style="margin-top: 0.12in; font-size: 7.5pt; color: #94A3B8; line-height: 1.4; max-width: 80%;">
+                    <div style="margin-top: 0.12in; font-size: 7.5pt; color: #94A3B8; line-height: 1.4; max-width: 85%;">
                         In accordance with s. 33 of the <em>Solicitors Act</em> (Ontario), interest will be charged at 3.0% per annum on unpaid amounts starting one month after delivery.
+                        {% if biller_footer_disclosure %}
+                        <br><strong style="color: #64748B;">{{ biller_footer_disclosure }}</strong>
+                        {% endif %}
                     </div>
                 </div>
             </div>

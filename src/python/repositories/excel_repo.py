@@ -189,6 +189,9 @@ TBL_DRAFT_INVOICES = TableRef(sc.SHEET_DRAFT_INVOICES, sc.TBL_DRAFT_INVOICES)
 TBL_CORP_ENTITIES = TableRef(sc.SHEET_CORP_ENTITIES, sc.TBL_CORP_ENTITIES)
 TBL_CORP_RELATIONSHIPS = TableRef(sc.SHEET_CORP_RELATIONSHIPS, sc.TBL_CORP_RELATIONSHIPS)
 TBL_CORP_TRANSACTIONS = TableRef(sc.SHEET_CORP_TRANSACTIONS, sc.TBL_CORP_TRANSACTIONS)
+TBL_BILLING_ENTITIES = TableRef(sc.SHEET_BILLING_ENTITIES, sc.TBL_BILLING_ENTITIES)
+TBL_SHAREHOLDER_LOAN_LEDGER = TableRef(sc.SHEET_SHAREHOLDER_LOAN_LEDGER, sc.TBL_SHAREHOLDER_LOAN_LEDGER)
+TBL_CCA_ASSETS = TableRef(sc.SHEET_CCA_ASSETS, sc.TBL_CCA_ASSETS)
 
 TABLES_IN_ORDER = [
     TBL_PARENTS,
@@ -212,10 +215,13 @@ TABLES_IN_ORDER = [
     TBL_CORP_ENTITIES,
     TBL_CORP_RELATIONSHIPS,
     TBL_CORP_TRANSACTIONS,
+    TBL_BILLING_ENTITIES,
+    TBL_SHAREHOLDER_LOAN_LEDGER,
+    TBL_CCA_ASSETS,
 ]
 TABLE_COLUMNS = sc.TABLE_COLUMNS
 TABLE_ALIASES = sc.TABLE_ALIASES
-TABLE_META_CACHE_SCHEMA_VERSION = 2
+TABLE_META_CACHE_SCHEMA_VERSION = 3
 
 
 def _clean_text(value: Any) -> str:
@@ -1274,6 +1280,10 @@ class ExcelRepo:
                     changed = True
                     table_changes.append({"table": table_name, "mode": mode})
 
+            seed_changes = self._seed_and_backfill_multi_biller_and_tax_schema(wb)
+            if seed_changes:
+                changed = True
+
             if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1:
                 default_ws = wb["Sheet"]
                 if int(default_ws.max_row or 0) <= 1 and int(default_ws.max_column or 0) <= 1:
@@ -1296,7 +1306,7 @@ class ExcelRepo:
             "createdWorkbook": created_workbook,
             "changed": changed,
             "tableChanges": table_changes,
-            "seedChanges": [],
+            "seedChanges": seed_changes,
         }
 
     @with_db_lock
@@ -1956,6 +1966,7 @@ class ExcelRepo:
                 selected.get(sc.COL_MATTER_JOINT_INSTRUCTIONS_REQUIRE_ALL), default=0
             ),
             "jointEngagementDocument": _clean_text(selected.get(sc.COL_MATTER_JOINT_ENGAGEMENT_DOCUMENT)),
+            "defaultBiller": _clean_text(selected.get(sc.COL_MATTER_DEFAULT_BILLER)) or "PC",
             "parties": self.list_matter_parties(_clean_text(selected.get(sc.COL_MATTER_ID))),
             "active": 1 if self._is_matter_row_active(selected) else 0,
             "createdAt": _clean_text(selected.get(sc.COL_MATTER_CREATED)),
@@ -2023,6 +2034,8 @@ class ExcelRepo:
                 continue
             if class_filter and not self._txn_scope_match(row_scope, class_filter):
                 continue
+            deductible_pct = self._parse_float(row.get(sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_PCT))
+            itc_pct = self._parse_float(row.get(sc.COL_TXN_CATEGORY_LKP_ITC_CLAIMABLE_PCT))
             out.append(
                 {
                     "categoryCode": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_CODE)),
@@ -2045,6 +2058,12 @@ class ExcelRepo:
                     "active": active,
                     "sortOrder": self._parse_int(row.get(sc.COL_TXN_CATEGORY_LKP_SORT_ORDER)) or 0,
                     "notes": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_NOTES)),
+                    "t2125LineNumber": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_T2125_LINE_NUM)),
+                    "t2125LineLabel": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_T2125_LINE_LABEL)),
+                    "gifiSchedule125Code": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_GIFI_S125_CODE)),
+                    "gifiSchedule125Label": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_GIFI_S125_LABEL)),
+                    "deductiblePct": round(float(deductible_pct if deductible_pct is not None else 100.0), 2),
+                    "itcClaimablePct": round(float(itc_pct if itc_pct is not None else 100.0), 2),
                 }
             )
         out.sort(
@@ -2109,6 +2128,7 @@ class ExcelRepo:
         parent_filter = _normalize_search_text(f.get("parent"))
         client_filter = _normalize_search_text(f.get("client"))
         matter_filter = _normalize_search_text(f.get("matter"))
+        biller_filter = _clean_text(f.get("billerEntity") or f.get("billerCode") or f.get("BillerEntity")).upper()
         include_void = self._to_bool_int(f.get("includeVoid"), default=1) == 1
 
         date_from = _clean_text(
@@ -2136,6 +2156,9 @@ class ExcelRepo:
             row_parent = _normalize_search_text(row.get(sc.COL_TXN_PARENT))
             row_client = _normalize_search_text(row.get(sc.COL_TXN_CLIENT))
             row_matter = _normalize_search_text(row.get(sc.COL_TXN_MATTER))
+            row_biller = _clean_text(row.get(sc.COL_TXN_BILLER_ENTITY)).upper() or (
+                "PC" if row_date >= "2026-11-01" or _clean_text(row.get(sc.COL_TXN_INVOICE_REF)).upper().endswith("-PC") else "SOLE_PROP"
+            )
 
             if class_filter and row_class != class_filter:
                 continue
@@ -2150,6 +2173,8 @@ class ExcelRepo:
             if client_filter and client_filter not in row_client:
                 continue
             if matter_filter and matter_filter not in row_matter:
+                continue
+            if biller_filter and row_biller != biller_filter:
                 continue
             if not include_void and row_status == "void":
                 continue
@@ -2202,6 +2227,7 @@ class ExcelRepo:
                     "reconciledAt": _clean_text(row.get(sc.COL_TXN_RECONCILED_AT)),
                     "createdAt": _clean_text(row.get(sc.COL_TXN_CREATED_AT)),
                     "updatedAt": _clean_text(row.get(sc.COL_TXN_UPDATED_AT)),
+                    "billerEntity": row_biller,
                 }
             )
 
@@ -2284,11 +2310,18 @@ class ExcelRepo:
             sc.COL_TXN_RECONCILED_AT: normalized["reconciledAt"],
             sc.COL_TXN_CREATED_AT: created_at,
             sc.COL_TXN_UPDATED_AT: now_stamp,
+            sc.COL_TXN_BILLER_ENTITY: normalized["billerEntity"],
         }
 
         self._upsert_row_by_key(TBL_TRANSACTIONS_MASTER, sc.COL_TXN_ID, txn_id, transaction_row)
         persisted = self._find_transaction_row(txn_id)
         verified = self._compare_transaction_rows_loose(transaction_row, persisted)
+
+        if verified:
+            try:
+                self._sync_shareholder_loan_from_transaction(transaction_row)
+            except Exception as shl_exc:
+                logger.warning("Shareholder loan sync from transaction %s skipped: %s", txn_id, shl_exc)
 
         warnings = list(normalized.get("warnings", []))
         if verified and warnings:
@@ -2391,9 +2424,15 @@ class ExcelRepo:
         supplier_reference = _clean_text(data.get("SupplierInvoiceRef"))
         if supplier_reference:
             description += f" — supplier invoice {supplier_reference}"
+        disb_date = _clean_text(data.get("Date") or data.get("InvoiceDate")) or date.today().isoformat()
+        biller_entity = (
+            _clean_text(data.get("BillerEntity") or data.get("billerEntity")).upper()
+            or _clean_text(matter.get(sc.COL_MATTER_DEFAULT_BILLER)).upper()
+            or ("PC" if disb_date >= "2026-11-01" else "SOLE_PROP")
+        )
         row = {
             sc.COL_DISB_ID: disbursement_id,
-            sc.COL_DISB_DATE: _clean_text(data.get("Date") or data.get("InvoiceDate")) or date.today().isoformat(),
+            sc.COL_DISB_DATE: disb_date,
             sc.COL_DISB_CLIENT_NAME: _clean_text(matter.get(sc.COL_MATTER_PARENT_NAME)) or _clean_text(matter.get(sc.COL_MATTER_CLIENT_NAME)),
             sc.COL_DISB_SUB_CLIENT: _clean_text(matter.get(sc.COL_MATTER_CLIENT_NAME)),
             sc.COL_DISB_CLIENT_ID: _clean_text(matter.get(sc.COL_MATTER_CLIENT_ID)),
@@ -2418,6 +2457,7 @@ class ExcelRepo:
             sc.COL_DISB_FX_RATE: self._money_round(data.get("FXRate") or 1),
             sc.COL_DISB_SUPPLIER_INVOICE_REF: supplier_reference,
             sc.COL_DISB_DOCUMENT_PATH: _clean_text(data.get("DocumentPath")),
+            sc.COL_DISB_BILLER_ENTITY: biller_entity,
         }
         disbursement_rows.append(row)
         self._replace_table_rows(TBL_DISBURSEMENTS, disbursement_rows)
@@ -2442,6 +2482,7 @@ class ExcelRepo:
             sc.COL_LEDGER_ORIGINAL_AMOUNT: self._money_round(data.get("OriginalAmount") or amount),
             sc.COL_LEDGER_WORK_CLIENT: row[sc.COL_DISB_SUB_CLIENT],
             sc.COL_LEDGER_CREATED_AT: now_stamp,
+            sc.COL_LEDGER_BILLER_ENTITY: biller_entity,
         })
         self._replace_table_rows(TBL_LEDGER, ledger_rows)
         return {
@@ -9601,6 +9642,30 @@ class ExcelRepo:
             elif isinstance(value, date):
                 value = value.isoformat()
             normalized[header] = "" if value is None else value
+        if tref.table == TBL_DISBURSEMENTS.table:
+            biller = _clean_text(normalized.get(sc.COL_DISB_BILLER_ENTITY)).upper()
+            if biller not in {"SOLE_PROP", "PC"}:
+                inv_ref = _clean_text(normalized.get(sc.COL_DISB_INVOICE_REF)).upper()
+                d_date = _clean_text(normalized.get(sc.COL_DISB_DATE))[:10]
+                normalized[sc.COL_DISB_BILLER_ENTITY] = (
+                    "PC" if (inv_ref.endswith("-PC") or (d_date and d_date >= "2026-11-01")) else "SOLE_PROP"
+                )
+        elif tref.table == TBL_RECEIVABLES.table:
+            biller = _clean_text(normalized.get(sc.COL_RECV_BILLER_ENTITY)).upper()
+            if biller not in {"SOLE_PROP", "PC"}:
+                inv_ref = _clean_text(normalized.get(sc.COL_RECV_INVOICE_NUM)).upper()
+                d_date = _clean_text(normalized.get(sc.COL_RECV_DATE))[:10]
+                normalized[sc.COL_RECV_BILLER_ENTITY] = (
+                    "PC" if (inv_ref.endswith("-PC") or (d_date and d_date >= "2026-11-01")) else "SOLE_PROP"
+                )
+        elif tref.table == TBL_INVOICE_LOG.table:
+            biller = _clean_text(normalized.get(sc.COL_INV_BILLER_ENTITY)).upper()
+            if biller not in {"SOLE_PROP", "PC"}:
+                inv_ref = _clean_text(normalized.get(sc.COL_INV_INVOICE_NUM)).upper()
+                d_date = _clean_text(normalized.get(sc.COL_INV_INVOICE_DATE))[:10]
+                normalized[sc.COL_INV_BILLER_ENTITY] = (
+                    "PC" if (inv_ref.endswith("-PC") or (d_date and d_date >= "2026-11-01")) else "SOLE_PROP"
+                )
         return normalized
 
     def _canonicalize_parent_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -9947,6 +10012,10 @@ class ExcelRepo:
             ),
             sc.COL_MATTER_CREATED: created_at,
             sc.COL_MATTER_UPDATED: updated_at,
+            sc.COL_MATTER_DEFAULT_BILLER: (
+                _clean_text(self._value_with_alias(TBL_MATTERS.table, row, sc.COL_MATTER_DEFAULT_BILLER)).upper()
+                or ("SOLE_PROP" if status.lower() in {"closed", "archived"} else "PC")
+            ),
         }
 
     def _canonicalize_matter_party_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -10047,9 +10116,15 @@ class ExcelRepo:
         if not created_at:
             created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        time_date = _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_DATE))
+        invoice_ref = _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_INVOICE_REF))
+        biller_entity = _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_BILLER_ENTITY)).upper()
+        if biller_entity not in {"SOLE_PROP", "PC"}:
+            biller_entity = "PC" if (invoice_ref.upper().endswith("-PC") or (time_date and time_date >= "2026-11-01")) else "SOLE_PROP"
+
         return {
             sc.COL_TIME_ENTRY_ID: entry_id,
-            sc.COL_TIME_DATE: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_DATE)),
+            sc.COL_TIME_DATE: time_date,
             sc.COL_TIME_CLIENT_ID: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_CLIENT_ID)),
             sc.COL_TIME_MATTER_ID: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_MATTER_ID)),
             sc.COL_TIME_PARENT_ID: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_PARENT_ID)),
@@ -10063,7 +10138,7 @@ class ExcelRepo:
             sc.COL_TIME_TOTAL: round(float(total), 2),
             sc.COL_TIME_SECONDS: int(raw_seconds),
             sc.COL_TIME_STATUS: status,
-            sc.COL_TIME_INVOICE_REF: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_INVOICE_REF)),
+            sc.COL_TIME_INVOICE_REF: invoice_ref,
             sc.COL_TIME_INVOICE_STATUS: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_INVOICE_STATUS)),
             sc.COL_TIME_PAYMENT_STATUS: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_PAYMENT_STATUS)),
             sc.COL_TIME_INVOICE_TOTAL: round(float(self._parse_float(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_INVOICE_TOTAL)) or 0.0), 2),
@@ -10072,6 +10147,8 @@ class ExcelRepo:
             sc.COL_TIME_INVOICE_DATE: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_INVOICE_DATE)),
             sc.COL_TIME_LOCK_AUDIT: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_LOCK_AUDIT)),
             sc.COL_TIME_CREATED: created_at,
+            sc.COL_TIME_REISSUE_INVOICE_NUM: _clean_text(self._value_with_alias(TBL_TIME.table, row, sc.COL_TIME_REISSUE_INVOICE_NUM)),
+            sc.COL_TIME_BILLER_ENTITY: biller_entity,
         }
 
     def _canonicalize_trademark_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -10350,6 +10427,15 @@ class ExcelRepo:
         if not updated_at:
             updated_at = created_at
 
+        invoice_ref = _clean_text(
+            self._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_INVOICE_REF)
+        )
+        biller_entity = _clean_text(
+            self._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_BILLER_ENTITY)
+        ).upper()
+        if biller_entity not in {"SOLE_PROP", "PC"}:
+            biller_entity = "PC" if (invoice_ref.upper().endswith("-PC") or txn_date >= "2026-11-01") else "SOLE_PROP"
+
         return {
             sc.COL_TXN_ID: txn_id,
             sc.COL_TXN_DATE: txn_date,
@@ -10395,9 +10481,7 @@ class ExcelRepo:
                 self._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_SHADOW),
                 default=0,
             ),
-            sc.COL_TXN_INVOICE_REF: _clean_text(
-                self._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_INVOICE_REF)
-            ),
+            sc.COL_TXN_INVOICE_REF: invoice_ref,
             sc.COL_TXN_BILL_CLAIM_PCT: round(bill_claim_pct, 2),
             sc.COL_TXN_TOTAL_CLAIM_AMOUNT: round(float(total_claim_amount), 2),
             sc.COL_TXN_EXPENSE_DETAILS: _clean_text(
@@ -10419,6 +10503,7 @@ class ExcelRepo:
             ),
             sc.COL_TXN_CREATED_AT: created_at,
             sc.COL_TXN_UPDATED_AT: updated_at,
+            sc.COL_TXN_BILLER_ENTITY: biller_entity,
         }
 
     def _canonicalize_transaction_account_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -10469,6 +10554,13 @@ class ExcelRepo:
         if sort_order is None:
             sort_order = 0
 
+        deductible_pct = self._parse_float(
+            self._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_PCT)
+        )
+        itc_claimable_pct = self._parse_float(
+            self._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_ITC_CLAIMABLE_PCT)
+        )
+
         return {
             sc.COL_TXN_CATEGORY_LKP_CODE: code,
             sc.COL_TXN_CATEGORY_LKP_NAME: name,
@@ -10517,6 +10609,20 @@ class ExcelRepo:
             sc.COL_TXN_CATEGORY_LKP_NOTES: _clean_text(
                 self._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_NOTES)
             ),
+            sc.COL_TXN_CATEGORY_LKP_T2125_LINE_NUM: _clean_text(
+                self._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_T2125_LINE_NUM)
+            ),
+            sc.COL_TXN_CATEGORY_LKP_T2125_LINE_LABEL: _clean_text(
+                self._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_T2125_LINE_LABEL)
+            ),
+            sc.COL_TXN_CATEGORY_LKP_GIFI_S125_CODE: _clean_text(
+                self._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_GIFI_S125_CODE)
+            ),
+            sc.COL_TXN_CATEGORY_LKP_GIFI_S125_LABEL: _clean_text(
+                self._value_with_alias(TBL_TRANSACTION_CATEGORIES.table, row, sc.COL_TXN_CATEGORY_LKP_GIFI_S125_LABEL)
+            ),
+            sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_PCT: round(float(deductible_pct if deductible_pct is not None else 100.0), 2),
+            sc.COL_TXN_CATEGORY_LKP_ITC_CLAIMABLE_PCT: round(float(itc_claimable_pct if itc_claimable_pct is not None else 100.0), 2),
         }
 
     def _canonicalize_transaction_business_unit_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -12756,6 +12862,10 @@ class ExcelRepo:
         if status == "Reconciled" and (not cleared_at or not reconciled_at):
             raise ValueError("Reconciled status requires ClearedAt and ReconciledAt.")
 
+        biller_entity = self._pick_text(payload, ["billerEntity", "billerCode", sc.COL_TXN_BILLER_ENTITY]).upper()
+        if biller_entity not in {"SOLE_PROP", "PC"}:
+            biller_entity = "PC" if (invoice_ref.upper().endswith("-PC") or txn_date >= "2026-11-01") else "SOLE_PROP"
+
         return {
             "transactionId": txn_id,
             "txnDate": txn_date,
@@ -12788,6 +12898,7 @@ class ExcelRepo:
             "clearedAt": cleared_at,
             "reconciledAt": reconciled_at,
             "createdAt": self._pick_text(payload, ["createdAt", sc.COL_TXN_CREATED_AT]),
+            "billerEntity": biller_entity,
             "warnings": warnings,
         }
 
@@ -14037,7 +14148,7 @@ class ExcelRepo:
             if group_by_raw in {"billing", "billingclient", "billing_client", "billing-client", "billing client"}
             else "client"
         )
-        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?(?:-PC)?$")
         ledger_rows = self._read_table_rows(TBL_LEDGER)
 
         excluded_invoices: set[str] = set()
@@ -14559,7 +14670,7 @@ class ExcelRepo:
         invoice_rows = self._read_table_rows(TBL_INVOICE_LOG)
         transaction_rows = self._read_table_rows(TBL_TRANSACTIONS_MASTER)
         legacy_docket_rows = self._read_raw_excel_table_rows("Dockets", "tblDockets")
-        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?(?:-PC)?$")
 
         def amount(value: Any) -> float:
             return float(self._parse_float(value) or 0.0)
@@ -14632,6 +14743,7 @@ class ExcelRepo:
 
         # Pass 1 & 2: Pre-calculate Realization Rates per Invoice
         ledger_billings_by_invoice: Dict[str, float] = {}
+        txn_hst_by_invoice: Dict[str, float] = {}
         for row in transaction_rows:
             ref = _clean_text(row.get(sc.COL_TXN_INVOICE_REF)).upper()
             if actual_invoice_pattern.match(ref):
@@ -14661,6 +14773,7 @@ class ExcelRepo:
             typ = row.get(sc.COL_TXN_TYPE)
             amt = amount(row.get(sc.COL_TXN_AMOUNT))
             tax = amount(row.get(sc.COL_TXN_TAX_AMOUNT))
+            ref = _clean_text(row.get(sc.COL_TXN_INVOICE_REF)).upper()
             
             bucket = quarters[label]
             if typ == "Income":
@@ -14668,6 +14781,8 @@ class ExcelRepo:
                 hst_collected_total += tax
                 bucket["revenue"] += amt
                 bucket["hstCollected"] += tax
+                if ref:
+                    txn_hst_by_invoice[ref] = txn_hst_by_invoice.get(ref, 0.0) + tax
             elif typ == "Expense":
                 expenses_total += amt
                 hst_paid_total += tax
@@ -14690,6 +14805,24 @@ class ExcelRepo:
             client_key = normalize_ledger_client(row.get(sc.COL_TXN_CLIENT))
             if client_key and typ == "Income":
                 billing_totals[client_key] = billing_totals.get(client_key, 0.0) + amt
+
+        excluded_inv_statuses = {"void", "voided", "cancelled", "canceled", "draft", "reversed"}
+        for row in invoice_rows:
+            inv_status = _clean_text(row.get(sc.COL_INV_PAYMENT_STATUS)).lower()
+            if inv_status in excluded_inv_statuses:
+                continue
+            label = quarter_label(row.get(sc.COL_INV_INVOICE_DATE))
+            if not label:
+                continue
+            inv_ref = _clean_text(row.get(sc.COL_INV_INVOICE_NUM)).upper()
+            inv_hst = amount(row.get(sc.COL_INV_HST_BILLED)) + amount(row.get(sc.COL_INV_HST_DISB))
+            already_counted_hst = txn_hst_by_invoice.get(inv_ref, 0.0) if inv_ref else 0.0
+            if inv_hst > already_counted_hst + 0.005:
+                delta_hst = inv_hst - already_counted_hst
+                hst_collected_total += delta_hst
+                quarters[label]["hstCollected"] += delta_hst
+                if inv_ref:
+                    txn_hst_by_invoice[inv_ref] = inv_hst
 
         if legacy_docket_rows:
             for row in legacy_docket_rows:
@@ -14920,6 +15053,9 @@ class ExcelRepo:
             "billedTimeAmount": money_round(billed_time_amount),
             "wipHours": round(wip_hours, 1),
             "totalAr": dashboard_total_ar,
+            "hstCollected": money_round(hst_collected_total),
+            "hstPaid": money_round(hst_paid_total),
+            "netHst": money_round(hst_collected_total - hst_paid_total),
         }
         cards = [
             {"label": "Revenue (Inc. WIP)", "value": revenue_including_wip, "subvalue": str(selected_year), "tone": "success"},
@@ -15207,7 +15343,7 @@ class ExcelRepo:
         # that OneDrive workbook can take many seconds; doing so for every
         # Statement or A/R tab made normal navigation appear frozen even when
         # current CSPM records already supplied every label.
-        invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?(?:-PC)?$")
         requires_legacy_context = False
         for row in receivable_rows:
             invoice_key = _clean_text(row.get(sc.COL_RECV_INVOICE_NUM)).casefold()
@@ -15279,7 +15415,7 @@ class ExcelRepo:
         events = []
         
         # 1. Debits (Invoices)
-        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?(?:-PC)?$")
         # The Receivables snapshot contains current balances. For a historical
         # statement, undo only dated settlements after its cutoff while keeping
         # undated legacy rounding adjustments in the client-facing invoice total.
@@ -15903,7 +16039,7 @@ class ExcelRepo:
             return []
 
         _parent_names, parent_lookup = self._client_parent_lookup(profiles, clients, parents)
-        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+        actual_invoice_pattern = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?(?:-PC)?$")
         excluded_statuses = {"void", "voided", "cancelled", "canceled", "reversed", "superseded", "draft"}
         choices: Dict[str, Dict[str, Any]] = {}
         seen_invoices: set[str] = set()
@@ -16168,6 +16304,9 @@ class ExcelRepo:
     def list_corporate_entities(self) -> List[Dict[str, Any]]:
         return self._read_table_rows(TBL_CORP_ENTITIES)
 
+    def list_corp_entities(self) -> List[Dict[str, Any]]:
+        return self.list_corporate_entities()
+
     def save_corporate_entity(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         with _DB_LOCK:
             wb = self._get_cached_wb()
@@ -16196,6 +16335,9 @@ class ExcelRepo:
     def list_corporate_relationships(self) -> List[Dict[str, Any]]:
         return self._read_table_rows(TBL_CORP_RELATIONSHIPS)
 
+    def list_corp_relationships(self) -> List[Dict[str, Any]]:
+        return self.list_corporate_relationships()
+
     def save_corporate_relationship(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         with _DB_LOCK:
             wb = self._get_cached_wb()
@@ -16221,6 +16363,9 @@ class ExcelRepo:
     def list_corporate_transactions(self) -> List[Dict[str, Any]]:
         return self._read_table_rows(TBL_CORP_TRANSACTIONS)
 
+    def list_corp_transactions(self) -> List[Dict[str, Any]]:
+        return self.list_corporate_transactions()
+
     def save_corporate_transaction(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         with _DB_LOCK:
             wb = self._get_cached_wb()
@@ -16245,3 +16390,1212 @@ class ExcelRepo:
 
             self.save()
             return {"ok": True, "transactionId": txn_id, "savedRow": payload}
+
+    # =========================================================================
+    # MULTI-BILLER, SHAREHOLDER LOAN (GIFI 2781), CCA & TAX COMPLIANCE
+    # =========================================================================
+
+    def _seed_and_backfill_multi_biller_and_tax_schema(self, wb: Workbook) -> bool:
+        """Idempotently seed multi-biller entities, Oct 17 SHL entries, corporate records,
+        tax category metadata, and backfill BillerEntity across existing tables."""
+        changed = False
+
+        def _get_ws_and_table(tref: TableRef):
+            if tref.sheet not in wb.sheetnames:
+                return None, None
+            ws = wb[tref.sheet]
+            tbl = ws.tables.get(tref.table) if hasattr(ws, "tables") else None
+            return ws, tbl
+
+        def _upsert_rows_in_wb(
+            tref: TableRef,
+            key_col: str,
+            seeds: List[Dict[str, Any]],
+            update_missing_cols: Optional[Tuple[str, ...]] = None,
+        ) -> bool:
+            ws, tbl = _get_ws_and_table(tref)
+            if ws is None or tbl is None:
+                return False
+            headers, existing_rows = self._rows_from_table(ws, tbl)
+            target_headers = list(TABLE_COLUMNS.get(tref.table, headers))
+            cleaned_rows: List[Dict[str, Any]] = []
+            index_by_key: Dict[str, int] = {}
+            for r in existing_rows:
+                if not any(_clean_text(v) for v in r.values()):
+                    continue
+                k = _clean_text(r.get(key_col)).upper()
+                if k:
+                    index_by_key[k] = len(cleaned_rows)
+                cleaned_rows.append(dict(r))
+
+            tbl_changed = False
+            for seed in seeds:
+                k = _clean_text(seed.get(key_col)).upper()
+                if not k:
+                    continue
+                if k not in index_by_key:
+                    row_to_add = {h: seed.get(h, "") for h in target_headers}
+                    index_by_key[k] = len(cleaned_rows)
+                    cleaned_rows.append(row_to_add)
+                    tbl_changed = True
+                elif update_missing_cols:
+                    idx = index_by_key[k]
+                    cur_row = cleaned_rows[idx]
+                    row_updated = False
+                    for col_name in update_missing_cols:
+                        if not _clean_text(cur_row.get(col_name)) and _clean_text(seed.get(col_name)):
+                            cur_row[col_name] = seed[col_name]
+                            row_updated = True
+                    if row_updated:
+                        tbl_changed = True
+
+            if tbl_changed:
+                self._write_table(
+                    ws=ws,
+                    existing_table=tbl,
+                    table_name=tref.table,
+                    headers=target_headers,
+                    rows=cleaned_rows,
+                    style=tbl.tableStyleInfo,
+                )
+            return tbl_changed
+
+        # 1. Seed tblBillingEntities
+        biller_seeds = [
+            {
+                sc.COL_BILLER_CODE: "SOLE_PROP",
+                sc.COL_BILLER_LEGAL_NAME: "Cory Schneider",
+                sc.COL_BILLER_PRACTICE_NAME: "Cory Schneider Law Office",
+                sc.COL_BILLER_OCN: "",
+                sc.COL_BILLER_BIN: "",
+                sc.COL_BILLER_HST_NUMBER: "78621 8222 RT0001",
+                sc.COL_BILLER_EFFECTIVE_FROM: "2020-01-01",
+                sc.COL_BILLER_EFFECTIVE_TO: "2026-10-31",
+                sc.COL_BILLER_DEFAULT_ADDRESS: "14 Parsons Court, Thornhill, ON L4K 6Z4",
+                sc.COL_BILLER_ALT_ADDRESS: "7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7",
+                sc.COL_BILLER_PHONE: "647.823.7900",
+                sc.COL_BILLER_EMAIL: "cory@coryschneiderlaw.ca",
+                sc.COL_BILLER_PAYABLE_TO: "CORY SCHNEIDER",
+                sc.COL_BILLER_ETRANSFER_EMAIL: "cory@coryschneiderlaw.ca",
+                sc.COL_BILLER_BANK_ACCOUNT_CODE: "OPERATING",
+                sc.COL_BILLER_INVOICE_SUFFIX: "",
+                sc.COL_BILLER_FOOTER_DISCLOSURE: "Cory Schneider Law Office",
+                sc.COL_BILLER_IS_DEFAULT: "FALSE",
+                sc.COL_BILLER_ACTIVE: "TRUE",
+            },
+            {
+                sc.COL_BILLER_CODE: "PC",
+                sc.COL_BILLER_LEGAL_NAME: "Cory Schneider Law Professional Corporation",
+                sc.COL_BILLER_PRACTICE_NAME: "Cory Schneider Law Office",
+                sc.COL_BILLER_OCN: "1001781977",
+                sc.COL_BILLER_BIN: "1001782016",
+                sc.COL_BILLER_HST_NUMBER: "",
+                sc.COL_BILLER_EFFECTIVE_FROM: "2026-11-01",
+                sc.COL_BILLER_EFFECTIVE_TO: "",
+                sc.COL_BILLER_DEFAULT_ADDRESS: "7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7",
+                sc.COL_BILLER_ALT_ADDRESS: "14 Parsons Court, Thornhill, ON L4K 6Z4",
+                sc.COL_BILLER_PHONE: "647.823.7900",
+                sc.COL_BILLER_EMAIL: "cory@coryschneiderlaw.ca",
+                sc.COL_BILLER_PAYABLE_TO: "CORY SCHNEIDER LAW PROFESSIONAL CORPORATION",
+                sc.COL_BILLER_ETRANSFER_EMAIL: "cory@coryschneiderlaw.ca",
+                sc.COL_BILLER_BANK_ACCOUNT_CODE: "PC_OPERATING",
+                sc.COL_BILLER_INVOICE_SUFFIX: "-PC",
+                sc.COL_BILLER_FOOTER_DISCLOSURE: "Cory Schneider Law Office is the registered business name (BIN: 1001782016) of Cory Schneider Law Professional Corporation (OCN: 1001781977).",
+                sc.COL_BILLER_IS_DEFAULT: "TRUE",
+                sc.COL_BILLER_ACTIVE: "TRUE",
+            },
+        ]
+        if _upsert_rows_in_wb(
+            TBL_BILLING_ENTITIES,
+            sc.COL_BILLER_CODE,
+            biller_seeds,
+            update_missing_cols=tuple(TABLE_COLUMNS.get(TBL_BILLING_ENTITIES.table, ())),
+        ):
+            changed = True
+
+        # 2. Seed tblShareholderLoanLedger (5 verified Oct 17, 2026 rows = $794.45 net GIFI 2781)
+        shl_seeds = [
+            {
+                sc.COL_SHL_ENTRY_ID: "SHL-2026-0001",
+                sc.COL_SHL_EFFECTIVE_DATE: "2026-10-17",
+                sc.COL_SHL_BILLER_ENTITY: "PC",
+                sc.COL_SHL_SHAREHOLDER_NAME: "Cory Schneider",
+                sc.COL_SHL_ENTRY_TYPE: "EXPENSE_PAID_PERSONALLY",
+                sc.COL_SHL_DIRECTION: "CREDIT_TO_SHAREHOLDER",
+                sc.COL_SHL_PRE_TAX_AMOUNT: 39.95,
+                sc.COL_SHL_HST_ITC_AMOUNT: 0.00,
+                sc.COL_SHL_GROSS_AMOUNT: 39.95,
+                sc.COL_SHL_SIGNED_DELTA: 39.95,
+                sc.COL_SHL_RUNNING_BALANCE: 39.95,
+                sc.COL_SHL_GIFI_LINE: "8860",
+                sc.COL_SHL_CATEGORY_CODE: "CORP_ORG_EXPENSE",
+                sc.COL_SHL_VENDOR_PAYEE: "GetNuans.com",
+                sc.COL_SHL_REFERENCE_NUMBER: "Order #GN-MVCNRB7D-802822",
+                sc.COL_SHL_DESCRIPTION: "Ontario Corporate NUANS Name Search (CORY SCHNEIDER LAW PROFESSIONAL CORPORATION)",
+                sc.COL_SHL_SOURCE_TXN_ID: "TXN-SHL-SEED-0001",
+                sc.COL_SHL_SOURCE_AP_BILL_ID: "",
+                sc.COL_SHL_RECEIPT_ON_FILE: "TRUE",
+                sc.COL_SHL_RECEIPT_PATH: "",
+                sc.COL_SHL_NOTES: "Pre-incorporation NUANS reservation report (OBCA s. 21(2) adoption)",
+                sc.COL_SHL_CREATED_AT: "2026-10-17 12:00:00",
+            },
+            {
+                sc.COL_SHL_ENTRY_ID: "SHL-2026-0002",
+                sc.COL_SHL_EFFECTIVE_DATE: "2026-10-17",
+                sc.COL_SHL_BILLER_ENTITY: "PC",
+                sc.COL_SHL_SHAREHOLDER_NAME: "Cory Schneider",
+                sc.COL_SHL_ENTRY_TYPE: "EXPENSE_PAID_PERSONALLY",
+                sc.COL_SHL_DIRECTION: "CREDIT_TO_SHAREHOLDER",
+                sc.COL_SHL_PRE_TAX_AMOUNT: 300.00,
+                sc.COL_SHL_HST_ITC_AMOUNT: 0.00,
+                sc.COL_SHL_GROSS_AMOUNT: 300.00,
+                sc.COL_SHL_SIGNED_DELTA: 300.00,
+                sc.COL_SHL_RUNNING_BALANCE: 339.95,
+                sc.COL_SHL_GIFI_LINE: "8760",
+                sc.COL_SHL_CATEGORY_CODE: "GOV_INCORPORATION_FILING",
+                sc.COL_SHL_VENDOR_PAYEE: "ServiceOntario",
+                sc.COL_SHL_REFERENCE_NUMBER: "Tx #9bccd2c22ddfc3e4",
+                sc.COL_SHL_DESCRIPTION: "OBCA Articles of Incorporation Statutory Filing Fee (OCN 1001781977)",
+                sc.COL_SHL_SOURCE_TXN_ID: "TXN-SHL-SEED-0002",
+                sc.COL_SHL_SOURCE_AP_BILL_ID: "",
+                sc.COL_SHL_RECEIPT_ON_FILE: "TRUE",
+                sc.COL_SHL_RECEIPT_PATH: "",
+                sc.COL_SHL_NOTES: "Statutory OBCA incorporation fee (HST-exempt)",
+                sc.COL_SHL_CREATED_AT: "2026-10-17 12:01:00",
+            },
+            {
+                sc.COL_SHL_ENTRY_ID: "SHL-2026-0003",
+                sc.COL_SHL_EFFECTIVE_DATE: "2026-10-17",
+                sc.COL_SHL_BILLER_ENTITY: "PC",
+                sc.COL_SHL_SHAREHOLDER_NAME: "Cory Schneider",
+                sc.COL_SHL_ENTRY_TYPE: "EXPENSE_PAID_PERSONALLY",
+                sc.COL_SHL_DIRECTION: "CREDIT_TO_SHAREHOLDER",
+                sc.COL_SHL_PRE_TAX_AMOUNT: 60.00,
+                sc.COL_SHL_HST_ITC_AMOUNT: 0.00,
+                sc.COL_SHL_GROSS_AMOUNT: 60.00,
+                sc.COL_SHL_SIGNED_DELTA: 60.00,
+                sc.COL_SHL_RUNNING_BALANCE: 399.95,
+                sc.COL_SHL_GIFI_LINE: "8760",
+                sc.COL_SHL_CATEGORY_CODE: "GOV_INCORPORATION_FILING",
+                sc.COL_SHL_VENDOR_PAYEE: "ServiceOntario",
+                sc.COL_SHL_REFERENCE_NUMBER: "Tx #9e56c4380e71944a",
+                sc.COL_SHL_DESCRIPTION: "Business Names Act Registration (CORY SCHNEIDER LAW OFFICE, BIN 1001782016)",
+                sc.COL_SHL_SOURCE_TXN_ID: "TXN-SHL-SEED-0003",
+                sc.COL_SHL_SOURCE_AP_BILL_ID: "",
+                sc.COL_SHL_RECEIPT_ON_FILE: "TRUE",
+                sc.COL_SHL_RECEIPT_PATH: "",
+                sc.COL_SHL_NOTES: "Statutory BNA registration fee (HST-exempt)",
+                sc.COL_SHL_CREATED_AT: "2026-10-17 12:02:00",
+            },
+            {
+                sc.COL_SHL_ENTRY_ID: "SHL-2026-0004",
+                sc.COL_SHL_EFFECTIVE_DATE: "2026-10-17",
+                sc.COL_SHL_BILLER_ENTITY: "PC",
+                sc.COL_SHL_SHAREHOLDER_NAME: "Cory Schneider",
+                sc.COL_SHL_ENTRY_TYPE: "EXPENSE_PAID_PERSONALLY",
+                sc.COL_SHL_DIRECTION: "CREDIT_TO_SHAREHOLDER",
+                sc.COL_SHL_PRE_TAX_AMOUNT: 350.00,
+                sc.COL_SHL_HST_ITC_AMOUNT: 45.50,
+                sc.COL_SHL_GROSS_AMOUNT: 395.50,
+                sc.COL_SHL_SIGNED_DELTA: 395.50,
+                sc.COL_SHL_RUNNING_BALANCE: 795.45,
+                sc.COL_SHL_GIFI_LINE: "8760",
+                sc.COL_SHL_CATEGORY_CODE: "EXP_LSO_FEES",
+                sc.COL_SHL_VENDOR_PAYEE: "Law Society of Ontario",
+                sc.COL_SHL_REFERENCE_NUMBER: "Invoice #INV-00501458-N9J8W7 / App #534837",
+                sc.COL_SHL_DESCRIPTION: "LSO Certificate of Authorization Application Fee (App #534837)",
+                sc.COL_SHL_SOURCE_TXN_ID: "TXN-SHL-SEED-0004",
+                sc.COL_SHL_SOURCE_AP_BILL_ID: "",
+                sc.COL_SHL_RECEIPT_ON_FILE: "TRUE",
+                sc.COL_SHL_RECEIPT_PATH: "",
+                sc.COL_SHL_NOTES: "LSO HST #121942866 ($350.00 + $45.50 HST ITC eligible under ETA s. 171(1))",
+                sc.COL_SHL_CREATED_AT: "2026-10-17 12:03:00",
+            },
+            {
+                sc.COL_SHL_ENTRY_ID: "SHL-2026-0005",
+                sc.COL_SHL_EFFECTIVE_DATE: "2026-10-17",
+                sc.COL_SHL_BILLER_ENTITY: "PC",
+                sc.COL_SHL_SHAREHOLDER_NAME: "Cory Schneider",
+                sc.COL_SHL_ENTRY_TYPE: "SHARE_SUBSCRIPTION_SETOFF",
+                sc.COL_SHL_DIRECTION: "DEBIT_FROM_SHAREHOLDER",
+                sc.COL_SHL_PRE_TAX_AMOUNT: 0.00,
+                sc.COL_SHL_HST_ITC_AMOUNT: 0.00,
+                sc.COL_SHL_GROSS_AMOUNT: 1.00,
+                sc.COL_SHL_SIGNED_DELTA: -1.00,
+                sc.COL_SHL_RUNNING_BALANCE: 794.45,
+                sc.COL_SHL_GIFI_LINE: "3500",
+                sc.COL_SHL_CATEGORY_CODE: "SHL_SHARE_SETOFF",
+                sc.COL_SHL_VENDOR_PAYEE: "Cory Schneider",
+                sc.COL_SHL_REFERENCE_NUMBER: "Notice #1 / Doc #10",
+                sc.COL_SHL_DESCRIPTION: "Subscription Set-Off for 100 Class 1 Common Shares ($1.00 aggregate consideration)",
+                sc.COL_SHL_SOURCE_TXN_ID: "",
+                sc.COL_SHL_SOURCE_AP_BILL_ID: "",
+                sc.COL_SHL_RECEIPT_ON_FILE: "TRUE",
+                sc.COL_SHL_RECEIPT_PATH: "",
+                sc.COL_SHL_NOTES: "Paid in full by set-off against $795.45 start-up outlays (OBCA s. 23(3)); net GIFI 2781 = $794.45",
+                sc.COL_SHL_CREATED_AT: "2026-10-17 12:04:00",
+            },
+        ]
+        if _upsert_rows_in_wb(
+            TBL_SHAREHOLDER_LOAN_LEDGER,
+            sc.COL_SHL_ENTRY_ID,
+            shl_seeds,
+            update_missing_cols=tuple(TABLE_COLUMNS.get(TBL_SHAREHOLDER_LOAN_LEDGER.table, ())),
+        ):
+            changed = True
+
+        # 3. Sync tblTransactionCategories and tblTransactionAccounts from seed CSVs
+        cat_seed_path = self.paths.schema_dir() / "transactions_master.categories.seed.csv"
+        if cat_seed_path.exists():
+            cat_seeds: List[Dict[str, Any]] = []
+            with cat_seed_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                for seed_row in csv.DictReader(handle):
+                    if _clean_text(seed_row.get(sc.COL_TXN_CATEGORY_LKP_CODE)):
+                        cat_seeds.append(dict(seed_row))
+            if _upsert_rows_in_wb(
+                TBL_TRANSACTION_CATEGORIES,
+                sc.COL_TXN_CATEGORY_LKP_CODE,
+                cat_seeds,
+                update_missing_cols=(
+                    sc.COL_TXN_CATEGORY_LKP_T2125_LINE_NUM,
+                    sc.COL_TXN_CATEGORY_LKP_T2125_LINE_LABEL,
+                    sc.COL_TXN_CATEGORY_LKP_GIFI_S125_CODE,
+                    sc.COL_TXN_CATEGORY_LKP_GIFI_S125_LABEL,
+                    sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_PCT,
+                    sc.COL_TXN_CATEGORY_LKP_ITC_CLAIMABLE_PCT,
+                ),
+            ):
+                changed = True
+
+        acct_seed_path = self.paths.schema_dir() / "transactions_master.accounts.seed.csv"
+        if acct_seed_path.exists():
+            acct_seeds: List[Dict[str, Any]] = []
+            with acct_seed_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                for seed_row in csv.DictReader(handle):
+                    if _clean_text(seed_row.get(sc.COL_TXN_ACCOUNT_CODE)):
+                        acct_seeds.append(dict(seed_row))
+            if _upsert_rows_in_wb(
+                TBL_TRANSACTION_ACCOUNTS,
+                sc.COL_TXN_ACCOUNT_CODE,
+                acct_seeds,
+                update_missing_cols=tuple(TABLE_COLUMNS.get(TBL_TRANSACTION_ACCOUNTS.table, ())),
+            ):
+                changed = True
+
+        # 4. Seed matching tblTransactionsMaster expense rows for the 4 Oct 17 PC start-up outlays
+        startup_txn_seeds = [
+            {
+                sc.COL_TXN_ID: "TXN-SHL-SEED-0001",
+                sc.COL_TXN_DATE: "2026-10-17",
+                sc.COL_TXN_CLASS: "Business",
+                sc.COL_TXN_BUSINESS_UNIT: "Law Practice",
+                sc.COL_TXN_TYPE: "Expense",
+                sc.COL_TXN_FROM_ACCOUNT: "CORY_PERSONAL",
+                sc.COL_TXN_TO_ACCOUNT: "VENDOR_AP",
+                sc.COL_TXN_PAYEE: "GetNuans.com",
+                sc.COL_TXN_CATEGORY_CODE: "CORP_ORG_EXPENSE",
+                sc.COL_TXN_CATEGORY_NAME: "Corporate Organization & NUANS Search",
+                sc.COL_TXN_MEMBER: "Cory Schneider",
+                sc.COL_TXN_AMOUNT: 39.95,
+                sc.COL_TXN_TAX_AMOUNT: 0.00,
+                sc.COL_TXN_TAX_FLAG: "Exempt",
+                sc.COL_TXN_HST_EXEMPT: "TRUE",
+                sc.COL_TXN_GENERAL_OFFICE_EXPENSE: "TRUE",
+                sc.COL_TXN_INVOICE_REF: "Order #GN-MVCNRB7D-802822",
+                sc.COL_TXN_EXPENSE_DETAILS: "GetNuans.com - Ontario Corporate NUANS Name Search",
+                sc.COL_TXN_NOTES: "Pre-incorporation NUANS report credited to Shareholder Loan (GIFI 2781)",
+                sc.COL_TXN_STATUS: "Cleared",
+                sc.COL_TXN_CURRENCY: "CAD",
+                sc.COL_TXN_CREATED_AT: "2026-10-17 12:00:00",
+                sc.COL_TXN_UPDATED_AT: "2026-10-17 12:00:00",
+                sc.COL_TXN_BILLER_ENTITY: "PC",
+            },
+            {
+                sc.COL_TXN_ID: "TXN-SHL-SEED-0002",
+                sc.COL_TXN_DATE: "2026-10-17",
+                sc.COL_TXN_CLASS: "Business",
+                sc.COL_TXN_BUSINESS_UNIT: "Law Practice",
+                sc.COL_TXN_TYPE: "Expense",
+                sc.COL_TXN_FROM_ACCOUNT: "CORY_PERSONAL",
+                sc.COL_TXN_TO_ACCOUNT: "VENDOR_AP",
+                sc.COL_TXN_PAYEE: "ServiceOntario",
+                sc.COL_TXN_CATEGORY_CODE: "GOV_INCORPORATION_FILING",
+                sc.COL_TXN_CATEGORY_NAME: "Government Incorporation & Business Name Statutory Fees",
+                sc.COL_TXN_MEMBER: "Cory Schneider",
+                sc.COL_TXN_AMOUNT: 300.00,
+                sc.COL_TXN_TAX_AMOUNT: 0.00,
+                sc.COL_TXN_TAX_FLAG: "Exempt",
+                sc.COL_TXN_HST_EXEMPT: "TRUE",
+                sc.COL_TXN_GENERAL_OFFICE_EXPENSE: "TRUE",
+                sc.COL_TXN_INVOICE_REF: "Tx #9bccd2c22ddfc3e4",
+                sc.COL_TXN_EXPENSE_DETAILS: "ServiceOntario - OBCA Articles of Incorporation Statutory Fee (OCN 1001781977)",
+                sc.COL_TXN_NOTES: "Statutory OBCA incorporation fee (HST-exempt) credited to Shareholder Loan (GIFI 2781)",
+                sc.COL_TXN_STATUS: "Cleared",
+                sc.COL_TXN_CURRENCY: "CAD",
+                sc.COL_TXN_CREATED_AT: "2026-10-17 12:01:00",
+                sc.COL_TXN_UPDATED_AT: "2026-10-17 12:01:00",
+                sc.COL_TXN_BILLER_ENTITY: "PC",
+            },
+            {
+                sc.COL_TXN_ID: "TXN-SHL-SEED-0003",
+                sc.COL_TXN_DATE: "2026-10-17",
+                sc.COL_TXN_CLASS: "Business",
+                sc.COL_TXN_BUSINESS_UNIT: "Law Practice",
+                sc.COL_TXN_TYPE: "Expense",
+                sc.COL_TXN_FROM_ACCOUNT: "CORY_PERSONAL",
+                sc.COL_TXN_TO_ACCOUNT: "VENDOR_AP",
+                sc.COL_TXN_PAYEE: "ServiceOntario",
+                sc.COL_TXN_CATEGORY_CODE: "GOV_INCORPORATION_FILING",
+                sc.COL_TXN_CATEGORY_NAME: "Government Incorporation & Business Name Statutory Fees",
+                sc.COL_TXN_MEMBER: "Cory Schneider",
+                sc.COL_TXN_AMOUNT: 60.00,
+                sc.COL_TXN_TAX_AMOUNT: 0.00,
+                sc.COL_TXN_TAX_FLAG: "Exempt",
+                sc.COL_TXN_HST_EXEMPT: "TRUE",
+                sc.COL_TXN_GENERAL_OFFICE_EXPENSE: "TRUE",
+                sc.COL_TXN_INVOICE_REF: "Tx #9e56c4380e71944a",
+                sc.COL_TXN_EXPENSE_DETAILS: "ServiceOntario - Business Names Act Registration (BIN 1001782016)",
+                sc.COL_TXN_NOTES: "Statutory BNA registration fee (HST-exempt) credited to Shareholder Loan (GIFI 2781)",
+                sc.COL_TXN_STATUS: "Cleared",
+                sc.COL_TXN_CURRENCY: "CAD",
+                sc.COL_TXN_CREATED_AT: "2026-10-17 12:02:00",
+                sc.COL_TXN_UPDATED_AT: "2026-10-17 12:02:00",
+                sc.COL_TXN_BILLER_ENTITY: "PC",
+            },
+            {
+                sc.COL_TXN_ID: "TXN-SHL-SEED-0004",
+                sc.COL_TXN_DATE: "2026-10-17",
+                sc.COL_TXN_CLASS: "Business",
+                sc.COL_TXN_BUSINESS_UNIT: "Law Practice",
+                sc.COL_TXN_TYPE: "Expense",
+                sc.COL_TXN_FROM_ACCOUNT: "CORY_PERSONAL",
+                sc.COL_TXN_TO_ACCOUNT: "VENDOR_AP",
+                sc.COL_TXN_PAYEE: "Law Society of Ontario",
+                sc.COL_TXN_CATEGORY_CODE: "EXP_LSO_FEES",
+                sc.COL_TXN_CATEGORY_NAME: "LSO Annual Fee & Professional Dues",
+                sc.COL_TXN_MEMBER: "Cory Schneider",
+                sc.COL_TXN_AMOUNT: 395.50,
+                sc.COL_TXN_TAX_AMOUNT: 45.50,
+                sc.COL_TXN_TAX_FLAG: "Taxable",
+                sc.COL_TXN_HST_EXEMPT: "FALSE",
+                sc.COL_TXN_GENERAL_OFFICE_EXPENSE: "TRUE",
+                sc.COL_TXN_INVOICE_REF: "INV-00501458-N9J8W7",
+                sc.COL_TXN_EXPENSE_DETAILS: "Law Society of Ontario - Certificate of Authorization Application Fee (App #534837)",
+                sc.COL_TXN_NOTES: "LSO HST #121942866 ($350.00 + $45.50 HST ITC eligible under ETA s. 171(1)) credited to Shareholder Loan (GIFI 2781)",
+                sc.COL_TXN_STATUS: "Cleared",
+                sc.COL_TXN_CURRENCY: "CAD",
+                sc.COL_TXN_CREATED_AT: "2026-10-17 12:03:00",
+                sc.COL_TXN_UPDATED_AT: "2026-10-17 12:03:00",
+                sc.COL_TXN_BILLER_ENTITY: "PC",
+            },
+        ]
+        if _upsert_rows_in_wb(
+            TBL_TRANSACTIONS_MASTER,
+            sc.COL_TXN_ID,
+            startup_txn_seeds,
+            update_missing_cols=tuple(TABLE_COLUMNS.get(TBL_TRANSACTIONS_MASTER.table, ())),
+        ):
+            changed = True
+
+        # 5. Seed Corporate Records for CORY SCHNEIDER LAW PROFESSIONAL CORPORATION
+        ce_seeds = [
+            {
+                sc.COL_CORP_ENTITY_ID: "CE-CSLPC-2026",
+                sc.COL_CORP_CLIENT_ID: "",
+                sc.COL_CORP_LEGAL_NAME: "CORY SCHNEIDER LAW PROFESSIONAL CORPORATION",
+                sc.COL_CORP_JURISDICTION: "Ontario (OBCA)",
+                sc.COL_CORP_INCORP_DATE: "2026-10-17",
+                sc.COL_CORP_INC_NUMBER: "1001781977",
+                sc.COL_CORP_FISCAL_YE: "12-31",
+                sc.COL_CORP_STATUS: "Active",
+                sc.COL_CORP_NOTES: (
+                    "OCN: 1001781977 | Company Key: 448389332 | BIN: 1001782016 (CORY SCHNEIDER LAW OFFICE) | "
+                    "Registered Office: 7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7 | "
+                    "Uncertificated shares under OBCA s. 54(1)"
+                ),
+                sc.COL_CORP_CREATED: "2026-10-17 12:00:00",
+            }
+        ]
+        if _upsert_rows_in_wb(
+            TBL_CORP_ENTITIES,
+            sc.COL_CORP_ENTITY_ID,
+            ce_seeds,
+            update_missing_cols=tuple(TABLE_COLUMNS.get(TBL_CORP_ENTITIES.table, ())),
+        ):
+            changed = True
+
+        cr_seeds = [
+            {
+                sc.COL_CREL_ID: "CR-CSLPC-0001",
+                sc.COL_CREL_SOURCE: "CORY_SCHNEIDER",
+                sc.COL_CREL_TARGET: "CE-CSLPC-2026",
+                sc.COL_CREL_TYPE: "Director & Officer",
+                sc.COL_CREL_TITLE: "Director, President & Secretary",
+                sc.COL_CREL_SHARE_CLASS: "N/A",
+                sc.COL_CREL_SHARES_HELD: 0,
+                sc.COL_CREL_OWNERSHIP_PCT: 100.0,
+                sc.COL_CREL_START_DATE: "2026-10-17",
+                sc.COL_CREL_END_DATE: "",
+                sc.COL_CREL_ACTIVE: "TRUE",
+            },
+            {
+                sc.COL_CREL_ID: "CR-CSLPC-0002",
+                sc.COL_CREL_SOURCE: "CORY_SCHNEIDER",
+                sc.COL_CREL_TARGET: "CE-CSLPC-2026",
+                sc.COL_CREL_TYPE: "Shareholder",
+                sc.COL_CREL_TITLE: "Uncertificated (Notice #1 / Doc #10); Stated Capital / PUC = $1.00 (GIFI 3500)",
+                sc.COL_CREL_SHARE_CLASS: "Class 1 Common Shares",
+                sc.COL_CREL_SHARES_HELD: 100,
+                sc.COL_CREL_OWNERSHIP_PCT: 100.0,
+                sc.COL_CREL_START_DATE: "2026-10-17",
+                sc.COL_CREL_END_DATE: "",
+                sc.COL_CREL_ACTIVE: "TRUE",
+            },
+            {
+                sc.COL_CREL_ID: "CR-CSLPC-0003",
+                sc.COL_CREL_SOURCE: "CORY_SCHNEIDER",
+                sc.COL_CREL_TARGET: "CE-CSLPC-2026",
+                sc.COL_CREL_TYPE: "Shareholder",
+                sc.COL_CREL_TITLE: "Uncertificated (Notice #2 / Doc #17); s. 85(1) Goodwill Rollover FMV $100.00, Elected Amount / PUC = $1.00 (GIFI 3520)",
+                sc.COL_CREL_SHARE_CLASS: "Class A1 Fixed Value Special Shares (Voting)",
+                sc.COL_CREL_SHARES_HELD: 100,
+                sc.COL_CREL_OWNERSHIP_PCT: 100.0,
+                sc.COL_CREL_START_DATE: "2026-11-01",
+                sc.COL_CREL_END_DATE: "",
+                sc.COL_CREL_ACTIVE: "TRUE",
+            },
+        ]
+        if _upsert_rows_in_wb(
+            TBL_CORP_RELATIONSHIPS,
+            sc.COL_CREL_ID,
+            cr_seeds,
+            update_missing_cols=tuple(TABLE_COLUMNS.get(TBL_CORP_RELATIONSHIPS.table, ())),
+        ):
+            changed = True
+
+        ctx_seeds = [
+            {
+                sc.COL_CTX_ID: "CTX-CSLPC-0001",
+                sc.COL_CTX_ENTITY_ID: "CE-CSLPC-2026",
+                sc.COL_CTX_DATE: "2026-10-17",
+                sc.COL_CTX_TYPE: "Issuance",
+                sc.COL_CTX_FROM: "TREASURY",
+                sc.COL_CTX_TO: "Cory Schneider",
+                sc.COL_CTX_SHARE_CLASS: "Class 1 Common Shares",
+                sc.COL_CTX_SHARES_QTY: 100,
+                sc.COL_CTX_PRICE_PER: 0.01,
+                sc.COL_CTX_TOTAL_VALUE: 1.00,
+                sc.COL_CTX_DOC_REF: "Notice #1 / Doc #10",
+                sc.COL_CTX_NOTES: "Treasury Issuance of 100 Class 1 Common Shares ($1.00 set-off under OBCA s. 23(3); GIFI 3500 = $1.00)",
+                sc.COL_CTX_CREATED: "2026-10-17 12:04:00",
+            },
+            {
+                sc.COL_CTX_ID: "CTX-CSLPC-0002",
+                sc.COL_CTX_ENTITY_ID: "CE-CSLPC-2026",
+                sc.COL_CTX_DATE: "2026-11-01",
+                sc.COL_CTX_TYPE: "Section 85 Rollover Issuance",
+                sc.COL_CTX_FROM: "TREASURY",
+                sc.COL_CTX_TO: "Cory Schneider",
+                sc.COL_CTX_SHARE_CLASS: "Class A1 Fixed Value Special Shares (Voting)",
+                sc.COL_CTX_SHARES_QTY: 100,
+                sc.COL_CTX_PRICE_PER: 1.00,
+                sc.COL_CTX_TOTAL_VALUE: 100.00,
+                sc.COL_CTX_DOC_REF: "Notice #2 / Doc #17 / Form T2057",
+                sc.COL_CTX_NOTES: "Issuance of 100 Class A1 Fixed Value Special Shares (Voting) on s. 85(1) Goodwill Rollover (FMV $100.00, Elected Amount / Stated Capital $1.00 under OBCA s. 24(3); GIFI 3520 = $1.00)",
+                sc.COL_CTX_CREATED: "2026-10-17 12:05:00",
+            },
+        ]
+        if _upsert_rows_in_wb(
+            TBL_CORP_TRANSACTIONS,
+            sc.COL_CTX_ID,
+            ctx_seeds,
+            update_missing_cols=tuple(TABLE_COLUMNS.get(TBL_CORP_TRANSACTIONS.table, ())),
+        ):
+            changed = True
+
+        # 6. Backfill BillerEntity / DefaultBillerEntity on existing tables where blank
+        def _backfill_column(tref: TableRef, target_col: str, date_col: Optional[str], inv_col: Optional[str] = None) -> bool:
+            ws, tbl = _get_ws_and_table(tref)
+            if ws is None or tbl is None:
+                return False
+            min_col, min_row, max_col, max_row = range_boundaries(tbl.ref)
+            headers = [
+                str(ws.cell(row=min_row, column=c_idx).value or "").strip()
+                for c_idx in range(min_col, max_col + 1)
+            ]
+            if target_col not in headers:
+                return False
+            col_idx = min_col + headers.index(target_col)
+            date_idx = (min_col + headers.index(date_col)) if (date_col and date_col in headers) else None
+            inv_idx = (min_col + headers.index(inv_col)) if (inv_col and inv_col in headers) else None
+            tbl_changed = False
+            for r_idx in range(min_row + 1, max_row + 1):
+                first_val = ws.cell(row=r_idx, column=min_col).value
+                second_val = ws.cell(row=r_idx, column=min_col + 1).value if max_col > min_col else None
+                if (first_val is None or str(first_val).strip() == "") and (second_val is None or str(second_val).strip() == ""):
+                    continue
+                cur_val = _clean_text(ws.cell(row=r_idx, column=col_idx).value).upper()
+                if cur_val in {"SOLE_PROP", "PC"}:
+                    continue
+                inferred = "SOLE_PROP"
+                if inv_idx is not None:
+                    inv_val = _clean_text(ws.cell(row=r_idx, column=inv_idx).value).upper()
+                    if inv_val.endswith("-PC"):
+                        inferred = "PC"
+                if inferred == "SOLE_PROP" and date_idx is not None:
+                    dt_val = self._parse_date_value(ws.cell(row=r_idx, column=date_idx).value)
+                    if dt_val and dt_val.strftime("%Y-%m-%d") >= "2026-11-01":
+                        inferred = "PC"
+                ws.cell(row=r_idx, column=col_idx, value=inferred)
+                tbl_changed = True
+            return tbl_changed
+
+        if _backfill_column(TBL_MATTERS, sc.COL_MATTER_DEFAULT_BILLER, sc.COL_MATTER_OPEN_DATE):
+            changed = True
+        if _backfill_column(TBL_TIME, sc.COL_TIME_BILLER_ENTITY, sc.COL_TIME_DATE, sc.COL_TIME_INVOICE_REF):
+            changed = True
+        if _backfill_column(TBL_DISBURSEMENTS, sc.COL_DISB_BILLER_ENTITY, sc.COL_DISB_DATE, sc.COL_DISB_INVOICE_REF):
+            changed = True
+        if _backfill_column(TBL_INVOICE_LOG, sc.COL_INV_BILLER_ENTITY, sc.COL_INV_INVOICE_DATE, sc.COL_INV_INVOICE_NUM):
+            changed = True
+        if _backfill_column(TBL_RECEIVABLES, sc.COL_RECV_BILLER_ENTITY, sc.COL_RECV_DATE, sc.COL_RECV_INVOICE_NUM):
+            changed = True
+        if _backfill_column(TBL_TRANSACTIONS_MASTER, sc.COL_TXN_BILLER_ENTITY, sc.COL_TXN_DATE, sc.COL_TXN_INVOICE_REF):
+            changed = True
+        if _backfill_column(TBL_HST_LOG, sc.COL_HST_BILLER_ENTITY, sc.COL_HST_FILED_DATE):
+            changed = True
+        if _backfill_column(TableRef(AP_BILLS_SHEET, AP_BILLS_TABLE), "BillerEntity", "InvoiceDate"):
+            changed = True
+
+        return changed
+
+    def _sync_shareholder_loan_from_transaction(self, transaction_row: Dict[str, Any]) -> None:
+        """Automatically maintain tblShareholderLoanLedger (GIFI 2781) when a PC transaction
+        is paid personally or when the corporation repays the Shareholder Loan."""
+        txn_id = _clean_text(transaction_row.get(sc.COL_TXN_ID))
+        if not txn_id or txn_id.startswith("TXN-SHL-SEED-"):
+            return
+        biller_entity = _clean_text(transaction_row.get(sc.COL_TXN_BILLER_ENTITY)).upper()
+        if biller_entity != "PC":
+            return
+
+        existing_entries = self._read_table_rows(TBL_SHAREHOLDER_LOAN_LEDGER)
+        for entry in existing_entries:
+            if _clean_text(entry.get(sc.COL_SHL_SOURCE_TXN_ID)) == txn_id:
+                return
+
+        typ = _clean_text(transaction_row.get(sc.COL_TXN_TYPE))
+        cat_code = _clean_text(transaction_row.get(sc.COL_TXN_CATEGORY_CODE)).upper()
+        from_acct = _clean_text(transaction_row.get(sc.COL_TXN_FROM_ACCOUNT)).upper()
+        to_acct = _clean_text(transaction_row.get(sc.COL_TXN_TO_ACCOUNT)).upper()
+        gross = self._money_round(transaction_row.get(sc.COL_TXN_AMOUNT) or 0.0)
+        hst_amt = self._money_round(transaction_row.get(sc.COL_TXN_TAX_AMOUNT) or 0.0)
+        pre_tax = self._money_round(max(0.0, gross - hst_amt))
+        if gross <= 0.0:
+            return
+
+        personal_codes = {"CORY_PERSONAL", "PERSONAL", "SHAREHOLDER_LOAN", "SHL"}
+        corp_codes = {"PC_OPERATING", "OPERATING"}
+
+        gifi_code = "8860"
+        for cat in self._read_table_rows(TBL_TRANSACTION_CATEGORIES):
+            if _clean_text(cat.get(sc.COL_TXN_CATEGORY_LKP_CODE)).upper() == cat_code:
+                gifi_code = _clean_text(cat.get(sc.COL_TXN_CATEGORY_LKP_GIFI_S125_CODE)) or "8860"
+                break
+
+        if typ == "Expense" and from_acct in personal_codes:
+            self.append_shareholder_loan_entry(
+                {
+                    "entryDate": _clean_text(transaction_row.get(sc.COL_TXN_DATE)) or datetime.now().strftime("%Y-%m-%d"),
+                    "billerEntity": "PC",
+                    "entryType": "EXPENSE_PAID_PERSONALLY",
+                    "description": _clean_text(transaction_row.get(sc.COL_TXN_EXPENSE_DETAILS)) or "Corporate expense paid personally",
+                    "vendor": _clean_text(transaction_row.get(sc.COL_TXN_PAYEE)),
+                    "receiptRef": _clean_text(transaction_row.get(sc.COL_TXN_INVOICE_REF)),
+                    "categoryCode": cat_code,
+                    "gifiCode": gifi_code,
+                    "preTaxAmount": pre_tax,
+                    "hstAmount": hst_amt,
+                    "hstItcEligible": "TRUE" if hst_amt > 0 else "FALSE",
+                    "grossCreditToLoan": gross,
+                    "debitRepaymentFromCorp": 0.0,
+                    "linkedTransactionId": txn_id,
+                    "notes": _clean_text(transaction_row.get(sc.COL_TXN_NOTES)) or "Auto-credited from personal-paid PC expense",
+                }
+            )
+        elif cat_code in {"CORP_SHL_REPAYMENT", "SHL_REPAYMENT_TO_SHAREHOLDER"} or (
+            typ == "Transfer" and to_acct in personal_codes and from_acct in corp_codes
+        ):
+            self.append_shareholder_loan_entry(
+                {
+                    "entryDate": _clean_text(transaction_row.get(sc.COL_TXN_DATE)) or datetime.now().strftime("%Y-%m-%d"),
+                    "billerEntity": "PC",
+                    "entryType": "REPAYMENT_TO_SHAREHOLDER",
+                    "description": _clean_text(transaction_row.get(sc.COL_TXN_EXPENSE_DETAILS)) or "Tax-free Shareholder Loan repayment to Cory Schneider",
+                    "vendor": _clean_text(transaction_row.get(sc.COL_TXN_PAYEE)) or "Cory Schneider",
+                    "receiptRef": _clean_text(transaction_row.get(sc.COL_TXN_INVOICE_REF)),
+                    "categoryCode": "SHL_REPAYMENT_TO_SHAREHOLDER",
+                    "gifiCode": "2781",
+                    "preTaxAmount": 0.0,
+                    "hstAmount": 0.0,
+                    "hstItcEligible": "FALSE",
+                    "grossCreditToLoan": 0.0,
+                    "debitRepaymentFromCorp": gross,
+                    "linkedTransactionId": txn_id,
+                    "notes": _clean_text(transaction_row.get(sc.COL_TXN_NOTES)) or "Tax-free repayment reducing GIFI 2781 balance",
+                }
+            )
+
+    def list_billing_entities(self) -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        rows = self._read_table_rows(TBL_BILLING_ENTITIES)
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            code = _clean_text(r.get(sc.COL_BILLER_CODE)).upper()
+            if not code:
+                continue
+            result.append(
+                {
+                    "billerCode": code,
+                    "entityCode": code,
+                    "legalName": _clean_text(r.get(sc.COL_BILLER_LEGAL_NAME)),
+                    "practiceName": _clean_text(r.get(sc.COL_BILLER_PRACTICE_NAME)),
+                    "ocn": _clean_text(r.get(sc.COL_BILLER_OCN)),
+                    "bin": _clean_text(r.get(sc.COL_BILLER_BIN)),
+                    "hstNumber": _clean_text(r.get(sc.COL_BILLER_HST_NUMBER)),
+                    "effectiveFrom": _clean_text(r.get(sc.COL_BILLER_EFFECTIVE_FROM)),
+                    "effectiveTo": _clean_text(r.get(sc.COL_BILLER_EFFECTIVE_TO)),
+                    "defaultAddressLine": _clean_text(r.get(sc.COL_BILLER_DEFAULT_ADDRESS)),
+                    "altAddressLine": _clean_text(r.get(sc.COL_BILLER_ALT_ADDRESS)),
+                    "phone": _clean_text(r.get(sc.COL_BILLER_PHONE)),
+                    "email": _clean_text(r.get(sc.COL_BILLER_EMAIL)),
+                    "payableToName": _clean_text(r.get(sc.COL_BILLER_PAYABLE_TO)),
+                    "eTransferEmail": _clean_text(r.get(sc.COL_BILLER_ETRANSFER_EMAIL)),
+                    "bankAccountCode": _clean_text(r.get(sc.COL_BILLER_BANK_ACCOUNT_CODE)),
+                    "invoiceNumberSuffix": _clean_text(r.get(sc.COL_BILLER_INVOICE_SUFFIX)),
+                    "footerDisclosureText": _clean_text(r.get(sc.COL_BILLER_FOOTER_DISCLOSURE)),
+                    "isDefault": _clean_text(r.get(sc.COL_BILLER_IS_DEFAULT)).upper() in {"TRUE", "1", "YES"},
+                    "active": _clean_text(r.get(sc.COL_BILLER_ACTIVE) or "TRUE").upper() in {"TRUE", "1", "YES"},
+                }
+            )
+        return result
+
+    def get_billing_entity(self, biller_code: str) -> Optional[Dict[str, Any]]:
+        target = _clean_text(biller_code).upper() or "SOLE_PROP"
+        for entity in self.list_billing_entities():
+            if entity["billerCode"] == target:
+                return entity
+        return None
+
+    def save_billing_entity(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.ensure_schema()
+        code = _clean_text(payload.get("billerCode") or payload.get("entityCode") or payload.get(sc.COL_BILLER_CODE)).upper()
+        if not code:
+            raise ValueError("BillerCode is required.")
+        existing = self.get_billing_entity(code) or {}
+        row_data = {
+            sc.COL_BILLER_CODE: code,
+            sc.COL_BILLER_LEGAL_NAME: _clean_text(payload.get("legalName") or payload.get(sc.COL_BILLER_LEGAL_NAME) or existing.get("legalName")),
+            sc.COL_BILLER_PRACTICE_NAME: _clean_text(payload.get("practiceName") or payload.get(sc.COL_BILLER_PRACTICE_NAME) or existing.get("practiceName")),
+            sc.COL_BILLER_OCN: _clean_text(payload.get("ocn") or payload.get(sc.COL_BILLER_OCN) or existing.get("ocn")),
+            sc.COL_BILLER_BIN: _clean_text(payload.get("bin") or payload.get(sc.COL_BILLER_BIN) or existing.get("bin")),
+            sc.COL_BILLER_HST_NUMBER: _clean_text(payload.get("hstNumber") if "hstNumber" in payload else (payload.get(sc.COL_BILLER_HST_NUMBER) if sc.COL_BILLER_HST_NUMBER in payload else existing.get("hstNumber"))),
+            sc.COL_BILLER_EFFECTIVE_FROM: _clean_text(payload.get("effectiveFrom") or payload.get(sc.COL_BILLER_EFFECTIVE_FROM) or existing.get("effectiveFrom")),
+            sc.COL_BILLER_EFFECTIVE_TO: _clean_text(payload.get("effectiveTo") if "effectiveTo" in payload else (payload.get(sc.COL_BILLER_EFFECTIVE_TO) if sc.COL_BILLER_EFFECTIVE_TO in payload else existing.get("effectiveTo"))),
+            sc.COL_BILLER_DEFAULT_ADDRESS: _clean_text(payload.get("defaultAddressLine") or payload.get(sc.COL_BILLER_DEFAULT_ADDRESS) or existing.get("defaultAddressLine")),
+            sc.COL_BILLER_ALT_ADDRESS: _clean_text(payload.get("altAddressLine") or payload.get(sc.COL_BILLER_ALT_ADDRESS) or existing.get("altAddressLine")),
+            sc.COL_BILLER_PHONE: _clean_text(payload.get("phone") or payload.get(sc.COL_BILLER_PHONE) or existing.get("phone")),
+            sc.COL_BILLER_EMAIL: _clean_text(payload.get("email") or payload.get(sc.COL_BILLER_EMAIL) or existing.get("email")),
+            sc.COL_BILLER_PAYABLE_TO: _clean_text(payload.get("payableToName") or payload.get(sc.COL_BILLER_PAYABLE_TO) or existing.get("payableToName")),
+            sc.COL_BILLER_ETRANSFER_EMAIL: _clean_text(payload.get("eTransferEmail") or payload.get(sc.COL_BILLER_ETRANSFER_EMAIL) or existing.get("eTransferEmail")),
+            sc.COL_BILLER_BANK_ACCOUNT_CODE: _clean_text(payload.get("bankAccountCode") or payload.get(sc.COL_BILLER_BANK_ACCOUNT_CODE) or existing.get("bankAccountCode")),
+            sc.COL_BILLER_INVOICE_SUFFIX: _clean_text(payload.get("invoiceNumberSuffix") if "invoiceNumberSuffix" in payload else (payload.get(sc.COL_BILLER_INVOICE_SUFFIX) if sc.COL_BILLER_INVOICE_SUFFIX in payload else existing.get("invoiceNumberSuffix"))),
+            sc.COL_BILLER_FOOTER_DISCLOSURE: _clean_text(payload.get("footerDisclosureText") or payload.get(sc.COL_BILLER_FOOTER_DISCLOSURE) or existing.get("footerDisclosureText")),
+            sc.COL_BILLER_IS_DEFAULT: "TRUE" if bool(payload.get("isDefault", existing.get("isDefault", False))) else "FALSE",
+            sc.COL_BILLER_ACTIVE: "TRUE" if bool(payload.get("active", existing.get("active", True))) else "FALSE",
+        }
+        self._upsert_row_by_key(TBL_BILLING_ENTITIES, sc.COL_BILLER_CODE, code, row_data)
+        return self.get_billing_entity(code) or row_data
+
+    def list_shareholder_loan_entries(self, biller_entity: str = "PC") -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        target_biller = _clean_text(biller_entity or "PC").upper()
+        raw_rows = self._read_table_rows(TBL_SHAREHOLDER_LOAN_LEDGER)
+        filtered = []
+        for r in raw_rows:
+            shl_id = _clean_text(r.get(sc.COL_SHL_ENTRY_ID))
+            if not shl_id:
+                continue
+            row_biller = _clean_text(r.get(sc.COL_SHL_BILLER_ENTITY) or "PC").upper()
+            if target_biller and row_biller != target_biller:
+                continue
+            dt = self._parse_date_value(r.get(sc.COL_SHL_EFFECTIVE_DATE))
+            dt_str = dt.strftime("%Y-%m-%d") if dt else _clean_text(r.get(sc.COL_SHL_EFFECTIVE_DATE))
+            pre_tax = self._money_round(r.get(sc.COL_SHL_PRE_TAX_AMOUNT) or 0.0)
+            hst_amt = self._money_round(r.get(sc.COL_SHL_HST_ITC_AMOUNT) or 0.0)
+            gross_amt = self._money_round(r.get(sc.COL_SHL_GROSS_AMOUNT) or (pre_tax + hst_amt))
+            signed_delta = self._money_round(r.get(sc.COL_SHL_SIGNED_DELTA) or 0.0)
+            direction = _clean_text(r.get(sc.COL_SHL_DIRECTION)).upper()
+            entry_type = _clean_text(r.get(sc.COL_SHL_ENTRY_TYPE)).upper()
+            if signed_delta > 0 or direction == "CREDIT_TO_SHAREHOLDER" or entry_type in {"EXPENSE_PAID_PERSONALLY", "SECTION_85_BOOT_OR_UCC"}:
+                gross_credit = abs(signed_delta) if signed_delta != 0 else gross_amt
+                debit_repay = 0.0
+            else:
+                gross_credit = 0.0
+                debit_repay = abs(signed_delta) if signed_delta != 0 else gross_amt
+            filtered.append(
+                {
+                    "shlEntryId": shl_id,
+                    "entryId": shl_id,
+                    "entryDate": dt_str,
+                    "date": dt_str,
+                    "billerEntity": row_biller,
+                    "shareholderName": _clean_text(r.get(sc.COL_SHL_SHAREHOLDER_NAME) or "Cory Schneider"),
+                    "entryType": entry_type,
+                    "direction": direction or ("CREDIT_TO_SHAREHOLDER" if gross_credit > 0 else "DEBIT_FROM_SHAREHOLDER"),
+                    "description": _clean_text(r.get(sc.COL_SHL_DESCRIPTION)),
+                    "vendor": _clean_text(r.get(sc.COL_SHL_VENDOR_PAYEE)),
+                    "receiptRef": _clean_text(r.get(sc.COL_SHL_REFERENCE_NUMBER)),
+                    "categoryCode": _clean_text(r.get(sc.COL_SHL_CATEGORY_CODE)),
+                    "gifiCode": _clean_text(r.get(sc.COL_SHL_GIFI_LINE)),
+                    "preTaxAmount": pre_tax,
+                    "hstAmount": hst_amt,
+                    "hstItcEligible": hst_amt > 0.0,
+                    "grossAmount": gross_amt,
+                    "grossCreditToLoan": gross_credit,
+                    "debitRepaymentFromCorp": debit_repay,
+                    "signedDelta": self._money_round(gross_credit - debit_repay),
+                    "runningLoanBalance": self._money_round(r.get(sc.COL_SHL_RUNNING_BALANCE) or 0.0),
+                    "linkedTransactionId": _clean_text(r.get(sc.COL_SHL_SOURCE_TXN_ID)),
+                    "linkedApBillId": _clean_text(r.get(sc.COL_SHL_SOURCE_AP_BILL_ID)),
+                    "receiptOnFile": _clean_text(r.get(sc.COL_SHL_RECEIPT_ON_FILE) or "TRUE").upper() in {"TRUE", "1", "YES"},
+                    "notes": _clean_text(r.get(sc.COL_SHL_NOTES)),
+                    "createdAt": _clean_text(r.get(sc.COL_SHL_CREATED_AT)),
+                }
+            )
+        filtered.sort(key=lambda item: (item["entryDate"], item["shlEntryId"]))
+        running = Decimal("0.00")
+        for item in filtered:
+            credit = Decimal(str(item["grossCreditToLoan"])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            debit = Decimal(str(item["debitRepaymentFromCorp"])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            running = (running + credit - debit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            item["runningLoanBalance"] = float(running)
+        return filtered
+
+    def append_shareholder_loan_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.ensure_schema()
+        entry_id = _clean_text(payload.get("shlEntryId") or payload.get("entryId") or payload.get(sc.COL_SHL_ENTRY_ID))
+        existing = self.list_shareholder_loan_entries(payload.get("billerEntity") or payload.get(sc.COL_SHL_BILLER_ENTITY) or "PC")
+        if not entry_id:
+            max_seq = 0
+            for row in existing:
+                m = re.match(r"^SHL-\d{4}-(\d+)$", row["shlEntryId"])
+                if m:
+                    max_seq = max(max_seq, int(m.group(1)))
+            entry_id = f"SHL-2026-{max(max_seq + 1, len(existing) + 1):04d}"
+
+        entry_type = _clean_text(payload.get("entryType") or payload.get(sc.COL_SHL_ENTRY_TYPE) or "EXPENSE_PAID_PERSONALLY").upper()
+        pre_tax = self._money_round(payload.get("preTaxAmount") if "preTaxAmount" in payload else payload.get(sc.COL_SHL_PRE_TAX_AMOUNT, 0.0))
+        hst_amt = self._money_round(payload.get("hstAmount") if "hstAmount" in payload else payload.get(sc.COL_SHL_HST_ITC_AMOUNT, 0.0))
+        gross_credit = self._money_round(
+            payload.get("grossCreditToLoan")
+            if "grossCreditToLoan" in payload
+            else (pre_tax + hst_amt if entry_type in {"EXPENSE_PAID_PERSONALLY", "SECTION_85_BOOT_OR_UCC"} else 0.0)
+        )
+        debit_repay = self._money_round(
+            payload.get("debitRepaymentFromCorp")
+            if "debitRepaymentFromCorp" in payload
+            else 0.0
+        )
+        signed_delta = self._money_round(gross_credit - debit_repay)
+        gross_amt = self._money_round(gross_credit if gross_credit > 0 else debit_repay)
+        direction = "CREDIT_TO_SHAREHOLDER" if signed_delta >= 0 else "DEBIT_FROM_SHAREHOLDER"
+        prev_balance = existing[-1]["runningLoanBalance"] if existing else 0.0
+        running_balance = self._money_round(prev_balance + signed_delta)
+
+        dt = self._parse_date_value(payload.get("entryDate") or payload.get("date") or payload.get(sc.COL_SHL_EFFECTIVE_DATE)) or date.today()
+        row_data = {
+            sc.COL_SHL_ENTRY_ID: entry_id,
+            sc.COL_SHL_EFFECTIVE_DATE: dt.strftime("%Y-%m-%d"),
+            sc.COL_SHL_BILLER_ENTITY: _clean_text(payload.get("billerEntity") or payload.get(sc.COL_SHL_BILLER_ENTITY) or "PC").upper(),
+            sc.COL_SHL_SHAREHOLDER_NAME: _clean_text(payload.get("shareholderName") or payload.get(sc.COL_SHL_SHAREHOLDER_NAME) or "Cory Schneider"),
+            sc.COL_SHL_ENTRY_TYPE: entry_type,
+            sc.COL_SHL_DIRECTION: direction,
+            sc.COL_SHL_PRE_TAX_AMOUNT: pre_tax,
+            sc.COL_SHL_HST_ITC_AMOUNT: hst_amt,
+            sc.COL_SHL_GROSS_AMOUNT: gross_amt,
+            sc.COL_SHL_SIGNED_DELTA: signed_delta,
+            sc.COL_SHL_RUNNING_BALANCE: running_balance,
+            sc.COL_SHL_GIFI_LINE: _clean_text(payload.get("gifiCode") or payload.get(sc.COL_SHL_GIFI_LINE) or "2781"),
+            sc.COL_SHL_CATEGORY_CODE: _clean_text(payload.get("categoryCode") or payload.get(sc.COL_SHL_CATEGORY_CODE)),
+            sc.COL_SHL_VENDOR_PAYEE: _clean_text(payload.get("vendor") or payload.get(sc.COL_SHL_VENDOR_PAYEE)),
+            sc.COL_SHL_REFERENCE_NUMBER: _clean_text(payload.get("receiptRef") or payload.get(sc.COL_SHL_REFERENCE_NUMBER)),
+            sc.COL_SHL_DESCRIPTION: _clean_text(payload.get("description") or payload.get(sc.COL_SHL_DESCRIPTION)),
+            sc.COL_SHL_SOURCE_TXN_ID: _clean_text(payload.get("linkedTransactionId") or payload.get(sc.COL_SHL_SOURCE_TXN_ID)),
+            sc.COL_SHL_SOURCE_AP_BILL_ID: _clean_text(payload.get("linkedApBillId") or payload.get(sc.COL_SHL_SOURCE_AP_BILL_ID)),
+            sc.COL_SHL_RECEIPT_ON_FILE: "TRUE",
+            sc.COL_SHL_RECEIPT_PATH: _clean_text(payload.get("receiptPath") or payload.get(sc.COL_SHL_RECEIPT_PATH)),
+            sc.COL_SHL_NOTES: _clean_text(payload.get("notes") or payload.get(sc.COL_SHL_NOTES)),
+            sc.COL_SHL_CREATED_AT: _clean_text(payload.get("createdAt") or payload.get(sc.COL_SHL_CREATED_AT)) or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        self._upsert_row_by_key(TBL_SHAREHOLDER_LOAN_LEDGER, sc.COL_SHL_ENTRY_ID, entry_id, row_data)
+        entries = self.list_shareholder_loan_entries(row_data[sc.COL_SHL_BILLER_ENTITY])
+        for item in entries:
+            if item["shlEntryId"] == entry_id:
+                return item
+        return row_data
+
+    def list_cca_assets(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        target = _clean_text(biller_entity).upper() if biller_entity else ""
+        rows = self._read_table_rows(TBL_CCA_ASSETS)
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            asset_id = _clean_text(r.get(sc.COL_CCA_ASSET_ID))
+            if not asset_id:
+                continue
+            biller = _clean_text(r.get(sc.COL_CCA_BILLER_ENTITY) or "SOLE_PROP").upper()
+            if target and biller != target:
+                continue
+            cca_class = _clean_text(r.get(sc.COL_CCA_CLASS) or "50")
+            default_rate = 55.0 if cca_class == "50" else (20.0 if cca_class == "8" else 30.0)
+            result.append(
+                {
+                    "assetId": asset_id,
+                    "billerEntity": biller,
+                    "ccaClass": cca_class,
+                    "ccaRatePct": default_rate,
+                    "businessUsePct": float(self._parse_float(r.get(sc.COL_CCA_BUSINESS_USE_PCT)) or 100.0),
+                    "description": _clean_text(r.get(sc.COL_CCA_DESCRIPTION)),
+                    "acquisitionDate": _clean_text(r.get(sc.COL_CCA_ACQUISITION_DATE)),
+                    "originalCost": self._money_round(r.get(sc.COL_CCA_ORIGINAL_COST) or 0.0),
+                    "openingUcc": self._money_round(r.get(sc.COL_CCA_OPENING_UCC) or 0.0),
+                    "additions": self._money_round(r.get(sc.COL_CCA_ADDITIONS_AMOUNT) or 0.0),
+                    "dispositionsProceeds": self._money_round(r.get(sc.COL_CCA_PROCEEDS_DISPOSITION) or 0.0),
+                    "ccaClaimed": self._money_round(r.get(sc.COL_CCA_CLAIMED) or 0.0),
+                    "closingUcc": self._money_round(r.get(sc.COL_CCA_CLOSING_UCC) or 0.0),
+                    "rolloverDate": _clean_text(r.get(sc.COL_CCA_ROLLOVER_DATE)),
+                    "rolloverToEntity": _clean_text(r.get(sc.COL_CCA_ROLLOVER_TO_ENTITY)),
+                    "transferredToPcOnCutover": bool(_clean_text(r.get(sc.COL_CCA_ROLLOVER_TO_ENTITY))) or (_clean_text(r.get(sc.COL_CCA_SHL_CREDITED)).upper() in {"TRUE", "1", "YES"}),
+                    "status": _clean_text(r.get(sc.COL_CCA_STATUS) or "Active"),
+                    "notes": _clean_text(r.get(sc.COL_CCA_NOTES)),
+                }
+            )
+        return result
+
+    def save_cca_asset(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.ensure_schema()
+        asset_id = _clean_text(payload.get("assetId") or payload.get(sc.COL_CCA_ASSET_ID)) or f"CCA-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        transferred = bool(payload.get("transferredToPcOnCutover") or payload.get(sc.COL_CCA_ROLLOVER_TO_ENTITY))
+        row_data = {
+            sc.COL_CCA_ASSET_ID: asset_id,
+            sc.COL_CCA_BILLER_ENTITY: _clean_text(payload.get("billerEntity") or payload.get(sc.COL_CCA_BILLER_ENTITY) or "SOLE_PROP").upper(),
+            sc.COL_CCA_CLASS: _clean_text(payload.get("ccaClass") or payload.get(sc.COL_CCA_CLASS) or "50"),
+            sc.COL_CCA_DESCRIPTION: _clean_text(payload.get("description") or payload.get(sc.COL_CCA_DESCRIPTION)),
+            sc.COL_CCA_ACQUISITION_DATE: _clean_text(payload.get("acquisitionDate") or payload.get(sc.COL_CCA_ACQUISITION_DATE)),
+            sc.COL_CCA_ORIGINAL_COST: self._money_round(payload.get("originalCost") if "originalCost" in payload else payload.get(sc.COL_CCA_ORIGINAL_COST, 0.0)),
+            sc.COL_CCA_BUSINESS_USE_PCT: float(self._parse_float(payload.get("businessUsePct") or payload.get(sc.COL_CCA_BUSINESS_USE_PCT)) or 100.0),
+            sc.COL_CCA_OPENING_UCC: self._money_round(payload.get("openingUcc") if "openingUcc" in payload else payload.get(sc.COL_CCA_OPENING_UCC, 0.0)),
+            sc.COL_CCA_ADDITIONS_AMOUNT: self._money_round(payload.get("additions") if "additions" in payload else payload.get(sc.COL_CCA_ADDITIONS_AMOUNT, 0.0)),
+            sc.COL_CCA_PROCEEDS_DISPOSITION: self._money_round(payload.get("dispositionsProceeds") if "dispositionsProceeds" in payload else payload.get(sc.COL_CCA_PROCEEDS_DISPOSITION, 0.0)),
+            sc.COL_CCA_CLAIMED: self._money_round(payload.get("ccaClaimed") if "ccaClaimed" in payload else payload.get(sc.COL_CCA_CLAIMED, 0.0)),
+            sc.COL_CCA_CLOSING_UCC: self._money_round(payload.get("closingUcc") if "closingUcc" in payload else payload.get(sc.COL_CCA_CLOSING_UCC, 0.0)),
+            sc.COL_CCA_ROLLOVER_DATE: _clean_text(payload.get("rolloverDate") or payload.get(sc.COL_CCA_ROLLOVER_DATE) or ("2026-11-01" if transferred else "")),
+            sc.COL_CCA_ROLLOVER_TO_ENTITY: _clean_text(payload.get("rolloverToEntity") or payload.get(sc.COL_CCA_ROLLOVER_TO_ENTITY) or ("PC" if transferred else "")),
+            sc.COL_CCA_SHL_CREDITED: "TRUE" if transferred else "FALSE",
+            sc.COL_CCA_STATUS: _clean_text(payload.get("status") or payload.get(sc.COL_CCA_STATUS) or "Active"),
+            sc.COL_CCA_NOTES: _clean_text(payload.get("notes") or payload.get(sc.COL_CCA_NOTES)),
+        }
+        self._upsert_row_by_key(TBL_CCA_ASSETS, sc.COL_CCA_ASSET_ID, asset_id, row_data)
+        return row_data
+
+    def record_equipment_ucc_rollover(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Transfer office/computer equipment at tax cost (UCC) on Nov 1, 2026 outside of Form T2057:
+        - Disposes of the asset in SOLE_PROP at Proceeds = UCC (zero recapture, closing UCC = $0)
+        - Acquires the asset in PC at Cost = UCC
+        - Credits Shareholder Loan (GIFI 2781) with SECTION_85_BOOT_OR_UCC for the exact UCC."""
+        ucc = self._money_round(payload.get("uccAmount") or payload.get("openingUcc") or 0.0)
+        if ucc <= 0.0:
+            raise ValueError("Equipment UCC amount must be greater than $0.00.")
+        cca_class = _clean_text(payload.get("ccaClass") or "50")
+        cca_rate = float(self._parse_float(payload.get("ccaRatePct")) or (55.0 if cca_class == "50" else 20.0))
+        desc = _clean_text(payload.get("description") or f"Class {cca_class} Office & Computer Equipment Rollover at UCC")
+        transfer_date = _clean_text(payload.get("transferDate") or "2026-11-01")
+        original_cost = self._money_round(payload.get("originalCost") or ucc)
+
+        sp_asset_id = _clean_text(payload.get("solePropAssetId")) or f"CCA-SP-{cca_class}-ROLLOVER"
+        pc_asset_id = _clean_text(payload.get("pcAssetId")) or f"CCA-PC-{cca_class}-ROLLOVER"
+
+        sp_asset = self.save_cca_asset(
+            {
+                "assetId": sp_asset_id,
+                "billerEntity": "SOLE_PROP",
+                "ccaClass": cca_class,
+                "ccaRatePct": cca_rate,
+                "description": desc,
+                "acquisitionDate": _clean_text(payload.get("acquisitionDate") or "2025-01-01"),
+                "originalCost": original_cost,
+                "openingUcc": ucc,
+                "additions": 0.0,
+                "dispositionsProceeds": ucc,
+                "ccaClaimed": 0.0,
+                "closingUcc": 0.0,
+                "rolloverDate": transfer_date,
+                "rolloverToEntity": "PC",
+                "transferredToPcOnCutover": True,
+                "status": "RolledOverToPC",
+                "notes": f"Transferred to PC at tax cost (UCC = ${ucc:,.2f}) on {transfer_date} outside Form T2057; zero recapture",
+            }
+        )
+        pc_asset = self.save_cca_asset(
+            {
+                "assetId": pc_asset_id,
+                "billerEntity": "PC",
+                "ccaClass": cca_class,
+                "ccaRatePct": cca_rate,
+                "description": desc,
+                "acquisitionDate": transfer_date,
+                "originalCost": ucc,
+                "openingUcc": 0.0,
+                "additions": ucc,
+                "dispositionsProceeds": 0.0,
+                "ccaClaimed": 0.0,
+                "closingUcc": ucc,
+                "rolloverDate": transfer_date,
+                "rolloverToEntity": "PC",
+                "transferredToPcOnCutover": True,
+                "status": "Active",
+                "notes": f"Acquired from Sole Prop at tax cost (UCC = ${ucc:,.2f}) on {transfer_date}; credited to Shareholder Loan (GIFI 2781)",
+            }
+        )
+        shl_entry = self.append_shareholder_loan_entry(
+            {
+                "entryDate": transfer_date,
+                "billerEntity": "PC",
+                "entryType": "SECTION_85_BOOT_OR_UCC",
+                "description": f"Nov 1 Cutover Equipment Transfer at Tax Cost (Class {cca_class} UCC): {desc}",
+                "vendor": "Cory Schneider",
+                "receiptRef": f"Bill of Sale ({transfer_date})",
+                "categoryCode": f"CCA_CLASS_{cca_class}",
+                "gifiCode": "1774" if cca_class == "50" else "1787",
+                "preTaxAmount": ucc,
+                "hstAmount": 0.0,
+                "hstItcEligible": False,
+                "grossCreditToLoan": ucc,
+                "debitRepaymentFromCorp": 0.0,
+                "notes": f"Equipment transferred at UCC (${ucc:,.2f}) outside Form T2057; credited dollar-for-dollar to Shareholder Loan (GIFI 2781)",
+            }
+        )
+        return {"ok": True, "solePropAsset": sp_asset, "pcAsset": pc_asset, "shlEntry": shl_entry}
+
+    def list_hst_log(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        target = _clean_text(biller_entity).upper() if biller_entity else ""
+        rows = self._read_table_rows(TBL_HST_LOG)
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            period_id = _clean_text(r.get(sc.COL_HST_PERIOD_ID))
+            if not period_id:
+                continue
+            biller = _clean_text(r.get(sc.COL_HST_BILLER_ENTITY) or "SOLE_PROP").upper()
+            if target and biller != target:
+                continue
+            result.append(
+                {
+                    "periodId": period_id,
+                    "billerEntity": biller,
+                    "hstAccountNumber": _clean_text(r.get(sc.COL_HST_ACCOUNT_NUM)),
+                    "periodStart": _clean_text(r.get(sc.COL_HST_PERIOD_START)),
+                    "periodEnd": _clean_text(r.get(sc.COL_HST_PERIOD_END)),
+                    "filingDate": _clean_text(r.get(sc.COL_HST_FILED_DATE)),
+                    "line101SalesRevenue": self._money_round(r.get(sc.COL_HST_LINE_101) or 0.0),
+                    "hstCollected": self._money_round(r.get(sc.COL_HST_LINE_103) or 0.0),
+                    "hstItcs": self._money_round(r.get(sc.COL_HST_LINE_106) or 0.0),
+                    "netRemitted": self._money_round(r.get(sc.COL_HST_NET_TAX) or r.get(sc.COL_HST_LINE_109) or 0.0),
+                    "confirmationNum": _clean_text(r.get(sc.COL_HST_CONF_NUM)),
+                    "status": _clean_text(r.get(sc.COL_HST_STATUS) or "Draft"),
+                }
+            )
+        return result
+
+    def save_hst_filing_record(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.ensure_schema()
+        period_id = _clean_text(payload.get("periodId") or payload.get(sc.COL_HST_PERIOD_ID)) or f"HST-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        line_101 = self._money_round(payload.get("line101SalesRevenue") if "line101SalesRevenue" in payload else payload.get(sc.COL_HST_LINE_101, 0.0))
+        line_103 = self._money_round(payload.get("hstCollected") if "hstCollected" in payload else payload.get(sc.COL_HST_LINE_103, 0.0))
+        line_106 = self._money_round(payload.get("hstItcs") if "hstItcs" in payload else payload.get(sc.COL_HST_LINE_106, 0.0))
+        net_tax = self._money_round(payload.get("netRemitted") if "netRemitted" in payload else payload.get(sc.COL_HST_NET_TAX, line_103 - line_106))
+        instalments = self._money_round(payload.get("instalmentsPaid") if "instalmentsPaid" in payload else payload.get(sc.COL_HST_LINE_110, 0.0))
+        row_data = {
+            sc.COL_HST_PERIOD_ID: period_id,
+            sc.COL_HST_PERIOD_START: _clean_text(payload.get("periodStart") or payload.get(sc.COL_HST_PERIOD_START)),
+            sc.COL_HST_PERIOD_END: _clean_text(payload.get("periodEnd") or payload.get(sc.COL_HST_PERIOD_END)),
+            sc.COL_HST_FILED_DATE: _clean_text(payload.get("filingDate") or payload.get(sc.COL_HST_FILED_DATE)),
+            sc.COL_HST_CONF_NUM: _clean_text(payload.get("confirmationNum") or payload.get(sc.COL_HST_CONF_NUM)),
+            sc.COL_HST_NET_TAX: net_tax,
+            sc.COL_HST_PAID_DATE: _clean_text(payload.get("paidDate") or payload.get(sc.COL_HST_PAID_DATE)),
+            sc.COL_HST_PAYMENT_REF: _clean_text(payload.get("paymentRef") or payload.get(sc.COL_HST_PAYMENT_REF)),
+            sc.COL_HST_BILLER_ENTITY: _clean_text(payload.get("billerEntity") or payload.get(sc.COL_HST_BILLER_ENTITY) or "SOLE_PROP").upper(),
+            sc.COL_HST_ACCOUNT_NUM: _clean_text(payload.get("hstAccountNumber") or payload.get(sc.COL_HST_ACCOUNT_NUM)),
+            sc.COL_HST_LINE_101: line_101,
+            sc.COL_HST_LINE_103: line_103,
+            sc.COL_HST_LINE_105: line_103,
+            sc.COL_HST_LINE_106: line_106,
+            sc.COL_HST_LINE_108: line_106,
+            sc.COL_HST_LINE_109: net_tax,
+            sc.COL_HST_LINE_110: instalments,
+            sc.COL_HST_LINE_113: self._money_round(net_tax - instalments),
+            sc.COL_HST_STATUS: _clean_text(payload.get("status") or payload.get(sc.COL_HST_STATUS) or "Filed"),
+            sc.COL_HST_SNAPSHOT_JSON: _clean_text(payload.get("snapshotJson") or payload.get(sc.COL_HST_SNAPSHOT_JSON)),
+        }
+        self._upsert_row_by_key(TBL_HST_LOG, sc.COL_HST_PERIOD_ID, period_id, row_data)
+        return row_data
+
+    def list_invoices(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        target = _clean_text(biller_entity).upper() if biller_entity else ""
+        rows = self._read_table_rows(TBL_INVOICE_LOG)
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            inv_num = _clean_text(r.get(sc.COL_INV_INVOICE_NUM))
+            if not inv_num:
+                continue
+            biller = _clean_text(r.get(sc.COL_INV_BILLER_ENTITY)).upper()
+            if not biller:
+                biller = "PC" if inv_num.upper().endswith("-PC") else "SOLE_PROP"
+            if target and biller != target:
+                continue
+            dt = self._parse_date_value(r.get(sc.COL_INV_INVOICE_DATE))
+            dt_str = dt.strftime("%Y-%m-%d") if dt else _clean_text(r.get(sc.COL_INV_INVOICE_DATE))
+            total_fees = self._money_round(r.get(sc.COL_INV_TOTAL_FEES) or 0.0)
+            total_disb = self._money_round(r.get(sc.COL_INV_TOTAL_DISBURSEMENTS) or 0.0)
+            total_tax = self._money_round(r.get(sc.COL_INV_TOTAL_TAX) or 0.0)
+            agg_billed = self._money_round(r.get(sc.COL_INV_AGGREGATE_BILLED) or (total_fees + total_disb + total_tax))
+            result.append(
+                {
+                    "invoiceNum": inv_num,
+                    "invoiceDate": dt_str,
+                    "clientName": _clean_text(r.get(sc.COL_INV_CLIENT_NAME)),
+                    "billToClient": _clean_text(r.get(sc.COL_INV_BILL_TO_CLIENT)),
+                    "subClient": _clean_text(r.get(sc.COL_INV_SUB_CLIENT)),
+                    "totalFees": total_fees,
+                    "totalDisbursements": total_disb,
+                    "totalTax": total_tax,
+                    "aggregateBilled": total_fees,
+                    "disbursementsPreHst": total_disb,
+                    "hstOnBilled": total_tax,
+                    "hstOnDisbursements": 0.0,
+                    "totalInvoiceAmount": agg_billed,
+                    "billerEntity": biller,
+                    "billerAddressOverride": _clean_text(r.get(sc.COL_INV_BILLER_ADDRESS_OVERRIDE)),
+                    "billerHstOverride": _clean_text(r.get(sc.COL_INV_BILLER_HST_OVERRIDE)),
+                }
+            )
+        return result
+
+    def list_disbursements(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        target = _clean_text(biller_entity).upper() if biller_entity else ""
+        rows = self._read_table_rows(TBL_DISBURSEMENTS)
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            disb_id = _clean_text(r.get(sc.COL_DISB_ID))
+            if not disb_id:
+                continue
+            dt = self._parse_date_value(r.get(sc.COL_DISB_DATE))
+            dt_str = dt.strftime("%Y-%m-%d") if dt else _clean_text(r.get(sc.COL_DISB_DATE))
+            biller = _clean_text(r.get(sc.COL_DISB_BILLER_ENTITY)).upper()
+            if not biller:
+                biller = "PC" if dt_str >= "2026-11-01" else "SOLE_PROP"
+            if target and biller != target:
+                continue
+            amt = self._money_round(r.get(sc.COL_DISB_AMOUNT) or 0.0)
+            tax_exempt = _clean_text(r.get(sc.COL_DISB_TAX_EXEMPT)).upper() in {"TRUE", "1", "YES"}
+            hst_amt = 0.0 if tax_exempt else self._money_round(amt * 0.13)
+            result.append(
+                {
+                    "disbId": disb_id,
+                    "date": dt_str,
+                    "matterId": _clean_text(r.get(sc.COL_DISB_MATTER_ID)),
+                    "clientId": _clean_text(r.get(sc.COL_DISB_CLIENT_ID)),
+                    "description": _clean_text(r.get(sc.COL_DISB_DESCRIPTION)),
+                    "amountExclHst": amt,
+                    "hstApplicable": "FALSE" if tax_exempt else "TRUE",
+                    "hstAmount": hst_amt,
+                    "totalAmount": self._money_round(amt + hst_amt),
+                    "invoiceNum": _clean_text(r.get(sc.COL_DISB_INVOICE_REF)),
+                    "status": _clean_text(r.get(sc.COL_DISB_PAYMENT_STATUS)),
+                    "billerEntity": biller,
+                }
+            )
+        return result
+
+    def list_receivables(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        target = _clean_text(biller_entity).upper() if biller_entity else ""
+        rows = self._read_table_rows(TBL_RECEIVABLES)
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            inv_num = _clean_text(r.get(sc.COL_RECV_INVOICE_NUM))
+            if not inv_num:
+                continue
+            biller = _clean_text(r.get(sc.COL_RECV_BILLER_ENTITY)).upper()
+            if not biller:
+                biller = "PC" if inv_num.upper().endswith("-PC") else "SOLE_PROP"
+            if target and biller != target:
+                continue
+            dt = self._parse_date_value(r.get(sc.COL_RECV_DATE))
+            dt_str = dt.strftime("%Y-%m-%d") if dt else _clean_text(r.get(sc.COL_RECV_DATE))
+            result.append(
+                {
+                    "invoiceNum": inv_num,
+                    "client": _clean_text(r.get(sc.COL_RECV_CLIENT)),
+                    "workClient": _clean_text(r.get(sc.COL_RECV_WORK_CLIENT)),
+                    "invoiceDate": dt_str,
+                    "totalInvoiced": self._money_round(r.get(sc.COL_RECV_TOTAL_INVOICED) or 0.0),
+                    "amountPaid": self._money_round(r.get(sc.COL_RECV_AMOUNT_PAID) or 0.0),
+                    "writeOff": self._money_round(r.get(sc.COL_RECV_CREDITS_ADJ) or 0.0),
+                    "balanceDue": self._money_round(r.get(sc.COL_RECV_BALANCE_DUE) or 0.0),
+                    "status": _clean_text(r.get(sc.COL_RECV_STATUS)),
+                    "billerEntity": biller,
+                }
+            )
+        return result
+
+    def list_ap_bills(self, biller_entity: Optional[str] = None) -> List[Dict[str, Any]]:
+        self.ensure_schema()
+        target = _clean_text(biller_entity).upper() if biller_entity else ""
+        rows = self._read_raw_excel_table_rows(AP_BILLS_SHEET, AP_BILLS_TABLE)
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            bill_id = _clean_text(r.get("APBillID"))
+            if not bill_id:
+                continue
+            dt = self._parse_date_value(r.get("InvoiceDate"))
+            dt_str = dt.strftime("%Y-%m-%d") if dt else _clean_text(r.get("InvoiceDate"))
+            biller = _clean_text(r.get("BillerEntity")).upper()
+            if not biller:
+                biller = "PC" if dt_str >= "2026-11-01" else "SOLE_PROP"
+            if target and biller != target:
+                continue
+            result.append(
+                {
+                    "apBillId": bill_id,
+                    "vendorId": _clean_text(r.get("VendorID")),
+                    "vendorName": _clean_text(r.get("VendorNameSnapshot")),
+                    "invoiceNumber": _clean_text(r.get("VendorInvoiceNumber")),
+                    "invoiceDate": dt_str,
+                    "dueDate": _clean_text(r.get("DueDate")),
+                    "status": _clean_text(r.get("Status")),
+                    "expenseType": _clean_text(r.get("ExpenseType")),
+                    "categoryCode": _clean_text(r.get("DefaultCategoryCode")),
+                    "subtotalExclTax": self._money_round(r.get("SubtotalExclTax") or 0.0),
+                    "taxTotal": self._money_round(r.get("TaxTotal") or 0.0),
+                    "grossTotal": self._money_round(r.get("GrossTotal") or 0.0),
+                    "paidTotal": self._money_round(r.get("PaidTotal") or 0.0),
+                    "balanceTotal": self._money_round(r.get("BalanceTotal") or 0.0),
+                    "billerEntity": biller,
+                }
+            )
+        return result
+

@@ -50,7 +50,7 @@ from services.workbook_integrity_service import WorkbookIntegrityService
 
 MONEY_TOLERANCE = Decimal("0.02")
 HOURS_TOLERANCE = Decimal("0.01")
-INVOICE_RE = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?$")
+INVOICE_RE = re.compile(r"^\d{2}-\d{4}(?:-[A-Z])?(?:-PC)?$")
 
 RAW_DOCKETS_SHEET = "Dockets"
 RAW_DOCKETS_TABLE = "tblDockets"

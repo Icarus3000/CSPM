@@ -146,6 +146,10 @@ class APOrchestrationService:
                 "A client matter expense at 0% creates no client WIP disbursement. "
                 "Confirm that the expense is intentionally non-recoverable before saving."
             )
+        inv_date_text = clean_text(prepared.get("InvoiceDate"))
+        biller_entity = clean_text(prepared.get("BillerEntity") or prepared.get("billerEntity")).upper()
+        if biller_entity not in {"SOLE_PROP", "PC"}:
+            biller_entity = "PC" if inv_date_text >= "2026-11-01" else "SOLE_PROP"
         prepared.update({
             "Currency": currency,
             "OriginalCurrency": currency,
@@ -159,6 +163,7 @@ class APOrchestrationService:
             "FXRate": float(rate),
             "FXRateDate": clean_text(prepared.get("FXRateDate") or prepared.get("InvoiceDate")),
             "BillClaimPct": float(claim_pct),
+            "BillerEntity": biller_entity,
         })
         return prepared
 
@@ -195,9 +200,13 @@ class APOrchestrationService:
             subtotal = float(bill.get("BaseSubtotal") if bill.get("BaseSubtotal") not in (None, "") else bill.get("Subtotal") or 0)
             tax = float(bill.get("BaseTaxAmount") if bill.get("BaseTaxAmount") not in (None, "") else bill.get("TaxAmount") or 0)
             total = round(subtotal + tax, 2)
+        inv_date_text = clean_text(bill.get("InvoiceDate"))
+        biller_entity = clean_text(bill.get("BillerEntity") or bill.get("billerEntity")).upper()
+        if biller_entity not in {"SOLE_PROP", "PC"}:
+            biller_entity = "PC" if inv_date_text >= "2026-11-01" else "SOLE_PROP"
         return {
             "transactionId": transaction_id,
-            "txnDate": clean_text(bill.get("InvoiceDate")),
+            "txnDate": inv_date_text,
             "class": clean_text(bill.get("Class")) or "Business",
             "businessUnit": clean_text(bill.get("BusinessUnit")),
             "type": "Expense",
@@ -223,6 +232,7 @@ class APOrchestrationService:
             "notes": clean_text(bill.get("Notes")),
             "status": clean_text(bill.get("TransactionStatus")) or "Pending",
             "currency": "CAD",
+            "billerEntity": biller_entity,
         }
 
     @staticmethod
@@ -321,6 +331,7 @@ class APOrchestrationService:
                     "BaseTaxAmount": normalized_bill.get("BaseTaxAmount"),
                     "CategoryName": normalized_bill.get("CategoryName"),
                     "DocumentPath": normalized_bill.get("DocumentPath"),
+                    "BillerEntity": normalized_bill.get("BillerEntity"),
                 }) or {})
             except Exception as exc:
                 # The supplier bill is not left as a usable record when its
@@ -684,6 +695,7 @@ class APOrchestrationService:
                 "BaseTaxAmount": normalized_bill.get("BaseTaxAmount"),
                 "CategoryName": normalized_bill.get("CategoryName"),
                 "DocumentPath": normalized_bill.get("DocumentPath"),
+                "BillerEntity": normalized_bill.get("BillerEntity"),
             }) or {})
             
             if disbursement_result.get("action") == "deleted":
@@ -764,6 +776,10 @@ class APOrchestrationService:
         if not payment_id:
             raise APValidationError("APPaymentID is required.")
 
+        biller_entity = clean_text(bill.get("BillerEntity") or payload.get("BillerEntity")).upper()
+        if biller_entity not in {"SOLE_PROP", "PC"}:
+            biller_entity = "PC" if clean_text(bill.get("InvoiceDate")) >= "2026-11-01" else "SOLE_PROP"
+
         # The AP row is the payable lifecycle authority.  A failure to create
         # its corresponding cash transfer is automatically reversed so it is
         # never silently left looking paid.
@@ -797,6 +813,7 @@ class APOrchestrationService:
                 "status": "Cleared",
                 "currency": "CAD",
                 "clearedAt": clean_text(payload.get("PaymentDate")),
+                "billerEntity": biller_entity,
             })
             if not transaction_result.get("ok"):
                 raise APValidationError(clean_text(transaction_result.get("message")) or "Supplier payment transfer was not saved.")
@@ -815,6 +832,28 @@ class APOrchestrationService:
             "FXRate": float(rate),
             "PaymentTransactionID": transaction_id,
         })
+        if biller_entity == "PC" and from_account.upper() in {"CORY_PERSONAL", "PERSONAL", "SHAREHOLDER_LOAN", "SHL"}:
+            shl_writer = getattr(self.expense_gateway, "append_shareholder_loan_entry", None)
+            if callable(shl_writer):
+                bill_sub = float(bill.get("BaseSubtotal") or bill.get("SubtotalExclTax") or base_amount)
+                bill_tax = float(bill.get("BaseTaxAmount") or bill.get("TaxTotal") or 0.0)
+                shl_writer({
+                    "entryDate": clean_text(payload.get("PaymentDate")),
+                    "billerEntity": "PC",
+                    "entryType": "EXPENSE_PAID_PERSONALLY",
+                    "description": f"Supplier payment for A/P bill {bill_id} ({clean_text(bill.get('Vendor'))})",
+                    "vendor": clean_text(bill.get("Vendor")),
+                    "receiptRef": clean_text(bill.get("VendorInvoiceNumber")) or bill_id,
+                    "categoryCode": clean_text(bill.get("CategoryCode")) or "EXP_GENERAL",
+                    "gifiCode": "8862",
+                    "preTaxAmount": bill_sub,
+                    "hstAmount": bill_tax,
+                    "hstItcEligible": bill_tax > 0.0,
+                    "grossCreditToLoan": float(base_amount),
+                    "debitRepaymentFromCorp": 0.0,
+                    "linkedTransactionId": transaction_id,
+                    "notes": f"AP Bill {bill_id} paid from personal account ({from_account})",
+                })
         return {
             **saved,
             "ok": True,

@@ -356,13 +356,13 @@
             <div>
                 <h1 style="font-size: 26px; font-variant: small-caps; line-height: 0.85; margin: 0; padding: 0;">Cory Schneider</h1>
                 <h1 style="font-size: 16px; font-variant: small-caps; color: var(--color-text-muted); line-height: 0.85; margin: 0 0 6px 0; padding: 0;">Law Office</h1>
-                <p style="margin: 0; line-height: 1;">14 Parsons Court | Thornhill, Ontario | L4J 6Z4</p>
+                <p style="margin: 0; line-height: 1;">{{ biller_address_line|default("14 Parsons Court, Thornhill, ON L4K 6Z4") }}</p>
             </div>
         </div>
         
         <div class="contact-info">
             <h2 class="uppercase" style="font-size: 32px; letter-spacing: 2px; margin: 0 0 5px 0; line-height: 1;">Invoice</h2>
-            <p>(416) 725-9364</p>
+            <p>{{ biller_phone|default("(416) 725-9364") }}</p>
             <p>cory.schneider@lawyersinhouse.com</p>
         </div>
     </div>
@@ -447,7 +447,7 @@
             </div>
             <div class="grand-totals-row">
                 <span class="meta-label">Rate ($/hr)</span>
-                <span class="font-semibold">${{ "%.2f"|format(rate) }}</span>
+                <span class="font-semibold">${{ "%.2f"|format(rate|default(0)) }}</span>
             </div>
             <div class="grand-totals-row">
                 <span class="meta-label">Sub-Total Charge to Client</span>
@@ -484,13 +484,17 @@
 
         <div class="boilerplate">
             <p><strong style="color: var(--color-text-main);">Payment Details</strong><br>
-            Please make payment payable to "CORY SCHNEIDER".</p>
+            Please make payment payable to "{{ biller_payable_to|default("CORY SCHNEIDER") }}".</p>
             
-            <p><strong>HST Registration No:</strong> 78621 8222 RT0001</p>
+            <p><strong>HST Registration No:</strong> {{ biller_hst_number|default("78621 8222 RT0001") }}</p>
+
+            {% if biller_footer_disclosure %}
+            <p><strong>Corporate Disclosure:</strong> {{ biller_footer_disclosure }}</p>
+            {% endif %}
 
             <p>In accordance with s. 33 of the <em>Solicitors Act</em> (Ontario), interest will be charged at the rate of 3.0 per cent per annum on unpaid fees, charges or disbursements calculated from a date that is one month after this statement is delivered.</p>
             
-            <p><strong>Note:</strong> Should the amount payable pursuant to this invoice not be paid when due, Cory Schneider reserves the right to reverse all or part of the discount/reduction contemplated in this invoice (if any) and pursue payment of the FULL amount docketed to this matter (without regard to such discount/reduction).</p>
+            <p><strong>Note:</strong> Should the amount payable pursuant to this invoice not be paid when due, Cory Schneider Law Office reserves the right to reverse all or part of the discount/reduction contemplated in this invoice (if any) and pursue payment of the FULL amount docketed to this matter (without regard to such discount/reduction).</p>
         </div>
     </div>
                 </td>

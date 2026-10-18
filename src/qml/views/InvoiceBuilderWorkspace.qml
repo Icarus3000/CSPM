@@ -168,13 +168,34 @@ Item {
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 1
-                                    Text {
+                                    RowLayout {
                                         Layout.fillWidth: true
-                                        text: String(modelData.InvoiceNum || modelData.draftNum)
-                                        color: host.textColor
-                                        font.pixelSize: 12
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
+                                        spacing: 6
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: String(modelData.InvoiceNum || modelData.draftNum)
+                                            color: host.textColor
+                                            font.pixelSize: 12
+                                            font.weight: Font.DemiBold
+                                            elide: Text.ElideRight
+                                        }
+                                        Rectangle {
+                                            readonly property bool isPcBiller: String(modelData.BillerEntity || modelData.billerEntity || "SOLE_PROP").toUpperCase() === "PC"
+                                            width: billerBadgeText.implicitWidth + 10
+                                            height: 18
+                                            radius: 4
+                                            color: isPcBiller ? Qt.rgba(0.06, 0.72, 0.50, 0.18) : Qt.rgba(host.accentColor.r, host.accentColor.g, host.accentColor.b, 0.15)
+                                            border.color: isPcBiller ? "#10b981" : host.accentColor
+                                            border.width: 1
+                                            Text {
+                                                id: billerBadgeText
+                                                anchors.centerIn: parent
+                                                text: parent.isPcBiller ? "PC" : "SOLE_PROP"
+                                                color: parent.isPcBiller ? "#10b981" : host.accentColor
+                                                font.pixelSize: 9
+                                                font.weight: Font.Bold
+                                            }
+                                        }
                                     }
                                     Text {
                                         Layout.fillWidth: true
@@ -536,6 +557,140 @@ Item {
                                                 invoiceDateField.height / 2
                                             )
                                             host.openDatePickerFor(invoiceDateField, point.x, point.y)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Biller Entity (SOLE_PROP vs PC) & Per-Invoice Practice Address Selector
+                            Rectangle {
+                                id: billerConfigBox
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: billerConfigFlow.implicitHeight + 18
+                                color: host.isDark ? "#28313e" : "#f1f6fc"
+                                border.color: host.borderColor
+                                border.width: 1
+                                radius: 6
+
+                                readonly property string addrParsons: "14 Parsons Court, Thornhill, ON L4K 6Z4"
+                                readonly property string addrStThomas: "7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7"
+                                property bool forceCustomAddress: false
+
+                                function currentAddressModeIndex() {
+                                    var ov = host._draftBillerAddressOverride()
+                                    if (forceCustomAddress) return 3
+                                    if (!ov) return 0
+                                    if (ov === addrParsons) return 1
+                                    if (ov === addrStThomas) return 2
+                                    return 3
+                                }
+
+                                Flow {
+                                    id: billerConfigFlow
+                                    anchors.fill: parent
+                                    anchors.margins: 9
+                                    spacing: 10
+                                    flow: Flow.LeftToRight
+
+                                    Column {
+                                        width: 240
+                                        spacing: 3
+                                        Text {
+                                            text: "Billing Entity (Tax & Legal Header)"
+                                            color: host.mutedColor
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+                                        ThemedComboBox {
+                                            id: billerEntityCombo
+                                            host: workspace.host
+                                            width: parent.width
+                                            height: 31
+                                            model: [
+                                                "SOLE_PROP — Cory Schneider (T2125)",
+                                                "PC — Cory Schneider Law PC (-PC / T2)"
+                                            ]
+                                            currentIndex: host._draftBillerEntity() === "PC" ? 1 : 0
+                                            onActivated: {
+                                                var nextCode = currentIndex === 1 ? "PC" : "SOLE_PROP"
+                                                host.updateDraftBillerSettings(nextCode, host._draftBillerAddressOverride(), host._draftBillerHstOverride())
+                                            }
+                                        }
+                                    }
+
+                                    Column {
+                                        width: 310
+                                        spacing: 3
+                                        Text {
+                                            text: "Invoice Practice Address"
+                                            color: host.mutedColor
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+                                        ThemedComboBox {
+                                            id: billerAddressCombo
+                                            host: workspace.host
+                                            width: parent.width
+                                            height: 31
+                                            model: [
+                                                "Entity Default (" + (host._draftBillerEntity() === "PC" ? "7 Saint Thomas St" : "14 Parsons Ct") + ")",
+                                                billerConfigBox.addrParsons,
+                                                billerConfigBox.addrStThomas,
+                                                "Custom Address..."
+                                            ]
+                                            currentIndex: billerConfigBox.currentAddressModeIndex()
+                                            onActivated: {
+                                                if (currentIndex === 0) {
+                                                    billerConfigBox.forceCustomAddress = false
+                                                    host.updateDraftBillerSettings(host._draftBillerEntity(), "", host._draftBillerHstOverride())
+                                                } else if (currentIndex === 1) {
+                                                    billerConfigBox.forceCustomAddress = false
+                                                    host.updateDraftBillerSettings(host._draftBillerEntity(), billerConfigBox.addrParsons, host._draftBillerHstOverride())
+                                                } else if (currentIndex === 2) {
+                                                    billerConfigBox.forceCustomAddress = false
+                                                    host.updateDraftBillerSettings(host._draftBillerEntity(), billerConfigBox.addrStThomas, host._draftBillerHstOverride())
+                                                } else {
+                                                    billerConfigBox.forceCustomAddress = true
+                                                    customBillerAddressField.forceActiveFocus()
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Column {
+                                        visible: billerConfigBox.currentAddressModeIndex() === 3
+                                        width: visible ? 300 : 0
+                                        spacing: 3
+                                        Text {
+                                            text: "Custom Address Override"
+                                            color: host.mutedColor
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                        }
+                                        Row {
+                                            width: parent.width
+                                            spacing: 4
+                                            TextField {
+                                                id: customBillerAddressField
+                                                width: parent.width - 58
+                                                height: 31
+                                                text: host._draftBillerAddressOverride()
+                                                placeholderText: "Enter custom practice address..."
+                                                placeholderTextColor: host.mutedColor
+                                                color: host.textColor
+                                                font.pixelSize: 11
+                                                selectByMouse: true
+                                                background: Rectangle { color: host.comboSurface; border.color: host.comboBorderColor; radius: 4 }
+                                                onAccepted: host.updateDraftBillerSettings(host._draftBillerEntity(), text.trim(), host._draftBillerHstOverride())
+                                            }
+                                            PillButton {
+                                                t: host.t
+                                                text: "Apply"
+                                                primary: false
+                                                width: 54
+                                                height: 31
+                                                onClicked: host.updateDraftBillerSettings(host._draftBillerEntity(), customBillerAddressField.text.trim(), host._draftBillerHstOverride())
+                                            }
                                         }
                                     }
                                 }

@@ -628,6 +628,18 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         return String(currentNode().id || "") === "A23"
     }
 
+    function activeIsHstReturnHelper() {
+        return String(currentNode().id || "") === "C19"
+    }
+
+    function activeIsShareholderLoanLedger() {
+        return String(currentNode().id || "") === "D20"
+    }
+
+    function activeIsIncomeTaxHelper() {
+        return String(currentNode().id || "") === "D21"
+    }
+
     function _cleanLowerText(value) {
         return String(value === undefined || value === null ? "" : value).trim().toLowerCase()
     }
@@ -4245,6 +4257,9 @@ Behavior on border.color {
                         && !root.activeIsInvoiceDirectory()
                         && !root.activeIsInvoiceReversal()
                         && !root.activeIsAccountsPayable()
+                        && !root.activeIsHstReturnHelper()
+                        && !root.activeIsShareholderLoanLedger()
+                        && !root.activeIsIncomeTaxHelper()
                     Layout.fillWidth: true
                     Layout.fillHeight: false
                     columns: root.formGridColumns(4, root.formGridLayoutWidth(compactFormGrid))
@@ -4881,6 +4896,83 @@ Behavior on border.color {
                                 t: root.t
                                 metrics: root.responsiveMetrics
                                 appRef: root.appRef
+                                sfxBus: root.sfxBus
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    visible: root.activeIsHstReturnHelper()
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: root.sectionRadiusPx
+                    color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
+                    border.width: 1
+                    border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+
+                    Loader {
+                        id: hstReturnHelperLoader
+                        anchors.fill: parent
+                        active: parent.visible
+                        sourceComponent: Component {
+                            HSTReturnHelperView {
+                                anchors.fill: parent
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                appRef: root.appRef
+                                windowRef: root.windowRef
+                                sfxBus: root.sfxBus
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    visible: root.activeIsShareholderLoanLedger()
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: root.sectionRadiusPx
+                    color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
+                    border.width: 1
+                    border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+
+                    Loader {
+                        id: shareholderLoanLedgerLoader
+                        anchors.fill: parent
+                        active: parent.visible
+                        sourceComponent: Component {
+                            ShareholderLoanLedgerView {
+                                anchors.fill: parent
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                appRef: root.appRef
+                                windowRef: root.windowRef
+                                sfxBus: root.sfxBus
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    visible: root.activeIsIncomeTaxHelper()
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: root.sectionRadiusPx
+                    color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.74)
+                    border.width: 1
+                    border.color: Qt.rgba(root._text.r, root._text.g, root._text.b, 0.16)
+
+                    Loader {
+                        id: incomeTaxHelperLoader
+                        anchors.fill: parent
+                        active: parent.visible
+                        sourceComponent: Component {
+                            IncomeTaxHelperView {
+                                anchors.fill: parent
+                                t: root.t
+                                metrics: root.responsiveMetrics
+                                appRef: root.appRef
+                                windowRef: root.windowRef
                                 sfxBus: root.sfxBus
                             }
                         }
@@ -6360,6 +6452,9 @@ Behavior on border.color {
                         && !root.activeIsAccountsPayable()
                         && !root.activeIsLegacyDocketsImport()
                         && !root.activeIsProductivityDashboard()
+                        && !root.activeIsHstReturnHelper()
+                        && !root.activeIsShareholderLoanLedger()
+                        && !root.activeIsIncomeTaxHelper()
                     Layout.fillWidth: true
                     Layout.maximumWidth: 700
                     Layout.alignment: Qt.AlignHCenter
@@ -6402,6 +6497,9 @@ Behavior on border.color {
                         && !root.activeIsInvoiceReversal()
                         && !root.activeIsAccountsPayable()
                         && !root.activeIsProductivityDashboard()
+                        && !root.activeIsHstReturnHelper()
+                        && !root.activeIsShareholderLoanLedger()
+                        && !root.activeIsIncomeTaxHelper()
                     Layout.fillWidth: true
                     Layout.topMargin: root.controlGapPx
                     Layout.preferredHeight: root.ratioPxH(0.066, 48)

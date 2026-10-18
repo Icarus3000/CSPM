@@ -647,6 +647,8 @@ class AppController(QObject):
 
         startup_logger.info("%s AppController creating corporate controller", _elapsed())
         self._corporate_controller = CorporateController(self._excel_repo)
+        from services.tax_compliance_service import TaxComplianceService
+        self._tax_compliance_service = TaxComplianceService(self._excel_repo)
 
         startup_logger.info("%s AppController reloading themes", _elapsed())
         self.reload_themes()
@@ -6511,3 +6513,122 @@ class AppController(QObject):
     def recordTelemetryDuration(self, action: str, duration_ms: int, details: str):
         if hasattr(self, "_telemetry") and self._telemetry:
             self._telemetry.record_activity(action, duration_ms=duration_ms, details=details)
+
+    # ------------------------------------------------------------------
+    # Corporate, Shareholder Loan (GIFI 2781), HST & Income Tax Slots
+    # ------------------------------------------------------------------
+    @Slot(result="QVariantList")
+    def listBillingEntities(self) -> list:
+        try:
+            return list(self._excel_repo.list_billing_entities() or [])
+        except Exception as exc:
+            self._report_failure("Failed to list billing entities", context="app.billing_entities.list", exc=exc)
+            return []
+
+    @Slot("QVariantMap", result="QVariantMap")
+    def saveBillingEntity(self, payload) -> dict:
+        try:
+            data = payload.toVariant() if hasattr(payload, "toVariant") else dict(payload or {})
+            res = self._excel_repo.save_billing_entity(data)
+            self.toast.emit("Billing entity settings saved.")
+            return {"ok": True, "entity": res}
+        except Exception as exc:
+            self._report_failure("Failed to save billing entity", context="app.billing_entities.save", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(result="QVariantMap")
+    @Slot(str, result="QVariantMap")
+    def getShareholderLoanLedger(self, biller_entity: str = "PC") -> dict:
+        try:
+            return dict(self._tax_compliance_service.get_shareholder_loan_ledger(biller_entity or "PC"))
+        except Exception as exc:
+            self._report_failure("Failed to load Shareholder Loan Ledger", context="app.tax.shl_ledger", exc=exc)
+            return {"ok": False, "message": str(exc), "entries": [], "closingBalance": 0.0}
+
+    @Slot("QVariantMap", result="QVariantMap")
+    def recordPersonalPaidCorporateExpense(self, payload) -> dict:
+        try:
+            data = payload.toVariant() if hasattr(payload, "toVariant") else dict(payload or {})
+            res = dict(self._tax_compliance_service.record_personal_paid_corporate_expense(data))
+            self.transactionDataChanged.emit()
+            self.toast.emit(f"Recorded personal-paid corporate expense (GIFI 2781 closing: ${res.get('closingBalance', 0.0):.2f}).")
+            return res
+        except Exception as exc:
+            self._report_failure("Failed to record personal-paid corporate expense", context="app.tax.shl_expense", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot("QVariantMap", result="QVariantMap")
+    def recordShareholderLoanRepayment(self, payload) -> dict:
+        try:
+            data = payload.toVariant() if hasattr(payload, "toVariant") else dict(payload or {})
+            res = dict(self._tax_compliance_service.record_shareholder_loan_repayment(data))
+            self.transactionDataChanged.emit()
+            self.toast.emit(f"Recorded tax-free shareholder loan repayment (GIFI 2781 closing: ${res.get('closingBalance', 0.0):.2f}).")
+            return res
+        except Exception as exc:
+            self._report_failure("Failed to record shareholder loan repayment", context="app.tax.shl_repayment", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot("QVariantMap", result="QVariantMap")
+    def recordEquipmentUccRollover(self, payload) -> dict:
+        try:
+            data = payload.toVariant() if hasattr(payload, "toVariant") else dict(payload or {})
+            res = dict(self._tax_compliance_service.record_equipment_ucc_rollover(data))
+            self.transactionDataChanged.emit()
+            self.toast.emit("Recorded Nov 1, 2026 equipment UCC rollover to PC (credited to GIFI 2781).")
+            return res
+        except Exception as exc:
+            self._report_failure("Failed to record equipment UCC rollover", context="app.tax.ucc_rollover", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(str, str, str, result="QVariantMap")
+    @Slot(str, str, str, str, result="QVariantMap")
+    def calculateHstReturn(
+        self,
+        biller_entity: str = "PC",
+        start_date: str = "2026-10-17",
+        end_date: str = "2026-12-31",
+        basis: str = "accrual",
+    ) -> dict:
+        try:
+            return dict(
+                self._tax_compliance_service.calculate_hst_return(
+                    biller_entity=biller_entity or "PC",
+                    start_date=start_date,
+                    end_date=end_date,
+                    basis=basis or "accrual",
+                )
+            )
+        except Exception as exc:
+            self._report_failure("Failed to calculate HST return", context="app.tax.hst_calc", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot("QVariantMap", result="QVariantMap")
+    def saveHstReturnSnapshot(self, payload) -> dict:
+        try:
+            data = payload.toVariant() if hasattr(payload, "toVariant") else dict(payload or {})
+            res = dict(self._tax_compliance_service.save_hst_return_snapshot(data))
+            self.toast.emit("HST return filing snapshot saved.")
+            return res
+        except Exception as exc:
+            self._report_failure("Failed to save HST return snapshot", context="app.tax.hst_save", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(result="QVariantMap")
+    @Slot(int, result="QVariantMap")
+    def calculateT2125Summary(self, tax_year: int = 2026) -> dict:
+        try:
+            return dict(self._tax_compliance_service.calculate_t2125_summary(int(tax_year or 2026)))
+        except Exception as exc:
+            self._report_failure("Failed to calculate T2125 summary", context="app.tax.t2125", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(result="QVariantMap")
+    @Slot(int, result="QVariantMap")
+    def calculateT2Summary(self, tax_year: int = 2026) -> dict:
+        try:
+            return dict(self._tax_compliance_service.calculate_t2_summary(int(tax_year or 2026)))
+        except Exception as exc:
+            self._report_failure("Failed to calculate T2 summary", context="app.tax.t2", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
