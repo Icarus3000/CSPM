@@ -1015,14 +1015,20 @@ class TrayController(QObject):
             if app is not None:
                 icon = getattr(app, "_tray_icon", None)
                 if icon is not None:
-                    icon.hide()
-                    icon.setContextMenu(None)
-                    icon.deleteLater()
+                    try:
+                        icon.hide()
+                        icon.setContextMenu(None)
+                        icon.deleteLater()
+                    except RuntimeError:
+                        pass
                     app._tray_icon = None
                 menu = getattr(app, "_tray_menu", None)
                 if menu is not None:
-                    menu.close()
-                    menu.deleteLater()
+                    try:
+                        menu.close()
+                        menu.deleteLater()
+                    except RuntimeError:
+                        pass
                     app._tray_menu = None
             import logging
             logging.getLogger("lifecycle").info("tray resources released; owned timers stopped")

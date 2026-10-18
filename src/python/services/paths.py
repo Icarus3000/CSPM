@@ -90,12 +90,22 @@ class AppPaths:
     def _is_isolated_test_root(self) -> bool:
         if os.environ.get("PYTEST_CURRENT_TEST", "").strip():
             return True
-        if self.override_data_dir is not None and str(self.override_data_dir).strip():
-            return True
         try:
-            return self.root.resolve() != self.project_root().resolve()
+            root_resolved = self.root.resolve()
+            proj_resolved = self.project_root().resolve()
+            local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+            app_data_root = (Path(local_app_data) / "CSPM").resolve() if local_app_data else None
+            if root_resolved != proj_resolved and (app_data_root is None or root_resolved != app_data_root):
+                return True
+            if self.override_data_dir is not None and str(self.override_data_dir).strip():
+                od_resolved = Path(self.override_data_dir).resolve()
+                proj_data = (proj_resolved / "data").resolve()
+                app_data_dir = (app_data_root / "data").resolve() if app_data_root is not None else None
+                if od_resolved != proj_data and (app_data_dir is None or od_resolved != app_data_dir):
+                    return True
         except OSError:
             return True
+        return False
 
     def legacy_onedrive_dockets_workbook_path(self) -> Path | None:
         """Resolve %OneDrive%/__Invoices (1)/Dockets.xlsm dynamically via environment/PathService.
@@ -161,6 +171,14 @@ class AppPaths:
 
         _add_if_exists(self.legacy_onedrive_dockets_workbook_path())
         _add_if_exists(self.dockets_workbook_path())
+        if not self._is_isolated_test_root():
+            local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+            if local_app_data:
+                _add_if_exists(Path(local_app_data) / "CSPM" / "data" / "Dockets.xlsm")
+            try:
+                _add_if_exists(self.shared_vault_dir().parent / "Dockets.xlsm")
+            except Exception:
+                pass
         if self._is_isolated_test_root():
             _add_if_exists(self.root / "Dockets.xlsm")
         return targets

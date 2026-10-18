@@ -385,6 +385,37 @@ class LegacyDocketsSyncService:
                 return r_idx
         return None
 
+    @classmethod
+    def _find_unique_matter_date_row(
+        cls,
+        ws: Any,
+        min_col: int,
+        header_row: int,
+        max_row: int,
+        col_map: Mapping[str, int],
+        matter_id: Any,
+        date_val: Any,
+    ) -> int | None:
+        t_matter = _norm_key(matter_id)
+        t_date = _iso_date_str(date_val)
+        if not t_matter or not t_date:
+            return None
+        col_date = col_map.get("date", min_col)
+        col_matter = col_map.get("matter_id", min_col + 10)
+        matches: list[int] = []
+        for r_idx in range(max_row, header_row, -1):
+            r_matter = _norm_key(ws.cell(r_idx, col_matter).value)
+            if r_matter != t_matter:
+                continue
+            raw_date = ws.cell(r_idx, col_date).value
+            if raw_date is None or _clean_text(raw_date) == "":
+                continue
+            if _iso_date_str(raw_date) == t_date:
+                matches.append(r_idx)
+                if len(matches) > 1:
+                    return None
+        return matches[0] if len(matches) == 1 else None
+
     @staticmethod
     def _copy_row_styles(ws: Any, src_row: int, dst_row: int, min_col: int, max_col: int) -> None:
         if src_row == dst_row or src_row < 1:
@@ -490,28 +521,28 @@ class LegacyDocketsSyncService:
                     ws, min_col, header_row, max_row, col_map, curr_sig, preferred_row_idx=preferred_row
                 )
 
-            action = "updated"
-            template_row_idx: int | None = None
-            if target_row_idx is None:
-                action = "added"
-                if max_row == header_row + 1 and self._row_is_blank(ws, max_row, min_col, max_col):
-                    target_row_idx = max_row
-                    template_row_idx = None
-                else:
-                    template_row_idx = max_row if max_row > header_row else None
-                    target_row_idx = max_row + 1
-                    max_row = target_row_idx
-            else:
-                template_row_idx = target_row_idx - 1 if target_row_idx > header_row + 1 else (
-                    target_row_idx + 1 if target_row_idx < max_row else None
-                )
+            if target_row_idx is None and is_update:
+                if previous_payload is not None:
+                    target_row_idx = self._find_unique_matter_date_row(
+                        ws,
+                        min_col,
+                        header_row,
+                        max_row,
+                        col_map,
+                        previous_payload.get("Matter_ID"),
+                        previous_payload.get("Date"),
+                    )
+                if target_row_idx is None:
+                    target_row_idx = self._find_unique_matter_date_row(
+                        ws,
+                        min_col,
+                        header_row,
+                        max_row,
+                        col_map,
+                        current_payload.get("Matter_ID"),
+                        current_payload.get("Date"),
+                    )
 
-            if template_row_idx is not None and template_row_idx > header_row:
-                self._copy_row_styles(ws, template_row_idx, target_row_idx, min_col, max_col)
-
-            is_flat_fee = _clean_text(current_payload.get("EntryType")).casefold() == "flat fee"
-
-            # Populate all 13 columns
             c_date = col_map["date"]
             c_client = col_map["client"]
             c_sub = col_map.get("sub-client2") or col_map.get("sub-client") or (min_col + 2)
@@ -526,13 +557,47 @@ class LegacyDocketsSyncService:
             c_sec = col_map["rawseconds"]
             c_type = col_map["entrytype"]
 
+            action = "updated"
+            template_row_idx: int | None = None
+            preserve_existing_client = False
+            existing_client_val = None
+            existing_sub_val = None
+            if target_row_idx is None:
+                action = "added"
+                if max_row == header_row + 1 and self._row_is_blank(ws, max_row, min_col, max_col):
+                    target_row_idx = max_row
+                    template_row_idx = None
+                else:
+                    template_row_idx = max_row if max_row > header_row else None
+                    target_row_idx = max_row + 1
+                    max_row = target_row_idx
+            else:
+                existing_matter_val = _norm_key(ws.cell(target_row_idx, c_matter).value)
+                incoming_matter_val = _norm_key(current_payload.get("Matter_ID"))
+                existing_client_val = _clean_text(ws.cell(target_row_idx, c_client).value)
+                existing_sub_val = ws.cell(target_row_idx, c_sub).value
+                if existing_client_val and existing_matter_val and existing_matter_val == incoming_matter_val:
+                    preserve_existing_client = True
+                template_row_idx = target_row_idx - 1 if target_row_idx > header_row + 1 else (
+                    target_row_idx + 1 if target_row_idx < max_row else None
+                )
+
+            if template_row_idx is not None and template_row_idx > header_row:
+                self._copy_row_styles(ws, template_row_idx, target_row_idx, min_col, max_col)
+
+            is_flat_fee = _clean_text(current_payload.get("EntryType")).casefold() == "flat fee"
+
             cell_date = ws.cell(target_row_idx, c_date)
             cell_date.value = _parse_datetime_midnight(current_payload.get("Date"))
             cell_date.number_format = LEGACY_DATE_NUMBER_FORMAT
 
-            ws.cell(target_row_idx, c_client).value = _clean_text(current_payload.get("Client")) or None
-            sub_val = _clean_text(current_payload.get("Sub-Client2"))
-            ws.cell(target_row_idx, c_sub).value = sub_val if sub_val else None
+            if preserve_existing_client:
+                ws.cell(target_row_idx, c_client).value = existing_client_val
+                ws.cell(target_row_idx, c_sub).value = existing_sub_val
+            else:
+                ws.cell(target_row_idx, c_client).value = _clean_text(current_payload.get("Client")) or None
+                sub_val = _clean_text(current_payload.get("Sub-Client2"))
+                ws.cell(target_row_idx, c_sub).value = sub_val if sub_val else None
             ws.cell(target_row_idx, c_desc).value = _clean_text(current_payload.get("Description"))
 
             cell_hours = ws.cell(target_row_idx, c_hours)
