@@ -426,6 +426,7 @@ class DocketRepo:
         parent_id = _clean_text(parent_row.get(sc.COL_PARENT_ID)) if parent_row else ""
 
         matter_id = ""
+        matter_row = None
         if normalized["matterName"]:
             matter_row = self.db._get_or_create_matter(
                 matter_name=normalized["matterName"],
@@ -439,6 +440,11 @@ class DocketRepo:
                 parent_id = _clean_text(matter_row.get(sc.COL_MATTER_PARENT_ID))
         elif not normalized.get("allowClientOnlyDraft", False):
             raise ValueError("Matter is required for time entry.")
+
+        if matter_row is not None and float(normalized.get("clientRate") or 0.0) <= 0.0:
+            matter_def_rate = float(self.db._parse_float(matter_row.get(sc.COL_MATTER_DEF_RATE)) or 0.0)
+            if matter_def_rate > 0.0:
+                normalized["clientRate"] = round(matter_def_rate, 2)
 
         normalized_status = self.db._normalize_time_status(normalized.get("status"))
 

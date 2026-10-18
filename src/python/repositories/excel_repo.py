@@ -6525,6 +6525,11 @@ class ExcelRepo:
         elif not normalized.get("allowClientOnlyDraft", False):
             raise ValueError("Matter is required for time entry.")
 
+        if matter_row is not None and float(normalized.get("clientRate") or 0.0) <= 0.0:
+            matter_def_rate = float(self._parse_float(matter_row.get(sc.COL_MATTER_DEF_RATE)) or 0.0)
+            if matter_def_rate > 0.0:
+                normalized["clientRate"] = round(matter_def_rate, 2)
+
         normalized_status = self._normalize_time_status(normalized.get("status"))
 
         rows = [self._canonicalize_time_row(r) for r in self._read_table_rows(TBL_TIME)]
@@ -13147,9 +13152,13 @@ class ExcelRepo:
         default_share_pct: float,
     ) -> Dict[str, Any]:
         name = _clean_text(matter_name)
+        name_lc = name.lower()
         rows = self._read_table_rows(TBL_MATTERS)
         for row in rows:
-            if _clean_text(row.get(sc.COL_MATTER_NAME)).lower() == name.lower():
+            row_name_lc = _clean_text(row.get(sc.COL_MATTER_NAME)).lower()
+            row_disp_lc = _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME)).lower()
+            row_num_lc = _clean_text(row.get(sc.COL_MATTER_NUMBER)).lower()
+            if name_lc and name_lc in (row_name_lc, row_disp_lc, row_num_lc):
                 canonical = self._canonicalize_matter_row(row)
                 row_client_id = _clean_text(canonical.get(sc.COL_MATTER_CLIENT_ID))
                 if client_id and row_client_id and row_client_id.lower() != _clean_text(client_id).lower():

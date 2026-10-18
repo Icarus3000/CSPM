@@ -249,10 +249,11 @@ class TrayController(QObject):
             rate = 0.0
             if hasattr(self._app_controller, '_excel_repo') and self._app_controller._excel_repo:
                 try:
-                    for md in self._app_controller._excel_repo.matter_directory:
-                        if md.get("matter_id") == timer.matter_id:
-                            rate = md.get("client_rate", 0.0)
-                            break
+                    prof = self._app_controller._excel_repo.get_matter_profile(
+                        timer.matter_id or timer.matter_display_name
+                    )
+                    if isinstance(prof, dict) and prof.get("ok") and isinstance(prof.get("matter"), dict):
+                        rate = float(prof["matter"].get("defaultRate") or 0.0)
                 except Exception:
                     pass
 
@@ -264,6 +265,7 @@ class TrayController(QObject):
                     "matterName": timer.matter_display_name,
                     "date": date_str,
                     "hours": hours,
+                    "rawSeconds": int(elapsed_sec),
                     "rate": rate,
                     "description": timer.description,
                     "source": "system_tray"
