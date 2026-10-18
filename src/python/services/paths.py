@@ -87,6 +87,84 @@ class AppPaths:
     def dockets_workbook_path(self) -> Path:
         return self.data_dir() / "Dockets.xlsm"
 
+    def _is_isolated_test_root(self) -> bool:
+        if os.environ.get("PYTEST_CURRENT_TEST", "").strip():
+            return True
+        if self.override_data_dir is not None and str(self.override_data_dir).strip():
+            return True
+        try:
+            return self.root.resolve() != self.project_root().resolve()
+        except OSError:
+            return True
+
+    def legacy_onedrive_dockets_workbook_path(self) -> Path | None:
+        """Resolve %OneDrive%/__Invoices (1)/Dockets.xlsm dynamically via environment/PathService.
+
+        In isolated test fixtures (tmp_path or override_data_dir), only explicit
+        test overrides or a fixture-local __Invoices (1)/Dockets.xlsm are returned
+        so tests never touch the live user OneDrive workbook.
+        """
+        explicit_override = os.environ.get("CSPM_LEGACY_DOCKETS_XLSM", "").strip()
+        if explicit_override:
+            return Path(os.path.expandvars(explicit_override)).expanduser()
+
+        fixture_candidate = self.root / "__Invoices (1)" / "Dockets.xlsm"
+        if fixture_candidate.exists():
+            return fixture_candidate
+
+        if self._is_isolated_test_root():
+            return None
+
+        candidate_roots: list[Path] = []
+        for env_key in ("OneDriveCommercial", "OneDrive", "OneDriveConsumer"):
+            env_val = os.environ.get(env_key, "").strip()
+            if env_val:
+                expanded = Path(os.path.expandvars(env_val)).expanduser()
+                if expanded not in candidate_roots:
+                    candidate_roots.append(expanded)
+
+        try:
+            for match in sorted(Path.home().glob("OneDrive*")):
+                if match.is_dir() and match not in candidate_roots:
+                    candidate_roots.append(match)
+        except OSError:
+            pass
+
+        for od_root in candidate_roots:
+            candidate = od_root / "__Invoices (1)" / "Dockets.xlsm"
+            if candidate.is_file():
+                return candidate
+
+        for od_root in candidate_roots:
+            inv_dir = od_root / "__Invoices (1)"
+            if inv_dir.is_dir():
+                return inv_dir / "Dockets.xlsm"
+
+        return None
+
+    def legacy_dockets_sync_targets(self) -> list[Path]:
+        """Return existing Dockets.xlsm paths (OneDrive __Invoices (1)/Dockets.xlsm + local data mirror)."""
+        targets: list[Path] = []
+        seen: set[str] = set()
+
+        def _add_if_exists(candidate: Path | None) -> None:
+            if candidate is None:
+                return
+            try:
+                if candidate.is_file():
+                    resolved_key = str(candidate.resolve()).casefold()
+                    if resolved_key not in seen:
+                        seen.add(resolved_key)
+                        targets.append(candidate)
+            except OSError:
+                return
+
+        _add_if_exists(self.legacy_onedrive_dockets_workbook_path())
+        _add_if_exists(self.dockets_workbook_path())
+        if self._is_isolated_test_root():
+            _add_if_exists(self.root / "Dockets.xlsm")
+        return targets
+
     def local_vault_dir(self) -> Path:
         """Resolve <data_dir>/Vault (e.g. %LOCALAPPDATA%/CSPM/data/Vault)."""
         return self.data_dir() / "Vault"

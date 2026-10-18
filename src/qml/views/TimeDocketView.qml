@@ -2240,6 +2240,43 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         }
     }
 
+    function syncMainTimerToBackend(reason) {
+        if (root._hydrating) return
+        var svc = root.appRef ? root.appRef : (typeof app !== "undefined" ? app : null)
+        if (!svc || !svc.syncActiveTimerState) return
+        ensureTimerOwnerId()
+        var rawSecs = root.isRunning
+            ? root.timerRawSecondsNow()
+            : Math.max(0, Math.floor(Number(root.elapsedSeconds || 0)))
+        var cText = String(clientCombo ? clientCombo.editText : "").trim()
+        if (cText === "(blank)" || cText === "(none)") cText = ""
+        var mText = String(matterCombo ? matterCombo.editText : "").trim()
+        if (mText === "(blank)" || mText === "(none)") mText = ""
+        var pText = String(parentCombo ? parentCombo.editText : "").trim()
+        if (pText === "(blank)" || pText === "(none)") pText = ""
+        var dText = String(descInput ? descInput.text : "")
+        try {
+            svc.syncActiveTimerState({
+                "ownerId": root.timerOwnerId,
+                "isRunning": !!root.isRunning,
+                "elapsedSeconds": rawSecs,
+                "clientId": root.currentClientId(),
+                "clientName": cText,
+                "matterId": root.currentMatterId(),
+                "matterName": mText,
+                "parentName": pText,
+                "description": dText,
+                "rateText": String(rateInput ? rateInput.text : "475.00"),
+                "billText": String(billInput ? billInput.text : "100"),
+                "dateText": String(dateInput ? dateInput.text : ""),
+                "taskText": String(taskCombo ? taskCombo.editText : ""),
+                "entryId": String(root.lastSavedEntryId || ""),
+                "reason": String(reason || "")
+            })
+        } catch (e0) {
+        }
+    }
+
     function startTimerAfterLock() {
         if (root.isBucketLocked()) return false
 
@@ -2266,6 +2303,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         root.timerApplyRawSeconds(base)
 
         docketTimer.restart()
+        root.syncMainTimerToBackend("start")
         return true
     }
 
@@ -2667,6 +2705,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
         root.dirty = true
         root.timerInternalElapsedWrite = false
+        root.syncMainTimerToBackend("reset")
 
         return true
     }
@@ -2852,6 +2891,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
         root.dirty = true
         root.cspmCloseEditTimerDialog()
+        root.syncMainTimerToBackend("edit-timer-dialog")
         return value
     }
 
@@ -3133,6 +3173,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         root.setElapsedSecondsSafe(parsed.seconds)
         if (changed && !root._hydrating) {
             root.dirty = true
+            root.syncMainTimerToBackend("manual-time-field")
         }
         return true
         } finally {
@@ -3161,6 +3202,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             root.timerProtectedMode = true
 
             releaseTimerLock()
+            root.syncMainTimerToBackend("pause")
             return
         }
 
@@ -3334,6 +3376,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         if (!root._hydrating && source !== "init") {
             root.dirty = true
             root.handleBucketContextChanged()
+            root.syncMainTimerToBackend("dropdown-" + String(source || ""))
         }
 
         root._updatingDropdowns = false
@@ -5119,7 +5162,12 @@ Behavior on border.color {
                             rightPadding: root.ratioPx(root.scaleRatios.descPadPct + 0.002, 10)
                             bottomPadding: root.ratioPx(root.scaleRatios.descPadPct, 4)
                             background: null
-                            onTextChanged: if (!root._hydrating) root.dirty = true
+                            onTextChanged: {
+                                if (!root._hydrating) {
+                                    root.dirty = true
+                                    root.syncMainTimerToBackend("description")
+                                }
+                            }
                         }
                     }
                 }
@@ -7652,6 +7700,58 @@ Behavior on border.color {
         }
         if (root.activeIsDeadlineEditor()) {
             ensureEditingDeadlineSeeded()
+        }
+    }
+
+    Connections {
+        target: typeof trayController !== "undefined" ? trayController : null
+        ignoreUnknownSignals: true
+        function onMainTimerCommandRequested(cmd) {
+            if (!cmd || typeof cmd !== "object") return
+            var action = String(cmd.action || "").trim()
+            if (action === "pause") {
+                if (root.isRunning) {
+                    root.toggleTimer()
+                }
+            } else if (action === "resume" || action === "start") {
+                if (!root.isRunning && !root.isBucketLocked()) {
+                    if (action === "start") {
+                        var cmdClient = String(cmd.clientName || "").trim()
+                        var cmdMatter = String(cmd.matterName || "").trim()
+                        var cmdDesc = String(cmd.description || "")
+                        if (cmdClient.length > 0 && String(clientCombo ? clientCombo.editText : "").trim().length <= 0) {
+                            root._hydrating = true
+                            root.setComboTextStrict(clientCombo, cmdClient)
+                            root.updateCascadingDropdowns("client")
+                            if (cmdMatter.length > 0) {
+                                root.setComboTextStrict(matterCombo, cmdMatter)
+                                root.updateCascadingDropdowns("matter")
+                            }
+                            if (descInput && cmdDesc.length > 0) {
+                                descInput.text = cmdDesc
+                            }
+                            root._hydrating = false
+                        }
+                    }
+                    root.toggleTimer()
+                }
+            } else if (action === "update_description") {
+                var nextDesc = String(cmd.description !== undefined ? cmd.description : "")
+                if (descInput && descInput.text !== nextDesc) {
+                    descInput.text = nextDesc
+                }
+            } else if (action === "stop_and_save") {
+                if (cmd.description !== undefined && descInput && descInput.text !== String(cmd.description)) {
+                    descInput.text = String(cmd.description)
+                }
+                if (root.isRunning) {
+                    root.toggleTimer()
+                }
+                root.requestSaveToDatabaseIfNeeded("tray-stop-and-save", {
+                    "skipMatterPrompt": true,
+                    "allowClientOnlyDraft": true
+                })
+            }
         }
     }
 

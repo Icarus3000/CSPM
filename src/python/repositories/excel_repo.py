@@ -15,7 +15,7 @@ import zipfile
 import threading
 from functools import wraps
 from urllib.parse import quote_plus
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 import collections
 
 _DB_LOCK = threading.RLock()
@@ -6712,6 +6712,7 @@ class ExcelRepo:
             sc.COL_TIME_CREATED: created_at,
         }
 
+        previous_row = dict(primary_row) if primary_row is not None else None
         self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, entry_row)
 
         # Merge duplicate editable rows into the primary bucket, preserving an audit breadcrumb.
@@ -6739,6 +6740,21 @@ class ExcelRepo:
         persisted = self._find_time_entry(entry_id)
         verified = self._compare_rows_loose(entry_row, persisted)
 
+        legacy_sync: Dict[str, Any] = {}
+        if verified and not bool((payload or {}).get("skipLegacyDocketsSync")):
+            matter_num = _clean_text((matter_row or {}).get(sc.COL_MATTER_NUMBER))
+            sub_client = _clean_text((payload or {}).get("subClient") or (payload or {}).get("subClient2"))
+            legacy_sync = self._sync_time_entry_to_legacy_dockets(
+                entry_row,
+                previous_row=previous_row,
+                is_update=(previous_row is not None),
+                fallback_client_name=_clean_text(client_row.get(sc.COL_CLIENT_NAME)) or normalized["clientName"],
+                fallback_parent_name=parent_name,
+                fallback_sub_client_name=sub_client,
+                fallback_matter_number=matter_num,
+                is_fee_entry=False,
+            )
+
         return {
             "ok": bool(verified),
             "verifiedExact": bool(verified),
@@ -6747,6 +6763,7 @@ class ExcelRepo:
             "aggregateRawSeconds": int(aggregate_raw_seconds),
             "aggregateHoursRounded": round(float(aggregate_hours), 2),
             "mergedRowCount": len(duplicate_rows),
+            "legacyDocketsSync": legacy_sync,
             "message": "" if verified else "Entry write verification failed.",
         }
 
@@ -6852,11 +6869,23 @@ class ExcelRepo:
         self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, entry_row)
         persisted = self._find_time_entry(entry_id)
         verified = self._compare_rows_loose(entry_row, persisted)
+        legacy_sync: Dict[str, Any] = {}
+        if verified and not bool(raw.get("skipLegacyDocketsSync")):
+            legacy_sync = self._sync_time_entry_to_legacy_dockets(
+                entry_row,
+                previous_row=None,
+                is_update=False,
+                fallback_client_name=_clean_text(matter_row.get(sc.COL_MATTER_CLIENT_NAME)),
+                fallback_parent_name=_clean_text(matter_row.get(sc.COL_MATTER_PARENT_NAME)),
+                fallback_matter_number=_clean_text(matter_row.get(sc.COL_MATTER_NUMBER)),
+                is_fee_entry=True,
+            )
         return {
             "ok": bool(verified),
             "verifiedExact": bool(verified),
             "entryId": entry_id,
             "savedRow": entry_row,
+            "legacyDocketsSync": legacy_sync,
             "message": "" if verified else "Fee entry write verification failed.",
         }
 
@@ -7178,60 +7207,220 @@ class ExcelRepo:
             "message": "" if verified else "Docket move verification failed.",
         }
 
+    def _resolve_time_entry_legacy_context(
+        self,
+        entry_row: Mapping[str, Any],
+        *,
+        fallback_client_name: str = "",
+        fallback_parent_name: str = "",
+        fallback_sub_client_name: str = "",
+        fallback_matter_number: str = "",
+        is_fee_entry: bool = False,
+    ) -> Dict[str, Any]:
+        from services.legacy_dockets_sync_service import LegacyDocketsSyncService
+
+        client_id = _clean_text(entry_row.get(sc.COL_TIME_CLIENT_ID))
+        matter_id = _clean_text(entry_row.get(sc.COL_TIME_MATTER_ID))
+        parent_id = _clean_text(entry_row.get(sc.COL_TIME_PARENT_ID))
+
+        client_name = _clean_text(fallback_client_name)
+        parent_name = _clean_text(fallback_parent_name)
+        matter_number = _clean_text(fallback_matter_number)
+
+        if matter_id and (not matter_number or not client_name):
+            for candidate in [self._canonicalize_matter_row(r) for r in self._read_table_rows(TBL_MATTERS)]:
+                if _clean_text(candidate.get(sc.COL_MATTER_ID)).casefold() == matter_id.casefold():
+                    if not matter_number:
+                        matter_number = _clean_text(candidate.get(sc.COL_MATTER_NUMBER)) or matter_id
+                    if not client_name:
+                        client_name = _clean_text(candidate.get(sc.COL_MATTER_CLIENT_NAME))
+                    if not parent_name:
+                        parent_name = _clean_text(candidate.get(sc.COL_MATTER_PARENT_NAME))
+                    if not parent_id:
+                        parent_id = _clean_text(candidate.get(sc.COL_MATTER_PARENT_ID))
+                    break
+
+        if client_id and not client_name:
+            for candidate in [self._canonicalize_client_row(r) for r in self._read_table_rows(TBL_CLIENTS)]:
+                if _clean_text(candidate.get(sc.COL_CLIENT_ID)).casefold() == client_id.casefold():
+                    client_name = _clean_text(candidate.get(sc.COL_CLIENT_NAME))
+                    break
+
+        if parent_id and not parent_name:
+            for candidate in [self._canonicalize_parent_row(r) for r in self._read_table_rows(TBL_PARENTS)]:
+                if _clean_text(candidate.get(sc.COL_PARENT_ID)).casefold() == parent_id.casefold():
+                    parent_name = _clean_text(candidate.get(sc.COL_PARENT_NAME))
+                    break
+
+        return LegacyDocketsSyncService.build_legacy_row_payload(
+            entry_row,
+            client_name=client_name,
+            parent_name=parent_name,
+            sub_client_name=fallback_sub_client_name,
+            matter_number=matter_number or matter_id,
+            is_fee_entry=is_fee_entry or self._is_fee_entry(dict(entry_row)),
+        )
+
+    def _sync_time_entry_to_legacy_dockets(
+        self,
+        entry_row: Mapping[str, Any],
+        *,
+        previous_row: Optional[Mapping[str, Any]] = None,
+        is_update: bool = False,
+        fallback_client_name: str = "",
+        fallback_parent_name: str = "",
+        fallback_sub_client_name: str = "",
+        fallback_matter_number: str = "",
+        is_fee_entry: bool = False,
+    ) -> Dict[str, Any]:
+        if getattr(self, "_import_batch_active", False):
+            return {"ok": True, "skipped": True, "reason": "import_batch_active"}
+        try:
+            from services.legacy_dockets_sync_service import LegacyDocketsSyncService
+
+            sync_service = LegacyDocketsSyncService(self.paths)
+            current_payload = self._resolve_time_entry_legacy_context(
+                entry_row,
+                fallback_client_name=fallback_client_name,
+                fallback_parent_name=fallback_parent_name,
+                fallback_sub_client_name=fallback_sub_client_name,
+                fallback_matter_number=fallback_matter_number,
+                is_fee_entry=is_fee_entry,
+            )
+            previous_payload = (
+                self._resolve_time_entry_legacy_context(previous_row)
+                if previous_row is not None
+                else None
+            )
+            result = sync_service.sync_docket_entry(
+                current_payload,
+                previous_payload=previous_payload,
+                is_update=is_update,
+            )
+            self._legacy_docket_rows_signature = ""
+            return result
+        except Exception as exc:
+            logger.warning("[excel_repo] Non-fatal legacy Dockets.xlsm sync error: %s", exc)
+            return {"ok": False, "warning": str(exc)}
+
     def update_time_entry(self, entry_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
         self.ensure_schema()
         row = self._find_time_entry(entry_id)
         if not row:
             return {"ok": False, "message": f"Time entry {entry_id} not found."}
-            
+
+        previous_row = dict(row)
         updated = False
-        
-        if "description" in changes:
-            row[sc.COL_TIME_DESC] = _clean_text(changes["description"])
+
+        if "description" in changes or "descriptionText" in changes:
+            desc_val = changes.get("description") if "description" in changes else changes.get("descriptionText")
+            row[sc.COL_TIME_DESC] = _clean_text(desc_val)
             updated = True
-            
-        if "date" in changes:
-            row[sc.COL_TIME_DATE] = _clean_text(changes["date"])
+
+        if "date" in changes or "dateText" in changes:
+            date_val = changes.get("date") if "date" in changes else changes.get("dateText")
+            row[sc.COL_TIME_DATE] = _clean_text(date_val)
             updated = True
-            
+
+        if "invoiceRef" in changes or "invoice" in changes:
+            inv_val = changes.get("invoiceRef") if "invoiceRef" in changes else changes.get("invoice")
+            row[sc.COL_TIME_INVOICE_REF] = _clean_text(inv_val)
+            updated = True
+
+        if "status" in changes:
+            row[sc.COL_TIME_STATUS] = self._normalize_time_status(changes.get("status"))
+            updated = True
+
+        if "rate" in changes or "clientRate" in changes:
+            rate_val = changes.get("rate") if "rate" in changes else changes.get("clientRate")
+            row[sc.COL_TIME_RATE] = round(float(self._parse_float(rate_val) or 0.0), 2)
+            updated = True
+
+        if "sharePct" in changes:
+            row[sc.COL_TIME_SHARE_PCT] = round(float(self._parse_float(changes.get("sharePct")) or 100.0), 2)
+            updated = True
+
         hours_changed = "hours" in changes
+        seconds_changed = "rawSeconds" in changes or "elapsedSeconds" in changes
         amount_changed = "amount" in changes
-        
-        if hours_changed or amount_changed:
+        rate_or_share_changed = ("rate" in changes) or ("clientRate" in changes) or ("sharePct" in changes)
+
+        if hours_changed or seconds_changed or amount_changed or rate_or_share_changed:
             old_hours = float(row.get(sc.COL_TIME_HOURS) or 0)
             old_net = float(row.get(sc.COL_TIME_NET) or 0)
-            
+
+            raw_sec_override: Optional[int] = None
+            if seconds_changed:
+                sec_raw = changes.get("rawSeconds") if "rawSeconds" in changes else changes.get("elapsedSeconds")
+                raw_sec_override = max(0, int(round(float(self._parse_float(sec_raw) or 0.0))))
+
             if hours_changed:
                 new_hours = float(changes["hours"])
+            elif raw_sec_override is not None:
+                new_hours = (
+                    math.ceil(((raw_sec_override / 3600.0) * 10.0) - 1e-9) / 10.0
+                    if raw_sec_override > 0
+                    else 0.0
+                )
             else:
                 new_hours = old_hours
-                
+
             if amount_changed:
                 new_net = float(changes["amount"])
+                new_gross = round(new_net, 2)
+                hst = round(new_net * 0.13, 2)
+                total = round(new_net + hst, 2)
+            elif rate_or_share_changed or float(row.get(sc.COL_TIME_RATE) or 0) > 0:
+                eff_rate = float(row.get(sc.COL_TIME_RATE) or 0.0)
+                eff_share = float(row.get(sc.COL_TIME_SHARE_PCT) or 100.0)
+                amounts = calc_amounts(
+                    hours=new_hours,
+                    client_rate=eff_rate,
+                    your_share_pct=eff_share,
+                    hst_rate=0.13,
+                )
+                new_gross = amounts["gross_to_client"]
+                new_net = amounts["amount_to_you"]
+                hst = amounts["hst_on_you"]
+                total = amounts["total_you_incl_hst"]
             else:
                 if old_hours != 0:
                     rate = old_net / old_hours
                     new_net = new_hours * rate
                 else:
-                    new_net = 0
-                          
-            hst = new_net * 0.13
-            total = new_net + hst
-            
-            row[sc.COL_TIME_HOURS] = new_hours
+                    new_net = 0.0
+                new_gross = round(new_net, 2)
+                hst = round(new_net * 0.13, 2)
+                total = round(new_net + hst, 2)
+
+            row[sc.COL_TIME_HOURS] = round(new_hours, 2)
             row[sc.COL_TIME_NET] = round(new_net, 2)
             row[sc.COL_TIME_HST] = round(hst, 2)
             row[sc.COL_TIME_TOTAL] = round(total, 2)
-            row[sc.COL_TIME_GROSS] = round(new_net, 2)
-            
-            # also update seconds
-            row[sc.COL_TIME_SECONDS] = int(new_hours * 3600)
+            row[sc.COL_TIME_GROSS] = round(new_gross, 2)
+
+            if raw_sec_override is not None:
+                row[sc.COL_TIME_SECONDS] = int(raw_sec_override)
+            else:
+                row[sc.COL_TIME_SECONDS] = int(round(new_hours * 3600))
             updated = True
-            
+
         if updated:
             self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, row)
-            return {"ok": True, "message": "Time entry updated.", "savedRow": row}
-            
+            legacy_sync: Dict[str, Any] = {}
+            if not bool((changes or {}).get("skipLegacyDocketsSync")):
+                legacy_sync = self._sync_time_entry_to_legacy_dockets(
+                    row,
+                    previous_row=previous_row,
+                    is_update=True,
+                )
+            return {
+                "ok": True,
+                "message": "Time entry updated.",
+                "savedRow": row,
+                "legacyDocketsSync": legacy_sync,
+            }
+
         return {"ok": True, "message": "No changes applied."}
 
     def delete_time_entry(self, entry_id: str) -> Dict[str, Any]:

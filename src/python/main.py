@@ -2365,10 +2365,10 @@ def main() -> None:
         open_action.triggered.connect(tray_controller.open_cspm)
         exit_action = tray_menu.addAction("Exit CSPM")
         exit_action.triggered.connect(tray_controller.exit_cspm)
-        app._tray_icon.setContextMenu(tray_menu)
+        app._tray_icon.setToolTip(tray_controller.trayTooltipText)
         
         def _on_tray_activated(reason):
-            if reason == QSystemTrayIcon.Trigger:
+            if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.Context):
                 _ensure_tray_qml_loaded(tray_controller.calculate_flyout_geometry)
             elif reason == QSystemTrayIcon.DoubleClick:
                 tray_controller.open_cspm()

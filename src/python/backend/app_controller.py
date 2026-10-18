@@ -4267,8 +4267,9 @@ class AppController(QObject):
             return
         self._shutdown_sync_complete = True
         self._shutting_down = True
-        if self._calendar_controller is not None:
-            self._calendar_controller.shutdown()
+        cal_ctrl = getattr(self, "_calendar_controller", None)
+        if cal_ctrl is not None:
+            cal_ctrl.shutdown()
         self._auto_backup_timer.stop()
         self._startup_briefing_process_poll_timer.stop()
         self.cancelStartupPracticeBriefingProcess()
@@ -5370,13 +5371,47 @@ class AppController(QObject):
             self._report_failure("Could not record undock event", context="session.record_undock", exc=exc)
             return False
 
+    def _notify_legacy_dockets_sync_warnings(self, result: dict) -> None:
+        try:
+            sync_info = result.get("legacyDocketsSync")
+            if isinstance(sync_info, dict):
+                for warn_msg in sync_info.get("warnings") or []:
+                    if warn_msg:
+                        self.toast.emit(str(warn_msg))
+        except Exception:
+            pass
+
+    @Slot("QVariantMap", result=dict)
+    def syncActiveTimerState(self, payload):
+        """Synchronize main-app docket timer state with AppController and System Tray."""
+        try:
+            data = dict(payload or {})
+            self._active_timer_state = dict(data)
+            tray = getattr(self, "_tray_controller", None)
+            if tray is not None and hasattr(tray, "syncMainTimerState"):
+                tray.syncMainTimerState(data)
+            return {"ok": True, "state": dict(self._active_timer_state)}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(result=dict)
+    def getActiveTimerState(self):
+        return dict(getattr(self, "_active_timer_state", None) or {})
+
     @Slot("QVariantMap", result=dict)
     def saveTimeDocketEntry(self, payload):
         try:
-            result = dict(self._excel_repo.add_time_entry(dict(payload or {})) or {})
+            raw_payload = dict(payload or {})
+            result = dict(self._excel_repo.add_time_entry(raw_payload) or {})
             if result.get("ok"):
                 self.toast.emit(f"Time entry saved: {result.get('entryId', '')}")
+                self._notify_legacy_dockets_sync_warnings(result)
                 self.clientDataChanged.emit()
+                tray = getattr(self, "_tray_controller", None)
+                if tray is not None and hasattr(tray, "onDocketSaved") and str(raw_payload.get("source") or "") != "system_tray":
+                    merged_notify = dict(raw_payload)
+                    merged_notify.update(result)
+                    tray.onDocketSaved(merged_notify)
             else:
                 message = str(result.get("message", "Time entry verification failed.") or "").strip()
                 if message:
@@ -5417,6 +5452,7 @@ class AppController(QObject):
             result = dict(self._excel_repo.add_fee_entry(dict(payload or {})) or {})
             if result.get("ok"):
                 self.toast.emit(f"Fee entry saved: {result.get('entryId', '')}")
+                self._notify_legacy_dockets_sync_warnings(result)
                 self.clientDataChanged.emit()
             else:
                 message = str(result.get("message", "Fee entry verification failed.") or "").strip()
@@ -5447,11 +5483,19 @@ class AppController(QObject):
     @Slot(str, "QVariantMap", result=dict)
     def updateTimeDocketEntry(self, entry_id, changes):
         try:
-            result = dict(self._excel_repo.update_time_entry(str(entry_id), dict(changes or {})) or {})
+            raw_changes = dict(changes or {})
+            result = dict(self._excel_repo.update_time_entry(str(entry_id), raw_changes) or {})
             result["verifiedExact"] = True
             if result.get("ok"):
                 self.toast.emit(f"Time entry updated: {entry_id}")
+                self._notify_legacy_dockets_sync_warnings(result)
                 self.clientDataChanged.emit()
+                tray = getattr(self, "_tray_controller", None)
+                if tray is not None and hasattr(tray, "onDocketSaved") and result.get("savedRow"):
+                    notify_payload = dict(raw_changes)
+                    notify_payload["entryId"] = str(entry_id)
+                    notify_payload["savedRow"] = result.get("savedRow")
+                    tray.onDocketSaved(notify_payload)
             else:
                 message = str(result.get("message", "Time entry update failed.") or "").strip()
                 if message:
@@ -5538,6 +5582,27 @@ class AppController(QObject):
             state = self._load_runtime_state()
             state["globalTimerLock"] = lock_payload
             self._save_runtime_state(state)
+
+            tray = getattr(self, "_tray_controller", None)
+            if tray is not None and hasattr(tray, "syncMainTimerState"):
+                descriptor = str(data.get("descriptor") or "").strip()
+                c_name = str(data.get("clientName") or data.get("clientText") or "").strip()
+                m_name = str(data.get("matterName") or data.get("matterText") or "").strip()
+                if not c_name and " / " in descriptor:
+                    parts = [p.strip() for p in descriptor.split(" / ") if p.strip()]
+                    if len(parts) >= 2:
+                        c_name = parts[-2]
+                        m_name = parts[-1]
+                tray.syncMainTimerState({
+                    "isRunning": True,
+                    "elapsedSeconds": int(data.get("elapsedSeconds", getattr(self, "_active_timer_state", {}).get("elapsedSeconds", 0)) or 0),
+                    "clientId": str(data.get("clientId") or ""),
+                    "clientName": c_name,
+                    "matterId": str(data.get("matterId") or ""),
+                    "matterName": m_name,
+                    "description": str(data.get("description") if "description" in data else getattr(self, "_active_timer_state", {}).get("description", "")),
+                })
+
             return {
                 "ok": True,
                 "granted": True,
@@ -5573,6 +5638,22 @@ class AppController(QObject):
             state = self._load_runtime_state()
             state["globalTimerLock"] = {}
             self._save_runtime_state(state)
+
+            tray = getattr(self, "_tray_controller", None)
+            if tray is not None and hasattr(tray, "syncMainTimerState"):
+                prev = dict(getattr(self, "_active_timer_state", None) or {})
+                elapsed_sec = int(data.get("elapsedSeconds", prev.get("elapsedSeconds", 0)) or 0)
+                if not bool(data.get("resetToZero", False)) and elapsed_sec <= 0 and hasattr(tray, "displayElapsedSeconds"):
+                    elapsed_sec = int(tray.displayElapsedSeconds or 0)
+                tray.syncMainTimerState({
+                    "isRunning": False,
+                    "elapsedSeconds": 0 if bool(data.get("resetToZero", False)) else elapsed_sec,
+                    "clearActiveTimer": bool(data.get("resetToZero", False)),
+                    "clientName": str(data.get("clientName") or prev.get("clientName") or ""),
+                    "matterName": str(data.get("matterName") or prev.get("matterName") or ""),
+                    "description": str(data.get("description") if "description" in data else prev.get("description", "")),
+                })
+
             return True
         except Exception as exc:
             self._report_failure("Could not release timer lock", context="session.timer_lock.release", exc=exc)
@@ -5618,6 +5699,7 @@ class AppController(QObject):
             if message:
                 self.error.emit(message)
         return result
+
     @Slot(str, result=dict)
     def handleOmniSearchCommand(self, query):
         return handle_omni_search_command(query, self._excel_repo, self._report_failure)
@@ -5650,142 +5732,6 @@ class AppController(QObject):
         except Exception as exc:
             self._report_failure("Could not record undock event", context="session.record_undock", exc=exc)
             return False
-
-    @Slot("QVariantMap", result=dict)
-    def saveTimeDocketEntry(self, payload):
-        try:
-            result = dict(self._excel_repo.add_time_entry(dict(payload or {})) or {})
-            if result.get("ok"):
-                self.toast.emit(f"Time entry saved: {result.get('entryId', '')}")
-                self.clientDataChanged.emit()
-            else:
-                message = str(result.get("message", "Time entry verification failed.") or "").strip()
-                if message:
-                    self.error.emit(message)
-            return result
-        except Exception as exc:
-            self._report_failure("Could not save time entry", context="repo.time.save_entry", exc=exc)
-            return {"ok": False, "entryId": "", "message": str(exc)}
-
-    @Slot("QVariantMap", result=dict)
-    def saveTrademarkFiling(self, payload):
-        try:
-            result = dict(self._excel_repo.save_trademark_filing(dict(payload or {})) or {})
-            if result.get("ok"):
-                self.toast.emit(f"Trademark filing saved: {result.get('trademarkId', '')}")
-                self.clientDataChanged.emit()
-            else:
-                message = str(result.get("message", "Trademark verification failed.") or "").strip()
-                if message:
-                    self.error.emit(message)
-            return result
-        except Exception as exc:
-            self._report_failure("Could not save trademark", context="repo.trademark.save", exc=exc)
-            return {"ok": False, "trademarkId": "", "message": str(exc)}
-
-    @Slot("QVariantMap", result=dict)
-    def acquireGlobalTimerLock(self, payload):
-        try:
-            data = dict(payload or {})
-            owner_id = str(data.get("ownerId", "") or "").strip()
-            force_takeover = bool(data.get("forceTakeover", False))
-            if not owner_id:
-                return {
-                    "ok": False,
-                    "granted": False,
-                    "message": "ownerId is required.",
-                    "holder": dict(self._global_timer_lock or {}),
-                }
-
-            now_utc = datetime.now(timezone.utc).isoformat()
-            holder = dict(self._global_timer_lock or {})
-            holder_id = str(holder.get("ownerId", "") or "").strip()
-            takeover_happened = False
-            previous_holder = {}
-
-            if holder_id and holder_id != owner_id:
-                if not force_takeover:
-                    return {
-                        "ok": True,
-                        "granted": False,
-                        "message": "A timer is already running in another window.",
-                        "holder": holder,
-                        "takenOver": False,
-                    }
-                takeover_happened = True
-                previous_holder = dict(holder)
-
-            lock_payload = {
-                "ownerId": owner_id,
-                "ownerLabel": str(data.get("ownerLabel", "") or "").strip(),
-                "descriptor": str(data.get("descriptor", "") or "").strip(),
-                "tileIndex": int(data.get("tileIndex", -1)),
-                "laneKey": str(data.get("laneKey", "") or "").strip(),
-                "acquiredAtUtc": str(holder.get("acquiredAtUtc", "") or now_utc),
-                "updatedAtUtc": now_utc,
-            }
-            self._global_timer_lock = lock_payload
-            state = self._load_runtime_state()
-            state["globalTimerLock"] = lock_payload
-            self._save_runtime_state(state)
-            return {
-                "ok": True,
-                "granted": True,
-                "message": "",
-                "holder": dict(lock_payload),
-                "takenOver": bool(takeover_happened),
-                "previousHolder": dict(previous_holder),
-            }
-        except Exception as exc:
-            self._report_failure("Could not acquire timer lock", context="session.timer_lock.acquire", exc=exc)
-            return {
-                "ok": False,
-                "granted": False,
-                "message": str(exc),
-                "holder": dict(self._global_timer_lock or {}),
-                "takenOver": False,
-                "previousHolder": {},
-            }
-
-    @Slot("QVariantMap", result=bool)
-    def releaseGlobalTimerLock(self, payload):
-        try:
-            data = dict(payload or {})
-            owner_id = str(data.get("ownerId", "") or "").strip()
-            if not owner_id:
-                return False
-            holder = dict(self._global_timer_lock or {})
-            holder_id = str(holder.get("ownerId", "") or "").strip()
-            if holder_id and holder_id != owner_id:
-                return False
-
-            self._global_timer_lock = {}
-            state = self._load_runtime_state()
-            state["globalTimerLock"] = {}
-            self._save_runtime_state(state)
-            return True
-        except Exception as exc:
-            self._report_failure("Could not release timer lock", context="session.timer_lock.release", exc=exc)
-            return False
-
-    @Slot(result=dict)
-    def getGlobalTimerLock(self):
-        try:
-            holder = dict(self._global_timer_lock or {})
-            if not holder:
-                state = self._load_runtime_state()
-                raw = state.get("globalTimerLock", {})
-                if isinstance(raw, dict):
-                    holder = dict(raw)
-                    self._global_timer_lock = dict(raw)
-            return {
-                "ok": True,
-                "active": bool(holder and str(holder.get("ownerId", "") or "").strip()),
-                "holder": holder,
-            }
-        except Exception as exc:
-            self._report_failure("Could not read timer lock", context="session.timer_lock.read", exc=exc)
-            return {"ok": False, "active": False, "holder": {}, "message": str(exc)}
 
 
     @Slot("QVariantMap", result=dict)

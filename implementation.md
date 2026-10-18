@@ -1,5 +1,27 @@
 # Implementation History
 
+## 2026-10-18: System Tray Mini-Popup Timer Sync, Minimalist Right-Click Tray Popup & Auto-Sync Saved Dockets to Legacy `Dockets.xlsm`
+
+1. **Main App Timer <-> System Tray Indicator & Mini-Popup Live Sync**:
+   - Extended `TrayController` (`src/python/backend/controllers/tray_controller.py`) and `AppController` (`src/python/backend/app_controller.py`) with a single unified reactive timer state (`hasRunningTimer`, `hasActiveOrPausedTimer`, `hasDisplayEntry`, `displayStatus`, `displayTimerId`, `displayElapsedSeconds`, `displayElapsedFormatted`, `displayClientName`, `displayMatterName`, `displayDescription`, `displayDescriptionOrPlaceholder`, `trayTooltipText`) and bidirectional sync slots (`syncActiveTimerState`, `getActiveTimerState`, `syncMainTimerState`, `onDocketSaved`, `togglePrimaryTimer`, `stopAndSavePrimaryTimer`, `updatePrimaryDescription`, `mainTimerCommandRequested`).
+   - Wired `TimeDocketView.qml` (`src/qml/views/TimeDocketView.qml`) to push timer state changes on start, pause, reset, manual time edits, client/matter selection, and description edits, and to handle remote pause/resume/start/description/stop-and-save commands emitted from the system tray mini-popup.
+   - Updated the system tray icon tooltip on every 1-second tick (`CSPM ● RUNNING (HH:MM:SS) — Client | Matter`, `CSPM ⏸ PAUSED ...`, or `CSPM — Latest: ...`).
+2. **Minimalist System Tray Right-Click Mini-Popup (`340×218`)**:
+   - Replaced the 420×740 full dialog in `src/qml/tray/TrayTimekeepingFlyout.qml` with a compact `340×218` frameless mini-popup anchored near the system tray icon.
+   - Updated `src/python/main.py` so both right-clicking (`QSystemTrayIcon.Context`) and left-clicking (`QSystemTrayIcon.Trigger`) the system tray icon toggle the minimalist mini-popup directly at the tray icon coordinates.
+   - The popup displays strictly the running/paused timer (if active) or the latest docket entry (when idle):
+     1. **Timer Status & Elapsed Time** (`HH:MM:SS` with `RUNNING` / `PAUSED` / `LATEST` badge and compact Pause/Resume/Restart and Stop & Save controls),
+     2. **Client Name**,
+     3. **Matter Name / Number** (normalized `MatterNumber — MatterName`), and
+     4. **Current Docket Description** (inline editable with `"No description"` muted placeholder), plus compact `Open CSPM` and `Quit` footer actions.
+3. **Auto-Add / Auto-Update Saved Dockets into Legacy `Dockets.xlsm` (`Dockets` -> `Table1_1`)**:
+   - Added `legacy_onedrive_dockets_workbook_path()` and `legacy_dockets_sync_targets()` to `AppPaths` (`src/python/services/paths.py`) with strict `pytest` / `tmp_path` isolation.
+   - Created `LegacyDocketsSyncService` (`src/python/services/legacy_dockets_sync_service.py`) and hooked `_sync_time_entry_to_legacy_dockets` into `ExcelRepo.add_time_entry`, `ExcelRepo.add_fee_entry`, and `ExcelRepo.update_time_entry` (`src/python/repositories/excel_repo.py`).
+   - Populates all 13 columns of `Table1_1` (`['Date', 'Client', 'Sub-Client2', 'Description', 'Time (in hrs)', 'Hourly Rate/Flat Fee', 'Percentage', 'Amount to CS', 'Total Inclusive of HST', 'Invoice', 'Matter_ID', 'RawSeconds', 'EntryType']`), updates existing rows in place on edits or appends new rows and expands `Table1_1.ref`, preserves `keep_vba=True` and macro content types, copies row styles and translates formulas from the preceding row, and queues/retries when `~$Dockets.xlsm` or `PermissionError` is encountered.
+4. **Validation Split**:
+   - **Sandbox-safe checks passed**: `python -m py_compile` on all modified/created Python files; `./scripts/qmllint.ps1` on `src/qml/tray/TrayTimekeepingFlyout.qml` and `src/qml/views/TimeDocketView.qml` (exit 0); isolated `tmp_path` unit tests in `tests/test_tray_timer_and_legacy_dockets_sync.py` plus existing tray/QML suites (`tests/test_tray_lifecycle_backend.py`, `tests/test_linux_tray_geometry.py`, `tests/test_tray_restore_qml.py`).
+   - **Outside-sandbox / `.exe` rebuild**: Held in **LIVE TIMER SAFE MODE** until the user confirms `CSPM.exe` is closed.
+
 ## 2026-10-18: Executive Dashboard (`COL_INV_PAYMENT_STATUS`) Fix, `schema_constants` AST Audit & Local/Cloud `CSPM.xlsm` Lossless Merge
 
 1. **Executive Dashboard Crash Fix & Full Codebase `schema_constants` Audit**:
