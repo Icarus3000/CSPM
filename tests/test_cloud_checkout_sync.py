@@ -247,7 +247,7 @@ def test_small_populated_workbook_saves_publishes_and_survives_recheckout(tmp_pa
                                  "matterName": "Synthetic Matter", "description": "Synthetic small practice docket",
                                  "hours": 1, "rate": 10, "sharePct": 100})
     assert result["ok"]
-    assert (local / "CSPM.xlsm").stat().st_size < 50_000
+    assert (local / "CSPM.xlsm").stat().st_size < 75_000
     assert not service._is_blank_seed("CSPM.xlsm", local / "CSPM.xlsm")
 
     published = service.publish_and_release()

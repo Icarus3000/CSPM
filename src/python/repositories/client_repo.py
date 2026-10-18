@@ -780,7 +780,7 @@ class ClientRepo:
                 ("Date Client Added", profile_row.get(sc.COL_PROFILE_DATE_CLIENT_ADDED)),
                 ("Birthday", profile_row.get(sc.COL_PROFILE_BIRTHDAY)),
                 ("Referral From", profile_row.get(sc.COL_PROFILE_REFERRAL_FROM)),
-                ("Referred By", profile_row.get(sc.COL_PROFILE_REFERRED_BY) or client_row.get(sc.COL_CLIENT_REFERRED_BY)),
+                ("Referred By", profile_row.get(sc.COL_PROFILE_REFERRAL_FROM) or client_row.get(sc.COL_PROFILE_REFERRAL_FROM)),
                 ("Conflict Notes", profile_row.get(sc.COL_PROFILE_CONFLICT_NOTES)),
                 ("Client Notes", profile_row.get(sc.COL_PROFILE_NOTES) or client_row.get(sc.COL_CLIENT_NOTES)),
             ]
@@ -848,7 +848,7 @@ class ClientRepo:
                 ("Date Client Added", profile_row.get(sc.COL_PROFILE_DATE_CLIENT_ADDED)),
                 ("Birthday", profile_row.get(sc.COL_PROFILE_BIRTHDAY)),
                 ("Referral From", profile_row.get(sc.COL_PROFILE_REFERRAL_FROM)),
-                ("Referred By", profile_row.get(sc.COL_PROFILE_REFERRED_BY)),
+                ("Referred By", profile_row.get(sc.COL_PROFILE_REFERRAL_FROM)),
                 ("Conflict Notes", profile_row.get(sc.COL_PROFILE_CONFLICT_NOTES)),
                 ("Client Notes", profile_row.get(sc.COL_PROFILE_NOTES)),
             ]
@@ -959,7 +959,7 @@ class ClientRepo:
                     ("Court File Number", matter_row.get(sc.COL_MATTER_COURT_FILE_NO)),
                     ("Opposing Party", matter_row.get(sc.COL_MATTER_OPPOSING_PARTY)),
                     ("Referral From", matter_row.get(sc.COL_MATTER_REFERRAL_FROM)),
-                    ("Referred By", matter_row.get(sc.COL_MATTER_REFERRED_BY)),
+                    ("Referred By", matter_row.get(sc.COL_MATTER_REFERRAL_FROM)),
                     ("Description", matter_row.get(sc.COL_MATTER_DESCRIPTION)),
                     ("Status", status),
                     ("Notes", matter_row.get(sc.COL_MATTER_NOTES)),

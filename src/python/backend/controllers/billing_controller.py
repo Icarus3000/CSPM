@@ -4020,7 +4020,7 @@ class BillingController(QObject):
             try:
                 bundle = self._draft_svc.get_draft_bundle(str(d_id or ""))
                 if bundle and bundle.get("draft"):
-                    biller = str(bundle["draft"].get(sc.COL_DRF_BILLER_ENTITY) or "").strip()
+                    biller = str(bundle["draft"].get(sc.COL_DRAFT_BILLER_ENTITY) or "").strip()
             except Exception:
                 pass
             return self.nextInvoiceNumberForBiller(biller)

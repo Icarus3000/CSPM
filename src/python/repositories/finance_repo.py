@@ -448,12 +448,12 @@ class FinanceRepo:
                     "active": active,
                     "sortOrder": self.db._parse_int(row.get(sc.COL_TXN_CATEGORY_LKP_SORT_ORDER)) or 0,
                     "notes": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_NOTES)),
-                    "t2125LineNumber": _clean_text(row.get(sc.COL_TXN_CAT_T2125_LINE)),
-                    "t2125LineLabel": _clean_text(row.get(sc.COL_TXN_CAT_T2125_LABEL)),
-                    "gifiSchedule125Code": _clean_text(row.get(sc.COL_TXN_CAT_GIFI_CODE)),
-                    "gifiSchedule125Label": _clean_text(row.get(sc.COL_TXN_CAT_GIFI_LABEL)),
-                    "deductiblePct": float(self.db._parse_float(row.get(sc.COL_TXN_CAT_DEDUCTIBLE_PCT)) or 100.0),
-                    "itcClaimablePct": float(self.db._parse_float(row.get(sc.COL_TXN_CAT_ITC_PCT)) or 100.0),
+                    "t2125LineNumber": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_T2125_LINE_NUM)),
+                    "t2125LineLabel": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_T2125_LINE_LABEL)),
+                    "gifiSchedule125Code": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_GIFI_S125_CODE)),
+                    "gifiSchedule125Label": _clean_text(row.get(sc.COL_TXN_CATEGORY_LKP_GIFI_S125_LABEL)),
+                    "deductiblePct": float(self.db._parse_float(row.get(sc.COL_TXN_CATEGORY_LKP_DEDUCTIBLE_PCT)) or 100.0),
+                    "itcClaimablePct": float(self.db._parse_float(row.get(sc.COL_TXN_CATEGORY_LKP_ITC_CLAIMABLE_PCT)) or 100.0),
                 }
             )
         out.sort(

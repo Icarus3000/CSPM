@@ -3598,6 +3598,7 @@ Item {
             Layout.preferredHeight: visible ? implicitHeight : 0
             visible: !root.option3ShellEnabled
             t: root.t
+            appRef: root.appRef
             appStyle: root.appStyle
             status: root.dataSourceStatus
             statusLabel: root.dataSourceStatusLabel

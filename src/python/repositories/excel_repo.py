@@ -7268,7 +7268,7 @@ class ExcelRepo:
             return {"ok": True, "message": "Invoice unlinked successfully."}
             
         # Check TBL_DISBURSEMENTS if not found in TBL_TIME
-        disb_row = self._find_row_by_key(TBL_DISBURSEMENTS, sc.COL_DISB_ENTRY_ID, entry_id)
+        disb_row = self._find_row_by_key(TBL_DISBURSEMENTS, sc.COL_DISB_ID, entry_id)
         if disb_row:
             disb_row[sc.COL_DISB_STATUS] = "Draft"
             disb_row[sc.COL_DISB_INVOICE_REF] = ""
@@ -7278,7 +7278,7 @@ class ExcelRepo:
             disb_row[sc.COL_DISB_INVOICE_AMOUNT_PAID] = ""
             disb_row[sc.COL_DISB_INVOICE_BALANCE_DUE] = ""
             disb_row[sc.COL_DISB_INVOICE_DATE] = ""
-            self._upsert_row_by_key(TBL_DISBURSEMENTS, sc.COL_DISB_ENTRY_ID, entry_id, disb_row)
+            self._upsert_row_by_key(TBL_DISBURSEMENTS, sc.COL_DISB_ID, entry_id, disb_row)
             return {"ok": True, "message": "Disbursement unlinked successfully."}
 
         return {"ok": False, "message": f"Time or disbursement entry {entry_id} not found."}
@@ -14808,14 +14808,20 @@ class ExcelRepo:
 
         excluded_inv_statuses = {"void", "voided", "cancelled", "canceled", "draft", "reversed"}
         for row in invoice_rows:
-            inv_status = _clean_text(row.get(sc.COL_INV_PAYMENT_STATUS)).lower()
+            inv_ref = _clean_text(row.get(sc.COL_INV_INVOICE_NUM)).upper()
+            if inv_ref.endswith("-V") or "SUPERSEDED" in inv_ref or "VOID" in inv_ref:
+                continue
+            inv_status = _clean_text(
+                row.get(sc.COL_INV_PAYMENT_STATUS) or row.get("Status")
+            ).lower()
             if inv_status in excluded_inv_statuses:
                 continue
             label = quarter_label(row.get(sc.COL_INV_INVOICE_DATE))
             if not label:
                 continue
-            inv_ref = _clean_text(row.get(sc.COL_INV_INVOICE_NUM)).upper()
-            inv_hst = amount(row.get(sc.COL_INV_HST_BILLED)) + amount(row.get(sc.COL_INV_HST_DISB))
+            inv_hst = amount(row.get(sc.COL_INV_TOTAL_TAX))
+            if inv_hst == 0.0:
+                inv_hst = amount(row.get("HSTBilled")) + amount(row.get(sc.COL_INV_HST_DISB))
             already_counted_hst = txn_hst_by_invoice.get(inv_ref, 0.0) if inv_ref else 0.0
             if inv_hst > already_counted_hst + 0.005:
                 delta_hst = inv_hst - already_counted_hst

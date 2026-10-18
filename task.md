@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-18: Executive Dashboard (`COL_INV_PAYMENT_STATUS`) Fix, `schema_constants` AST Audit & Local/Cloud `CSPM.xlsm` Lossless Merge
+
+- [x] Fix `AttributeError: module 'domain.schema_constants' has no attribute 'COL_INV_PAYMENT_STATUS'` (and `COL_INV_HST_BILLED` / `COL_INV_HST_DISB`) in `src/python/repositories/excel_repo.py` (`financial_dashboard_report`).
+- [x] Run a full AST scan across all Python files under `src/python/` for `sc.*` / `schema_constants.*` attribute references, fix all 5 call sites (`excel_repo.py`, `finance_repo.py`, `client_repo.py`, `billing_controller.py`), and add backward-compatible column constant aliases to `src/python/domain/schema_constants.py` (`TOTAL_MISSING: 0`).
+- [x] Back up Local and Cloud `CSPM.xlsm` (`pre_merge_20261018_1358`) and losslessly merge the 8 Oct 13 Cloud-only rows (`Matters` `M_62221a7d3b`, 5 `TimeEntries` rows + 6 billed-status updates for Invoice `26-0122`, and `26-0122` in `InvoiceLog`, `Receivables`, and `Ledger`) with the Local multi-biller/Shareholder Loan/Corporate tables, synchronize Local and Cloud `CSPM.xlsm` (`SHA-256: EC6802F01837595AC95A821C293C1E99621EC91F3DE02A79216EA35680E8D5F2`), and update `%LOCALAPPDATA%/CSPM/sync_state.json`.
+- [x] Add `@Slot(result="QVariantMap") retrySharedDataCheckout()` to `AppController` (`src/python/backend/app_controller.py`) and a `"Retry Checkout"` button in `src/qml/components/DataSourceStatusBanner.qml` (`ProfessionalAppShell.qml` & `MainContent.qml`).
+- [x] Sandbox-safe validation: `py_compile` across all modified Python files, `scripts/qmllint.ps1` across modified QML files, `ExcelRepo.financial_dashboard_report(2026)` verification (`ok=True`, `revenueIncludingWip=$264,766.68`, `netIncomeAccrual=$247,960.07`, `wipAmount=$17,569.35`, `collectibleAr=$62,040.38`), and `pytest tests/test_cloud_checkout_sync.py tests/test_tray_restore_qml.py` (`25 passed`).
+- [ ] Recompile and deploy `C:\Programs\CSPM\CSPM.exe` once the user finishes their active timer in `PID 24052`.
+
 ## 2026-10-18: Compliance Vault Service (`VaultService`), 1-Click Retainer/KYC Open in QML & Core-Code-Only `.exe` Build Rule
 
 - [x] Refine the **Mandatory Post-Change Delivery Gate** in `./GEMINI.md` and `./.agent/rules/post_change_pipeline.md` to explicitly separate **Core Code / UI / Schema Changes** (must run `py_compile`/`qmllint`/tests, recompile `.exe`, and `git push`) from **Data-Only / Matter Intake / Document Operations** (must NOT recompile `CSPM.exe`).

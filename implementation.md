@@ -1,5 +1,19 @@
 # Implementation History
 
+## 2026-10-18: Executive Dashboard (`COL_INV_PAYMENT_STATUS`) Fix, `schema_constants` AST Audit & Local/Cloud `CSPM.xlsm` Lossless Merge
+
+1. **Executive Dashboard Crash Fix & Full Codebase `schema_constants` Audit**:
+   - Fixed `ExcelRepo.financial_dashboard_report()` (`src/python/repositories/excel_repo.py` lines 14809–14830) where `sc.COL_INV_PAYMENT_STATUS`, `sc.COL_INV_HST_BILLED`, and `sc.COL_INV_HST_DISB` caused an `AttributeError` when loading the Executive Dashboard (`Finance & Ledger > Executive Dashboard`).
+   - Scanned the AST of all `.py` files under `src/python/` for `sc.*` / `schema_constants.*` attribute references, updated all 5 call sites (`src/python/repositories/excel_repo.py`, `src/python/repositories/finance_repo.py`, `src/python/repositories/client_repo.py`, and `src/python/backend/controllers/billing_controller.py`), and added backward-compatible aliases in `src/python/domain/schema_constants.py` (`TOTAL_MISSING: 0`).
+2. **Lossless Local + Cloud `CSPM.xlsm` Merge & Sync State Alignment**:
+   - Created verified backups of both `%LOCALAPPDATA%/CSPM/data/CSPM.xlsm` and `%OneDrive%/CSPM_Shared_Data/CSPM.xlsm` under `%LOCALAPPDATA%/CSPM/backups/pre_merge_20261018_1358/`.
+   - Merged the 8 October 13 Cloud-only rows (`Matters` `M_62221a7d3b` / `MIL1-NONE-GEN-26-0209`, 5 `TimeEntries` rows + 6 billed-status updates for Invoice `26-0122`, and Invoice `26-0122` in `InvoiceLog`, `Receivables`, and `Ledger`) into Local `CSPM.xlsm` alongside all multi-biller, Shareholder Loan (`GIFI 2781`), CCA, and Corporate rows, atomically synchronized Local and Cloud `CSPM.xlsm` (`SHA-256: EC6802F01837595AC95A821C293C1E99621EC91F3DE02A79216EA35680E8D5F2`), and updated `%LOCALAPPDATA%/CSPM/sync_state.json`.
+3. **Runtime Cloud Checkout Retry (`AppController` & `DataSourceStatusBanner.qml`)**:
+   - Added `@Slot(result="QVariantMap") retrySharedDataCheckout()` to `src/python/backend/app_controller.py` and wired a `"Retry Checkout"` button in `src/qml/components/DataSourceStatusBanner.qml` (`ProfessionalAppShell.qml` & `MainContent.qml`).
+4. **Validation Split**:
+   - **Sandbox-safe checks passed**: `python -m py_compile` on all modified Python files; `scripts/qmllint.ps1` on modified QML files; `ExcelRepo.financial_dashboard_report(2026)` verified (`ok=True`, `revenueIncludingWip=$264,766.68`, `netIncomeAccrual=$247,960.07`, `wipAmount=$17,569.35`, `collectibleAr=$62,040.38`); `pytest tests/test_cloud_checkout_sync.py tests/test_tray_restore_qml.py` (`25 passed`).
+   - **Outside-sandbox / `.exe` rebuild**: Deferred while the user's active timer is running in `C:\Programs\CSPM\CSPM.exe` (`PID 24052`).
+
 ## 2026-10-18: Compliance Vault Service (`VaultService`), 1-Click Retainer/KYC Open in QML & Core-Code-Only `.exe` Build Rule
 
 1. **Core-Code-Only vs. Data-Only Delivery Gate (`./GEMINI.md` & `./.agent/rules/post_change_pipeline.md`)**:

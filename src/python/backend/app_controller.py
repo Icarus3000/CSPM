@@ -3920,6 +3920,20 @@ class AppController(QObject):
         logging.error("Shared-data checkout blocked during %s: %s", phase, message)
         self.toast.emit(f"Shared data opened read-only: {message}")
 
+    @Slot(result="QVariantMap")
+    def retrySharedDataCheckout(self) -> Dict[str, Any]:
+        """Re-attempt cloud writer checkout at runtime without restarting CSPM."""
+        self._checkout_shared_data("runtime retry")
+        ok = bool(self._governed_source_verified)
+        if ok:
+            self.toast.emit("Cloud checkout verified — session is now writable.")
+        return {
+            "ok": ok,
+            "status": self.dataSourceStatus,
+            "statusLabel": self.dataSourceStatusLabel,
+            "identity": self._governed_source_identity,
+        }
+
     @Property(str, notify=dataSourceStatusChanged)
     def dataSourceStatus(self) -> str:
         from backend.native_candidate import profile
