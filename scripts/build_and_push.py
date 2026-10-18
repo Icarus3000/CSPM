@@ -73,7 +73,7 @@ def _git_changed_files() -> list[str]:
 
 
 def _is_safe_to_stage(rel_path: str) -> bool:
-    norm = rel_path.replace("\\", "/").lstrip("./")
+    norm = rel_path.replace("\\", "/").removeprefix("./")
     parts = Path(norm).parts
     if any(part in FORBIDDEN_DIR_PARTS or part.startswith(".venv") for part in parts):
         return False
