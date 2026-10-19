@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from copy import copy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from html import escape as xml_escape
 import json
 import logging
 import math
@@ -44,6 +45,7 @@ LEGACY_DOCKETS_COLUMNS = LEGACY_DOCKETS_HEADERS
 LEGACY_DATE_NUMBER_FORMAT = "[$-409]mmmm\\ d\\,\\ yyyy;@"
 LEGACY_PERCENT_NUMBER_FORMAT = "0%"
 LEGACY_CURRENCY_NUMBER_FORMAT = "$#,##0.00"
+EXCEL_EPOCH_DATE = date(1899, 12, 30)
 
 
 def _clean_text(value: Any) -> str:
@@ -79,8 +81,17 @@ def _parse_datetime_midnight(value: Any) -> datetime:
         return datetime(value.year, value.month, value.day, 0, 0, 0)
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day, 0, 0, 0)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if 20000 <= float(value) <= 100000:
+            dt_d = EXCEL_EPOCH_DATE + timedelta(days=int(round(float(value))))
+            return datetime(dt_d.year, dt_d.month, dt_d.day, 0, 0, 0)
     text = _clean_text(value)
     if text:
+        if re.fullmatch(r"\d{5}(?:\.\d+)?", text):
+            serial_val = float(text)
+            if 20000 <= serial_val <= 100000:
+                dt_d = EXCEL_EPOCH_DATE + timedelta(days=int(round(serial_val)))
+                return datetime(dt_d.year, dt_d.month, dt_d.day, 0, 0, 0)
         for candidate in (text[:10], text):
             try:
                 dt = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
@@ -119,6 +130,15 @@ def _format_rate_number(value: Any) -> int | float:
     if rate.is_integer():
         return int(rate)
     return rate
+
+
+def _format_xml_number(value: Any) -> str:
+    num = float(value or 0.0)
+    if not math.isfinite(num):
+        return "0"
+    if num.is_integer():
+        return str(int(num))
+    return str(round(num, 6)).rstrip("0").rstrip(".")
 
 
 class LegacyDocketsSyncService:
@@ -610,25 +630,27 @@ class LegacyDocketsSyncService:
             cell_pct.value = _normalize_share_fraction(current_payload.get("Percentage", 1))
             cell_pct.number_format = LEGACY_PERCENT_NUMBER_FORMAT
 
+            amt_numeric = round(_parse_float(current_payload.get("Amount to CS"), 0.0), 2)
             cell_amt = ws.cell(target_row_idx, c_amt)
             cell_amt.value = self._resolve_formula_or_value(
                 ws,
                 template_row_idx,
                 target_row_idx,
                 c_amt,
-                _parse_float(current_payload.get("Amount to CS"), 0.0),
+                amt_numeric,
                 is_flat_fee,
             )
             if not cell_amt.number_format or cell_amt.number_format == "General":
                 cell_amt.number_format = LEGACY_CURRENCY_NUMBER_FORMAT
 
+            total_numeric = round(_parse_float(current_payload.get("Total Inclusive of HST"), 0.0), 2)
             cell_total = ws.cell(target_row_idx, c_total)
             cell_total.value = self._resolve_formula_or_value(
                 ws,
                 template_row_idx,
                 target_row_idx,
                 c_total,
-                _parse_float(current_payload.get("Total Inclusive of HST"), 0.0),
+                total_numeric,
                 is_flat_fee,
             )
             if not cell_total.number_format or cell_total.number_format == "General":
@@ -648,8 +670,31 @@ class LegacyDocketsSyncService:
             if getattr(ws, "auto_filter", None) is not None and getattr(ws.auto_filter, "ref", None):
                 ws.auto_filter.ref = new_ref
 
-            wb.save(str(temp_path))
-            self._normalize_xlsm_content_types(temp_path, workbook_path)
+            row_cell_values: dict[int, Any] = {
+                col_idx: ws.cell(target_row_idx, col_idx).value
+                for col_idx in range(min_col, max_col + 1)
+            }
+            formula_cached_values: dict[int, float] = {
+                c_amt: amt_numeric,
+                c_total: total_numeric,
+            }
+
+            patched_surgically = self._surgically_patch_workbook_zip(
+                workbook_path=workbook_path,
+                temp_path=temp_path,
+                target_row_idx=int(target_row_idx),
+                template_row_idx=int(template_row_idx) if template_row_idx is not None else None,
+                header_row=int(header_row),
+                min_col=int(min_col),
+                max_col=int(max_col),
+                max_row=int(max_row),
+                new_ref=new_ref,
+                row_cell_values=row_cell_values,
+                formula_cached_values=formula_cached_values,
+            )
+            if not patched_surgically:
+                wb.save(str(temp_path))
+                self._normalize_xlsm_content_types(temp_path, workbook_path)
             self._close_workbook(wb)
             wb = None
 
@@ -676,6 +721,242 @@ class LegacyDocketsSyncService:
                     temp_path.unlink()
                 except Exception:
                     pass
+
+    @classmethod
+    def _surgically_patch_workbook_zip(
+        cls,
+        *,
+        workbook_path: Path,
+        temp_path: Path,
+        target_row_idx: int,
+        template_row_idx: int | None,
+        header_row: int,
+        min_col: int,
+        max_col: int,
+        max_row: int,
+        new_ref: str,
+        row_cell_values: Mapping[int, Any],
+        formula_cached_values: Mapping[int, float],
+    ) -> bool:
+        """Update only the Dockets sheet XML, Table1_1 XML, and ExternalData_1 definedName in the ZIP archive.
+
+        This preserves customUI/*, _rels/.rels (ui/extensibility), xl/queryTables/*, xl/connections.xml,
+        xl/comments*, xl/drawings/*, xl/vbaProject.bin, and all other workbook parts byte-for-byte.
+        """
+        if not workbook_path.is_file() or not zipfile.is_zipfile(workbook_path):
+            return False
+
+        try:
+            with zipfile.ZipFile(workbook_path, "r") as zin:
+                names = set(zin.namelist())
+                if "xl/workbook.xml" not in names or "xl/_rels/workbook.xml.rels" not in names:
+                    return False
+
+                wb_xml = zin.read("xl/workbook.xml").decode("utf-8")
+                wb_rels_xml = zin.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+
+                sheet_rid = None
+                for m_sheet in re.finditer(r"<sheet\b[^>]*>", wb_xml):
+                    tag = m_sheet.group(0)
+                    m_name = re.search(r'\bname="([^"]+)"', tag)
+                    if m_name and m_name.group(1) == LEGACY_DOCKETS_SHEET:
+                        m_rid = re.search(r'\br:id="([^"]+)"', tag)
+                        if m_rid:
+                            sheet_rid = m_rid.group(1)
+                        break
+                if not sheet_rid:
+                    return False
+
+                sheet_part_name = None
+                for m_rel in re.finditer(r"<Relationship\b[^>]*>", wb_rels_xml):
+                    tag = m_rel.group(0)
+                    m_id = re.search(r'\bId="([^"]+)"', tag)
+                    m_target = re.search(r'\bTarget="([^"]+)"', tag)
+                    if m_id and m_target and m_id.group(1) == sheet_rid:
+                        raw_target = m_target.group(1).lstrip("/")
+                        if not raw_target.startswith("xl/"):
+                            raw_target = f"xl/{raw_target}"
+                        sheet_part_name = raw_target
+                        break
+                if not sheet_part_name or sheet_part_name not in names:
+                    return False
+
+                table_part_name = None
+                for candidate in sorted(n for n in names if n.startswith("xl/tables/") and n.endswith(".xml")):
+                    t_xml = zin.read(candidate).decode("utf-8", errors="ignore")
+                    m_tbl = re.search(r"<table\b[^>]*>", t_xml)
+                    if not m_tbl:
+                        continue
+                    tbl_tag = m_tbl.group(0)
+                    if (
+                        f'name="{LEGACY_DOCKETS_TABLE}"' in tbl_tag
+                        or f'displayName="{LEGACY_DOCKETS_TABLE}"' in tbl_tag
+                    ):
+                        table_part_name = candidate
+                        break
+                if not table_part_name or table_part_name not in names:
+                    return False
+
+                sheet_xml = zin.read(sheet_part_name).decode("utf-8")
+                table_xml = zin.read(table_part_name).decode("utf-8")
+
+                # Extract cell styles (s="...") from template row and/or existing target row
+                style_by_col: dict[str, str] = {}
+                candidate_style_rows: list[int] = []
+                if template_row_idx is not None and template_row_idx > header_row:
+                    candidate_style_rows.append(template_row_idx)
+                if target_row_idx > header_row:
+                    candidate_style_rows.append(target_row_idx)
+
+                def _harvest_row_styles(row_block: str, overwrite: bool = True) -> None:
+                    for m_c in re.finditer(r'<c\b[^>]*\br="([A-Z]+)\d+"[^>]*>', row_block):
+                        col_let = m_c.group(1)
+                        m_s = re.search(r'\bs="(\d+)"', m_c.group(0))
+                        if m_s and (overwrite or col_let not in style_by_col):
+                            style_by_col[col_let] = m_s.group(1)
+
+                for r_idx in candidate_style_rows:
+                    m_r = re.search(
+                        rf'<row\b[^>]*\br="{r_idx}"[^>]*>(?:.*?</row>|/>)',
+                        sheet_xml,
+                        re.DOTALL,
+                    )
+                    if m_r:
+                        _harvest_row_styles(m_r.group(0), overwrite=True)
+
+                if not style_by_col:
+                    all_rows = list(re.finditer(r'<row\b[^>]*\br="(\d+)"[^>]*>.*?</row>', sheet_xml, re.DOTALL))
+                    for m_r in reversed(all_rows):
+                        if int(m_r.group(1)) > header_row:
+                            _harvest_row_styles(m_r.group(0), overwrite=False)
+                            if style_by_col:
+                                break
+
+                existing_target_match = re.search(
+                    rf'<row\b([^>]*\br="{target_row_idx}"[^>]*)>(?:.*?</row>|/>)',
+                    sheet_xml,
+                    re.DOTALL,
+                )
+                row_attrs_str = f'r="{target_row_idx}" spans="{min_col}:{max_col}"'
+                if existing_target_match:
+                    raw_attrs = existing_target_match.group(1)
+                    m_ht = re.search(r'\bht="([^"]+)"', raw_attrs)
+                    if m_ht:
+                        row_attrs_str += f' ht="{m_ht.group(1)}"'
+                elif template_row_idx is not None:
+                    m_tmpl = re.search(rf'<row\b([^>]*\br="{template_row_idx}"[^>]*)>', sheet_xml)
+                    if m_tmpl:
+                        m_ht = re.search(r'\bht="([^"]+)"', m_tmpl.group(1))
+                        if m_ht:
+                            row_attrs_str += f' ht="{m_ht.group(1)}"'
+
+                cells_xml: list[str] = []
+                for col_idx in range(min_col, max_col + 1):
+                    col_letter = get_column_letter(col_idx)
+                    coord = f"{col_letter}{target_row_idx}"
+                    s_val = style_by_col.get(col_letter)
+                    s_attr = f' s="{s_val}"' if s_val is not None else ""
+                    val = row_cell_values.get(col_idx)
+
+                    if val is None or (isinstance(val, str) and val == ""):
+                        if s_attr:
+                            cells_xml.append(f'<c r="{coord}"{s_attr}/>')
+                        continue
+
+                    if isinstance(val, (datetime, date)):
+                        d_val = val.date() if isinstance(val, datetime) else val
+                        serial_days = (d_val - EXCEL_EPOCH_DATE).days
+                        cells_xml.append(f'<c r="{coord}"{s_attr}><v>{serial_days}</v></c>')
+                        continue
+
+                    if isinstance(val, str) and val.startswith("="):
+                        f_body = xml_escape(val[1:], quote=False)
+                        cached_num = formula_cached_values.get(col_idx, 0.0)
+                        v_str = _format_xml_number(cached_num)
+                        cells_xml.append(f'<c r="{coord}"{s_attr}><f>{f_body}</f><v>{v_str}</v></c>')
+                        continue
+
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        v_str = _format_xml_number(val)
+                        cells_xml.append(f'<c r="{coord}"{s_attr}><v>{v_str}</v></c>')
+                        continue
+
+                    text_str = str(val)
+                    escaped_text = xml_escape(text_str, quote=False)
+                    space_attr = (
+                        ' xml:space="preserve"'
+                        if (text_str[:1].isspace() or text_str[-1:].isspace() or "\n" in text_str)
+                        else ""
+                    )
+                    cells_xml.append(
+                        f'<c r="{coord}"{s_attr} t="inlineStr"><is><t{space_attr}>{escaped_text}</t></is></c>'
+                    )
+
+                new_row_xml = f"<row {row_attrs_str}>{''.join(cells_xml)}</row>"
+
+                if existing_target_match:
+                    start_pos, end_pos = existing_target_match.span()
+                    sheet_xml = sheet_xml[:start_pos] + new_row_xml + sheet_xml[end_pos:]
+                else:
+                    close_tag = "</sheetData>"
+                    idx_close = sheet_xml.rfind(close_tag)
+                    if idx_close < 0:
+                        return False
+                    sheet_xml = sheet_xml[:idx_close] + new_row_xml + sheet_xml[idx_close:]
+
+                # Expand <dimension ref="A1:Z879"/> if max_row exceeds previous dimension end row
+                def _bump_dimension(m_dim: re.Match[str]) -> str:
+                    prefix, end_col, end_row_str, suffix = (
+                        m_dim.group(1),
+                        m_dim.group(2),
+                        m_dim.group(3),
+                        m_dim.group(4),
+                    )
+                    new_end_row = max(int(end_row_str), int(max_row))
+                    return f"{prefix}{end_col}{new_end_row}{suffix}"
+
+                sheet_xml = re.sub(
+                    r'(<dimension\b[^>]*\bref="[A-Z]+\d+:)([A-Z]+)(\d+)("[^>]*/>)',
+                    _bump_dimension,
+                    sheet_xml,
+                    count=1,
+                )
+
+                # Update ref="A1:M..." on <table ...> and <autoFilter ...> in table1.xml
+                table_xml = re.sub(
+                    r'(<table\b[^>]*\bref=")[^"]+(")',
+                    rf"\g<1>{new_ref}\g<2>",
+                    table_xml,
+                    count=1,
+                )
+                table_xml = re.sub(
+                    r'(<autoFilter\b[^>]*\bref=")[^"]+(")',
+                    rf"\g<1>{new_ref}\g<2>",
+                    table_xml,
+                    count=1,
+                )
+
+                # Synchronize ExternalData_1 definedName in xl/workbook.xml if present for Dockets queryTable
+                wb_xml = re.sub(
+                    r'(<definedName\b[^>]*\bname="ExternalData_1"[^>]*>\s*(?:\'Dockets\'|Dockets)!\$[A-Z]+\$\d+:\$[A-Z]+\$)\d+(\s*</definedName>)',
+                    rf"\g<1>{max_row}\g<2>",
+                    wb_xml,
+                )
+
+                with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+                    for name in zin.namelist():
+                        if name == sheet_part_name:
+                            zout.writestr(name, sheet_xml.encode("utf-8"))
+                        elif name == table_part_name:
+                            zout.writestr(name, table_xml.encode("utf-8"))
+                        elif name == "xl/workbook.xml":
+                            zout.writestr(name, wb_xml.encode("utf-8"))
+                        else:
+                            zout.writestr(name, zin.read(name))
+                return True
+        except Exception as exc:
+            logger.debug("[legacy_dockets_sync] Surgical ZIP patch fallback to openpyxl: %s", exc)
+            return False
 
     def _queue_pending_sync(
         self,

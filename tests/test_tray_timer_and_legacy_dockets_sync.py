@@ -334,3 +334,97 @@ def test_legacy_dockets_lock_resilience_queues_and_flushes(tmp_path: Path) -> No
     assert int(ws.cell(row=3, column=12).value) == 2880
     LegacyDocketsSyncService._close_workbook(wb)
 
+
+def test_start_new_timer_switches_matter_and_preserves_custom_ui_ribbon(tmp_path: Path) -> None:
+    import zipfile
+
+    paths, repo, legacy_path = _create_isolated_cspm_repo(tmp_path)
+
+    # Inject customUI ribbon, ui/extensibility relationship, queryTables, and ExternalData_1 definedName
+    # into legacy_path to simulate real Dockets.xlsm structure.
+    patched_zip = legacy_path.with_name("patched_dockets.xlsm")
+    with zipfile.ZipFile(legacy_path, "r") as zin, zipfile.ZipFile(
+        patched_zip, "w", compression=zipfile.ZIP_DEFLATED
+    ) as zout:
+        for name in zin.namelist():
+            data = zin.read(name)
+            if name == "_rels/.rels":
+                txt = data.decode("utf-8").replace(
+                    "</Relationships>",
+                    '<Relationship Id="R9ba3f36e5ed24550" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="customUI/customUI14.xml"/></Relationships>',
+                )
+                data = txt.encode("utf-8")
+            elif name == "xl/workbook.xml":
+                txt = data.decode("utf-8")
+                if "<definedNames>" not in txt:
+                    txt = txt.replace(
+                        "</workbook>",
+                        '<definedNames><definedName name="ExternalData_1" localSheetId="0" hidden="1">Dockets!$A$1:$H$2</definedName></definedNames></workbook>',
+                    )
+                data = txt.encode("utf-8")
+            zout.writestr(name, data)
+        zout.writestr("customUI/customUI14.xml", b'<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui"><ribbon/></customUI>')
+        zout.writestr("xl/queryTables/queryTable1.xml", b'<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="ExternalData_1"/>')
+        zout.writestr("xl/connections.xml", b'<connections xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>')
+    patched_zip.replace(legacy_path)
+
+    # Verify _get_or_create_matter matches 'MEGA-COR-26-0093 — Corporate Reorganization' without creating a duplicate
+    matched_matter = repo._get_or_create_matter(
+        matter_name="MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+        client_id="CLI-001",
+        parent_id="PAR-001",
+        default_rate=475.0,
+        default_share_pct=100.0,
+    )
+    assert matched_matter[sc.COL_MATTER_ID] == "MAT-001"
+    assert matched_matter[sc.COL_MATTER_NUMBER] == "MEGA-COR-26-0093"
+
+    # Sync a new docket via repo.add_time_entry using the display-formatted matterName
+    add_res = repo.add_time_entry(
+        {
+            "date": "2026-10-18",
+            "clientId": "CLI-001",
+            "clientName": "Megatech Integrated Services Ltd.",
+            "matterName": "MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+            "description": "Surgical XML sync preserving customUI ribbon",
+            "rawSeconds": 3600,
+            "hours": 1.0,
+            "useExactHours": True,
+            "clientRate": 475.0,
+            "sharePct": 100.0,
+            "status": "Draft",
+        }
+    )
+    assert add_res["ok"] is True
+
+    with zipfile.ZipFile(legacy_path, "r") as zcheck:
+        names = set(zcheck.namelist())
+        assert "customUI/customUI14.xml" in names
+        assert "xl/queryTables/queryTable1.xml" in names
+        assert "xl/connections.xml" in names
+        rels_xml = zcheck.read("_rels/.rels").decode("utf-8")
+        assert "customUI/customUI14.xml" in rels_xml
+        wb_xml = zcheck.read("xl/workbook.xml").decode("utf-8")
+        assert "Dockets!$A$1:$H$3" in wb_xml
+
+    # Verify TrayController.startNewTimerWithDescription switches to a new 00:00:00 timer
+    _app = QCoreApplication.instance() or QCoreApplication([])
+    mock_icon = MagicMock()
+    mock_app_controller = SimpleNamespace(_excel_repo=repo, _theme_name="Dark", _tray_icon=mock_icon)
+    tray = TrayController(mock_app_controller)
+    commands: list[dict] = []
+    tray.mainTimerCommandRequested.connect(lambda cmd: commands.append(dict(cmd)))
+
+    tray.startNewTimerWithDescription(
+        "Megatech Integrated Services Ltd.",
+        "MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+        "New matter timer",
+    )
+    assert tray.hasRunningTimer is True
+    assert tray.displayClientName == "Megatech Integrated Services Ltd."
+    assert tray.displayMatterName == "MEGA-COR-26-0093 \u2014 Corporate Reorganization"
+    assert tray.displayDescription == "New matter timer"
+    assert commands[-1]["action"] == "start_new"
+    tray.shutdown()
+
+

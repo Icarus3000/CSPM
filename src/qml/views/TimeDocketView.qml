@@ -1681,17 +1681,25 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function currentMatterId() {
+        var mText = String(matterCombo ? matterCombo.editText : "").trim()
+        if (mText.length > 0 && mText !== "(blank)" && mText !== "(none)") {
+            var rec = root.getMatterRecordFromName(mText)
+            if (rec) return String(rec.matterId || rec.matterNumber || "")
+        }
         var explicitId = String(root.selectedMatterId || "").trim()
-        if (explicitId.length > 0) return explicitId
-        var rec = root.getMatterRecordFromName(matterCombo ? matterCombo.editText : "")
-        return rec ? String(rec.matterId || rec.matterNumber || "") : ""
+        if (explicitId.length > 0 && mText.length > 0) return explicitId
+        return ""
     }
 
     function currentClientId() {
+        var cText = String(clientCombo ? clientCombo.editText : "").trim()
+        if (cText.length > 0 && cText !== "(blank)" && cText !== "(none)") {
+            var rec = root.getClientRecordFromName(cText)
+            if (rec) return String(rec.clientId || "")
+        }
         var explicitId = String(root.selectedClientId || "").trim()
-        if (explicitId.length > 0) return explicitId
-        var rec = root.getClientRecordFromName(clientCombo ? clientCombo.editText : "")
-        return rec ? String(rec.clientId || "") : ""
+        if (explicitId.length > 0 && cText.length > 0) return explicitId
+        return ""
     }
 
     function updateSelectedMatterIdentityFromCombo() {
@@ -1729,6 +1737,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             var loadedSeconds = parseInt(result.aggregateRawSeconds)
             if (!isFinite(loadedSeconds) || loadedSeconds < 0) loadedSeconds = 0
             root.elapsedSeconds = Math.max(0, Math.floor(loadedSeconds))
+            root.pausedRawSeconds = root.elapsedSeconds
+            root.activeSegmentBaseSeconds = root.elapsedSeconds
             root.lastPersistedSeconds = root.elapsedSeconds
             root.persistedBucketKey = currentBucketKey()
             root.lastSavedEntryId = (result.entryId !== undefined && result.entryId !== null) ? String(result.entryId) : ""
@@ -1748,6 +1758,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             return
         }
 
+        root.pausedRawSeconds = 0
+        root.activeSegmentBaseSeconds = 0
         setElapsedSecondsSafe(0)
         lastPersistedSeconds = 0
         lastSavedEntryId = ""
@@ -2240,11 +2252,12 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         }
     }
 
-    function syncMainTimerToBackend(reason) {
+    function syncMainTimerToBackend(reason, extraOptions) {
         if (root._hydrating) return
         var svc = root.appRef ? root.appRef : (typeof app !== "undefined" ? app : null)
         if (!svc || !svc.syncActiveTimerState) return
         ensureTimerOwnerId()
+        var opts = extraOptions || ({})
         var rawSecs = root.isRunning
             ? root.timerRawSecondsNow()
             : Math.max(0, Math.floor(Number(root.elapsedSeconds || 0)))
@@ -2271,6 +2284,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                 "dateText": String(dateInput ? dateInput.text : ""),
                 "taskText": String(taskCombo ? taskCombo.editText : ""),
                 "entryId": String(root.lastSavedEntryId || ""),
+                "clearActiveTimer": !!opts.clearActiveTimer,
                 "reason": String(reason || "")
             })
         } catch (e0) {
@@ -3259,68 +3273,84 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             root._updatingDropdowns = false
             return
         }
+        var prevBucketKey = root.currentBucketKey()
         var pSel = parentCombo.editText
         var cSel = clientCombo.editText
         var mSel = matterCombo.editText
 
-        if (source === "matter" && mSel && mSel !== "") {
-            var matchMatter = null
-            var cleanMSel = mSel.replace(/ - $/, "").replace(/ - undefined$/, "").trim()
-            for (var i = 0; i < root._rawMatterDirectory.length; i++) {
-                var m = root._rawMatterDirectory[i]
-                var mStr = String(m.matterNumber || "") + " - " + String(m.matterName || "")
-                var mNum = String(m.matterNumber || "").trim()
-                var mName = String(m.matterName || "").trim()
-                var dName = String(m.displayName || "").trim()
-                
-                if (mStr === mSel || 
-                    mName === mSel || mName === cleanMSel ||
-                    mNum === mSel || mNum === cleanMSel || 
-                    dName === mSel || dName === cleanMSel ||
-                    (mNum !== "" && mSel.indexOf(mNum) === 0)) {
-                    matchMatter = m
-                    break
-                }
-            }
-            if (matchMatter) {
-                var cName = String(matchMatter.clientName || "")
-                if (cName) {
-                    clientCombo.editText = cName
-                    cSel = cName
-                    var pName = ""
-                    for (var j = 0; j < root._rawClientDirectory.length; j++) {
-                        var c = root._rawClientDirectory[j]
-                        if (c.displayName === cName || c.clientName === cName) {
-                            pName = String(c.parentClientName || "")
-                            break
+        if (source === "matter") {
+            if (!mSel || mSel === "" || mSel === "(blank)" || mSel === "(none)") {
+                root.selectedMatterId = ""
+            } else {
+                var matchMatter = root.getMatterRecordFromName(mSel)
+                if (matchMatter) {
+                    root.selectedMatterId = String(matchMatter.matterId || "")
+                    if (String(matchMatter.clientId || "").trim().length > 0) {
+                        root.selectedClientId = String(matchMatter.clientId || "")
+                    }
+                    if (String(matchMatter.parentId || "").trim().length > 0) {
+                        root.selectedParentId = String(matchMatter.parentId || "")
+                    }
+                    var defRate = Number(matchMatter.defaultRate)
+                    if (!root._hydrating && isFinite(defRate) && defRate > 0 && rateInput) {
+                        rateInput.text = defRate.toFixed(2)
+                    }
+                    var defShare = Number(matchMatter.defaultShare)
+                    if (!root._hydrating && isFinite(defShare) && defShare > 0 && billInput) {
+                        billInput.text = String(defShare)
+                    }
+                    var cName = String(matchMatter.clientName || "")
+                    if (cName) {
+                        clientCombo.editText = cName
+                        cSel = cName
+                        var pName = ""
+                        for (var j = 0; j < root._rawClientDirectory.length; j++) {
+                            var c = root._rawClientDirectory[j]
+                            if (c.displayName === cName || c.clientName === cName) {
+                                pName = String(c.parentClientName || "")
+                                if (String(c.clientId || "").trim().length > 0) {
+                                    root.selectedClientId = String(c.clientId || "")
+                                }
+                                break
+                            }
                         }
+                        if (pName) {
+                            parentCombo.editText = pName
+                        } else {
+                            parentCombo.editText = "(none)"
+                        }
+                        pSel = parentCombo.editText
                     }
-                    if (pName) {
-                        parentCombo.editText = pName
-                    } else {
-                        parentCombo.editText = "(none)"
-                    }
-                    pSel = parentCombo.editText
+                } else {
+                    root.selectedMatterId = ""
                 }
             }
         }
-        if (source === "client" && cSel && cSel !== "" && cSel !== "(blank)") {
-            var matchClient = null
-            for (var k = 0; k < root._rawClientDirectory.length; k++) {
-                var c2 = root._rawClientDirectory[k]
-                if (c2.displayName === cSel || c2.clientName === cSel) {
-                    matchClient = c2
-                    break
+        if (source === "client") {
+            if (!cSel || cSel === "" || cSel === "(blank)") {
+                root.selectedClientId = ""
+            } else {
+                var matchClient = null
+                for (var k = 0; k < root._rawClientDirectory.length; k++) {
+                    var c2 = root._rawClientDirectory[k]
+                    if (c2.displayName === cSel || c2.clientName === cSel) {
+                        matchClient = c2
+                        break
+                    }
                 }
-            }
-            if (matchClient) {
-                var pName2 = String(matchClient.parentClientName || "")
-                if (pName2) {
-                    parentCombo.editText = pName2
-                    pSel = pName2
+                if (matchClient) {
+                    root.selectedClientId = String(matchClient.clientId || "")
+                    root.selectedParentId = String(matchClient.parentClientId || "")
+                    var pName2 = String(matchClient.parentClientName || "")
+                    if (pName2) {
+                        parentCombo.editText = pName2
+                        pSel = pName2
+                    } else {
+                        parentCombo.editText = "(none)"
+                        pSel = "(none)"
+                    }
                 } else {
-                    parentCombo.editText = "(none)"
-                    pSel = "(none)"
+                    root.selectedClientId = ""
                 }
             }
         }
@@ -3373,8 +3403,53 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         clientCombo.fullModel = filteredClients.sort()
         matterCombo.fullModel = filteredMatters.sort()
 
+        if (!root._hydrating && (source === "client" || source === "parent")) {
+            var curMatterRec = root.getMatterRecordFromName(matterCombo.editText)
+            var curMatterClient = curMatterRec ? String(curMatterRec.clientName || "") : ""
+            var matterBelongs = (cFilter === null)
+                ? (curMatterRec !== null)
+                : (curMatterClient === cFilter)
+            if (!matterBelongs) {
+                if (source === "client" && filteredMatters.length === 1) {
+                    matterCombo.editText = filteredMatters[0]
+                    var singleRec = root.getMatterRecordFromName(filteredMatters[0])
+                    root.selectedMatterId = singleRec ? String(singleRec.matterId || "") : ""
+                    if (singleRec) {
+                        var sRate = Number(singleRec.defaultRate)
+                        if (isFinite(sRate) && sRate > 0 && rateInput) rateInput.text = sRate.toFixed(2)
+                        var sShare = Number(singleRec.defaultShare)
+                        if (isFinite(sShare) && sShare > 0 && billInput) billInput.text = String(sShare)
+                    }
+                } else {
+                    matterCombo.editText = ""
+                    root.selectedMatterId = ""
+                }
+            }
+        }
+
         if (!root._hydrating && source !== "init") {
-            root.dirty = true
+            var nextBucketKey = root.currentBucketKey()
+            if (!root.isRunning && nextBucketKey !== prevBucketKey) {
+                // Switching Client or Matter after saving (or while viewing another docket)
+                // starts a clean slate for the new bucket and loads any existing aggregate for it.
+                if (root.lastSavedEntryId.length > 0 || root.lastPersistedSeconds > 0 || !root.dirty) {
+                    root.lastSavedEntryId = ""
+                    root.lastPersistedSeconds = 0
+                    root.persistedBucketKey = ""
+                    root.timerDraftBucketKey = ""
+                    root.timerProtectedMode = false
+                    root.pausedRawSeconds = 0
+                    root.activeSegmentBaseSeconds = 0
+                    root.elapsedSeconds = 0
+                    root.timerLockNotice = ""
+                    root.docketStatusText = "Draft"
+                    if (descInput) descInput.text = ""
+                    root.syncTimeFieldFromElapsed()
+                    root.dirty = false
+                }
+            } else {
+                root.dirty = true
+            }
             root.handleBucketContextChanged()
             root.syncMainTimerToBackend("dropdown-" + String(source || ""))
         }
@@ -3444,6 +3519,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             "distinctDocket": root.saveAsDistinctDocket ? 1 : 0,
             "status": String(options.statusText || root.docketStatusText || "Draft"),
             "allowClientOnlyDraft": options.allowClientOnlyDraft ? 1 : 0,
+            "stoppedTimer": !root.isRunning,
             "entryId": root.lastSavedEntryId
         }
     }
@@ -3599,6 +3675,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             if (isFinite(persistedSeconds) && persistedSeconds >= 0) {
                 root._hydrating = true
                 root.elapsedSeconds = Math.max(0, Math.floor(persistedSeconds))
+                root.pausedRawSeconds = root.elapsedSeconds
+                root.activeSegmentBaseSeconds = root.elapsedSeconds
                 syncTimeFieldFromElapsed()
                 root.lastPersistedSeconds = root.elapsedSeconds
                 root._hydrating = false
@@ -3608,6 +3686,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             root.persistedBucketKey = currentBucketKey()
             if (root.isRunning) {
                 root.activeSegmentStartedAtMs = Date.now()
+            } else {
+                root.timerProtectedMode = false
             }
             if (!root._hydrating) root.dirty = false
             root.timerLockNotice = "Saved " + (lastSavedEntryId.length > 0 ? ("entry " + lastSavedEntryId + " ") : "")
@@ -3658,7 +3738,12 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function getMatterRecordFromName(mSel) {
-        var cleanMSel = String(mSel || "").replace(/ - $/, "").replace(/ - undefined$/, "").trim().toLowerCase()
+        var cleanMSel = String(mSel || "")
+            .replace(/\s+\u2014\s+/g, " - ")
+            .replace(/ - $/, "")
+            .replace(/ - undefined$/, "")
+            .trim()
+            .toLowerCase()
         if (!cleanMSel || cleanMSel === "(none)" || cleanMSel === "(blank)") return null
         if (!root._rawMatterDirectory) return null
         var best = null
@@ -3668,7 +3753,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             var mId = String(m.matterId || "").trim().toLowerCase()
             var mNum = String(m.matterNumber || "").trim().toLowerCase()
             var mName = String(m.matterName || "").trim().toLowerCase()
-            var dName = String(m.displayName || "").trim().toLowerCase()
+            var dName = String(m.displayName || "").replace(/\s+\u2014\s+/g, " - ").trim().toLowerCase()
             var mStr = mNum + (mName ? " - " + mName : "")
             var score = -1
             if (mId && mId === cleanMSel) score = 1000
@@ -3787,19 +3872,58 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         _hydrating = false
     }
 
+    function startNewDocketEntry() {
+        if (root.isRunning) {
+            root.toggleTimer()
+            if (root.elapsedSeconds > 0 && String(clientCombo ? clientCombo.editText : "").trim().length > 0) {
+                root.requestSaveToDatabaseIfNeeded("new-docket-autosave", {
+                    "skipMatterPrompt": true,
+                    "allowClientOnlyDraft": true
+                })
+            }
+        }
+        root.clearDocketForm()
+    }
+
     function clearDocketForm() {
+        try { if (docketTimer) docketTimer.stop() } catch (e0) {}
+        try { if (bucketLookupDebounce) bucketLookupDebounce.stop() } catch (e1) {}
+        try { releaseTimerLock() } catch (e2) {}
+
         _hydrating = true
+        root.isRunning = false
+        root.activeSegmentStartedAtMs = 0
+        root.activeSegmentBaseSeconds = 0
+        root.pausedRawSeconds = 0
+        root.elapsedSeconds = 0
+        root.lastPersistedSeconds = 0
         root.lastSavedEntryId = ""
-        if (timeInput) timeInput.text = ""
-        if (descInput) descInput.text = ""
-        if (billInput) billInput.text = ""
-        
-        root.resetDocketTimerToZero()
+        root.persistedBucketKey = ""
+        root.timerDraftBucketKey = ""
+        root.timerProtectedMode = false
+        root.timerLockNotice = ""
+        root.selectedParentId = ""
+        root.selectedClientId = ""
+        root.selectedMatterId = ""
         root.docketStatusText = "Draft"
+
+        if (dateInput) dateInput.text = root.todayIsoLocal()
+        root.setComboTextStrict(parentCombo, "")
+        root.setComboTextStrict(clientCombo, "")
+        root.setComboTextStrict(matterCombo, "")
+        root.setComboTextStrict(taskCombo, "")
+        if (descInput) descInput.text = ""
+        if (billInput) billInput.text = "100"
+        if (timeInput) timeInput.text = "0.0"
+
+        root.updateCascadingDropdowns("init")
         root.calculateFees()
-        
         root.dirty = false
         _hydrating = false
+
+        root.syncMainTimerToBackend("new-entry", { "clearActiveTimer": true })
+        root.showSaveFeedback("Ready for new docket — select a Client or Matter.", false)
+        if (clientCombo) clientCombo.forceActiveFocus()
     }
 
     function returnToCallerOrClose() {
@@ -4859,7 +4983,7 @@ Behavior on border.color {
                             text: root.isBucketLocked() ? "Locked" : (root.isRunning ? "Stop" : "Start")
                             primary: true
                             enabled: !root.isBucketLocked()
-                            Layout.preferredWidth: 120
+                            Layout.preferredWidth: 112
                             Layout.preferredHeight: 40
                             onClicked: root.toggleTimer()
                         }
@@ -4871,9 +4995,23 @@ Behavior on border.color {
                             text: "Reset"
                             primary: false
                             enabled: !root.isBucketLocked() && (root.isRunning || root.elapsedSeconds > 0)
-                            Layout.preferredWidth: 116
+                            Layout.preferredWidth: 96
                             Layout.preferredHeight: 40
                             onClicked: root.resetDocketTimerToZero()
+                        }
+
+                        PillButton {
+                            objectName: "timeDocketTopNewButton"
+                            t: root.t
+                            metrics: root.responsiveMetrics
+                            sfxBus: root.sfxBus
+                            text: "+ New"
+                            primary: false
+                            Layout.preferredWidth: 96
+                            Layout.preferredHeight: 40
+                            onClicked: root.startNewDocketEntry()
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Clear current docket and start a fresh 00:00:00 entry for another Client/Matter"
                         }
                     }
                 }
@@ -7713,33 +7851,116 @@ Behavior on border.color {
                 if (root.isRunning) {
                     root.toggleTimer()
                 }
+            } else if (action === "start_new") {
+                try { if (docketTimer) docketTimer.stop() } catch (e0) {}
+                try { if (bucketLookupDebounce) bucketLookupDebounce.stop() } catch (e1) {}
+                try { releaseTimerLock() } catch (e2) {}
+
+                var newClient = String(cmd.clientName || "").trim()
+                var newMatter = String(cmd.matterName || "").replace(/\s+\u2014\s+/g, " - ").trim()
+                var newDesc = String(cmd.description || "")
+
+                root._hydrating = true
+                root.isRunning = false
+                root.activeSegmentStartedAtMs = 0
+                root.activeSegmentBaseSeconds = 0
+                root.pausedRawSeconds = 0
+                root.elapsedSeconds = 0
+                root.lastPersistedSeconds = 0
+                root.lastSavedEntryId = ""
+                root.persistedBucketKey = ""
+                root.timerDraftBucketKey = ""
+                root.timerProtectedMode = false
+                root.timerLockNotice = ""
+                root.docketStatusText = "Draft"
+                root.selectedParentId = ""
+                root.selectedClientId = String(cmd.clientId || "")
+                root.selectedMatterId = String(cmd.matterId || "")
+
+                if (dateInput) dateInput.text = root.todayIsoLocal()
+                if (newClient.length > 0) {
+                    root.setComboTextStrict(clientCombo, newClient)
+                    root.updateCascadingDropdowns("client")
+                } else {
+                    root.setComboTextStrict(clientCombo, "")
+                }
+                if (newMatter.length > 0) {
+                    root.setComboTextStrict(matterCombo, newMatter)
+                    root.updateCascadingDropdowns("matter")
+                    var mRec = root.getMatterRecordFromName(newMatter)
+                    if (mRec) {
+                        root.selectedMatterId = String(mRec.matterId || root.selectedMatterId || "")
+                        root.selectedClientId = String(mRec.clientId || root.selectedClientId || "")
+                        var defR = Number(mRec.defaultRate)
+                        if (isFinite(defR) && defR > 0 && rateInput) rateInput.text = defR.toFixed(2)
+                        var defS = Number(mRec.defaultShare)
+                        if (isFinite(defS) && defS > 0 && billInput) billInput.text = String(defS)
+                    }
+                } else {
+                    root.setComboTextStrict(matterCombo, "")
+                }
+                if (descInput) descInput.text = newDesc
+                root.syncTimeFieldFromElapsed()
+                root.calculateFees()
+                root._hydrating = false
+                root.dirty = true
+                root.toggleTimer()
             } else if (action === "resume" || action === "start") {
                 if (!root.isRunning && !root.isBucketLocked()) {
-                    if (action === "start") {
-                        var cmdClient = String(cmd.clientName || "").trim()
-                        var cmdMatter = String(cmd.matterName || "").trim()
-                        var cmdDesc = String(cmd.description || "")
-                        if (cmdClient.length > 0 && String(clientCombo ? clientCombo.editText : "").trim().length <= 0) {
-                            root._hydrating = true
-                            root.setComboTextStrict(clientCombo, cmdClient)
-                            root.updateCascadingDropdowns("client")
-                            if (cmdMatter.length > 0) {
-                                root.setComboTextStrict(matterCombo, cmdMatter)
-                                root.updateCascadingDropdowns("matter")
-                            }
-                            if (descInput && cmdDesc.length > 0) {
-                                descInput.text = cmdDesc
-                            }
-                            root._hydrating = false
+                    var cmdClient = String(cmd.clientName || "").trim()
+                    var cmdMatter = String(cmd.matterName || "").replace(/\s+\u2014\s+/g, " - ").trim()
+                    var cmdDesc = String(cmd.description || "")
+                    if (cmdClient.length > 0) {
+                        root._hydrating = true
+                        root.setComboTextStrict(clientCombo, cmdClient)
+                        root.updateCascadingDropdowns("client")
+                        if (cmdMatter.length > 0) {
+                            root.setComboTextStrict(matterCombo, cmdMatter)
+                            root.updateCascadingDropdowns("matter")
                         }
+                        if (descInput && cmdDesc.length > 0) {
+                            descInput.text = cmdDesc
+                        }
+                        if (cmd.elapsedSeconds !== undefined) {
+                            var startBase = Math.max(0, Math.floor(Number(cmd.elapsedSeconds || 0)))
+                            root.elapsedSeconds = startBase
+                            root.pausedRawSeconds = startBase
+                            root.activeSegmentBaseSeconds = startBase
+                            root.syncTimeFieldFromElapsed()
+                        }
+                        root._hydrating = false
                     }
                     root.toggleTimer()
                 }
-            } else if (action === "update_description") {
+            } else if (action === "description" || action === "update_description") {
                 var nextDesc = String(cmd.description !== undefined ? cmd.description : "")
                 if (descInput && descInput.text !== nextDesc) {
                     descInput.text = nextDesc
                 }
+            } else if (action === "stopped_and_saved") {
+                try { if (docketTimer) docketTimer.stop() } catch (e3) {}
+                root.isRunning = false
+                root.activeSegmentStartedAtMs = 0
+                root.timerProtectedMode = false
+                releaseTimerLock()
+                if (cmd.entryId) {
+                    root.lastSavedEntryId = String(cmd.entryId)
+                }
+                if (cmd.elapsedSeconds !== undefined) {
+                    var savedSecs = Math.max(0, Math.floor(Number(cmd.elapsedSeconds || 0)))
+                    root._hydrating = true
+                    root.elapsedSeconds = savedSecs
+                    root.pausedRawSeconds = savedSecs
+                    root.activeSegmentBaseSeconds = savedSecs
+                    root.lastPersistedSeconds = savedSecs
+                    root.syncTimeFieldFromElapsed()
+                    root._hydrating = false
+                }
+                root.persistedBucketKey = root.currentBucketKey()
+                root.dirty = false
+                root.timerLockNotice = "Saved " + (root.lastSavedEntryId.length > 0 ? ("entry " + root.lastSavedEntryId + " ") : "")
+                    + "(" + root.formatHoursRounded(root.elapsedSeconds) + " hrs)."
+                root.refreshDocketReportAfterSave()
             } else if (action === "stop_and_save") {
                 if (cmd.description !== undefined && descInput && descInput.text !== String(cmd.description)) {
                     descInput.text = String(cmd.description)

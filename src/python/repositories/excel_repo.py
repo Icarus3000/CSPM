@@ -13347,7 +13347,24 @@ class ExcelRepo:
             row_name_lc = _clean_text(row.get(sc.COL_MATTER_NAME)).lower()
             row_disp_lc = _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME)).lower()
             row_num_lc = _clean_text(row.get(sc.COL_MATTER_NUMBER)).lower()
-            if name_lc and name_lc in (row_name_lc, row_disp_lc, row_num_lc):
+            combined_candidates = {
+                c
+                for c in (
+                    row_name_lc,
+                    row_disp_lc,
+                    row_num_lc,
+                    f"{row_num_lc} \u2014 {row_name_lc}" if row_num_lc and row_name_lc else "",
+                    f"{row_num_lc} - {row_name_lc}" if row_num_lc and row_name_lc else "",
+                    f"{row_num_lc} \u2014 {row_disp_lc}" if row_num_lc and row_disp_lc else "",
+                    f"{row_num_lc} - {row_disp_lc}" if row_num_lc and row_disp_lc else "",
+                )
+                if c
+            }
+            prefix_match = bool(
+                row_num_lc
+                and (name_lc.startswith(f"{row_num_lc} \u2014") or name_lc.startswith(f"{row_num_lc} -"))
+            )
+            if name_lc and (name_lc in combined_candidates or prefix_match):
                 canonical = self._canonicalize_matter_row(row)
                 row_client_id = _clean_text(canonical.get(sc.COL_MATTER_CLIENT_ID))
                 if client_id and row_client_id and row_client_id.lower() != _clean_text(client_id).lower():

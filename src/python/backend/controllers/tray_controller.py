@@ -454,8 +454,15 @@ class TrayController(QObject):
             if existing is not None:
                 self._timers = [t for t in self._timers if t is not existing]
                 self.activeTimersChanged.emit()
-            # If latest entry exists and matches, keep its description/client/matter fresh if edited
-            if self._entries and (c_name or m_name or "description" in data or "descriptionText" in data):
+            # Only update the latest recorded entry if the main window is explicitly editing that exact entryId
+            payload_entry_id = str(data.get("entryId") or "").strip()
+            if (
+                not clear_timer
+                and payload_entry_id
+                and self._entries
+                and self._entries[0].entry_id == payload_entry_id
+                and (c_name or m_name or "description" in data or "descriptionText" in data)
+            ):
                 latest = self._entries[0]
                 if c_name:
                     latest.client_display_name = c_name
@@ -854,11 +861,31 @@ class TrayController(QObject):
         try:
             # Bypass CrudFacade._is_booted() guard — go directly to the repo
             repo = getattr(self._app_controller, '_excel_repo', None)
+            if repo is not None and hasattr(repo, "list_active_matter_directory"):
+                directory = repo.list_active_matter_directory() or []
+            elif hasattr(self._app_controller, "listActiveMatterDirectory"):
+                directory = self._app_controller.listActiveMatterDirectory() or []
+            else:
+                directory = []
+            if directory:
+                out = []
+                for m in directory:
+                    if not isinstance(m, dict):
+                        continue
+                    disp = _normalize_matter_label(m.get("displayName") or "")
+                    if not disp:
+                        m_num = str(m.get("matterNumber") or "").strip()
+                        m_name = str(m.get("matterName") or "").strip()
+                        disp = f"{m_num} — {m_name}" if (m_num and m_name) else (m_num or m_name)
+                    if disp and disp not in out:
+                        out.append(disp)
+                if out:
+                    return out
             if repo is not None:
                 result = repo.list_active_matter_names()
             else:
                 result = self._app_controller.listActiveMatterNames()
-            return result if result else []
+            return [_normalize_matter_label(x) for x in (result or []) if x]
         except Exception as exc:
             logger.error("availableMatters EXCEPTION: %s", exc)
             return []
@@ -871,11 +898,19 @@ class TrayController(QObject):
             repo = getattr(self._app_controller, '_excel_repo', None)
             directory = repo.list_active_matter_directory() if repo else self._app_controller.listActiveMatterDirectory()
             
+            def _label(m):
+                disp = _normalize_matter_label(m.get('displayName', ''))
+                if not disp:
+                    m_num = str(m.get('matterNumber') or '').strip()
+                    m_name = str(m.get('matterName') or '').strip()
+                    disp = f"{m_num} — {m_name}" if (m_num and m_name) else (m_num or m_name)
+                return disp
+
             # Filter the directory by clientName matching exactly
-            filtered = [m.get('displayName', '') for m in directory if m.get('clientName', '').lower() == client_name.lower()]
+            filtered = [_label(m) for m in directory if m.get('clientName', '').lower() == client_name.lower()]
             if not filtered:
                 # Fallback to partial match if exact match fails
-                filtered = [m.get('displayName', '') for m in directory if client_name.lower() in m.get('clientName', '').lower()]
+                filtered = [_label(m) for m in directory if client_name.lower() in m.get('clientName', '').lower()]
             return [name for name in filtered if name]
         except Exception as exc:
             import logging
@@ -889,9 +924,18 @@ class TrayController(QObject):
         try:
             repo = getattr(self._app_controller, '_excel_repo', None)
             directory = repo.list_active_matter_directory() if repo else self._app_controller.listActiveMatterDirectory()
-            
+            target_norm = _normalize_matter_label(matter_name).lower()
+            target_raw = str(matter_name).strip().lower()
             for m in directory:
-                if m.get('displayName', '').lower() == matter_name.lower():
+                disp_raw = str(m.get('displayName', '')).strip().lower()
+                disp_norm = _normalize_matter_label(m.get('displayName', '')).lower()
+                m_num = str(m.get('matterNumber', '')).strip().lower()
+                m_name = str(m.get('matterName', '')).strip().lower()
+                if (
+                    target_raw in (disp_raw, disp_norm, m_num, m_name)
+                    or target_norm in (disp_raw, disp_norm)
+                    or (m_num and target_raw.startswith(m_num))
+                ):
                     return m.get('clientName', '')
             return "" 
         except Exception:
@@ -915,26 +959,59 @@ class TrayController(QObject):
 
     @Slot(str, str)
     def start_new_timer(self, client_name, matter_name):
+        self.startNewTimerWithDescription(client_name, matter_name, "")
+
+    @Slot(str, str, str)
+    def startNewTimerWithDescription(self, client_name, matter_name, description=""):
+        # If there is an active or paused timer with accumulated time, save it before starting the new one
+        existing_primary = self._primary_active_timer()
+        if existing_primary is not None:
+            elapsed_now = existing_primary._state.get_elapsed_seconds(self._current_monotonic)
+            if elapsed_now > 0:
+                self.stop_timer(existing_primary.timer_id)
+            else:
+                self._timers = [x for x in self._timers if x.timer_id != existing_primary.timer_id]
+
         new_id = "main_timer"
-        
-        if not client_name: client_name = "Ad Hoc Client"
-        if not matter_name: matter_name = "General Consultation"
-        _, resolved_client, _, resolved_matter = self._resolve_client_and_matter_labels("", client_name, "", matter_name)
-        c_label = resolved_client or client_name
-        m_label = resolved_matter or _normalize_matter_label(matter_name)
-            
-        t = TrayActiveTimer(new_id, "", c_label, "", m_label, TimerState(0, True, self._current_monotonic), parent=self)
+        clean_client = str(client_name or "").strip()
+        clean_matter = str(matter_name or "").strip()
+        clean_desc = str(description or "").strip()
+        if not clean_client and clean_matter:
+            clean_client = self.getClientForMatter(clean_matter) or ""
+        if not clean_client:
+            clean_client = "Ad Hoc Client"
+        if not clean_matter:
+            clean_matter = "General Consultation"
+
+        c_id, resolved_client, m_id, resolved_matter = self._resolve_client_and_matter_labels(
+            "", clean_client, "", clean_matter
+        )
+        c_label = resolved_client or clean_client
+        m_label = resolved_matter or _normalize_matter_label(clean_matter)
+
+        t = TrayActiveTimer(
+            new_id,
+            c_id,
+            c_label,
+            m_id,
+            m_label,
+            TimerState(0, True, self._current_monotonic),
+            description=clean_desc,
+            parent=self,
+        )
         self._timers = [x for x in self._timers if x.timer_id != new_id]
         self._timers.insert(0, t)
         self.activeTimersChanged.emit()
         self.update_timers()
         self.mainTimerCommandRequested.emit({
-            "action": "start",
+            "action": "start_new",
             "timerId": new_id,
             "elapsedSeconds": 0,
+            "clientId": c_id,
             "clientName": c_label,
+            "matterId": m_id,
             "matterName": m_label,
-            "description": "",
+            "description": clean_desc,
         })
         
     @Slot()
