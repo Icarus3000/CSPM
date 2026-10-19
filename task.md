@@ -1,5 +1,13 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-19: Fix `LazyRepoFacade` & `AppPaths` Legacy `Dockets.xlsm` Auto-Sync & Remediate Oct 19 `88 Queen` / `Braun, Scott` Dockets
+
+- [x] Fix `LazyRepoFacade._resolve` (`src/python/backend/repo_facade.py`) and `DocketRepo` (`src/python/repositories/docket_repo.py`) so `add_time_entry` routes to the authoritative `ExcelRepo.add_time_entry` (which invokes `_sync_time_entry_to_legacy_dockets` and SQLite `cspm.db` sync) instead of being shadowed by a stale method on `DocketRepo`.
+- [x] Fix `AppPaths._is_isolated_test_root()` (`src/python/services/paths.py`) so `%LOCALAPPDATA%\CSPM\working\data` is recognized as production (not an isolated test root) when `PYTEST_CURRENT_TEST` is not set, allowing `legacy_onedrive_dockets_workbook_path()` and `legacy_dockets_sync_targets()` to resolve `%OneDrive%\__Invoices (1)\Dockets.xlsm`.
+- [x] Update `LegacyDocketsSyncService` (`src/python/services/legacy_dockets_sync_service.py`) so appending a new row for an existing `Matter_ID` in `Table1_1` inherits that matter's existing `Client` and `Sub-Client2` column values (e.g., `Client='88 Queen', Sub-Client2=None` and `Client='Braun, Scott', Sub-Client2=None`).
+- [x] Remediate `Dockets.xlsm` (`Table1_1` Rows 886 and 887, `A1:M887`) across `%OneDrive%\__Invoices (1)\Dockets.xlsm`, `%LOCALAPPDATA%\CSPM\working\data\Dockets.xlsm`, `%LOCALAPPDATA%\CSPM\data\Dockets.xlsm`, and `%OneDrive%\CSPM_Shared_Data\Dockets.xlsm` plus `cspm.db` and `sync_state.json` for `T_841680fe1c` (`88 Queen`, `2026-10-19`, `0.9 hrs`, `$427.50`) and `T_c60567763e` (`Braun, Scott`, `2026-10-19`, `1.0 hrs`, `$475.00`).
+- [x] Run `py_compile`, `./scripts/qmllint.ps1`, `pytest tests/test_tray_timer_and_legacy_dockets_sync.py` (`10 passed`), recompile standalone `C:\Programs\CSPM\CSPM.exe`, and push to Git cloud via `./scripts/build_and_push.py`.
+
 ## 2026-10-19: `America/Toronto` IANA `tzdata` Packaging, Frozen `TZPATH` Bootstrap & Release Builder Verification Gates
 
 - [x] Install exact pinned calendar/timezone dependencies from `requirements-release-windows.lock.txt` (`tzdata==2026.5`, `msal==1.39.0`, `holidays==0.106`, `certifi==2026.7.22`) into `.venv_OMNIBOOK_cschn`.

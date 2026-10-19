@@ -321,6 +321,7 @@ Item {
 
     Connections {
         target: trayController
+        ignoreUnknownSignals: true
         function onFlyoutGeometryCalculated(x, y, w, h) {
             if (flyoutWindow.visible) {
                 root.hideMiniPopup()

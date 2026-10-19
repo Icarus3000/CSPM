@@ -1846,7 +1846,7 @@ Rectangle {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 4
-                        visible: (flyout.legacyConflictData && flyout.legacyConflictData.existingRows && flyout.legacyConflictData.existingRows.length > 1)
+                        visible: Boolean(flyout.legacyConflictData && flyout.legacyConflictData.existingRows && flyout.legacyConflictData.existingRows.length > 1)
 
                         Text {
                             text: "Target Row:"

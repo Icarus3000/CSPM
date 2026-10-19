@@ -251,7 +251,8 @@ class LegacyDocketsSyncService:
         clean_parent = _clean_text(parent_name)
         clean_sub = _clean_text(sub_client_name)
 
-        if clean_parent and _norm_key(clean_parent) != _norm_key(clean_client):
+        is_leviathan_parent = "leviathan" in clean_parent.casefold()
+        if clean_parent and not is_leviathan_parent and _norm_key(clean_parent) != _norm_key(clean_client):
             legacy_client = clean_parent
             legacy_sub_client = clean_sub or clean_client
         else:
@@ -850,6 +851,16 @@ class LegacyDocketsSyncService:
             existing_sub_val = None
             if target_row_idx is None:
                 action = "added"
+                incoming_matter_val = _norm_key(effective_payload.get("Matter_ID"))
+                if incoming_matter_val and max_row > header_row:
+                    for prior_r in range(max_row, header_row, -1):
+                        if _norm_key(ws.cell(prior_r, c_matter).value) == incoming_matter_val:
+                            cand_client = _clean_text(ws.cell(prior_r, c_client).value)
+                            if cand_client:
+                                existing_client_val = cand_client
+                                existing_sub_val = ws.cell(prior_r, c_sub).value
+                                preserve_existing_client = True
+                                break
                 if max_row == header_row + 1 and self._row_is_blank(ws, max_row, min_col, max_col):
                     target_row_idx = max_row
                     template_row_idx = None

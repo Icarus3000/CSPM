@@ -5,6 +5,14 @@ import os
 from pathlib import Path
 
 
+def _is_path_within(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve().relative_to(parent.resolve())
+        return True
+    except Exception:
+        return False
+
+
 @dataclass()
 class AppPaths:
     root: Path
@@ -100,15 +108,26 @@ class AppPaths:
         try:
             root_resolved = self.root.resolve()
             proj_resolved = self.project_root().resolve()
+            exec_resolved = self.executable_root().resolve()
             local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
             app_data_root = (Path(local_app_data) / "CSPM").resolve() if local_app_data else None
-            if root_resolved != proj_resolved and (app_data_root is None or root_resolved != app_data_root):
+            root_is_known = (
+                root_resolved == proj_resolved
+                or root_resolved == exec_resolved
+                or _is_path_within(root_resolved, proj_resolved)
+                or _is_path_within(root_resolved, exec_resolved)
+                or (app_data_root is not None and _is_path_within(root_resolved, app_data_root))
+            )
+            if not root_is_known:
                 return True
             if self.override_data_dir is not None and str(self.override_data_dir).strip():
                 od_resolved = Path(self.override_data_dir).resolve()
-                proj_data = (proj_resolved / "data").resolve()
-                app_data_dir = (app_data_root / "data").resolve() if app_data_root is not None else None
-                if od_resolved != proj_data and (app_data_dir is None or od_resolved != app_data_dir):
+                od_is_known = (
+                    _is_path_within(od_resolved, proj_resolved)
+                    or _is_path_within(od_resolved, exec_resolved)
+                    or (app_data_root is not None and _is_path_within(od_resolved, app_data_root))
+                )
+                if not od_is_known:
                     return True
         except OSError:
             return True
@@ -131,6 +150,29 @@ class AppPaths:
 
         if self._is_isolated_test_root():
             return None
+
+        # Check user_settings.json if a legacy Dockets.xlsm path was explicitly recorded
+        try:
+            import json
+            settings_file = self.user_settings_path()
+            if settings_file.is_file():
+                payload = json.loads(settings_file.read_text(encoding="utf-8"))
+                explicit_setting = str(payload.get("legacyDocketsPath", "") or "").strip()
+                if explicit_setting:
+                    expanded_setting = Path(os.path.expandvars(explicit_setting)).expanduser()
+                    if expanded_setting.is_file():
+                        return expanded_setting
+                recent_files = payload.get("legacyDocketsRecentFiles")
+                if isinstance(recent_files, list):
+                    for item in recent_files:
+                        cand_str = str(item or "").strip()
+                        if not cand_str:
+                            continue
+                        cand_path = Path(os.path.expandvars(cand_str)).expanduser()
+                        if cand_path.is_file() and cand_path.name.casefold() == "dockets.xlsm" and "__invoices" in str(cand_path).casefold():
+                            return cand_path
+        except Exception:
+            pass
 
         candidate_roots: list[Path] = []
         for env_key in ("OneDriveCommercial", "OneDrive", "OneDriveConsumer"):
@@ -160,7 +202,7 @@ class AppPaths:
         return None
 
     def legacy_dockets_sync_targets(self) -> list[Path]:
-        """Return existing Dockets.xlsm paths (OneDrive __Invoices (1)/Dockets.xlsm + local data mirror)."""
+        """Return existing Dockets.xlsm paths (OneDrive __Invoices (1)/Dockets.xlsm + local working/data mirrors)."""
         targets: list[Path] = []
         seen: set[str] = set()
 
@@ -182,10 +224,7 @@ class AppPaths:
             local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
             if local_app_data:
                 _add_if_exists(Path(local_app_data) / "CSPM" / "data" / "Dockets.xlsm")
-            try:
-                _add_if_exists(self.shared_vault_dir().parent / "Dockets.xlsm")
-            except Exception:
-                pass
+                _add_if_exists(Path(local_app_data) / "CSPM" / "working" / "data" / "Dockets.xlsm")
         if self._is_isolated_test_root():
             _add_if_exists(self.root / "Dockets.xlsm")
         return targets

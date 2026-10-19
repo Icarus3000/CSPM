@@ -31,6 +31,8 @@ class LazyRepoFacade:
             self._docket = DocketRepo(self._db)
             self._ip = IPRepo(self._db)
 
+        if hasattr(self._db, item):
+            return getattr(self._db, item)
         if hasattr(self._client, item):
             return getattr(self._client, item)
         if hasattr(self._finance, item):
@@ -39,10 +41,7 @@ class LazyRepoFacade:
             return getattr(self._docket, item)
         if hasattr(self._ip, item):
             return getattr(self._ip, item)
-        if hasattr(self._db, item):
-            return getattr(self._db, item)
         raise AttributeError(f"RepoFacade has no attribute '{item}'")
 
     def __getattr__(self, item):
         return self._resolve(item)
-

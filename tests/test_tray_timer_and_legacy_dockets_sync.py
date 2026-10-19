@@ -961,3 +961,185 @@ def test_tray_cancel_delete_and_reset_docket_timer(tmp_path: Path) -> None:
 
 
 
+
+def test_lazy_repo_facade_and_working_data_sync_to_legacy_dockets(tmp_path: Path, monkeypatch) -> None:
+    from backend.repo_facade import LazyRepoFacade
+
+    paths, _direct_repo, legacy_path = _create_isolated_cspm_repo(tmp_path)
+    facade = LazyRepoFacade(paths)
+
+    # Seed existing rows for 88 Queen and Braun, Scott in Table1_1 with Client='88 Queen' / 'Braun, Scott' and Sub-Client2=None
+    wb_seed = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws_seed = wb_seed[LEGACY_DOCKETS_SHEET]
+    ws_seed.append(
+        [
+            dt.datetime(2026, 10, 18, 0, 0),
+            "88 Queen",
+            None,
+            "Prior 88 Queen research",
+            1.5,
+            475,
+            1,
+            "=([@[Time (in hrs)]]*[@[Hourly Rate/Flat Fee]])*[@Percentage]",
+            "=[@[Amount to CS]]*1.13",
+            None,
+            "88QU-LEVI-TAX-26-0005",
+            5400,
+            "Hourly",
+        ]
+    )
+    ws_seed.append(
+        [
+            dt.datetime(2026, 10, 16, 0, 0),
+            "Braun, Scott",
+            None,
+            "Prior Braun trust agreement review",
+            4.2,
+            475,
+            1,
+            "=([@[Time (in hrs)]]*[@[Hourly Rate/Flat Fee]])*[@Percentage]",
+            "=[@[Amount to CS]]*1.13",
+            None,
+            "BRAU-LEVI-TAX-26-0081",
+            15120,
+            "Hourly",
+        ]
+    )
+    ws_seed.tables[LEGACY_DOCKETS_TABLE].ref = "A1:M4"
+    wb_seed.save(legacy_path)
+    LegacyDocketsSyncService._close_workbook(wb_seed)
+
+    # Seed Leviathan parent + 88 Queen and Braun, Scott clients & matters in CSPM
+    facade._upsert_row_by_key(
+        TBL_PARENTS,
+        sc.COL_PARENT_ID,
+        "LEVI",
+        {
+            sc.COL_PARENT_ID: "LEVI",
+            sc.COL_PARENT_NAME: "Leviathan Private Network",
+            sc.COL_PARENT_DEF_RATE: 475.0,
+            sc.COL_PARENT_DEF_SHARE: 100.0,
+            sc.COL_PARENT_ACTIVE: True,
+        },
+    )
+    facade._upsert_row_by_key(
+        TBL_CLIENTS,
+        sc.COL_CLIENT_ID,
+        "88QU",
+        {
+            sc.COL_CLIENT_ID: "88QU",
+            sc.COL_CLIENT_NAME: "88 Queen",
+            sc.COL_CLIENT_ACTIVE: True,
+        },
+    )
+    facade._upsert_row_by_key(
+        TBL_MATTERS,
+        sc.COL_MATTER_ID,
+        "LEG-MATTER-88QU",
+        {
+            sc.COL_MATTER_ID: "LEG-MATTER-88QU",
+            sc.COL_MATTER_NUMBER: "88QU-LEVI-TAX-26-0005",
+            sc.COL_MATTER_CLIENT_ID: "88QU",
+            sc.COL_MATTER_CLIENT_NAME: "88 Queen",
+            sc.COL_MATTER_PARENT_ID: "LEVI",
+            sc.COL_MATTER_PARENT_NAME: "Leviathan Private Network",
+            sc.COL_MATTER_NAME: "88 Queen",
+            sc.COL_MATTER_STATUS: "Open",
+            sc.COL_MATTER_DEF_RATE: 475.0,
+            sc.COL_MATTER_DEF_SHARE: 100.0,
+        },
+    )
+    facade._upsert_row_by_key(
+        TBL_CLIENTS,
+        sc.COL_CLIENT_ID,
+        "C_BRAUN",
+        {
+            sc.COL_CLIENT_ID: "C_BRAUN",
+            sc.COL_CLIENT_NAME: "Braun, Scott",
+            sc.COL_CLIENT_ACTIVE: True,
+        },
+    )
+    facade._upsert_row_by_key(
+        TBL_MATTERS,
+        sc.COL_MATTER_ID,
+        "M_BRAUN",
+        {
+            sc.COL_MATTER_ID: "M_BRAUN",
+            sc.COL_MATTER_NUMBER: "BRAU-LEVI-TAX-26-0081",
+            sc.COL_MATTER_CLIENT_ID: "C_BRAUN",
+            sc.COL_MATTER_CLIENT_NAME: "Braun, Scott",
+            sc.COL_MATTER_PARENT_ID: "LEVI",
+            sc.COL_MATTER_PARENT_NAME: "Leviathan Private Network",
+            sc.COL_MATTER_NAME: "Tax Matter",
+            sc.COL_MATTER_STATUS: "Open",
+            sc.COL_MATTER_DEF_RATE: 475.0,
+            sc.COL_MATTER_DEF_SHARE: 100.0,
+        },
+    )
+
+    # Save 88 Queen and Braun, Scott dockets through LazyRepoFacade (as AppController/DocketingController do)
+    res_88 = facade.add_time_entry(
+        {
+            "date": "2026-10-19",
+            "clientId": "88QU",
+            "clientName": "88 Queen",
+            "matterId": "LEG-MATTER-88QU",
+            "matterName": "88QU-LEVI-TAX-26-0005",
+            "parentId": "LEVI",
+            "description": "Attend MS Teams call with James, Vicky, and Kelvin re Statement of Adjustments and GST/HST matters; draft post-call notes to file summarizing discussion and action items",
+            "rawSeconds": 3240,
+            "hours": 0.9,
+            "useExactHours": True,
+            "clientRate": 475.0,
+            "sharePct": 100.0,
+            "status": "Draft",
+        }
+    )
+    assert res_88["ok"] is True
+    assert res_88.get("legacyDocketsSync", {}).get("ok") is True
+
+    res_braun = facade.add_time_entry(
+        {
+            "date": "2026-10-19",
+            "clientId": "C_BRAUN",
+            "clientName": "Braun, Scott",
+            "matterId": "M_BRAUN",
+            "matterName": "BRAU-LEVI-TAX-26-0081",
+            "parentId": "LEVI",
+            "description": "Zoom call with James, Rosanne, and Jason; post call notes to file; legal research",
+            "rawSeconds": 3600,
+            "hours": 1.0,
+            "useExactHours": True,
+            "clientRate": 475.0,
+            "sharePct": 100.0,
+            "status": "Draft",
+        }
+    )
+    assert res_braun["ok"] is True
+    assert res_braun.get("legacyDocketsSync", {}).get("ok") is True
+
+    wb_check = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws_check = wb_check[LEGACY_DOCKETS_SHEET]
+    assert ws_check.tables[LEGACY_DOCKETS_TABLE].ref == "A1:M6"
+    assert ws_check.cell(row=5, column=2).value == "88 Queen"
+    assert ws_check.cell(row=5, column=3).value is None
+    assert float(ws_check.cell(row=5, column=5).value) == 0.9
+    assert ws_check.cell(row=5, column=11).value == "88QU-LEVI-TAX-26-0005"
+    assert int(ws_check.cell(row=5, column=12).value) == 3240
+
+    assert ws_check.cell(row=6, column=2).value == "Braun, Scott"
+    assert ws_check.cell(row=6, column=3).value is None
+    assert float(ws_check.cell(row=6, column=5).value) == 1.0
+    assert ws_check.cell(row=6, column=11).value == "BRAU-LEVI-TAX-26-0081"
+    assert int(ws_check.cell(row=6, column=12).value) == 3600
+    LegacyDocketsSyncService._close_workbook(wb_check)
+
+    # Verify AppPaths._is_isolated_test_root() treats %LOCALAPPDATA%/CSPM/working/data as production when not under pytest
+    fake_local_appdata = tmp_path / "FakeLocalAppData"
+    working_data_dir = fake_local_appdata / "CSPM" / "working" / "data"
+    working_data_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("LOCALAPPDATA", str(fake_local_appdata))
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    prod_paths = AppPaths(AppPaths.project_root(), override_data_dir=working_data_dir)
+    assert prod_paths._is_isolated_test_root() is False
