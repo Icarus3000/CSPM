@@ -8055,6 +8055,47 @@ Behavior on border.color {
                     "skipMatterPrompt": true,
                     "allowClientOnlyDraft": true
                 })
+            } else if (action === "cancel_or_delete") {
+                try { if (docketTimer) docketTimer.stop() } catch (e4) {}
+                root._hydrating = true
+                root.isRunning = false
+                root.activeSegmentStartedAtMs = 0
+                root.activeSegmentBaseSeconds = 0
+                root.pausedRawSeconds = 0
+                root.elapsedSeconds = 0
+                root.lastPersistedSeconds = 0
+                if (cmd.entryId && String(root.lastSavedEntryId || "") === String(cmd.entryId || "")) {
+                    root.lastSavedEntryId = ""
+                }
+                root.timerProtectedMode = false
+                releaseTimerLock()
+                if (descInput && String(descInput.text || "").trim().toLowerCase() === "auto-saved on system shutdown") {
+                    descInput.text = ""
+                }
+                root.syncTimeFieldFromElapsed()
+                root.calculateFees()
+                root._hydrating = false
+                root.dirty = false
+                root.refreshDocketReportAfterSave()
+            } else if (action === "reset_timer") {
+                try { if (docketTimer) docketTimer.stop() } catch (e5) {}
+                root._hydrating = true
+                root.isRunning = false
+                root.activeSegmentStartedAtMs = 0
+                root.activeSegmentBaseSeconds = 0
+                root.pausedRawSeconds = 0
+                root.elapsedSeconds = 0
+                root.lastPersistedSeconds = 0
+                root.timerProtectedMode = false
+                releaseTimerLock()
+                if (descInput) {
+                    var resetDesc = String(cmd.description !== undefined ? cmd.description : descInput.text).trim()
+                    descInput.text = (resetDesc.toLowerCase() === "auto-saved on system shutdown") ? "" : resetDesc
+                }
+                root.syncTimeFieldFromElapsed()
+                root.calculateFees()
+                root._hydrating = false
+                root.dirty = false
             }
         }
     }

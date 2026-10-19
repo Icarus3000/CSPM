@@ -226,6 +226,155 @@ Rectangle {
     property var clientSuggestions: []
     property var matterSuggestions: []
 
+    property bool deleteConfirmOpen: false
+    property string pendingDeleteTabId: ""
+    property string pendingDeleteSummaryLabel: ""
+    property string pendingDeleteElapsedFormatted: "00:00:00"
+    property string pendingDeleteDescription: ""
+    property bool pendingDeleteIsSaved: false
+
+    readonly property var activeTabObject: {
+        var tabs = flyout.todayTabsModel || []
+        for (var i = 0; i < tabs.length; i++) {
+            if (String(tabs[i].tabId || "") === flyout.activeTabId) {
+                return tabs[i]
+            }
+        }
+        return tabs.length > 0 ? tabs[0] : null
+    }
+
+    readonly property bool isCurrentTabSavedDocket: {
+        if (flyout.statusBadgeText === "LATEST" || flyout.statusBadgeText === "SAVED") {
+            return true
+        }
+        var t = flyout.activeTabObject
+        if (t && (Boolean(t.isSaved) || String(t.status || "") === "SAVED" || String(t.entryId || "").trim().length > 0)) {
+            return true
+        }
+        var descLower = String(flyout.descriptionRawText || "").trim().toLowerCase()
+        if (descLower === "auto-saved on system shutdown") {
+            return true
+        }
+        return false
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Delete"
+        context: Qt.WindowShortcut
+        onActivated: {
+            flyout.requestCancelOrDeleteTab(flyout.activeTabId)
+        }
+    }
+
+    function findTabObjectById(tabId) {
+        var cleanId = String(tabId || flyout.activeTabId || "").trim()
+        var tabs = flyout.todayTabsModel || []
+        for (var i = 0; i < tabs.length; i++) {
+            if (String(tabs[i].tabId || "") === cleanId) {
+                return tabs[i]
+            }
+        }
+        return cleanId === flyout.activeTabId ? flyout.activeTabObject : null
+    }
+
+    function executeCancelOrDeleteTab(tabId) {
+        var cleanId = String(tabId || flyout.pendingDeleteTabId || flyout.activeTabId || "").trim()
+        flyout.deleteConfirmOpen = false
+        flyout.pendingDeleteTabId = ""
+        if (flyout.editingElapsedInline) {
+            flyout.editingElapsedInline = false
+        }
+        if (typeof trayController !== "undefined" && trayController && trayController.cancelOrDeleteDocketTab) {
+            trayController.cancelOrDeleteDocketTab(cleanId, true)
+            return
+        }
+        if (typeof docketApp !== "undefined" && docketApp && docketApp.cancelOrDeleteDocketTab) {
+            docketApp.cancelOrDeleteDocketTab(cleanId, true)
+            return
+        }
+        if (typeof app !== "undefined" && app && app.cancelOrDeleteDocketTab) {
+            app.cancelOrDeleteDocketTab(cleanId, true)
+        }
+    }
+
+    function executeResetDocketTimer(tabId) {
+        var cleanId = String(tabId || flyout.pendingDeleteTabId || flyout.activeTabId || "").trim()
+        flyout.deleteConfirmOpen = false
+        flyout.pendingDeleteTabId = ""
+        if (flyout.editingElapsedInline) {
+            flyout.editingElapsedInline = false
+        }
+        var res = null
+        if (typeof trayController !== "undefined" && trayController && trayController.resetDocketTimer) {
+            res = trayController.resetDocketTimer(cleanId)
+        } else if (typeof docketApp !== "undefined" && docketApp && docketApp.resetDocketTimer) {
+            res = docketApp.resetDocketTimer(cleanId)
+        } else if (typeof app !== "undefined" && app && app.resetDocketTimer) {
+            res = app.resetDocketTimer(cleanId)
+        }
+        if (descField && String(descField.text || "").trim().toLowerCase() === "auto-saved on system shutdown") {
+            descField.text = ""
+        } else if (res && res.description !== undefined && descField) {
+            descField.text = String(res.description || "")
+        }
+    }
+
+    function requestCancelOrDeleteTab(tabId) {
+        if (flyout.editingElapsedInline) {
+            flyout.commitInlineManualTime()
+        }
+        if (descField.activeFocus && typeof trayController !== "undefined" && trayController && trayController.updatePrimaryDescription) {
+            trayController.updatePrimaryDescription(descField.text)
+        }
+        var cleanId = String(tabId || flyout.activeTabId || "").trim()
+        var tabObj = flyout.findTabObjectById(cleanId)
+        var isActive = (cleanId.length <= 0 || cleanId === flyout.activeTabId)
+
+        var entryIdStr = tabObj ? String(tabObj.entryId || "").trim() : ""
+        var tabStatusStr = tabObj ? String(tabObj.status || "").trim() : (isActive ? flyout.statusBadgeText : "IDLE")
+        var isSavedFlag = Boolean(
+            (tabObj && Boolean(tabObj.isSaved))
+            || entryIdStr.length > 0
+            || tabStatusStr === "SAVED"
+            || tabStatusStr === "LATEST"
+            || (isActive && flyout.isCurrentTabSavedDocket)
+        )
+        var elapsedSec = tabObj
+            ? Number(tabObj.elapsedSeconds || 0)
+            : (typeof trayController !== "undefined" && trayController && trayController.displayElapsedSeconds !== undefined
+                ? Number(trayController.displayElapsedSeconds || 0)
+                : 0)
+        var rawDesc = tabObj
+            ? String(tabObj.description || "").trim()
+            : String(isActive && descField ? descField.text : flyout.descriptionRawText).trim()
+        if (isActive && descField && String(descField.text || "").trim().length > 0) {
+            rawDesc = String(descField.text || "").trim()
+        }
+        var isAutoShutdownDesc = (rawDesc.toLowerCase() === "auto-saved on system shutdown")
+        var hasCustomDesc = (rawDesc.length > 0 && !isAutoShutdownDesc)
+
+        // Instant 1-Click Cancel: unsaved draft, < 60s elapsed, and no custom user-typed description
+        if (!isSavedFlag && !isAutoShutdownDesc && elapsedSec < 60 && !hasCustomDesc) {
+            flyout.executeCancelOrDeleteTab(cleanId)
+            return
+        }
+
+        // Otherwise show the compact inline confirmation overlay with 3 explicit actions
+        var cName = tabObj ? String(tabObj.clientName || "").trim() : String(flyout.clientNameText || "").trim()
+        var mName = tabObj ? String(tabObj.matterName || tabObj.shortLabel || "").trim() : String(flyout.matterNameText || "").trim()
+        var summary = mName.length > 0 ? (cName.length > 0 ? (cName + " • " + mName) : mName) : (cName.length > 0 ? cName : "Current Docket")
+        var elapsedFmt = tabObj
+            ? String(tabObj.elapsedFormatted || "00:00:00")
+            : String(flyout.elapsedText || "00:00:00")
+
+        flyout.pendingDeleteTabId = cleanId
+        flyout.pendingDeleteSummaryLabel = summary
+        flyout.pendingDeleteElapsedFormatted = elapsedFmt
+        flyout.pendingDeleteDescription = rawDesc
+        flyout.pendingDeleteIsSaved = Boolean(isSavedFlag || isAutoShutdownDesc)
+        flyout.deleteConfirmOpen = true
+    }
+
     function openInlineTimeEditor() {
         editingElapsedInline = true
         manualTimeEditField.text = flyout.elapsedText === "00:00:00" ? "" : flyout.elapsedText
@@ -507,22 +656,22 @@ Rectangle {
                                 color: tabPill.tabStatus === "RUNNING" ? theme.timerGreen : theme.textSecondary
                             }
 
-                            // Close / Hide ('×') button
+                            // Close / Delete ('×') button on every tab pill
                             Rectangle {
                                 id: tabCloseBtn
                                 objectName: "trayDocketTabCloseButton"
-                                visible: Boolean(modelData.canClose !== undefined ? modelData.canClose : true) && flyout.todayTabsModel.length > 1
-                                width: 13
-                                height: 13
+                                visible: true
+                                width: 14
+                                height: 14
                                 radius: 3
-                                color: tabCloseMouse.containsMouse ? "#334155" : "transparent"
+                                color: tabCloseMouse.containsMouse ? "#451A1A" : "transparent"
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: "×"
                                     font.pixelSize: 10
                                     font.bold: true
-                                    color: tabCloseMouse.containsMouse ? "#F8FAFC" : theme.textSecondary
+                                    color: tabCloseMouse.containsMouse ? "#F87171" : theme.textSecondary
                                 }
 
                                 MouseArea {
@@ -532,9 +681,7 @@ Rectangle {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: function(mouse) {
                                         mouse.accepted = true
-                                        if (typeof trayController !== "undefined" && trayController && trayController.closeOrHideDocketTab) {
-                                            trayController.closeOrHideDocketTab(String(modelData.tabId || ""))
-                                        }
+                                        flyout.requestCancelOrDeleteTab(String(modelData.tabId || ""))
                                     }
                                 }
                             }
@@ -618,7 +765,7 @@ Rectangle {
                 objectName: "trayStatusBadge"
                 radius: 5
                 height: 22
-                implicitWidth: statusLabel.implicitWidth + 12
+                implicitWidth: statusLabel.implicitWidth + 10
                 color: {
                     if (flyout.statusBadgeText === "RUNNING") return theme.timerGreen
                     if (flyout.statusBadgeText === "PAUSED") return "#D97706"
@@ -666,7 +813,7 @@ Rectangle {
                     objectName: "trayElapsedText"
                     anchors.centerIn: parent
                     text: flyout.elapsedText
-                    font.pixelSize: 18
+                    font.pixelSize: 16
                     font.bold: true
                     color: flyout.isRunningNow ? theme.timerGreen : theme.textPrimary
                 }
@@ -684,7 +831,7 @@ Rectangle {
             Rectangle {
                 id: manualTimeEditBox
                 visible: flyout.editingElapsedInline
-                Layout.preferredWidth: 92
+                Layout.preferredWidth: 88
                 Layout.preferredHeight: 24
                 radius: 5
                 color: theme.surface
@@ -721,7 +868,7 @@ Rectangle {
                 id: toggleTimerBtn
                 objectName: "trayToggleTimerButton"
                 visible: true
-                implicitWidth: 54
+                implicitWidth: 50
                 implicitHeight: 24
                 text: flyout.isRunningNow ? "Pause" : (flyout.statusBadgeText === "PAUSED" ? "Resume" : "Start")
                 font.pixelSize: 11
@@ -755,7 +902,7 @@ Rectangle {
                 id: stopSaveBtn
                 objectName: "trayStopSaveButton"
                 visible: flyout.hasActiveOrPaused || flyout.hasEntryToDisplay
-                implicitWidth: 46
+                implicitWidth: 42
                 implicitHeight: 24
                 text: "Save"
                 font.pixelSize: 11
@@ -784,11 +931,42 @@ Rectangle {
                 }
             }
 
+            // Cancel (for unsaved draft/running timer) or Delete (for saved/auto-saved docket)
+            Button {
+                id: cancelOrDeleteBtn
+                objectName: "trayCancelOrDeleteButton"
+                visible: true
+                hoverEnabled: true
+                implicitWidth: 48
+                implicitHeight: 24
+                text: flyout.isCurrentTabSavedDocket ? "Delete" : "Cancel"
+                font.pixelSize: 11
+                font.bold: true
+                ToolTip.visible: hovered
+                ToolTip.text: (flyout.isCurrentTabSavedDocket ? "Delete saved docket" : "Cancel timer / draft") + " (Ctrl+Del)"
+                contentItem: Text {
+                    text: cancelOrDeleteBtn.text
+                    font: cancelOrDeleteBtn.font
+                    color: cancelOrDeleteBtn.hovered ? "#F87171" : "#EF4444"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 5
+                    color: cancelOrDeleteBtn.hovered ? "#2A1215" : theme.surface
+                    border.width: 1
+                    border.color: cancelOrDeleteBtn.hovered ? "#F87171" : "#EF4444"
+                }
+                onClicked: {
+                    flyout.requestCancelOrDeleteTab(flyout.activeTabId)
+                }
+            }
+
             // + New Timer for a different Client / Matter
             Button {
                 id: newTimerBtn
                 objectName: "trayNewTimerButton"
-                implicitWidth: 46
+                implicitWidth: 44
                 implicitHeight: 24
                 text: "+ New"
                 font.pixelSize: 11
@@ -2272,4 +2450,200 @@ Rectangle {
             }
         }
     }
+
+    // =========================================================================
+    // OVERLAY 5: Compact Inline Cancel / Delete / Reset Confirmation Overlay
+    // =========================================================================
+    Rectangle {
+        id: deleteConfirmOverlay
+        objectName: "trayDeleteConfirmOverlay"
+        anchors.fill: parent
+        radius: flyout.radius
+        color: "#F20F172A"
+        visible: flyout.deleteConfirmOpen
+        z: 140
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                Rectangle {
+                    width: 8
+                    height: 8
+                    radius: 4
+                    color: "#EF4444"
+                }
+
+                Text {
+                    text: flyout.pendingDeleteIsSaved
+                        ? "Delete or Reset Saved Docket?"
+                        : "Cancel or Reset Active Timer?"
+                    font.pixelSize: 12
+                    font.bold: true
+                    color: "#F8FAFC"
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: deleteConfirmInfoCol.implicitHeight + 10
+                radius: 6
+                color: "#1E293B"
+                border.width: 1
+                border.color: "#334155"
+
+                ColumnLayout {
+                    id: deleteConfirmInfoCol
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    spacing: 2
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Text {
+                            text: flyout.pendingDeleteSummaryLabel
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: "#F8FAFC"
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            text: flyout.pendingDeleteElapsedFormatted
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: "#FCA5A5"
+                        }
+                    }
+
+                    Text {
+                        visible: flyout.pendingDeleteDescription.length > 0
+                        text: flyout.pendingDeleteDescription
+                        font.pixelSize: 10
+                        color: "#CBD5E1"
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: flyout.pendingDeleteIsSaved
+                            ? "Removes this docket from CSPM and its unbilled row from Dockets.xlsm."
+                            : "Stops the timer and removes this docket tab from CSPM."
+                        font.pixelSize: 9
+                        color: "#94A3B8"
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+
+            Item { Layout.fillHeight: true }
+
+            // 1. Delete Docket (Destructive Primary)
+            Button {
+                id: confirmDeleteDocketBtn
+                objectName: "trayConfirmDeleteDocketButton"
+                Layout.fillWidth: true
+                implicitHeight: 28
+                hoverEnabled: true
+                text: "Delete Docket"
+                font.pixelSize: 11
+                font.bold: true
+                contentItem: Text {
+                    text: confirmDeleteDocketBtn.text
+                    font: confirmDeleteDocketBtn.font
+                    color: "#FFFFFF"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 5
+                    color: confirmDeleteDocketBtn.hovered ? "#F87171" : "#EF4444"
+                    border.width: 1
+                    border.color: "#FCA5A5"
+                }
+                onClicked: {
+                    flyout.executeCancelOrDeleteTab(flyout.pendingDeleteTabId)
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                // 2. Reset to 00:00:00
+                Button {
+                    id: confirmResetTimerBtn
+                    objectName: "trayConfirmResetTimerButton"
+                    Layout.fillWidth: true
+                    implicitHeight: 26
+                    hoverEnabled: true
+                    text: "Reset to 00:00:00"
+                    font.pixelSize: 11
+                    font.bold: true
+                    contentItem: Text {
+                        text: confirmResetTimerBtn.text
+                        font: confirmResetTimerBtn.font
+                        color: confirmResetTimerBtn.hovered ? "#F8FAFC" : "#38BDF8"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 5
+                        color: confirmResetTimerBtn.hovered ? "#1E3A8A" : "#1E293B"
+                        border.width: 1
+                        border.color: "#38BDF8"
+                    }
+                    onClicked: {
+                        flyout.executeResetDocketTimer(flyout.pendingDeleteTabId)
+                    }
+                }
+
+                // 3. Keep
+                Button {
+                    id: confirmKeepDocketBtn
+                    objectName: "trayConfirmKeepDocketButton"
+                    Layout.preferredWidth: 84
+                    implicitHeight: 26
+                    hoverEnabled: true
+                    text: "Keep"
+                    font.pixelSize: 11
+                    font.bold: true
+                    contentItem: Text {
+                        text: confirmKeepDocketBtn.text
+                        font: confirmKeepDocketBtn.font
+                        color: confirmKeepDocketBtn.hovered ? "#F8FAFC" : theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 5
+                        color: confirmKeepDocketBtn.hovered ? "#334155" : "transparent"
+                        border.width: 1
+                        border.color: theme.border
+                    }
+                    onClicked: {
+                        flyout.deleteConfirmOpen = false
+                        flyout.pendingDeleteTabId = ""
+                    }
+                }
+            }
+        }
+    }
 }
+

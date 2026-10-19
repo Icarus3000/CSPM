@@ -7364,8 +7364,194 @@ class ExcelRepo:
             logger.debug("[excel_repo] Could not initialize SQLiteRepository: %s", exc)
         return None
 
+    def _get_timer_recovery_paths(self) -> List[Path]:
+        if hasattr(self, "paths") and self.paths is not None:
+            if hasattr(self.paths, "timer_recovery_candidate_paths"):
+                return list(self.paths.timer_recovery_candidate_paths())
+            if hasattr(self.paths, "state_dir"):
+                return [self.paths.state_dir() / "timer_recovery.json"]
+        return []
+
+    def _upsert_timer_recovery_entry(self, payload: Mapping[str, Any]) -> None:
+        entry_id = _clean_text(
+            payload.get("entry_id")
+            or payload.get("EntryID")
+            or payload.get("entryId")
+            or payload.get("tab_id")
+            or payload.get("tabId")
+        )
+        if not entry_id:
+            return
+        recovery_paths = self._get_timer_recovery_paths()
+        if not recovery_paths:
+            return
+        primary_path = recovery_paths[0]
+        try:
+            import json as _json
+
+            data: Dict[str, Any] = {"entries": {}}
+            if primary_path.exists():
+                try:
+                    loaded = _json.loads(primary_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        data = loaded
+                except Exception:
+                    data = {"entries": {}}
+            entries = data.get("entries")
+            if not isinstance(entries, dict):
+                entries = {}
+                data["entries"] = entries
+            entry_status = str(
+                payload.get("entry_status")
+                or payload.get("EntryStatus")
+                or payload.get("entryStatus")
+                or "PAUSED"
+            ).strip().upper()
+            entries[entry_id] = {
+                "entry_id": entry_id,
+                "matter_id": _clean_text(payload.get("matter_id") or payload.get("MatterID") or payload.get("matterId")),
+                "matter_name": _clean_text(payload.get("matter_name") or payload.get("MatterName") or payload.get("matterName")),
+                "client_id": _clean_text(payload.get("client_id") or payload.get("ClientID") or payload.get("clientId")),
+                "client_name": _clean_text(payload.get("client_name") or payload.get("ClientName") or payload.get("clientName")),
+                "date": _clean_text(payload.get("date") or payload.get("Date")),
+                "raw_seconds": int(self._parse_float(payload.get("raw_seconds") if "raw_seconds" in payload else payload.get("RawSeconds")) or 0),
+                "description": _clean_text(payload.get("description") if "description" in payload else payload.get("Description")),
+                "entry_status": entry_status,
+                "updated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            }
+            data["updatedAt"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            primary_path.parent.mkdir(parents=True, exist_ok=True)
+            primary_path.write_text(_json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        except Exception as exc:
+            logger.debug("[excel_repo] Could not update timer_recovery.json: %s", exc)
+
+    def _remove_from_timer_recovery(self, tab_or_entry_id: str, *, matter_id: str = "", date_iso: str = "") -> bool:
+        target = _clean_text(tab_or_entry_id)
+        bare_target = target[len("entry:"):] if target.lower().startswith("entry:") else target
+        removed_any = False
+        import json as _json
+
+        for rec_path in self._get_timer_recovery_paths():
+            if not rec_path.exists():
+                continue
+            try:
+                loaded = _json.loads(rec_path.read_text(encoding="utf-8"))
+                changed = False
+                if isinstance(loaded, dict):
+                    # Support {"entries": {...}}, {"timers": [...]}, or flat dict/key match
+                    entries_map = loaded.get("entries")
+                    if isinstance(entries_map, dict):
+                        for k in list(entries_map.keys()):
+                            v = entries_map.get(k)
+                            k_str = _clean_text(k)
+                            v_id = _clean_text(v.get("entry_id") or v.get("EntryID") or v.get("tabId")) if isinstance(v, dict) else ""
+                            v_matter = _clean_text(v.get("matter_id") or v.get("MatterID") or v.get("matterId")) if isinstance(v, dict) else ""
+                            v_date = _clean_text(v.get("date") or v.get("Date")) if isinstance(v, dict) else ""
+                            if (
+                                k_str in (target, bare_target, f"entry:{bare_target}")
+                                or v_id in (target, bare_target, f"entry:{bare_target}")
+                                or (matter_id and v_matter == matter_id and (not date_iso or not v_date or v_date == date_iso))
+                            ):
+                                entries_map.pop(k, None)
+                                changed = True
+                    for list_key in ("timers", "tabs", "items"):
+                        items = loaded.get(list_key)
+                        if isinstance(items, list):
+                            new_items = []
+                            for item in items:
+                                if isinstance(item, dict):
+                                    i_id = _clean_text(
+                                        item.get("entry_id")
+                                        or item.get("EntryID")
+                                        or item.get("entryId")
+                                        or item.get("tab_id")
+                                        or item.get("tabId")
+                                    )
+                                    i_matter = _clean_text(item.get("matter_id") or item.get("MatterID") or item.get("matterId"))
+                                    i_date = _clean_text(item.get("date") or item.get("Date"))
+                                    if (
+                                        i_id in (target, bare_target, f"entry:{bare_target}")
+                                        or (matter_id and i_matter == matter_id and (not date_iso or not i_date or i_date == date_iso))
+                                    ):
+                                        changed = True
+                                        continue
+                                new_items.append(item)
+                            if changed:
+                                loaded[list_key] = new_items
+                    for k in list(loaded.keys()):
+                        if k in (target, bare_target, f"entry:{bare_target}"):
+                            loaded.pop(k, None)
+                            changed = True
+                    if _clean_text(loaded.get("entry_id") or loaded.get("EntryID") or loaded.get("tabId")) in (
+                        target,
+                        bare_target,
+                        f"entry:{bare_target}",
+                    ):
+                        loaded.clear()
+                        changed = True
+                elif isinstance(loaded, list):
+                    new_list = []
+                    for item in loaded:
+                        if isinstance(item, dict):
+                            i_id = _clean_text(
+                                item.get("entry_id")
+                                or item.get("EntryID")
+                                or item.get("entryId")
+                                or item.get("tab_id")
+                                or item.get("tabId")
+                            )
+                            if i_id in (target, bare_target, f"entry:{bare_target}"):
+                                changed = True
+                                continue
+                        new_list.append(item)
+                    if changed:
+                        loaded = new_list
+                if changed:
+                    rec_path.write_text(_json.dumps(loaded, indent=2, sort_keys=True), encoding="utf-8")
+                    removed_any = True
+            except Exception as exc:
+                logger.debug("[excel_repo] Failed cleaning timer_recovery.json (%s): %s", rec_path, exc)
+        return removed_any
+
+    def _reset_in_timer_recovery(self, tab_or_entry_id: str) -> bool:
+        target = _clean_text(tab_or_entry_id)
+        bare_target = target[len("entry:"):] if target.lower().startswith("entry:") else target
+        updated_any = False
+        import json as _json
+
+        for rec_path in self._get_timer_recovery_paths():
+            if not rec_path.exists():
+                continue
+            try:
+                loaded = _json.loads(rec_path.read_text(encoding="utf-8"))
+                changed = False
+                if isinstance(loaded, dict):
+                    entries_map = loaded.get("entries")
+                    if isinstance(entries_map, dict):
+                        for k, v in list(entries_map.items()):
+                            if not isinstance(v, dict):
+                                continue
+                            v_id = _clean_text(v.get("entry_id") or v.get("EntryID") or v.get("tabId"))
+                            if _clean_text(k) in (target, bare_target, f"entry:{bare_target}") or v_id in (
+                                target,
+                                bare_target,
+                                f"entry:{bare_target}",
+                            ):
+                                v["raw_seconds"] = 0
+                                v["entry_status"] = "PAUSED"
+                                if _clean_text(v.get("description")).lower() == "auto-saved on system shutdown":
+                                    v["description"] = ""
+                                changed = True
+                if changed:
+                    rec_path.write_text(_json.dumps(loaded, indent=2, sort_keys=True), encoding="utf-8")
+                    updated_any = True
+            except Exception as exc:
+                logger.debug("[excel_repo] Failed resetting timer_recovery.json (%s): %s", rec_path, exc)
+        return updated_any
+
     def upsert_sqlite_docket_heartbeat(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Persist live timer heartbeat or draft edit to SQLite time_entries (WAL mode)."""
+        """Persist live timer heartbeat or draft edit to SQLite time_entries (WAL mode) and timer_recovery.json."""
+        self._upsert_timer_recovery_entry(payload or {})
         sq = self._get_sqlite_repo()
         if sq is None:
             return {"ok": False, "message": "SQLite repository unavailable"}
@@ -7374,6 +7560,7 @@ class ExcelRepo:
         except Exception as exc:
             logger.warning("[excel_repo] SQLite docket heartbeat error: %s", exc)
             return {"ok": False, "message": str(exc)}
+
 
     def _sync_time_entry_to_legacy_dockets(
         self,
@@ -7908,13 +8095,235 @@ class ExcelRepo:
 
         return {"ok": True, "message": "No changes applied."}
 
-    def delete_time_entry(self, entry_id: str) -> Dict[str, Any]:
-        """Deletes a time entry from TBL_TIME."""
+    def delete_time_entry(
+        self,
+        entry_id: str,
+        *,
+        remove_from_legacy_dockets: bool = True,
+        fallback_payload: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Deletes a time entry from TBL_TIME, SQLite time_entries, timer_recovery.json, and (if unbilled) Dockets.xlsm."""
+        raw_target = _clean_text(entry_id)
+        clean_id = raw_target[len("entry:"):] if raw_target.lower().startswith("entry:") else raw_target
+        if not clean_id:
+            return {"ok": False, "message": "No docket entry ID provided."}
+
         self.ensure_schema()
-        deleted = self._delete_row_by_key_hard(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id)
-        if deleted:
-            return {"ok": True, "message": f"Time entry {entry_id} deleted."}
-        return {"ok": False, "message": f"Time entry {entry_id} not found."}
+        existing_row = self._find_time_entry(clean_id)
+        sq = self._get_sqlite_repo()
+        existing_sq = None
+        if sq is not None:
+            try:
+                existing_sq = sq.get_time_entry_by_id(clean_id) or (
+                    sq.get_time_entry_by_id(raw_target) if raw_target != clean_id else None
+                )
+            except Exception:
+                existing_sq = None
+
+        fb = dict(fallback_payload or {})
+        matter_id = _clean_text(
+            (existing_row or {}).get(sc.COL_TIME_MATTER_ID)
+            or (existing_sq or {}).get("MatterID")
+            or fb.get("matterId")
+            or fb.get("matter_id")
+        )
+        date_iso = _clean_text(
+            (existing_row or {}).get(sc.COL_TIME_DATE)
+            or (existing_sq or {}).get("Date")
+            or fb.get("entryDate")
+            or fb.get("date")
+        )
+
+        legacy_context: Dict[str, Any] = {}
+        if existing_row is not None:
+            try:
+                legacy_context = dict(self._resolve_time_entry_legacy_context(existing_row) or {})
+            except Exception:
+                legacy_context = {}
+        if existing_sq is not None:
+            if not legacy_context.get("EntryID"):
+                legacy_context["EntryID"] = clean_id
+            if not legacy_context.get("Date") and existing_sq.get("Date"):
+                legacy_context["Date"] = str(existing_sq.get("Date") or "")
+            if not legacy_context.get("Matter_ID") and existing_sq.get("MatterName"):
+                legacy_context["Matter_ID"] = str(existing_sq.get("MatterName") or "")
+            if not legacy_context.get("Description") and existing_sq.get("Description"):
+                legacy_context["Description"] = str(existing_sq.get("Description") or "")
+            if "Time (in hrs)" not in legacy_context and existing_sq.get("Hours") is not None:
+                legacy_context["Time (in hrs)"] = float(existing_sq.get("Hours") or 0.0)
+            if "RawSeconds" not in legacy_context and existing_sq.get("RawSeconds") is not None:
+                legacy_context["RawSeconds"] = int(existing_sq.get("RawSeconds") or 0)
+            if existing_sq.get("LegacyDocketsRowSignature"):
+                legacy_context["rowSignature"] = existing_sq.get("LegacyDocketsRowSignature")
+        if fb:
+            if not legacy_context.get("EntryID"):
+                legacy_context["EntryID"] = clean_id
+            if not legacy_context.get("Date") and (fb.get("entryDate") or fb.get("date")):
+                legacy_context["Date"] = _clean_text(fb.get("entryDate") or fb.get("date"))
+            if not legacy_context.get("Matter_ID") and (fb.get("matterNumber") or fb.get("matter_name")):
+                legacy_context["Matter_ID"] = _clean_text(fb.get("matterNumber") or fb.get("matter_name"))
+            if not legacy_context.get("Description") and fb.get("description"):
+                legacy_context["Description"] = _clean_text(fb.get("description"))
+
+        deleted_excel = False
+        if not clean_id.lower().startswith("draft:"):
+            deleted_excel = bool(self._delete_row_by_key_hard(TBL_TIME, sc.COL_TIME_ENTRY_ID, clean_id))
+
+        deleted_sqlite = False
+        if sq is not None:
+            try:
+                deleted_sqlite = bool(sq.delete_time_entry(clean_id))
+                if raw_target != clean_id:
+                    deleted_sqlite = bool(sq.delete_time_entry(raw_target)) or deleted_sqlite
+            except Exception as exc:
+                logger.debug("[excel_repo] SQLite delete_time_entry error: %s", exc)
+
+        removed_recovery = self._remove_from_timer_recovery(
+            raw_target,
+            matter_id=matter_id,
+            date_iso=date_iso,
+        )
+
+        legacy_delete: Dict[str, Any] = {}
+        if remove_from_legacy_dockets and not clean_id.lower().startswith("draft:"):
+            try:
+                from services.legacy_dockets_sync_service import LegacyDocketsSyncService
+
+                sync_service = LegacyDocketsSyncService(self.paths)
+                legacy_delete = sync_service.delete_docket_entry(
+                    clean_id,
+                    entry_payload=legacy_context if legacy_context else None,
+                )
+                self._legacy_docket_rows_signature = ""
+            except Exception as exc:
+                logger.warning("[excel_repo] Non-fatal legacy Dockets.xlsm delete error: %s", exc)
+                legacy_delete = {"ok": False, "warning": str(exc)}
+
+        warning_msg = _clean_text(legacy_delete.get("warning"))
+        found_anywhere = bool(
+            deleted_excel
+            or deleted_sqlite
+            or removed_recovery
+            or legacy_delete.get("deletedCount")
+            or legacy_delete.get("billedLocked")
+        )
+        if found_anywhere:
+            msg = f"Time entry {clean_id} deleted."
+            if warning_msg:
+                msg = f"{msg} {warning_msg}"
+            return {
+                "ok": True,
+                "entryId": clean_id,
+                "deletedExcel": deleted_excel,
+                "deletedSqlite": deleted_sqlite,
+                "removedRecovery": removed_recovery,
+                "legacyDocketsDelete": legacy_delete,
+                "billedLocked": bool(legacy_delete.get("billedLocked")),
+                "billedInvoice": _clean_text(legacy_delete.get("billedInvoice")),
+                "warning": warning_msg,
+                "message": msg,
+            }
+        return {
+            "ok": False,
+            "entryId": clean_id,
+            "message": f"Time entry {clean_id} not found.",
+        }
+
+    def cancel_or_delete_docket_entry(
+        self,
+        tab_or_entry_id: str,
+        remove_from_legacy_dockets: bool = True,
+        fallback_payload: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Cancel a running/paused draft timer or delete a saved docket entry across all stores."""
+        raw_target = _clean_text(tab_or_entry_id)
+        if not raw_target:
+            return {"ok": False, "message": "No tab or docket entry ID provided."}
+        res = self.delete_time_entry(
+            raw_target,
+            remove_from_legacy_dockets=bool(remove_from_legacy_dockets),
+            fallback_payload=fallback_payload,
+        )
+        # Even if a pure in-memory draft tab had not yet been written to disk, cancelling it is a valid success.
+        if not res.get("ok"):
+            return {
+                "ok": True,
+                "entryId": res.get("entryId") or raw_target,
+                "deletedExcel": False,
+                "deletedSqlite": False,
+                "removedRecovery": False,
+                "legacyDocketsDelete": {},
+                "billedLocked": False,
+                "billedInvoice": "",
+                "warning": "",
+                "message": "Draft docket timer cancelled.",
+            }
+        return res
+
+    def reset_docket_timer(
+        self,
+        tab_or_entry_id: str,
+        fallback_payload: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Reset a docket timer to 00:00:00 and clear auto-shutdown placeholder text while keeping the matter open."""
+        raw_target = _clean_text(tab_or_entry_id)
+        clean_id = raw_target[len("entry:"):] if raw_target.lower().startswith("entry:") else raw_target
+        if not clean_id:
+            return {"ok": False, "message": "No tab or docket entry ID provided."}
+
+        self.ensure_schema()
+        fb = dict(fallback_payload or {})
+        cleaned_desc = _clean_text(fb.get("description"))
+        if cleaned_desc.lower() == "auto-saved on system shutdown":
+            cleaned_desc = ""
+
+        updated_excel = False
+        existing_row = self._find_time_entry(clean_id) if not clean_id.lower().startswith("draft:") else None
+        if existing_row is not None:
+            row_desc = _clean_text(existing_row.get(sc.COL_TIME_DESC))
+            if row_desc.lower() == "auto-saved on system shutdown":
+                row_desc = ""
+            cleaned_desc = row_desc
+            existing_row[sc.COL_TIME_DESC] = row_desc
+            existing_row[sc.COL_TIME_HOURS] = 0.0
+            existing_row[sc.COL_TIME_SECONDS] = 0
+            existing_row[sc.COL_TIME_GROSS] = 0.0
+            existing_row[sc.COL_TIME_NET] = 0.0
+            existing_row[sc.COL_TIME_HST] = 0.0
+            existing_row[sc.COL_TIME_TOTAL] = 0.0
+            self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, clean_id, existing_row)
+            updated_excel = True
+
+        updated_sqlite = False
+        sq = self._get_sqlite_repo()
+        if sq is not None:
+            try:
+                sq_res = sq.reset_docket_timer(clean_id)
+                if sq_res.get("ok"):
+                    updated_sqlite = True
+                    cleaned_desc = _clean_text(sq_res.get("description") or cleaned_desc)
+                elif raw_target != clean_id:
+                    sq_res2 = sq.reset_docket_timer(raw_target)
+                    if sq_res2.get("ok"):
+                        updated_sqlite = True
+                        cleaned_desc = _clean_text(sq_res2.get("description") or cleaned_desc)
+            except Exception as exc:
+                logger.debug("[excel_repo] SQLite reset_docket_timer error: %s", exc)
+
+        updated_recovery = self._reset_in_timer_recovery(raw_target)
+
+        return {
+            "ok": True,
+            "entryId": clean_id,
+            "rawSeconds": 0,
+            "hours": 0.0,
+            "description": cleaned_desc,
+            "updatedExcel": updated_excel,
+            "updatedSqlite": updated_sqlite,
+            "updatedRecovery": updated_recovery,
+            "message": "Timer reset to 00:00:00.",
+        }
+
 
     @with_db_lock
     @with_financial_write_batch

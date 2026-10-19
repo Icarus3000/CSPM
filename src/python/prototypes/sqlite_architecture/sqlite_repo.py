@@ -993,6 +993,42 @@ class SqliteTimeRepo:
         conn.commit()
         return deleted > 0
 
+    def reset_docket_timer(self, entry_id: str) -> Dict[str, Any]:
+        target_id = str(entry_id or "").strip()
+        if not target_id:
+            return {"ok": False, "message": "entry_id is required"}
+        existing = self.get_time_entry_by_id(target_id)
+        if existing is None:
+            return {"ok": False, "message": f"Entry not found: {target_id}"}
+        desc = str(existing.get("Description") or "").strip()
+        if desc.lower() == "auto-saved on system shutdown":
+            desc = ""
+        updated = self.upsert_live_docket_heartbeat(
+            {
+                "entry_id": target_id,
+                "matter_id": str(existing.get("MatterID") or ""),
+                "matter_name": str(existing.get("MatterName") or ""),
+                "client_id": str(existing.get("ClientID") or ""),
+                "client_name": str(existing.get("ClientName") or ""),
+                "parent_id": str(existing.get("ParentID") or ""),
+                "date": str(existing.get("Date") or ""),
+                "hours": 0.0,
+                "raw_seconds": 0,
+                "rate": float(existing.get("Rate") or 475.0),
+                "share_pct": float(existing.get("SharePct") or 100.0),
+                "GrossToClient": 0.0,
+                "AmountToYou": 0.0,
+                "HST": 0.0,
+                "TotalInclHST": 0.0,
+                "description": desc,
+                "status": "Draft",
+                "entry_status": "PAUSED",
+                "started_at_utc": None,
+            }
+        )
+        return {"ok": True, "entryId": target_id, "description": desc, **(updated or {})}
+
+
     def get_unbilled_time(self, matter_id: str) -> List[Dict[str, Any]]:
         conn = self._conn()
         try:

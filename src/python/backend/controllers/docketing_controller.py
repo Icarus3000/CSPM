@@ -649,3 +649,49 @@ class DocketingController(QObject):
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
 
+    @Slot(str, result="QVariantMap")
+    @Slot(str, bool, result="QVariantMap")
+    def cancelOrDeleteDocketTab(self, tab_or_entry_id: str, remove_from_legacy_dockets: bool = True) -> dict:
+        """Cancel a running/paused timer or delete a docket entry from active tabs, SQLite, CSPM.xlsm, timer_recovery.json, and Dockets.xlsm."""
+        try:
+            tray = getattr(self, "_tray_controller", None)
+            if tray is not None and hasattr(tray, "cancelOrDeleteDocketTab"):
+                res = dict(tray.cancelOrDeleteDocketTab(str(tab_or_entry_id or ""), bool(remove_from_legacy_dockets)) or {})
+                self.transactionDataChanged.emit()
+                return res
+            if hasattr(self._excel_repo, "cancel_or_delete_docket_entry"):
+                res = dict(
+                    self._excel_repo.cancel_or_delete_docket_entry(
+                        str(tab_or_entry_id or ""),
+                        remove_from_legacy_dockets=bool(remove_from_legacy_dockets),
+                    )
+                    or {}
+                )
+                self.transactionDataChanged.emit()
+                return res
+            if hasattr(self._excel_repo, "delete_time_entry"):
+                res = dict(self._excel_repo.delete_time_entry(str(tab_or_entry_id or "")) or {})
+                self.transactionDataChanged.emit()
+                return res
+            return {"ok": False, "message": "Docket delete unavailable"}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(str, result="QVariantMap")
+    def resetDocketTimer(self, tab_or_entry_id: str) -> dict:
+        """Stop the timer if running, reset raw_seconds to 0, clear auto-shutdown placeholder text, and keep the matter tab open."""
+        try:
+            tray = getattr(self, "_tray_controller", None)
+            if tray is not None and hasattr(tray, "resetDocketTimer"):
+                res = dict(tray.resetDocketTimer(str(tab_or_entry_id or "")) or {})
+                self.transactionDataChanged.emit()
+                return res
+            if hasattr(self._excel_repo, "reset_docket_timer"):
+                res = dict(self._excel_repo.reset_docket_timer(str(tab_or_entry_id or "")) or {})
+                self.transactionDataChanged.emit()
+                return res
+            return {"ok": False, "message": "Docket timer reset unavailable"}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+

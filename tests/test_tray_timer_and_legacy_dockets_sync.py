@@ -816,4 +816,148 @@ def test_sqlite_realtime_autosave_crash_recovery_and_close_safeguard(tmp_path: P
     tray.shutdown()
 
 
+def test_tray_cancel_delete_and_reset_docket_timer(tmp_path: Path) -> None:
+    from backend.controllers.docketing_controller import DocketingController
+
+    _app = QCoreApplication.instance() or QCoreApplication([])
+    paths, repo, legacy_path = _create_isolated_cspm_repo(tmp_path)
+    sqlite_repo = repo._get_sqlite_repo()
+    assert sqlite_repo is not None
+
+    docketing_ctrl = DocketingController(repo)
+    mock_icon = MagicMock()
+    mock_app_controller = SimpleNamespace(
+        _excel_repo=repo,
+        _docketing_controller=docketing_ctrl,
+        _paths=paths,
+        _theme_name="Dark",
+        _tray_icon=mock_icon,
+        saveTimeDocketEntry=lambda payload: repo.add_time_entry(payload),
+    )
+    tray = TrayController(mock_app_controller)
+    assert getattr(docketing_ctrl, "_tray_controller", None) is tray
+
+    # 1. Start a running draft timer, verify it is persisted to SQLite & timer_recovery.json, then cancel it
+    tray.startNewTimerWithDescription(
+        "Megatech Integrated Services Ltd.",
+        "MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+        "",
+    )
+    assert tray.hasRunningTimer is True
+    active_timer = tray.activeTimers[0]
+    sq_live_id = active_timer.sqlite_entry_id
+    active_tab_id = f"timer:{active_timer.timer_id}"
+    assert sqlite_repo.get_time_entry_by_id(sq_live_id) is not None
+    assert paths.timer_recovery_path().exists()
+
+    cancel_res = tray.cancelOrDeleteDocketTab(active_tab_id)
+    assert cancel_res["ok"] is True
+    assert tray.hasRunningTimer is False
+    assert len(tray.activeTimers) == 0
+    assert sqlite_repo.get_time_entry_by_id(sq_live_id) is None
+    # With no remaining timers/entries, tab strip falls back to a clean 00:00:00 draft tab with canClose=True
+    tabs_after_cancel = tray.todayDocketTabs
+    assert len(tabs_after_cancel) == 1
+    assert tabs_after_cancel[0]["tabId"] == "draft:1"
+    assert tabs_after_cancel[0]["elapsedFormatted"] == "00:00:00"
+    assert tabs_after_cancel[0]["canClose"] is True
+
+    # 2. Save an auto-shutdown docket entry (synced to Dockets.xlsm Table1_1), reset it to 00:00:00, then delete it
+    tray.startNewTimerWithManualTime(
+        "Megatech Integrated Services Ltd.",
+        "MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+        "Auto-saved on system shutdown",
+        "2h 48m",
+    )
+    tray.stopAndSavePrimaryTimer()
+    assert len(tray.recordedEntries) == 1
+    saved_entry = tray.recordedEntries[0]
+    saved_entry_id = saved_entry.entry_id
+    saved_tab_id = f"entry:{saved_entry_id}"
+    assert saved_entry.exactSeconds == 10080
+    assert saved_entry.description == "Auto-saved on system shutdown"
+
+    # Verify it was written to Dockets.xlsm Table1_1 (row 3, after seed row 2)
+    wb1 = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws1 = wb1[LEGACY_DOCKETS_SHEET]
+    assert str(ws1.cell(row=3, column=11).value or "") == "MEGA-COR-26-0093"
+    assert round(float(ws1.cell(row=3, column=5).value or 0.0), 4) == 2.8
+    LegacyDocketsSyncService._close_workbook(wb1)
+
+    # Test Reset to 00:00:00 via DocketingController slot: zeroes raw_seconds & clears "Auto-saved on system shutdown"
+    reset_res = docketing_ctrl.resetDocketTimer(saved_tab_id)
+    assert reset_res["ok"] is True
+    assert reset_res["rawSeconds"] == 0
+    assert reset_res["description"] == ""
+    assert saved_entry.exactSeconds == 0
+    assert saved_entry.description == ""
+    assert "Megatech" in saved_entry.clientName
+    assert "MEGA-COR-26-0093" in saved_entry.matterName
+    sq_reset_row = sqlite_repo.get_time_entry_by_id(saved_entry_id)
+    assert sq_reset_row is not None
+    assert int(sq_reset_row["RawSeconds"] or 0) == 0
+    assert str(sq_reset_row["Description"] or "") == ""
+
+    # Add a second saved docket on a different date so Table1_1 has 3 data rows (rows 2, 3, and 4)
+    res_second = repo.add_time_entry(
+        {
+            "date": "2026-10-18",
+            "clientId": "CLI-001",
+            "clientName": "Megatech Integrated Services Ltd.",
+            "matterId": "MAT-001",
+            "matterName": "MEGA-COR-26-0093",
+            "parentId": "PAR-001",
+            "description": "Prior day research",
+            "rawSeconds": 3600,
+            "hours": 1.0,
+            "useExactHours": True,
+            "clientRate": 475.0,
+            "sharePct": 100.0,
+            "status": "Unbilled",
+            "forceNewEntry": True,
+        }
+    )
+    second_entry_id = res_second["entryId"]
+
+    wb2 = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws2 = wb2[LEGACY_DOCKETS_SHEET]
+    assert ws2.max_row == 4
+    assert ws2.tables[LEGACY_DOCKETS_TABLE].ref == "A1:M4"
+    LegacyDocketsSyncService._close_workbook(wb2)
+
+    # Delete the first saved docket via cancelOrDeleteDocketTab: removes from tab model, CSPM.xlsm, SQLite, and Dockets.xlsm
+    del_res = docketing_ctrl.cancelOrDeleteDocketTab(saved_tab_id, True)
+    assert del_res["ok"] is True
+    assert del_res["billedLocked"] is False
+    assert repo._find_time_entry(saved_entry_id) is None
+    assert sqlite_repo.get_time_entry_by_id(saved_entry_id) is None
+    assert all(e.entry_id != saved_entry_id for e in tray.recordedEntries)
+
+    # Verify row 3 was deleted from Dockets.xlsm Table1_1 and Table1_1.ref updated to A1:M3
+    wb3 = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws3 = wb3[LEGACY_DOCKETS_SHEET]
+    assert ws3.max_row == 3
+    assert ws3.tables[LEGACY_DOCKETS_TABLE].ref == "A1:M3"
+    assert str(ws3.cell(row=3, column=4).value or "") == "Prior day research"
+    # Mark remaining row 3 as billed (Invoice populated) and verify billed row is protected
+    ws3.cell(row=3, column=10).value = "26-0105"
+    wb3.save(legacy_path)
+    LegacyDocketsSyncService._close_workbook(wb3)
+
+    del_billed_res = docketing_ctrl.cancelOrDeleteDocketTab(second_entry_id, True)
+    assert del_billed_res["ok"] is True
+    assert del_billed_res["billedLocked"] is True
+    assert del_billed_res["billedInvoice"] == "26-0105"
+    assert "not deleted" in del_billed_res["warning"].lower()
+
+    wb4 = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws4 = wb4[LEGACY_DOCKETS_SHEET]
+    assert ws4.max_row == 3
+    assert str(ws4.cell(row=3, column=10).value or "") == "26-0105"
+    LegacyDocketsSyncService._close_workbook(wb4)
+
+    tray.shutdown()
+
+
+
 

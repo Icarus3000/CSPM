@@ -6913,3 +6913,41 @@ class AppController(QObject):
             self._report_failure("Failed to calculate T2 summary", context="app.tax.t2", exc=exc)
             return {"ok": False, "message": str(exc)}
 
+    @Slot(str, result="QVariantMap")
+    @Slot(str, bool, result="QVariantMap")
+    def cancelOrDeleteDocketTab(self, tab_or_entry_id: str, remove_from_legacy_dockets: bool = True) -> dict:
+        try:
+            tray = getattr(self, "_tray_controller", None)
+            if tray is not None and hasattr(tray, "cancelOrDeleteDocketTab"):
+                res = dict(tray.cancelOrDeleteDocketTab(str(tab_or_entry_id or ""), bool(remove_from_legacy_dockets)) or {})
+                self.transactionDataChanged.emit()
+                return res
+            if hasattr(self._docketing_controller, "cancelOrDeleteDocketTab"):
+                return dict(
+                    self._docketing_controller.cancelOrDeleteDocketTab(
+                        str(tab_or_entry_id or ""),
+                        bool(remove_from_legacy_dockets),
+                    )
+                    or {}
+                )
+            return {"ok": False, "message": "Docket delete unavailable"}
+        except Exception as exc:
+            self._report_failure("Failed to cancel or delete docket tab", context="app.docket.cancel_delete", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(str, result="QVariantMap")
+    def resetDocketTimer(self, tab_or_entry_id: str) -> dict:
+        try:
+            tray = getattr(self, "_tray_controller", None)
+            if tray is not None and hasattr(tray, "resetDocketTimer"):
+                res = dict(tray.resetDocketTimer(str(tab_or_entry_id or "")) or {})
+                self.transactionDataChanged.emit()
+                return res
+            if hasattr(self._docketing_controller, "resetDocketTimer"):
+                return dict(self._docketing_controller.resetDocketTimer(str(tab_or_entry_id or "")) or {})
+            return {"ok": False, "message": "Docket timer reset unavailable"}
+        except Exception as exc:
+            self._report_failure("Failed to reset docket timer", context="app.docket.reset_timer", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+

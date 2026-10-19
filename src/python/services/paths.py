@@ -245,6 +245,25 @@ class AppPaths:
     def last_entry_path(self) -> Path:
         return self.state_dir() / "last_entry.json"
 
+    def timer_recovery_path(self) -> Path:
+        return self.state_dir() / "timer_recovery.json"
+
+    def timer_recovery_candidate_paths(self) -> list[Path]:
+        candidates = [
+            self.timer_recovery_path(),
+            self.data_dir() / "timer_recovery.json",
+        ]
+        if self._is_isolated_test_root():
+            candidates.append(self.root / "timer_recovery.json")
+        out: list[Path] = []
+        seen: set[str] = set()
+        for p in candidates:
+            key = str(p).casefold()
+            if key not in seen:
+                seen.add(key)
+                out.append(p)
+        return out
+
     def excel_metadata_cache_path(self) -> Path:
         return self.state_dir() / "excel_table_metadata_cache.json"
 

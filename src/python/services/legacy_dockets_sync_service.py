@@ -1606,3 +1606,495 @@ class LegacyDocketsSyncService:
             self._remove_pending_conflict(conflict_id)
         return res
 
+    @classmethod
+    def _surgically_delete_row_in_workbook_zip(
+        cls,
+        *,
+        workbook_path: Path,
+        temp_path: Path,
+        target_row_idx: int,
+        header_row: int,
+        min_col: int,
+        max_col: int,
+        new_max_row: int,
+        new_ref: str,
+        clear_only: bool = False,
+    ) -> bool:
+        if not workbook_path.is_file() or not zipfile.is_zipfile(workbook_path):
+            return False
+
+        if clear_only:
+            empty_values = {col_idx: None for col_idx in range(min_col, max_col + 1)}
+            return cls._surgically_patch_workbook_zip(
+                workbook_path=workbook_path,
+                temp_path=temp_path,
+                target_row_idx=target_row_idx,
+                template_row_idx=None,
+                header_row=header_row,
+                min_col=min_col,
+                max_col=max_col,
+                max_row=new_max_row,
+                new_ref=new_ref,
+                row_cell_values=empty_values,
+                formula_cached_values={},
+            )
+
+        try:
+            with zipfile.ZipFile(workbook_path, "r") as zin:
+                names = set(zin.namelist())
+                if "xl/workbook.xml" not in names or "xl/_rels/workbook.xml.rels" not in names:
+                    return False
+
+                wb_xml = zin.read("xl/workbook.xml").decode("utf-8")
+                wb_rels_xml = zin.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+
+                sheet_rid = None
+                for m_sheet in re.finditer(r"<sheet\b[^>]*>", wb_xml):
+                    tag = m_sheet.group(0)
+                    m_name = re.search(r'\bname="([^"]+)"', tag)
+                    if m_name and m_name.group(1) == LEGACY_DOCKETS_SHEET:
+                        m_rid = re.search(r'\br:id="([^"]+)"', tag)
+                        if m_rid:
+                            sheet_rid = m_rid.group(1)
+                        break
+                if not sheet_rid:
+                    return False
+
+                sheet_part_name = None
+                for m_rel in re.finditer(r"<Relationship\b[^>]*>", wb_rels_xml):
+                    tag = m_rel.group(0)
+                    m_id = re.search(r'\bId="([^"]+)"', tag)
+                    m_target = re.search(r'\bTarget="([^"]+)"', tag)
+                    if m_id and m_target and m_id.group(1) == sheet_rid:
+                        raw_target = m_target.group(1).lstrip("/")
+                        if not raw_target.startswith("xl/"):
+                            raw_target = f"xl/{raw_target}"
+                        sheet_part_name = raw_target
+                        break
+                if not sheet_part_name or sheet_part_name not in names:
+                    return False
+
+                table_part_name = None
+                for candidate in sorted(n for n in names if n.startswith("xl/tables/") and n.endswith(".xml")):
+                    t_xml = zin.read(candidate).decode("utf-8", errors="ignore")
+                    m_tbl = re.search(r"<table\b[^>]*>", t_xml)
+                    if not m_tbl:
+                        continue
+                    tbl_tag = m_tbl.group(0)
+                    if (
+                        f'name="{LEGACY_DOCKETS_TABLE}"' in tbl_tag
+                        or f'displayName="{LEGACY_DOCKETS_TABLE}"' in tbl_tag
+                    ):
+                        table_part_name = candidate
+                        break
+                if not table_part_name or table_part_name not in names:
+                    return False
+
+                sheet_xml = zin.read(sheet_part_name).decode("utf-8")
+                table_xml = zin.read(table_part_name).decode("utf-8")
+
+                row_pattern = re.compile(
+                    r'<row\b([^>]*\br="(\d+)"[^>]*)(?:>(.*?)</row>|/>)',
+                    re.DOTALL,
+                )
+                found_deleted = False
+
+                def _replace_row(m_row: re.Match[str]) -> str:
+                    nonlocal found_deleted
+                    attrs = m_row.group(1)
+                    r_num = int(m_row.group(2))
+                    body = m_row.group(3)
+                    if r_num == target_row_idx:
+                        found_deleted = True
+                        return ""
+                    if r_num > target_row_idx:
+                        next_r = r_num - 1
+                        new_attrs = re.sub(r'\br="\d+"', f'r="{next_r}"', attrs, count=1)
+                        if body is None:
+                            return f"<row{new_attrs}/>"
+                        new_body = re.sub(
+                            r'(<c\b[^>]*\br="[A-Z]+)\d+(")',
+                            rf"\g<1>{next_r}\g<2>",
+                            body,
+                        )
+                        return f"<row{new_attrs}>{new_body}</row>"
+                    return m_row.group(0)
+
+                sheet_xml = row_pattern.sub(_replace_row, sheet_xml)
+                if not found_deleted:
+                    return False
+
+                sheet_xml = re.sub(
+                    r'(<dimension\b[^>]*\bref="[A-Z]+\d+:)([A-Z]+)(\d+)("[^>]*/>)',
+                    lambda m_dim: f"{m_dim.group(1)}{m_dim.group(2)}{new_max_row}{m_dim.group(4)}",
+                    sheet_xml,
+                    count=1,
+                )
+
+                table_xml = re.sub(
+                    r'(<table\b[^>]*\bref=")[^"]+(")',
+                    rf"\g<1>{new_ref}\g<2>",
+                    table_xml,
+                    count=1,
+                )
+                table_xml = re.sub(
+                    r'(<autoFilter\b[^>]*\bref=")[^"]+(")',
+                    rf"\g<1>{new_ref}\g<2>",
+                    table_xml,
+                    count=1,
+                )
+
+                wb_xml = re.sub(
+                    r'(<definedName\b[^>]*\bname="ExternalData_1"[^>]*>\s*(?:\'Dockets\'|Dockets)!\$[A-Z]+\$\d+:\$[A-Z]+\$)\d+(\s*</definedName>)',
+                    rf"\g<1>{new_max_row}\g<2>",
+                    wb_xml,
+                )
+
+                with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+                    for name in zin.namelist():
+                        if name == sheet_part_name:
+                            zout.writestr(name, sheet_xml.encode("utf-8"))
+                        elif name == table_part_name:
+                            zout.writestr(name, table_xml.encode("utf-8"))
+                        elif name == "xl/workbook.xml":
+                            zout.writestr(name, wb_xml.encode("utf-8"))
+                        else:
+                            zout.writestr(name, zin.read(name))
+                return True
+        except Exception as exc:
+            logger.debug("[legacy_dockets_sync] Surgical ZIP delete fallback to openpyxl: %s", exc)
+            return False
+
+    def _apply_delete_to_workbook(
+        self,
+        workbook_path: Path,
+        entry_id: str,
+        entry_payload: Mapping[str, Any] | None,
+        sync_map: dict[str, Any],
+    ) -> dict[str, Any]:
+        if self._is_excel_lock_present(workbook_path):
+            raise PermissionError(f"Excel lock file ~${workbook_path.name} is present.")
+
+        wb = None
+        temp_path = workbook_path.with_name(f".{workbook_path.name}.{uuid4().hex}.tmp")
+        try:
+            keep_vba = workbook_path.suffix.lower() == ".xlsm"
+            wb = openpyxl.load_workbook(str(workbook_path), keep_vba=keep_vba)
+            if LEGACY_DOCKETS_SHEET not in wb.sheetnames:
+                return {
+                    "ok": True,
+                    "status": "NOT_FOUND",
+                    "deleted": False,
+                    "billedLocked": False,
+                    "billedInvoice": "",
+                    "workbookPath": str(workbook_path),
+                    "entryId": entry_id,
+                }
+            ws = wb[LEGACY_DOCKETS_SHEET]
+            table, min_col, header_row, max_col, max_row = self._ensure_table1_1(ws)
+            if max_col - min_col + 1 < len(LEGACY_DOCKETS_HEADERS):
+                max_col = min_col + len(LEGACY_DOCKETS_HEADERS) - 1
+
+            col_map: dict[str, int] = {}
+            for col_idx in range(min_col, max_col + 1):
+                header_text = _clean_text(ws.cell(header_row, col_idx).value)
+                if header_text:
+                    col_map[header_text.casefold()] = col_idx
+            for offset, default_header in enumerate(LEGACY_DOCKETS_HEADERS):
+                col_idx = min_col + offset
+                if default_header.casefold() not in col_map:
+                    col_map[default_header.casefold()] = col_idx
+
+            c_inv = col_map["invoice"]
+            c_date = col_map["date"]
+            c_matter = col_map["matter_id"]
+
+            wb_key = str(workbook_path.resolve()).casefold()
+            wb_entries = sync_map.setdefault(wb_key, {})
+            clean_eid = _clean_text(entry_id)
+            mapped_info = wb_entries.get(clean_eid) if (clean_eid and isinstance(wb_entries, dict)) else None
+            preferred_row = (
+                int(mapped_info["row"])
+                if isinstance(mapped_info, dict) and mapped_info.get("row")
+                else None
+            )
+            saved_sig: tuple[str, str, int, str, float] | None = None
+            if isinstance(mapped_info, dict) and isinstance(mapped_info.get("signature"), (list, tuple)):
+                raw_sig = list(mapped_info["signature"])
+                if len(raw_sig) == 5:
+                    saved_sig = (
+                        str(raw_sig[0]),
+                        str(raw_sig[1]),
+                        int(round(_parse_float(raw_sig[2], 0.0))),
+                        str(raw_sig[3]),
+                        round(_parse_float(raw_sig[4], 0.0), 2),
+                    )
+
+            target_row_idx: int | None = None
+            if (
+                preferred_row is not None
+                and header_row < preferred_row <= max_row
+                and not self._row_is_blank(ws, preferred_row, min_col, max_col)
+            ):
+                row_date_str = _iso_date_str(ws.cell(preferred_row, c_date).value)
+                row_matter_key = _norm_key(ws.cell(preferred_row, c_matter).value)
+                expected_matter = (
+                    saved_sig[0]
+                    if saved_sig is not None
+                    else (_norm_key(entry_payload.get("Matter_ID")) if entry_payload else "")
+                )
+                expected_date = (
+                    saved_sig[1]
+                    if saved_sig is not None
+                    else (_iso_date_str(entry_payload.get("Date")) if entry_payload else "")
+                )
+                if (
+                    (expected_date and row_date_str == expected_date)
+                    and (not expected_matter or row_matter_key == expected_matter)
+                ):
+                    target_row_idx = int(preferred_row)
+
+            if target_row_idx is None and saved_sig is not None:
+                target_row_idx = self._find_matching_row(
+                    ws,
+                    min_col,
+                    header_row,
+                    max_row,
+                    col_map,
+                    saved_sig,
+                    preferred_row_idx=preferred_row,
+                )
+
+            if target_row_idx is None and entry_payload is not None:
+                payload_sig = self._signature_from_payload(entry_payload)
+                if payload_sig[0] and payload_sig[1]:
+                    target_row_idx = self._find_matching_row(
+                        ws,
+                        min_col,
+                        header_row,
+                        max_row,
+                        col_map,
+                        payload_sig,
+                        preferred_row_idx=preferred_row,
+                    )
+                    if target_row_idx is None:
+                        dm_rows = self._find_rows_by_date_and_matter(
+                            ws,
+                            min_col,
+                            header_row,
+                            max_row,
+                            col_map,
+                            entry_payload.get("Matter_ID"),
+                            entry_payload.get("Date"),
+                        )
+                        if len(dm_rows) == 1:
+                            target_row_idx = int(dm_rows[0])
+
+            if target_row_idx is None:
+                if clean_eid and isinstance(wb_entries, dict):
+                    wb_entries.pop(clean_eid, None)
+                return {
+                    "ok": True,
+                    "status": "NOT_FOUND",
+                    "deleted": False,
+                    "billedLocked": False,
+                    "billedInvoice": "",
+                    "workbookPath": str(workbook_path),
+                    "entryId": clean_eid,
+                }
+
+            existing_inv = _clean_text(ws.cell(target_row_idx, c_inv).value)
+            if existing_inv:
+                warn_msg = (
+                    f"Row {target_row_idx} in Dockets.xlsm is already billed on Invoice {existing_inv} "
+                    "and was not deleted from Dockets.xlsm."
+                )
+                return {
+                    "ok": False,
+                    "status": "BILLED_LOCKED",
+                    "deleted": False,
+                    "billedLocked": True,
+                    "billedInvoice": existing_inv,
+                    "row": int(target_row_idx),
+                    "workbookPath": str(workbook_path),
+                    "entryId": clean_eid,
+                    "warning": warn_msg,
+                }
+
+            clear_only = max_row <= (header_row + 1)
+            if clear_only:
+                for col_idx in range(min_col, max_col + 1):
+                    ws.cell(target_row_idx, col_idx).value = None
+                new_max_row = header_row + 1
+            else:
+                ws.delete_rows(target_row_idx, 1)
+                new_max_row = max_row - 1
+
+            new_ref = f"{get_column_letter(min_col)}{header_row}:{get_column_letter(max_col)}{new_max_row}"
+            table.ref = new_ref
+            if getattr(table, "autoFilter", None) is not None:
+                table.autoFilter.ref = new_ref
+            if getattr(ws, "auto_filter", None) is not None and getattr(ws.auto_filter, "ref", None):
+                ws.auto_filter.ref = new_ref
+
+            patched_surgically = self._surgically_delete_row_in_workbook_zip(
+                workbook_path=workbook_path,
+                temp_path=temp_path,
+                target_row_idx=int(target_row_idx),
+                header_row=int(header_row),
+                min_col=int(min_col),
+                max_col=int(max_col),
+                new_max_row=int(new_max_row),
+                new_ref=new_ref,
+                clear_only=clear_only,
+            )
+            if not patched_surgically:
+                wb.save(str(temp_path))
+                self._normalize_xlsm_content_types(temp_path, workbook_path)
+            self._close_workbook(wb)
+            wb = None
+
+            os.replace(str(temp_path), str(workbook_path))
+
+            if isinstance(wb_entries, dict):
+                if clean_eid:
+                    wb_entries.pop(clean_eid, None)
+                if not clear_only:
+                    to_remove_keys: list[str] = []
+                    for k, info in wb_entries.items():
+                        if not isinstance(info, dict):
+                            continue
+                        r_val = info.get("row")
+                        if isinstance(r_val, int):
+                            if r_val == target_row_idx:
+                                to_remove_keys.append(k)
+                            elif r_val > target_row_idx:
+                                info["row"] = r_val - 1
+                    for k in to_remove_keys:
+                        wb_entries.pop(k, None)
+
+            return {
+                "ok": True,
+                "status": "DELETED",
+                "deleted": True,
+                "billedLocked": False,
+                "billedInvoice": "",
+                "row": int(target_row_idx),
+                "tableRef": new_ref,
+                "workbookPath": str(workbook_path),
+                "entryId": clean_eid,
+            }
+        finally:
+            self._close_workbook(wb)
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+
+    def delete_docket_entry(
+        self,
+        entry_id: str,
+        entry_payload: Mapping[str, Any] | None = None,
+        *,
+        target_paths: Sequence[Path] | None = None,
+    ) -> dict[str, Any]:
+        """Delete an unbilled synced row from Dockets.xlsm (Table1_1) and update Table1_1.ref."""
+        clean_eid = _clean_text(entry_id)
+
+        # Remove any pending queue items or pending conflicts for this entry_id
+        if clean_eid:
+            try:
+                queue_file = self._pending_queue_path()
+                q_state = self._load_json_state(queue_file)
+                pending = q_state.get("pending")
+                if isinstance(pending, list):
+                    filtered = [
+                        item
+                        for item in pending
+                        if not (isinstance(item, dict) and _clean_text(item.get("entryId")) == clean_eid)
+                    ]
+                    if len(filtered) != len(pending):
+                        q_state["pending"] = filtered
+                        self._save_json_state(queue_file, q_state)
+            except Exception:
+                pass
+            try:
+                conflict_file = self._pending_conflicts_path()
+                c_state = self._load_json_state(conflict_file)
+                conflicts = c_state.get("conflicts")
+                if isinstance(conflicts, dict):
+                    to_del = [
+                        cid
+                        for cid, cval in conflicts.items()
+                        if isinstance(cval, dict)
+                        and _clean_text((cval.get("incomingEntry") or {}).get("entryId")) == clean_eid
+                    ]
+                    for cid in to_del:
+                        conflicts.pop(cid, None)
+                    if to_del:
+                        self._save_json_state(conflict_file, c_state)
+            except Exception:
+                pass
+
+        targets = list(target_paths) if target_paths is not None else self.paths.legacy_dockets_sync_targets()
+        if not targets:
+            return {
+                "ok": True,
+                "status": "NO_TARGETS",
+                "deleted": False,
+                "deletedCount": 0,
+                "billedLocked": False,
+                "billedInvoice": "",
+                "warnings": [],
+                "results": [],
+            }
+
+        sync_map = self._load_json_state(self._sync_map_path())
+        results: list[dict[str, Any]] = []
+        deleted_count = 0
+        billed_locked = False
+        billed_invoice = ""
+        warnings: list[str] = []
+
+        for wb_path in targets:
+            if not wb_path.is_file():
+                continue
+            try:
+                res = self._apply_delete_to_workbook(wb_path, clean_eid, entry_payload, sync_map)
+                results.append(res)
+                if res.get("deleted"):
+                    deleted_count += 1
+                if res.get("billedLocked"):
+                    billed_locked = True
+                    billed_invoice = str(res.get("billedInvoice") or billed_invoice)
+                    if res.get("warning"):
+                        warnings.append(str(res["warning"]))
+            except Exception as exc:
+                warn_msg = f"Could not delete docket from {wb_path.name}: {exc}"
+                logger.warning("[legacy_dockets_sync] %s", warn_msg)
+                warnings.append(warn_msg)
+                results.append(
+                    {
+                        "ok": False,
+                        "deleted": False,
+                        "workbookPath": str(wb_path),
+                        "warning": warn_msg,
+                    }
+                )
+
+        self._save_json_state(self._sync_map_path(), sync_map)
+        return {
+            "ok": not billed_locked,
+            "status": "BILLED_LOCKED" if billed_locked else ("DELETED" if deleted_count > 0 else "NOT_FOUND"),
+            "deleted": deleted_count > 0,
+            "deletedCount": deleted_count,
+            "billedLocked": billed_locked,
+            "billedInvoice": billed_invoice,
+            "warning": warnings[0] if warnings else "",
+            "warnings": warnings,
+            "results": results,
+            "entryId": clean_eid,
+        }
+
+

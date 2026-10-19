@@ -219,6 +219,20 @@ def _compute_tab_short_label(matter_name: str, client_name: str, fallback_index:
     return f"Draft #{max(1, int(fallback_index))}"
 
 
+def _extract_matter_number_token(matter_label: str) -> str:
+    m_clean = str(matter_label or "").strip()
+    if not m_clean:
+        return ""
+    for sep in (" — ", " - "):
+        if sep in m_clean:
+            left = m_clean.split(sep, 1)[0].strip()
+            if left and "-" in left:
+                return left
+    if "-" in m_clean and " " not in m_clean:
+        return m_clean
+    return ""
+
+
 class TrayController(QObject):
     activeTimersChanged = Signal()
     recordedEntriesChanged = Signal()
@@ -256,6 +270,9 @@ class TrayController(QObject):
         if self._app_controller is not None:
             try:
                 setattr(self._app_controller, "_tray_controller", self)
+                dock_ctrl = getattr(self._app_controller, "_docketing_controller", None)
+                if dock_ctrl is not None:
+                    setattr(dock_ctrl, "_tray_controller", self)
             except Exception:
                 pass
         self._current_monotonic = time.monotonic()
@@ -622,7 +639,7 @@ class TrayController(QObject):
                 "date": today_iso,
                 "isSaved": False,
                 "isDraft": True,
-                "canClose": False,
+                "canClose": True,
                 "isSelected": True,
             })
 
@@ -801,10 +818,369 @@ class TrayController(QObject):
         self.primaryTimerChanged.emit()
         return True
 
+    @Slot(result="QVariantMap")
+    @Slot(str, result="QVariantMap")
+    @Slot(str, bool, result="QVariantMap")
+    def cancelOrDeleteDocketTab(
+        self,
+        tab_or_entry_id: str = "",
+        remove_from_legacy_dockets: bool = True,
+    ) -> dict:
+        """
+        Stop the target timer (if running) and permanently remove the docket tab/entry
+        from the active tab model, SQLite time_entries, CSPM.xlsm (tblTimeEntries),
+        timer_recovery.json, and (if unbilled) Dockets.xlsm (Table1_1).
+        """
+        raw_id = str(tab_or_entry_id or self.selectedTabId or "").strip()
+        if not raw_id:
+            return {"ok": False, "message": "No docket tab or entry ID specified."}
+
+        prior_tabs = self._build_today_docket_tabs()
+        prior_index = next(
+            (i for i, item in enumerate(prior_tabs) if item.get("tabId") == raw_id),
+            0,
+        )
+
+        bare_id = raw_id
+        for prefix in ("entry:", "timer:"):
+            if bare_id.lower().startswith(prefix):
+                bare_id = bare_id[len(prefix):]
+                break
+
+        # 1. Locate matching in-memory timer, recorded entry, or draft tab
+        t_obj = next(
+            (
+                t
+                for t in self._timers
+                if f"timer:{t.timer_id}" == raw_id
+                or t.timer_id == raw_id
+                or t.timer_id == bare_id
+                or (bare_id and str(getattr(t, "linked_entry_id", "") or "") == bare_id)
+                or (bare_id and str(getattr(t, "sqlite_entry_id", "") or "") == bare_id)
+            ),
+            None,
+        )
+        e_obj = next(
+            (
+                e
+                for e in self._entries
+                if f"entry:{e.entry_id}" == raw_id
+                or e.entry_id == raw_id
+                or e.entry_id == bare_id
+                or (t_obj is not None and str(getattr(t_obj, "linked_entry_id", "") or "") == e.entry_id)
+            ),
+            None,
+        )
+        d_obj = next(
+            (
+                d
+                for d in self._draft_tabs
+                if str(d.get("tabId") or "") == raw_id
+                or (bare_id and str(d.get("sqliteEntryId") or "") == bare_id)
+            ),
+            None,
+        )
+
+        # 2. If timer is running, stop it immediately
+        if t_obj is not None and t_obj.isRunning:
+            self._current_monotonic = time.monotonic()
+            t_obj._state.accumulated_elapsed_seconds = t_obj._state.get_elapsed_seconds(self._current_monotonic)
+            t_obj._state.is_running = False
+            t_obj._state.started_at_monotonic = None
+            t_obj._current_elapsed = t_obj._state.accumulated_elapsed_seconds
+            t_obj.changed.emit()
+
+        # 3. Collect all persistent entry IDs and context for legacy Dockets.xlsm cleanup
+        entry_ids_to_delete: list[str] = []
+        for candidate in (
+            getattr(e_obj, "entry_id", "") if e_obj is not None else "",
+            getattr(t_obj, "linked_entry_id", "") if t_obj is not None else "",
+            getattr(t_obj, "sqlite_entry_id", "") if t_obj is not None else "",
+            str(d_obj.get("sqliteEntryId") or "") if d_obj is not None else "",
+            bare_id if not raw_id.lower().startswith(("timer:", "draft:")) else "",
+        ):
+            c_str = str(candidate or "").strip()
+            if c_str and c_str not in entry_ids_to_delete:
+                entry_ids_to_delete.append(c_str)
+
+        today_iso = datetime.date.today().isoformat()
+        fallback_payload = {
+            "clientId": (
+                (getattr(t_obj, "client_id", "") if t_obj is not None else "")
+                or (getattr(e_obj, "client_id", "") if e_obj is not None else "")
+                or (str(d_obj.get("clientId") or "") if d_obj is not None else "")
+            ),
+            "clientName": (
+                (getattr(t_obj, "client_display_name", "") if t_obj is not None else "")
+                or (getattr(e_obj, "client_display_name", "") if e_obj is not None else "")
+                or (str(d_obj.get("clientName") or "") if d_obj is not None else "")
+            ),
+            "matterId": (
+                (getattr(t_obj, "matter_id", "") if t_obj is not None else "")
+                or (getattr(e_obj, "matter_id", "") if e_obj is not None else "")
+                or (str(d_obj.get("matterId") or "") if d_obj is not None else "")
+            ),
+            "matterNumber": _extract_matter_number_token(
+                (getattr(t_obj, "matter_display_name", "") if t_obj is not None else "")
+                or (getattr(e_obj, "matter_display_name", "") if e_obj is not None else "")
+                or (str(d_obj.get("matterName") or "") if d_obj is not None else "")
+            ),
+            "entryDate": (
+                (str(getattr(e_obj, "recorded_date", "") or "")[:10] if e_obj is not None else "")
+                or today_iso
+            ),
+            "description": (
+                (getattr(t_obj, "description", "") if t_obj is not None else "")
+                or (getattr(e_obj, "description", "") if e_obj is not None else "")
+                or (str(d_obj.get("description") or "") if d_obj is not None else "")
+            ),
+        }
+
+        # 4. Remove from in-memory tab models
+        if t_obj is not None:
+            self._timers = [t for t in self._timers if t.timer_id != t_obj.timer_id]
+            self._hidden_tab_ids.discard(f"timer:{t_obj.timer_id}")
+        if e_obj is not None or entry_ids_to_delete:
+            del_set = set(entry_ids_to_delete)
+            if e_obj is not None:
+                del_set.add(e_obj.entry_id)
+            self._entries = [e for e in self._entries if e.entry_id not in del_set]
+            for eid in del_set:
+                self._hidden_tab_ids.discard(f"entry:{eid}")
+        if d_obj is not None or raw_id.startswith("draft:"):
+            self._draft_tabs = [
+                d for d in self._draft_tabs if str(d.get("tabId") or "") != raw_id
+            ]
+            self._hidden_tab_ids.discard(raw_id)
+        if self._crash_recovery_dockets and entry_ids_to_delete:
+            del_set = set(entry_ids_to_delete)
+            self._crash_recovery_dockets = [
+                row
+                for row in self._crash_recovery_dockets
+                if str(row.get("entryId") or row.get("EntryID") or "") not in del_set
+            ]
+
+        # 5. Delete from persistent stores (CSPM.xlsm, SQLite time_entries, timer_recovery.json, Dockets.xlsm)
+        repo = getattr(self._app_controller, "_excel_repo", None)
+        sq = self._get_sqlite_repo()
+        repo_res: dict = {}
+        target_ids_for_repo = entry_ids_to_delete if entry_ids_to_delete else [raw_id]
+        if repo is not None and hasattr(repo, "cancel_or_delete_docket_entry"):
+            for eid in target_ids_for_repo:
+                try:
+                    r = repo.cancel_or_delete_docket_entry(
+                        eid,
+                        remove_from_legacy_dockets=bool(remove_from_legacy_dockets),
+                        fallback_payload=fallback_payload,
+                    )
+                    if isinstance(r, dict):
+                        if not repo_res or r.get("deletedExcel") or r.get("billedLocked") or r.get("legacyDocketsDelete"):
+                            repo_res = dict(r)
+                except Exception:
+                    pass
+        if sq is not None:
+            for eid in target_ids_for_repo:
+                try:
+                    sq.delete_time_entry(eid)
+                except Exception:
+                    pass
+
+        # 6. Select the next available tab (or initialize clean 00:00:00 draft if none remain)
+        remaining_tabs = self._build_today_docket_tabs()
+        if remaining_tabs:
+            next_idx = min(max(0, prior_index), len(remaining_tabs) - 1)
+            self._selected_tab_id = str(remaining_tabs[next_idx].get("tabId") or "draft:1")
+        else:
+            self._selected_tab_id = "draft:1"
+        remaining_tabs = self._build_today_docket_tabs()
+
+        self.activeTimersChanged.emit()
+        self.recordedEntriesChanged.emit()
+        self.summaryChanged.emit()
+        self.selectedTabChanged.emit()
+        self.todayDocketTabsChanged.emit()
+        self.primaryTimerChanged.emit()
+
+        primary_deleted_id = entry_ids_to_delete[0] if entry_ids_to_delete else raw_id
+        self.mainTimerCommandRequested.emit({
+            "action": "cancel_or_delete",
+            "tabId": raw_id,
+            "entryId": primary_deleted_id,
+            "selectedTabId": self._selected_tab_id,
+        })
+
+        warning_msg = str(repo_res.get("warning") or "").strip()
+        billed_locked = bool(repo_res.get("billedLocked"))
+        if warning_msg:
+            self._last_sync_status_message = warning_msg
+            self.legacySyncConflictChanged.emit()
+            self.show_tray_toast(warning_msg)
+        else:
+            self._last_sync_status_message = "Docket cancelled / deleted"
+            self.legacySyncConflictChanged.emit()
+
+        return {
+            "ok": True,
+            "cancelledTabId": raw_id,
+            "deletedEntryId": primary_deleted_id,
+            "selectedTabId": self._selected_tab_id,
+            "remainingTabCount": len(remaining_tabs),
+            "billedLocked": billed_locked,
+            "billedInvoice": str(repo_res.get("billedInvoice") or ""),
+            "warning": warning_msg,
+            "message": str(repo_res.get("message") or "Docket cancelled and removed."),
+        }
+
+    @Slot(result="QVariantMap")
+    @Slot(str, result="QVariantMap")
+    def resetDocketTimer(self, tab_or_entry_id: str = "") -> dict:
+        """
+        Stop the target timer if running, reset raw_seconds to 0 (00:00:00),
+        clear any 'Auto-saved on system shutdown' placeholder text, and keep the
+        client/matter tab open so the user can start fresh.
+        """
+        raw_id = str(tab_or_entry_id or self.selectedTabId or "").strip()
+        if not raw_id:
+            return {"ok": False, "message": "No docket tab or entry ID specified."}
+
+        bare_id = raw_id
+        for prefix in ("entry:", "timer:"):
+            if bare_id.lower().startswith(prefix):
+                bare_id = bare_id[len(prefix):]
+                break
+
+        def _strip_auto_shutdown_desc(desc: str) -> str:
+            text = str(desc or "").strip()
+            return "" if text.casefold() == "auto-saved on system shutdown" else text
+
+        t_obj = next(
+            (
+                t
+                for t in self._timers
+                if f"timer:{t.timer_id}" == raw_id
+                or t.timer_id == raw_id
+                or t.timer_id == bare_id
+                or (bare_id and str(getattr(t, "linked_entry_id", "") or "") == bare_id)
+                or (bare_id and str(getattr(t, "sqlite_entry_id", "") or "") == bare_id)
+            ),
+            None,
+        )
+        e_obj = next(
+            (
+                e
+                for e in self._entries
+                if f"entry:{e.entry_id}" == raw_id
+                or e.entry_id == raw_id
+                or e.entry_id == bare_id
+                or (t_obj is not None and str(getattr(t_obj, "linked_entry_id", "") or "") == e.entry_id)
+            ),
+            None,
+        )
+        d_obj = next(
+            (
+                d
+                for d in self._draft_tabs
+                if str(d.get("tabId") or "") == raw_id
+                or (bare_id and str(d.get("sqliteEntryId") or "") == bare_id)
+            ),
+            None,
+        )
+
+        cleaned_desc = ""
+        client_name = ""
+        matter_name = ""
+        target_entry_ids: list[str] = []
+
+        if t_obj is not None:
+            self._current_monotonic = time.monotonic()
+            t_obj._state.is_running = False
+            t_obj._state.started_at_monotonic = None
+            t_obj._state.accumulated_elapsed_seconds = 0
+            t_obj._current_elapsed = 0
+            t_obj._description = _strip_auto_shutdown_desc(t_obj._description)
+            cleaned_desc = t_obj._description
+            client_name = t_obj.client_display_name
+            matter_name = t_obj.matter_display_name
+            t_obj.changed.emit()
+            for cand in (getattr(t_obj, "linked_entry_id", ""), getattr(t_obj, "sqlite_entry_id", "")):
+                if cand and cand not in target_entry_ids:
+                    target_entry_ids.append(str(cand))
+
+        if e_obj is not None:
+            e_obj._exact_seconds = 0
+            e_obj.decimal_hours = 0.0
+            e_obj._description = _strip_auto_shutdown_desc(e_obj._description)
+            cleaned_desc = e_obj._description
+            client_name = client_name or e_obj.client_display_name
+            matter_name = matter_name or e_obj.matter_display_name
+            e_obj.changed.emit()
+            if e_obj.entry_id and e_obj.entry_id not in target_entry_ids:
+                target_entry_ids.append(e_obj.entry_id)
+
+        if d_obj is not None:
+            d_obj["elapsedSeconds"] = 0
+            d_obj["description"] = _strip_auto_shutdown_desc(str(d_obj.get("description") or ""))
+            cleaned_desc = d_obj["description"]
+            client_name = client_name or str(d_obj.get("clientName") or "")
+            matter_name = matter_name or str(d_obj.get("matterName") or "")
+            sq_id = str(d_obj.get("sqliteEntryId") or "").strip()
+            if sq_id and sq_id not in target_entry_ids:
+                target_entry_ids.append(sq_id)
+
+        if not target_entry_ids and not raw_id.lower().startswith(("timer:", "draft:")):
+            target_entry_ids.append(bare_id)
+
+        repo = getattr(self._app_controller, "_excel_repo", None)
+        sq = self._get_sqlite_repo()
+        for eid in target_entry_ids:
+            if repo is not None and hasattr(repo, "reset_docket_timer"):
+                try:
+                    repo.reset_docket_timer(eid, fallback_payload={"description": cleaned_desc})
+                except Exception:
+                    pass
+            if sq is not None and hasattr(sq, "reset_docket_timer"):
+                try:
+                    sq.reset_docket_timer(eid)
+                except Exception:
+                    pass
+
+        if t_obj is not None:
+            self._upsert_timer_to_sqlite(t_obj, force=True)
+
+        self.activeTimersChanged.emit()
+        self.recordedEntriesChanged.emit()
+        self.summaryChanged.emit()
+        self.todayDocketTabsChanged.emit()
+        self.primaryTimerChanged.emit()
+
+        self.mainTimerCommandRequested.emit({
+            "action": "reset_timer",
+            "tabId": raw_id,
+            "entryId": target_entry_ids[0] if target_entry_ids else "",
+            "clientName": client_name,
+            "matterName": matter_name,
+            "description": cleaned_desc,
+            "elapsedSeconds": 0,
+        })
+
+        return {
+            "ok": True,
+            "tabId": raw_id,
+            "entryId": target_entry_ids[0] if target_entry_ids else "",
+            "rawSeconds": 0,
+            "elapsedFormatted": "00:00:00",
+            "clientName": client_name,
+            "matterName": matter_name,
+            "description": cleaned_desc,
+            "message": "Timer reset to 00:00:00.",
+        }
+
     @Slot(str, str)
-    def setSelectedTabClientAndMatter(self, client_name: str, matter_name: str):
+    @Slot(str, str, str)
+    def setSelectedTabClientAndMatter(self, client_name: str, matter_name: str, description: str = ""):
         clean_c = str(client_name or "").strip()
         clean_m = str(matter_name or "").strip()
+        clean_desc = str(description or "").strip()
         if not clean_c and clean_m:
             clean_c = self.getClientForMatter(clean_m) or ""
         c_id, resolved_c, m_id, resolved_m = self._resolve_client_and_matter_labels("", clean_c, "", clean_m)
@@ -819,6 +1195,8 @@ class TrayController(QObject):
             if final_m:
                 d["matterId"] = m_id
                 d["matterName"] = final_m
+            if clean_desc:
+                d["description"] = clean_desc
             self._schedule_debounced_sqlite_heartbeat()
             self.todayDocketTabsChanged.emit()
             self.primaryTimerChanged.emit()
@@ -832,6 +1210,8 @@ class TrayController(QObject):
             if final_m:
                 t.matter_id = m_id or t.matter_id
                 t.matter_display_name = final_m
+            if clean_desc:
+                t.description = clean_desc
             t.legacy_dockets_sync_status = "PENDING_CRASH_RECOVERY"
             t.changed.emit()
             self._schedule_debounced_sqlite_heartbeat()
@@ -847,6 +1227,8 @@ class TrayController(QObject):
             if final_m:
                 e.matter_id = m_id or getattr(e, "matter_id", "")
                 e.matter_display_name = final_m
+            if clean_desc:
+                e.description = clean_desc
             e.changed.emit()
             self.todayDocketTabsChanged.emit()
             self.primaryTimerChanged.emit()
@@ -1212,6 +1594,12 @@ class TrayController(QObject):
                 "legacy_dockets_sync_status": eff_sync_status,
                 "legacy_dockets_row_signature": getattr(t, "legacy_dockets_row_signature", None),
             }
+            repo = getattr(self._app_controller, "_excel_repo", None)
+            if repo is not None and hasattr(repo, "_upsert_timer_recovery_entry"):
+                try:
+                    repo._upsert_timer_recovery_entry(payload)
+                except Exception:
+                    pass
             return dict(sq.upsert_live_docket_heartbeat(payload) or {})
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
@@ -1253,6 +1641,12 @@ class TrayController(QObject):
                 "last_heartbeat_utc": now_utc,
                 "legacy_dockets_sync_status": "PENDING_CRASH_RECOVERY",
             }
+            repo = getattr(self._app_controller, "_excel_repo", None)
+            if repo is not None and hasattr(repo, "_upsert_timer_recovery_entry"):
+                try:
+                    repo._upsert_timer_recovery_entry(payload)
+                except Exception:
+                    pass
             return dict(sq.upsert_live_docket_heartbeat(payload) or {})
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
