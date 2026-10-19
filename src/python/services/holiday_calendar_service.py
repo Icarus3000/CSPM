@@ -237,7 +237,9 @@ class HolidayCalendarService:
             return result
         try:
             _check_cancel(cancel_event)
-            toronto = ZoneInfo("America/Toronto")
+            from .calendar_agenda_service import _load_zone_info
+
+            toronto = _load_zone_info("America/Toronto")
         except _Cancelled:
             result["errors"].append("Holiday refresh cancelled.")
             return result

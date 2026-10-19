@@ -1,5 +1,17 @@
 # Implementation History
 
+## 2026-10-19: `America/Toronto` IANA `tzdata` Packaging, Frozen `TZPATH` Bootstrap & Release Builder Preflight/Post-Bundle Gates
+
+1. **Root Cause Resolution (`requirements-release-windows.lock.txt` & PyInstaller `tzdata` Packaging)**:
+   - Synchronized `.venv_OMNIBOOK_cschn` against `requirements-release-windows.lock.txt` (`tzdata==2026.5`, `msal==1.39.0`, `holidays==0.106`, `certifi==2026.7.22`, `requests==2.34.2`, `cryptography==50.0.2`, `PyJWT==2.15.1`, `python-dateutil==2.9.0.post0`).
+   - Updated `scripts/build_release.py` to include `--hidden-import=tzdata` and `--collect-submodules=tzdata` alongside `--collect-data=tzdata` so PyInstaller bundles both the `tzdata.zoneinfo.*` Python subpackages (`__init__.py`) and the raw IANA `zoneinfo` TZif binary files into `_internal/tzdata/zoneinfo/`.
+2. **Runtime `zoneinfo.TZPATH` Bootstrap (`src/python/bootstrap/runtime_bootstrap.py`, `src/python/services/calendar_agenda_service.py`, `src/python/services/holiday_calendar_service.py`)**:
+   - Added `bootstrap_timezone_data()` in `src/python/bootstrap/runtime_bootstrap.py` (invoked automatically during `bootstrap_logging_and_qt_bridge`) to register bundled (`_MEIPASS/tzdata/zoneinfo`, `_internal/tzdata/zoneinfo`) and installed `tzdata/zoneinfo` directories directly into `zoneinfo.TZPATH` on Windows.
+   - Added `_load_zone_info(tz_name)` in `src/python/services/calendar_agenda_service.py` (and wired `src/python/services/holiday_calendar_service.py`) to initialize `TZPATH` and load bundled `TZif` binaries if `ZoneInfo(tz_name)` is called before global bootstrap while still rejecting untrusted/invalid timezone keys.
+3. **Pre-Flight & Post-Bundle Release Gates (`scripts/build_release.py`)**:
+   - Added a pre-flight gate verifying that `ZoneInfo("America/Toronto")` (including `EST`/`EDT` DST offset transitions), `tzdata`, `msal`, and `holidays` are installed and valid in `sys.executable` before PyInstaller starts.
+   - Added a post-bundle gate verifying that `dist/CSPM/_internal/tzdata/zoneinfo/America/Toronto` exists, starts with the `b"TZif"` magic header, and loads cleanly via `ZoneInfo.from_file(...)` before promoting or deploying `CSPM.exe`.
+
 ## 2026-10-19: System Tray Mini-Popup "Cancel / Delete" Docket Timer Button, Tab Close (`×`) Glyph & Full-Stack Cancel/Delete/Reset Cleanup
 
 1. **Mini-Popup UI Upgrades (`src/qml/tray/TrayTimekeepingFlyout.qml` & `src/qml/views/TimeDocketView.qml`)**:

@@ -337,3 +337,19 @@ def test_http_errors_do_not_expose_response_body_or_sensitive_url(monkeypatch):
     with pytest.raises(CalendarFetchError, match="denied access") as failure:
         GraphTransport().get_json("https://graph.microsoft.com/v1.0/me/calendars", {"Authorization": "Bearer secret"})
     assert "RAW RESPONSE" not in str(failure.value) and "private-secret" not in str(failure.value)
+
+
+def test_bootstrap_timezone_data_and_load_zone_info_for_toronto():
+    import zoneinfo
+    from bootstrap.runtime_bootstrap import bootstrap_timezone_data
+    from services.calendar_agenda_service import _load_zone_info
+
+    tz_paths = bootstrap_timezone_data()
+    assert any((Path(p) / "America" / "Toronto").is_file() for p in tz_paths)
+    tz = _load_zone_info("America/Toronto")
+    assert getattr(tz, "key", "") == "America/Toronto"
+    with pytest.raises(zoneinfo.ZoneInfoNotFoundError):
+        _load_zone_info("../America/Toronto")
+    with pytest.raises(zoneinfo.ZoneInfoNotFoundError):
+        _load_zone_info("Unknown/Untrusted")
+

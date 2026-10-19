@@ -95,7 +95,53 @@ def install_qt_message_bridge() -> None:
     qInstallMessageHandler(qt_message_handler)
 
 
+def bootstrap_timezone_data() -> list[str]:
+    """Ensure bundled or installed IANA tzdata/zoneinfo directories are in zoneinfo.TZPATH."""
+    import zoneinfo
+
+    candidate_dirs: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidate_dirs.append(Path(meipass) / "tzdata" / "zoneinfo")
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidate_dirs.append(exe_dir / "_internal" / "tzdata" / "zoneinfo")
+        candidate_dirs.append(exe_dir / "tzdata" / "zoneinfo")
+    try:
+        import tzdata  # type: ignore[import-not-found]
+
+        tzdata_file = getattr(tzdata, "__file__", None)
+        if tzdata_file:
+            candidate_dirs.append(Path(tzdata_file).resolve().parent / "zoneinfo")
+    except Exception:
+        pass
+
+    valid_dirs: list[str] = []
+    seen: set[str] = set()
+    for d in candidate_dirs:
+        try:
+            if d.is_dir() and (d / "America" / "Toronto").is_file():
+                resolved_str = str(d.resolve())
+                key = resolved_str.casefold()
+                if key not in seen:
+                    seen.add(key)
+                    valid_dirs.append(resolved_str)
+        except OSError:
+            continue
+
+    for existing in zoneinfo.TZPATH:
+        key = str(existing).casefold()
+        if key not in seen:
+            seen.add(key)
+            valid_dirs.append(str(existing))
+
+    if valid_dirs and tuple(valid_dirs) != tuple(zoneinfo.TZPATH):
+        zoneinfo.reset_tzpath(valid_dirs)
+    return list(zoneinfo.TZPATH)
+
+
 def bootstrap_logging_and_qt_bridge(log_dir: Path | None = None) -> logging.Logger:
+    bootstrap_timezone_data()
     logger = setup_global_logging(log_dir)
     install_qt_message_bridge()
     return logger

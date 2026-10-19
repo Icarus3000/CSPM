@@ -377,6 +377,26 @@ def main():
             
     print(f"Target version: {app_version}")
     
+    # PRE-FLIGHT GATE: Runtime Dependencies & America/Toronto IANA Timezone Database
+    try:
+        from zoneinfo import ZoneInfo
+
+        toronto_tz = ZoneInfo("America/Toronto")
+        winter_offset = datetime(2026, 1, 15, 12, 0, tzinfo=toronto_tz).utcoffset()
+        summer_offset = datetime(2026, 7, 15, 12, 0, tzinfo=toronto_tz).utcoffset()
+        if winter_offset is None or summer_offset is None or winter_offset == summer_offset:
+            raise RuntimeError("America/Toronto DST offsets failed preflight validation")
+        import holidays  # noqa: F401
+        import msal  # noqa: F401
+        import tzdata  # noqa: F401
+    except Exception as dep_err:
+        print(
+            "ERROR: Build blocked. Required calendar/timezone runtime dependencies "
+            f"(tzdata, msal, holidays, America/Toronto) are missing or invalid in {sys.executable}: {dep_err}"
+        )
+        print("Run: python -m pip install -r requirements-release-windows.lock.txt")
+        sys.exit(1)
+
     # PRE-FLIGHT GATE: Template Governance
     template_dir = ROOT_DIR / "src" / "templates"
     manifest_path = template_dir / "template_approval.json"
@@ -479,11 +499,13 @@ def main():
         # loaded dynamically rather than during application bootstrap.
         "--hidden-import=win32crypt",
         "--hidden-import=msal",
+        "--hidden-import=tzdata",
         "--hidden-import=holidays.countries.canada",
         "--hidden-import=holidays.countries.united_states",
         "--hidden-import=services.tax_compliance_service",
         "--collect-data=holidays",
         "--collect-data=tzdata",
+        "--collect-submodules=tzdata",
         "--distpath", str(dist_dir),
         "--workpath", str(build_dir),
         "--specpath", str(build_dir / "specs"),
@@ -541,17 +563,29 @@ def main():
     dist_data = dist_cspm / "data"
     dist_data.mkdir(exist_ok=True)
 
-    # main.py resolves startup branding from PROJECT_ROOT / "assets".  Verify
-    # the bundle preserves those files before a release can be promoted.
+    # main.py resolves startup branding from PROJECT_ROOT / "assets" and
+    # calendar services resolve IANA tzdata from _internal/tzdata/zoneinfo.
+    # Verify the bundle preserves those files before a release can be promoted.
+    bundled_toronto_tz = dist_cspm / "_internal" / "tzdata" / "zoneinfo" / "America" / "Toronto"
     required_runtime_assets = [
         dist_cspm / "_internal" / "assets" / "CS.svg",
         dist_cspm / "_internal" / "assets" / "splash_logo.svg",
+        bundled_toronto_tz,
     ]
     missing_runtime_assets = [str(path) for path in required_runtime_assets if not path.is_file()]
     if missing_runtime_assets:
-        print("ERROR: Build blocked. Required splash assets were not bundled:")
+        print("ERROR: Build blocked. Required runtime/timezone assets were not bundled:")
         for asset_path in missing_runtime_assets:
             print(f"  - {asset_path}")
+        sys.exit(1)
+    try:
+        tz_bytes = bundled_toronto_tz.read_bytes()
+        if not tz_bytes.startswith(b"TZif"):
+            raise ValueError("Bundled America/Toronto file is not a valid TZif binary")
+        with bundled_toronto_tz.open("rb") as tz_stream:
+            ZoneInfo.from_file(tz_stream, key="America/Toronto")
+    except Exception as tz_err:
+        print(f"ERROR: Build blocked. Bundled America/Toronto TZif validation failed: {tz_err}")
         sys.exit(1)
     
     import hashlib as _hl

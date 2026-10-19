@@ -123,6 +123,26 @@ class GraphTransport:
             raise CalendarFetchError("Microsoft returned an unreadable calendar response.") from None
 
 
+def _load_zone_info(tz_name: str) -> ZoneInfo:
+    if not tz_name or ".." in tz_name or tz_name.startswith(("/", "\\")):
+        raise ZoneInfoNotFoundError(tz_name)
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        try:
+            from bootstrap.runtime_bootstrap import bootstrap_timezone_data
+
+            tz_dirs = bootstrap_timezone_data()
+            for d_str in tz_dirs:
+                candidate = Path(d_str) / Path(*tz_name.split("/"))
+                if candidate.is_file():
+                    with candidate.open("rb") as fobj:
+                        return ZoneInfo.from_file(fobj, key=tz_name)
+        except Exception:
+            pass
+        return ZoneInfo(tz_name)
+
+
 def _datetime(value, toronto) -> datetime:
     if not isinstance(value, dict):
         raise ValueError("Missing date")
@@ -136,7 +156,7 @@ def _datetime(value, toronto) -> datetime:
             parsed = parsed.replace(tzinfo=timezone.utc)
         else:
             # A missing/unknown zone must not be guessed from the workstation.
-            parsed = parsed.replace(tzinfo=ZoneInfo(tz_name))
+            parsed = parsed.replace(tzinfo=_load_zone_info(tz_name))
     return parsed.astimezone(toronto)
 
 
@@ -172,7 +192,7 @@ class CalendarAgendaService:
 
     def _clock(self):
         try:
-            toronto = ZoneInfo(TIME_ZONE)
+            toronto = _load_zone_info(TIME_ZONE)
         except ZoneInfoNotFoundError:
             raise CalendarFetchError("Toronto time-zone data is missing from this installation.") from None
         value = self._now() if callable(self._now) else self._now

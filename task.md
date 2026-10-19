@@ -1,5 +1,12 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-19: `America/Toronto` IANA `tzdata` Packaging, Frozen `TZPATH` Bootstrap & Release Builder Verification Gates
+
+- [x] Install exact pinned calendar/timezone dependencies from `requirements-release-windows.lock.txt` (`tzdata==2026.5`, `msal==1.39.0`, `holidays==0.106`, `certifi==2026.7.22`) into `.venv_OMNIBOOK_cschn`.
+- [x] Add `bootstrap_timezone_data()` in `src/python/bootstrap/runtime_bootstrap.py` and `_load_zone_info` in `src/python/services/calendar_agenda_service.py` / `src/python/services/holiday_calendar_service.py` so `zoneinfo.TZPATH` includes bundled `_internal/tzdata/zoneinfo` and installed `tzdata/zoneinfo` directories on Windows.
+- [x] Harden `scripts/build_release.py` with `--hidden-import=tzdata`, `--collect-submodules=tzdata`, a pre-flight `ZoneInfo("America/Toronto")` / `msal` / `holidays` check, and a post-bundle `_internal/tzdata/zoneinfo/America/Toronto` `TZif` binary verification gate.
+- [x] Run unit tests (`tests/test_calendar_agenda_service.py`, `tests/test_holiday_calendar_service.py`, `tests/test_calendar_package_audit.py`), recompile standalone `CSPM.exe`, and push to Git cloud via `./scripts/build_and_push.py`.
+
 ## 2026-10-19: System Tray Mini-Popup "Cancel / Delete" Docket Timer Button, Universal Tab Close (`×`), Smart Confirmation / Reset Overlay & Multi-Store Cleanup
 
 - [x] **Part 1 Mini-Popup UI (`src/qml/tray/TrayTimekeepingFlyout.qml`)**:
