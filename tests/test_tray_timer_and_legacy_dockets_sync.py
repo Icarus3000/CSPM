@@ -500,3 +500,320 @@ def test_tray_manual_time_entry_and_matter_deduplication(tmp_path: Path) -> None
     tray.shutdown()
 
 
+def test_multi_tab_today_dockets_and_simultaneous_timer_warning(tmp_path: Path) -> None:
+    paths, repo, _legacy_path = _create_isolated_cspm_repo(tmp_path)
+    _app = QCoreApplication.instance() or QCoreApplication([])
+    mock_icon = MagicMock()
+    mock_app_controller = SimpleNamespace(
+        _excel_repo=repo,
+        _paths=paths,
+        _theme_name="Dark",
+        _tray_icon=mock_icon,
+        saveTimeDocketEntry=lambda payload: repo.add_time_entry(payload),
+    )
+    tray = TrayController(mock_app_controller)
+
+    # 1. Start Timer A on Matter 1
+    tray.startNewTimerWithDescription(
+        "Megatech Integrated Services Ltd.",
+        "MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+        "Drafting share rollovers",
+    )
+    assert tray.hasRunningTimer is True
+    assert len(tray.todayDocketTabs) >= 1
+
+    # 2. Click '+' to open a new blank docket tab for today
+    new_tab_id = tray.createNewBlankDocketTab()
+    assert new_tab_id.startswith("draft:")
+    assert tray.selectedTabId == new_tab_id
+    assert any(t["tabId"] == new_tab_id for t in tray.todayDocketTabs)
+
+    # 3. Attempting to start Timer B while Timer A is RUNNING triggers Simultaneous Timer Warning
+    started_immediately = tray.startNewTimerWithManualTime(
+        "Megatech Integrated Services Ltd.",
+        "General Corporate Advisory",
+        "Second concurrent matter",
+        "15m",
+    )
+    assert started_immediately is False
+    assert tray.simultaneousTimerWarningVisible is True
+    assert "Another timer is already running for" in tray.simultaneousTimerWarningMessage
+
+    # 3a. Cancel leaves Timer A running and does not start Timer B
+    tray.resolveSimultaneousTimerCancel()
+    assert tray.simultaneousTimerWarningVisible is False
+    running_timers = [t for t in tray._timers if t.isRunning]
+    assert len(running_timers) == 1
+
+    # 3b. Trigger warning again and choose 'Pause Other & Start This One'
+    tray.selectDocketTab(new_tab_id)
+    tray.startNewTimerWithManualTime(
+        "Megatech Integrated Services Ltd.",
+        "General Corporate Advisory",
+        "Second matter after pausing first",
+        "15m",
+    )
+    assert tray.simultaneousTimerWarningVisible is True
+    tray.resolveSimultaneousTimerPauseOther()
+    assert tray.simultaneousTimerWarningVisible is False
+    running_timers = [t for t in tray._timers if t.isRunning]
+    paused_timers = [t for t in tray._timers if not t.isRunning]
+    assert len(running_timers) == 1
+    assert len(paused_timers) == 1
+    assert running_timers[0].description == "Second matter after pausing first"
+
+    # 3c. Resume paused Timer A -> triggers warning -> choose 'Run Both Simultaneously'
+    tray.resume_timer(paused_timers[0].timer_id)
+    assert tray.simultaneousTimerWarningVisible is True
+    tray.resolveSimultaneousTimerRunBoth()
+    assert tray.simultaneousTimerWarningVisible is False
+    running_timers = [t for t in tray._timers if t.isRunning]
+    assert len(running_timers) == 2
+
+    # 4. Verify multi-monitor geometry persistence & screen intersection check
+    assert tray.saveMiniPopupGeometry(2200, 140, 420, 310) is True
+    assert TrayController._rect_intersects_any_screen(
+        2200, 140, 420, 310, [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)]
+    ) is True
+    assert TrayController._rect_intersects_any_screen(
+        9000, 9000, 420, 310, [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)]
+    ) is False
+    tray.shutdown()
+
+
+def test_legacy_dockets_conflict_detection_and_four_resolutions(tmp_path: Path) -> None:
+    paths, repo, legacy_path = _create_isolated_cspm_repo(tmp_path)
+
+    # Case A: First entry for (2026-10-19, MEGA-COR-26-0093) appends quietly without conflict
+    res1 = repo.add_time_entry(
+        {
+            "date": "2026-10-19",
+            "clientId": "CLI-001",
+            "clientName": "Megatech Integrated Services Ltd.",
+            "matterId": "MAT-001",
+            "matterName": "MEGA-COR-26-0093",
+            "parentId": "PAR-001",
+            "description": "Initial morning drafting",
+            "rawSeconds": 3600,
+            "hours": 1.0,
+            "useExactHours": True,
+            "clientRate": 475.0,
+            "sharePct": 100.0,
+            "status": "Draft",
+        }
+    )
+    assert res1["ok"] is True
+    sync1 = res1["legacyDocketsSync"]
+    assert sync1["conflict"] is False
+    assert sync1["status"] in ("APPENDED", "SYNCED")
+    assert sync1["toastMessage"] == "Saved & synced to Dockets.xlsm"
+
+    # Case B: Second separate entry on the SAME (Date, Matter_ID) triggers CONFLICT
+    res2 = repo.add_time_entry(
+        {
+            "date": "2026-10-19",
+            "clientId": "CLI-001",
+            "clientName": "Megatech Integrated Services Ltd.",
+            "matterId": "MAT-001",
+            "matterName": "MEGA-COR-26-0093",
+            "parentId": "PAR-001",
+            "description": "Afternoon follow-up call",
+            "rawSeconds": 1800,
+            "hours": 0.5,
+            "useExactHours": True,
+            "clientRate": 475.0,
+            "sharePct": 100.0,
+            "status": "Draft",
+            "forceNewEntry": True,
+        }
+    )
+    sync2 = res2["legacyDocketsSync"]
+    assert sync2["conflict"] is True
+    assert sync2["status"] == "CONFLICT"
+    conflict_id = sync2["conflictId"]
+    target_row = sync2["selectedTargetRow"]
+    assert target_row == 3
+
+    # Resolution 3: Combine / Add Time into Existing Row (1.0h + 0.5h = 1.5h, 3600s + 1800s = 5400s)
+    comb_res = repo.resolve_legacy_dockets_conflict(conflict_id, "combine", target_row=target_row)
+    assert comb_res["ok"] is True
+    assert comb_res["status"] == "SYNCED"
+    assert comb_res.get("resolutionMode") == "combine"
+
+    wb = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws = wb[LEGACY_DOCKETS_SHEET]
+    assert ws.max_row == 3
+    assert float(ws.cell(row=3, column=5).value) == 1.5
+    assert int(ws.cell(row=3, column=12).value) == 5400
+    assert "Initial morning drafting; Afternoon follow-up call" in str(ws.cell(row=3, column=4).value)
+    # Mark row 3 as Billed in Excel to test billed overwrite protection
+    ws.cell(row=3, column=10).value = "26-0099"
+    wb.save(legacy_path)
+    LegacyDocketsSyncService._close_workbook(wb)
+
+    # Third entry on same (Date, Matter_ID) when existing row is Billed
+    res3 = repo.add_time_entry(
+        {
+            "date": "2026-10-19",
+            "clientId": "CLI-001",
+            "clientName": "Megatech Integrated Services Ltd.",
+            "matterId": "MAT-001",
+            "matterName": "MEGA-COR-26-0093",
+            "parentId": "PAR-001",
+            "description": "Evening revisions",
+            "rawSeconds": 1200,
+            "hours": 0.4,
+            "useExactHours": True,
+            "clientRate": 475.0,
+            "sharePct": 100.0,
+            "status": "Draft",
+            "forceNewEntry": True,
+        }
+    )
+    sync3 = res3["legacyDocketsSync"]
+    assert sync3["conflict"] is True
+    assert any(r.get("isBilled") for r in sync3["existingRows"])
+
+    # Overwrite without confirm_billed_overwrite=True requires confirmation first
+    ow_unconfirmed = repo.resolve_legacy_dockets_conflict(
+        sync3, "overwrite", target_row=3, confirm_billed_overwrite=False
+    )
+    assert ow_unconfirmed.get("requiresBilledConfirmation") is True
+
+    # Resolution 2: Append as Separate New Row
+    app_res = repo.resolve_legacy_dockets_conflict(sync3, "append", target_row=3)
+    assert app_res["ok"] is True
+    assert app_res["status"] in ("APPENDED", "SYNCED")
+    assert app_res.get("resolutionMode") == "append"
+
+    wb2 = openpyxl.load_workbook(legacy_path, keep_vba=True, data_only=False)
+    ws2 = wb2[LEGACY_DOCKETS_SHEET]
+    assert ws2.max_row == 4
+    assert ws2.tables[LEGACY_DOCKETS_TABLE].ref == "A1:M4"
+    LegacyDocketsSyncService._close_workbook(wb2)
+
+    # Resolution 4: Skip Dockets.xlsm (Save in CSPM Only)
+    skip_res = repo.resolve_legacy_dockets_conflict(sync3, "skip", target_row=3)
+    assert skip_res["ok"] is True
+    assert skip_res["status"] == "SKIPPED"
+
+    # Resolution 1: Overwrite Existing Row (with confirm_billed_overwrite=True)
+    ow_confirmed = repo.resolve_legacy_dockets_conflict(
+        sync3, "overwrite", target_row=3, confirm_billed_overwrite=True
+    )
+    assert ow_confirmed["ok"] is True
+    assert ow_confirmed["status"] in ("OVERWRITTEN", "SYNCED")
+
+
+
+def test_sqlite_realtime_autosave_crash_recovery_and_close_safeguard(tmp_path: Path) -> None:
+    paths, repo, legacy_path = _create_isolated_cspm_repo(tmp_path)
+    sqlite_repo = repo._get_sqlite_repo()
+    assert sqlite_repo is not None
+
+    # 1. Simulate a timer that was RUNNING and autosaved to SQLite 5s before a hard PC crash
+    started_utc = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=600)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    heartbeat_utc = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=300)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    crashed_row = repo.upsert_sqlite_docket_heartbeat(
+        {
+            "entryId": "TM-CRASH-01",
+            "clientId": "CLI-001",
+            "clientName": "Megatech Integrated Services Ltd.",
+            "matterId": "MAT-001",
+            "matterName": "MEGA-COR-26-0093",
+            "date": "2026-10-19",
+            "description": "Crashed mid-timer research",
+            "rawSeconds": 300,
+            "entryStatus": "RUNNING",
+            "startedAtUtc": started_utc,
+            "lastHeartbeatUtc": heartbeat_utc,
+            "legacyDocketsSyncStatus": "PENDING_CRASH_RECOVERY",
+        }
+    )
+    assert crashed_row["entryId"] == "TM-CRASH-01"
+
+    # Also seed a PENDING_SYNC row (saved in SQLite before crash, not yet in Dockets.xlsm)
+    pending_row = repo.upsert_sqlite_docket_heartbeat(
+        {
+            "entryId": "TM-PEND-01",
+            "clientId": "CLI-001",
+            "clientName": "Megatech Integrated Services Ltd.",
+            "matterId": "MAT-001",
+            "matterName": "MEGA-COR-26-0093",
+            "date": "2026-10-17",
+            "description": "Saved before crash but pending Excel sync",
+            "rawSeconds": 1800,
+            "entryStatus": "SAVED",
+            "legacyDocketsSyncStatus": "PENDING_SYNC",
+        }
+    )
+    assert pending_row["entryId"] == "TM-PEND-01"
+
+    # 2. Run startup reconciliation:
+    # - TM-PEND-01 (2026-10-17) quietly appends to Dockets.xlsm Table1_1 and becomes SYNCED
+    # - TM-CRASH-01 (2026-10-19) is restored as PAUSED in SQLite and returned in crashRecoveryDockets
+    rec = repo.reconcile_unsynced_dockets_on_startup()
+    assert rec["ok"] is True
+    assert any(item["entryId"] == "TM-PEND-01" for item in rec["syncedEntries"])
+    assert any(item["entryId"] == "TM-CRASH-01" for item in rec["crashRecoveryDockets"])
+
+    crash_info = next(item for item in rec["crashRecoveryDockets"] if item["entryId"] == "TM-CRASH-01")
+    assert crash_info["wasRunning"] is True
+    assert crash_info["heartbeatSeconds"] == 300
+    assert crash_info["wallClockSeconds"] >= 590
+
+    # Verify TM-CRASH-01 was safely transitioned to PAUSED in SQLite
+    db_row = sqlite_repo.get_time_entry_by_id("TM-CRASH-01")
+    assert db_row is not None
+    assert db_row["EntryStatus"] == "PAUSED"
+
+    # 3. Resolve TM-CRASH-01 using Option 2 ('sync_and_keep_paused') with 'heartbeat' time
+    res_keep = repo.resolve_crash_recovery_docket(
+        "TM-CRASH-01", "sync_and_keep_paused", time_option="heartbeat"
+    )
+    assert res_keep["ok"] is True
+    assert res_keep["keepPausedTab"] is True
+    assert res_keep["legacyDocketsSync"]["conflict"] is False
+
+    db_row_after = sqlite_repo.get_time_entry_by_id("TM-CRASH-01")
+    assert db_row_after is not None
+    assert db_row_after["EntryStatus"] == "PAUSED"
+    assert db_row_after["LegacyDocketsSyncStatus"] == "SYNCED"
+    assert db_row_after["LegacyDocketsRowSignature"] is not None
+
+    # 4. Verify Close Safeguard in TrayController when a timer is RUNNING
+    _app = QCoreApplication.instance() or QCoreApplication([])
+    mock_icon = MagicMock()
+    mock_app_controller = SimpleNamespace(
+        _excel_repo=repo,
+        _paths=paths,
+        _theme_name="Dark",
+        _tray_icon=mock_icon,
+        saveTimeDocketEntry=lambda payload: repo.add_time_entry(payload),
+    )
+    tray = TrayController(mock_app_controller)
+    tray.startNewTimerWithDescription(
+        "Megatech Integrated Services Ltd.",
+        "MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+        "Active timer during close attempt",
+    )
+    assert tray.hasUnsavedOrActiveDocketOnClose() is True
+    assert tray.requestCloseWithSafeguard("main_window") is True
+    assert tray.closeSafeguardVisible is True
+
+    # Option 4: Cancel close safeguard
+    cancel_res = tray.resolveCloseSafeguard("cancel")
+    assert cancel_res["action"] == "cancel"
+    assert tray.closeSafeguardVisible is False
+    assert tray.hasRunningTimer is True
+
+    # Option 2: Pause, Sync Current Time to Dockets.xlsm & Quit (Resume Next Launch)
+    tray.setPrimaryManualTime("30m")
+    pause_quit_res = tray.resolveCloseSafeguard("pause_sync_and_quit")
+    assert pause_quit_res["ok"] is True
+    assert tray.hasRunningTimer is False
+    assert tray._pause_sync_quit_completed is True
+    tray.shutdown()
+
+
+

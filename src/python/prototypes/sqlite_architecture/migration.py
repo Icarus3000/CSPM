@@ -570,6 +570,7 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
                     matter_id_map[mid] = mid
             date_iso = normalize_iso_date(row.get("Date"), "2026-01-01")
             hours = float(to_decimal(row.get("Hours", 0)))
+            raw_seconds = int(to_decimal(row.get("RawSeconds", round(hours * 3600))))
             rate_dec = to_decimal(row.get("ClientRate", 0))
             share_pct = float(to_decimal(row.get("SharePct", 100)))
             gross_dec = to_decimal(row.get("GrossToClient", hours * float(rate_dec)))
@@ -578,25 +579,58 @@ def perform_dry_run_migration(workbook_path: Optional[Path] = None) -> Dict[str,
             tot_incl_dec = to_decimal(row.get("TotalInclHST", amt_you_dec + hst_dec))
             inv_ref = str(row.get("InvoiceRef") or "").strip()
             status = str(row.get("Status") or ("Billed" if inv_ref else "Unbilled"))
+            entry_status = str(row.get("EntryStatus") or "SAVED").strip().upper() or "SAVED"
+            started_at_utc = row.get("StartedAtUTC") or None
+            last_heartbeat_utc = str(row.get("LastHeartbeatUTC") or now)
+            legacy_sync_status = str(row.get("LegacyDocketsSyncStatus") or "SYNCED").strip().upper() or "SYNCED"
+            legacy_synced_at = row.get("LegacyDocketsSyncedAt") or now
+            legacy_row_sig = row.get("LegacyDocketsRowSignature") or None
             biller = str(row.get("BillerEntity") or "").strip().upper() or (
                 "PC" if inv_ref.endswith("-PC") else infer_biller_from_date(date_iso)
             )
             conn.execute(
                 """INSERT OR REPLACE INTO TimeEntry (
-                       time_id, matter_id, client_id, parent_id, date, hours, rate, rate_cents,
+                       time_id, matter_id, client_id, parent_id, date, hours, raw_seconds, rate, rate_cents,
                        share_pct, amount, amount_cents, amount_to_you, amount_to_you_cents,
                        hst, hst_cents, total_incl_hst, total_incl_hst_cents,
-                       description, status, is_billed, billed_invoice_id, biller_entity,
+                       description, status, entry_status, started_at_utc, last_heartbeat_utc,
+                       legacy_dockets_sync_status, legacy_dockets_synced_at, legacy_dockets_row_signature,
+                       is_billed, billed_invoice_id, biller_entity,
                        created_at, updated_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     tid, mid, str(row.get("ClientID") or ""), str(row.get("ParentID") or ""),
-                    date_iso, hours, float(rate_dec), to_cents(rate_dec),
+                    date_iso, hours, raw_seconds, float(rate_dec), to_cents(rate_dec),
                     share_pct, float(gross_dec), to_cents(gross_dec),
                     float(amt_you_dec), to_cents(amt_you_dec),
                     float(hst_dec), to_cents(hst_dec),
                     float(tot_incl_dec), to_cents(tot_incl_dec),
                     str(row.get("Description") or ""), status,
+                    entry_status, started_at_utc, last_heartbeat_utc,
+                    legacy_sync_status, legacy_synced_at, legacy_row_sig,
+                    1 if inv_ref else 0, inv_ref, biller, now, now
+                ),
+            )
+            conn.execute(
+                """INSERT OR REPLACE INTO time_entries (
+                       entry_id, time_id, matter_id, client_id, parent_id, date, hours, raw_seconds, rate, rate_cents,
+                       share_pct, amount, amount_cents, amount_to_you, amount_to_you_cents,
+                       hst, hst_cents, total_incl_hst, total_incl_hst_cents,
+                       description, status, entry_status, started_at_utc, last_heartbeat_utc,
+                       legacy_dockets_sync_status, legacy_dockets_synced_at, legacy_dockets_row_signature,
+                       is_billed, billed_invoice_id, biller_entity,
+                       created_at, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    tid, tid, mid, str(row.get("ClientID") or ""), str(row.get("ParentID") or ""),
+                    date_iso, hours, raw_seconds, float(rate_dec), to_cents(rate_dec),
+                    share_pct, float(gross_dec), to_cents(gross_dec),
+                    float(amt_you_dec), to_cents(amt_you_dec),
+                    float(hst_dec), to_cents(hst_dec),
+                    float(tot_incl_dec), to_cents(tot_incl_dec),
+                    str(row.get("Description") or ""), status,
+                    entry_status, started_at_utc, last_heartbeat_utc,
+                    legacy_sync_status, legacy_synced_at, legacy_row_sig,
                     1 if inv_ref else 0, inv_ref, biller, now, now
                 ),
             )

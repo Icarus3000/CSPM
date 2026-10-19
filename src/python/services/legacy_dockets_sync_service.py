@@ -153,6 +153,9 @@ class LegacyDocketsSyncService:
     def _pending_queue_path(self) -> Path:
         return self.paths.state_dir() / "legacy_dockets_pending_sync.json"
 
+    def _pending_conflicts_path(self) -> Path:
+        return self.paths.state_dir() / "legacy_dockets_pending_conflicts.json"
+
     def _load_json_state(self, path: Path) -> dict[str, Any]:
         try:
             if path.is_file():
@@ -406,6 +409,85 @@ class LegacyDocketsSyncService:
         return None
 
     @classmethod
+    def _find_rows_by_date_and_matter(
+        cls,
+        ws: Any,
+        min_col: int,
+        header_row: int,
+        max_row: int,
+        col_map: Mapping[str, int],
+        matter_id: Any,
+        date_val: Any,
+    ) -> list[int]:
+        t_matter = _norm_key(matter_id)
+        t_date = _iso_date_str(date_val) if _clean_text(date_val) else ""
+        if not t_matter or not t_date:
+            return []
+        col_date = col_map.get("date", min_col)
+        col_matter = col_map.get("matter_id", min_col + 10)
+        matches: list[int] = []
+        for r_idx in range(header_row + 1, max_row + 1):
+            r_matter = _norm_key(ws.cell(r_idx, col_matter).value)
+            if r_matter != t_matter:
+                continue
+            raw_date = ws.cell(r_idx, col_date).value
+            if raw_date is None or _clean_text(raw_date) == "":
+                continue
+            if _iso_date_str(raw_date) == t_date:
+                matches.append(int(r_idx))
+        return matches
+
+    @classmethod
+    def _extract_row_details(
+        cls,
+        ws: Any,
+        row_idx: int,
+        min_col: int,
+        col_map: Mapping[str, int],
+    ) -> dict[str, Any]:
+        c_date = col_map.get("date", min_col)
+        c_client = col_map.get("client", min_col + 1)
+        c_sub = col_map.get("sub-client2") or col_map.get("sub-client") or (min_col + 2)
+        c_desc = col_map.get("description", min_col + 3)
+        c_hours = col_map.get("time (in hrs)", min_col + 4)
+        c_rate = col_map.get("hourly rate/flat fee", min_col + 5)
+        c_pct = col_map.get("percentage", min_col + 6)
+        c_amt = col_map.get("amount to cs", min_col + 7)
+        c_total = col_map.get("total inclusive of hst", min_col + 8)
+        c_inv = col_map.get("invoice", min_col + 9)
+        c_matter = col_map.get("matter_id", min_col + 10)
+        c_sec = col_map.get("rawseconds", min_col + 11)
+        c_type = col_map.get("entrytype", min_col + 12)
+
+        raw_date = ws.cell(row_idx, c_date).value
+        date_str = _iso_date_str(raw_date) if (raw_date is not None and _clean_text(raw_date) != "") else ""
+        hours_val = round(_parse_float(ws.cell(row_idx, c_hours).value, 0.0), 2)
+        raw_sec_val = ws.cell(row_idx, c_sec).value
+        raw_seconds = int(round(_parse_float(raw_sec_val, 0.0)))
+        if raw_seconds <= 0 and hours_val > 0:
+            raw_seconds = int(round(hours_val * 3600.0))
+        inv_text = _clean_text(ws.cell(row_idx, c_inv).value)
+
+        return {
+            "row": int(row_idx),
+            "rowNumber": int(row_idx),
+            "Date": date_str,
+            "Client": _clean_text(ws.cell(row_idx, c_client).value),
+            "Sub-Client2": _clean_text(ws.cell(row_idx, c_sub).value),
+            "Description": _clean_text(ws.cell(row_idx, c_desc).value),
+            "Time (in hrs)": hours_val,
+            "Hourly Rate/Flat Fee": _format_rate_number(ws.cell(row_idx, c_rate).value),
+            "Percentage": _normalize_share_fraction(ws.cell(row_idx, c_pct).value),
+            "Amount to CS": round(_parse_float(ws.cell(row_idx, c_amt).value, 0.0), 2),
+            "Total Inclusive of HST": round(_parse_float(ws.cell(row_idx, c_total).value, 0.0), 2),
+            "Invoice": inv_text,
+            "isBilled": bool(inv_text),
+            "Matter_ID": _clean_text(ws.cell(row_idx, c_matter).value),
+            "RawSeconds": int(raw_seconds),
+            "EntryType": _clean_text(ws.cell(row_idx, c_type).value) or "Hourly",
+        }
+
+    @classmethod
     def _find_unique_matter_date_row(
         cls,
         ws: Any,
@@ -416,24 +498,9 @@ class LegacyDocketsSyncService:
         matter_id: Any,
         date_val: Any,
     ) -> int | None:
-        t_matter = _norm_key(matter_id)
-        t_date = _iso_date_str(date_val)
-        if not t_matter or not t_date:
-            return None
-        col_date = col_map.get("date", min_col)
-        col_matter = col_map.get("matter_id", min_col + 10)
-        matches: list[int] = []
-        for r_idx in range(max_row, header_row, -1):
-            r_matter = _norm_key(ws.cell(r_idx, col_matter).value)
-            if r_matter != t_matter:
-                continue
-            raw_date = ws.cell(r_idx, col_date).value
-            if raw_date is None or _clean_text(raw_date) == "":
-                continue
-            if _iso_date_str(raw_date) == t_date:
-                matches.append(r_idx)
-                if len(matches) > 1:
-                    return None
+        matches = cls._find_rows_by_date_and_matter(
+            ws, min_col, header_row, max_row, col_map, matter_id, date_val
+        )
         return matches[0] if len(matches) == 1 else None
 
     @staticmethod
@@ -478,6 +545,21 @@ class LegacyDocketsSyncService:
 
         return round(float(numeric_value), 2)
 
+    @staticmethod
+    def _normalize_resolution_mode(resolution_mode: str | None) -> str | None:
+        if not resolution_mode:
+            return None
+        key = _clean_text(resolution_mode).casefold().replace("-", "_").replace(" ", "_")
+        if key in {"overwrite", "overwrite_existing", "overwrite_existing_row", "replace"}:
+            return "overwrite"
+        if key in {"append", "append_new", "append_as_separate_new_row", "separate"}:
+            return "append"
+        if key in {"combine", "add_time", "combine_add_time", "combine_existing", "merge"}:
+            return "combine"
+        if key in {"skip", "skip_dockets", "save_in_cspm_only", "cspm_only", "ignore"}:
+            return "skip"
+        raise ValueError(f"Unsupported Dockets.xlsm conflict resolution mode: {resolution_mode}")
+
     def _apply_upsert_to_workbook(
         self,
         workbook_path: Path,
@@ -485,7 +567,22 @@ class LegacyDocketsSyncService:
         previous_payload: Mapping[str, Any] | None,
         is_update: bool,
         sync_map: dict[str, Any],
+        *,
+        resolution_mode: str | None = None,
+        target_row: int | None = None,
+        confirm_billed_overwrite: bool = True,
     ) -> dict[str, Any]:
+        normalized_mode = self._normalize_resolution_mode(resolution_mode)
+        if normalized_mode == "skip":
+            return {
+                "ok": True,
+                "status": "SKIPPED",
+                "conflict": False,
+                "action": "skipped",
+                "resolutionMode": "skip",
+                "workbookPath": str(workbook_path),
+            }
+
         if self._is_excel_lock_present(workbook_path):
             raise PermissionError(f"Excel lock file ~${workbook_path.name} is present.")
 
@@ -515,54 +612,6 @@ class LegacyDocketsSyncService:
                 if not _clean_text(ws.cell(header_row, col_idx).value):
                     ws.cell(header_row, col_idx).value = default_header
 
-            wb_key = str(workbook_path.resolve()).casefold()
-            wb_entries = sync_map.setdefault(wb_key, {})
-            entry_id = _clean_text(current_payload.get("entryId"))
-            mapped_info = wb_entries.get(entry_id) if (entry_id and isinstance(wb_entries, dict)) else None
-            preferred_row = int(mapped_info["row"]) if isinstance(mapped_info, dict) and mapped_info.get("row") else None
-
-            target_row_idx: int | None = None
-            if previous_payload is not None:
-                prev_sig = self._signature_from_payload(previous_payload)
-                target_row_idx = self._find_matching_row(
-                    ws, min_col, header_row, max_row, col_map, prev_sig, preferred_row_idx=preferred_row
-                )
-
-            if target_row_idx is None and isinstance(mapped_info, dict) and mapped_info.get("signature"):
-                saved_sig = tuple(mapped_info["signature"])
-                if len(saved_sig) == 5:
-                    target_row_idx = self._find_matching_row(
-                        ws, min_col, header_row, max_row, col_map, saved_sig, preferred_row_idx=preferred_row
-                    )
-
-            if target_row_idx is None and (is_update or preferred_row is not None):
-                curr_sig = self._signature_from_payload(current_payload)
-                target_row_idx = self._find_matching_row(
-                    ws, min_col, header_row, max_row, col_map, curr_sig, preferred_row_idx=preferred_row
-                )
-
-            if target_row_idx is None and is_update:
-                if previous_payload is not None:
-                    target_row_idx = self._find_unique_matter_date_row(
-                        ws,
-                        min_col,
-                        header_row,
-                        max_row,
-                        col_map,
-                        previous_payload.get("Matter_ID"),
-                        previous_payload.get("Date"),
-                    )
-                if target_row_idx is None:
-                    target_row_idx = self._find_unique_matter_date_row(
-                        ws,
-                        min_col,
-                        header_row,
-                        max_row,
-                        col_map,
-                        current_payload.get("Matter_ID"),
-                        current_payload.get("Date"),
-                    )
-
             c_date = col_map["date"]
             c_client = col_map["client"]
             c_sub = col_map.get("sub-client2") or col_map.get("sub-client") or (min_col + 2)
@@ -576,6 +625,223 @@ class LegacyDocketsSyncService:
             c_matter = col_map["matter_id"]
             c_sec = col_map["rawseconds"]
             c_type = col_map["entrytype"]
+
+            wb_key = str(workbook_path.resolve()).casefold()
+            wb_entries = sync_map.setdefault(wb_key, {})
+            entry_id = _clean_text(current_payload.get("entryId"))
+            mapped_info = wb_entries.get(entry_id) if (entry_id and isinstance(wb_entries, dict)) else None
+            preferred_row = int(mapped_info["row"]) if isinstance(mapped_info, dict) and mapped_info.get("row") else None
+
+            date_matter_rows = self._find_rows_by_date_and_matter(
+                ws,
+                min_col,
+                header_row,
+                max_row,
+                col_map,
+                current_payload.get("Matter_ID"),
+                current_payload.get("Date"),
+            )
+
+            prior_matched_row: int | None = None
+            prior_snapshot_modified_externally = False
+            if (
+                preferred_row is not None
+                and header_row < preferred_row <= max_row
+                and not self._row_is_blank(ws, preferred_row, min_col, max_col)
+            ):
+                matches_saved = False
+                if isinstance(mapped_info, dict) and mapped_info.get("signature"):
+                    saved_sig = tuple(mapped_info["signature"])
+                    if len(saved_sig) == 5:
+                        matches_saved = (
+                            self._find_matching_row(
+                                ws,
+                                min_col,
+                                header_row,
+                                max_row,
+                                col_map,
+                                saved_sig,
+                                preferred_row_idx=preferred_row,
+                            )
+                            == preferred_row
+                        )
+                matches_prev = False
+                if previous_payload is not None:
+                    prev_sig = self._signature_from_payload(previous_payload)
+                    matches_prev = (
+                        self._find_matching_row(
+                            ws,
+                            min_col,
+                            header_row,
+                            max_row,
+                            col_map,
+                            prev_sig,
+                            preferred_row_idx=preferred_row,
+                        )
+                        == preferred_row
+                    )
+                matches_curr = (
+                    self._find_matching_row(
+                        ws,
+                        min_col,
+                        header_row,
+                        max_row,
+                        col_map,
+                        self._signature_from_payload(current_payload),
+                        preferred_row_idx=preferred_row,
+                    )
+                    == preferred_row
+                )
+                prior_matched_row = preferred_row
+                if not (matches_saved or matches_prev or matches_curr):
+                    prior_snapshot_modified_externally = True
+            elif previous_payload is not None:
+                prev_sig = self._signature_from_payload(previous_payload)
+                prior_matched_row = self._find_matching_row(
+                    ws, min_col, header_row, max_row, col_map, prev_sig, preferred_row_idx=preferred_row
+                )
+
+            candidate_rows: list[int] = []
+            if prior_matched_row is not None and header_row < prior_matched_row <= max_row:
+                candidate_rows.append(int(prior_matched_row))
+            for r_idx in date_matter_rows:
+                if r_idx not in candidate_rows:
+                    candidate_rows.append(int(r_idx))
+            if previous_payload is not None:
+                for r_idx in self._find_rows_by_date_and_matter(
+                    ws,
+                    min_col,
+                    header_row,
+                    max_row,
+                    col_map,
+                    previous_payload.get("Matter_ID"),
+                    previous_payload.get("Date"),
+                ):
+                    if r_idx not in candidate_rows:
+                        candidate_rows.append(int(r_idx))
+
+            existing_rows_details = [
+                self._extract_row_details(ws, r_idx, min_col, col_map) for r_idx in candidate_rows
+            ]
+            any_billed = any(bool(item.get("isBilled")) for item in existing_rows_details)
+
+            effective_payload: dict[str, Any] = dict(current_payload)
+            target_row_idx: int | None = None
+
+            if normalized_mode is None:
+                if not candidate_rows:
+                    # Case A — No Conflict (Zero Matching Rows on (Date, Matter_ID)) -> Quietly append
+                    target_row_idx = None
+                elif (
+                    is_update
+                    and isinstance(mapped_info, dict)
+                    and len(candidate_rows) == 1
+                    and not prior_snapshot_modified_externally
+                    and not any_billed
+                ):
+                    # Unambiguous in-place update of an entry synced by CSPM with no external edits or billing lock
+                    target_row_idx = int(candidate_rows[0])
+                else:
+                    # Case B — Potential Conflict Detected -> Do NOT overwrite or append silently
+                    if any_billed:
+                        conflict_reason = "ALREADY_BILLED"
+                    elif prior_snapshot_modified_externally:
+                        conflict_reason = "EXTERNAL_MODIFICATION"
+                    elif len(candidate_rows) > 1:
+                        conflict_reason = "MULTIPLE_MATCHING_ROWS"
+                    else:
+                        conflict_reason = "EXISTING_DATE_MATTER_ROW"
+                    return {
+                        "ok": True,
+                        "status": "CONFLICT",
+                        "conflict": True,
+                        "action": "conflict",
+                        "conflictReason": conflict_reason,
+                        "workbookPath": str(workbook_path),
+                        "incomingEntry": dict(current_payload),
+                        "existingRows": existing_rows_details,
+                        "selectedTargetRow": int(candidate_rows[0]),
+                    }
+            elif normalized_mode == "append":
+                target_row_idx = None
+            elif normalized_mode == "overwrite":
+                if target_row is not None and header_row < int(target_row) <= max_row:
+                    target_row_idx = int(target_row)
+                elif candidate_rows:
+                    target_row_idx = int(candidate_rows[0])
+                else:
+                    target_row_idx = None
+
+                if target_row_idx is not None:
+                    existing_inv_on_target = _clean_text(ws.cell(target_row_idx, c_inv).value)
+                    if existing_inv_on_target and not confirm_billed_overwrite:
+                        return {
+                            "ok": False,
+                            "status": "CONFLICT",
+                            "conflict": True,
+                            "requiresBilledConfirmation": True,
+                            "existingInvoice": existing_inv_on_target,
+                            "row": int(target_row_idx),
+                            "workbookPath": str(workbook_path),
+                            "incomingEntry": dict(current_payload),
+                            "existingRows": existing_rows_details,
+                            "message": (
+                                f"Row {target_row_idx} in Dockets.xlsm is already billed "
+                                f"(Invoice {existing_inv_on_target}). Please confirm before overwriting."
+                            ),
+                        }
+            elif normalized_mode == "combine":
+                if target_row is not None and header_row < int(target_row) <= max_row:
+                    target_row_idx = int(target_row)
+                elif candidate_rows:
+                    target_row_idx = int(candidate_rows[0])
+                else:
+                    target_row_idx = None
+
+                if target_row_idx is not None:
+                    existing_details = self._extract_row_details(ws, target_row_idx, min_col, col_map)
+                    existing_sec = int(existing_details.get("RawSeconds") or 0)
+                    existing_hrs = float(existing_details.get("Time (in hrs)") or 0.0)
+                    existing_desc = _clean_text(existing_details.get("Description"))
+                    existing_inv = _clean_text(existing_details.get("Invoice"))
+                    existing_rate = _parse_float(existing_details.get("Hourly Rate/Flat Fee"), 0.0)
+                    existing_pct = _normalize_share_fraction(existing_details.get("Percentage", 1))
+
+                    incoming_sec = int(round(_parse_float(current_payload.get("RawSeconds"), 0.0)))
+                    incoming_hrs = round(_parse_float(current_payload.get("Time (in hrs)"), 0.0), 2)
+                    if incoming_sec <= 0 and incoming_hrs > 0:
+                        incoming_sec = int(round(incoming_hrs * 3600.0))
+                    if incoming_hrs <= 0 and incoming_sec > 0:
+                        incoming_hrs = round(math.ceil(((incoming_sec / 3600.0) * 10.0) - 1e-9) / 10.0, 2)
+                    incoming_desc = _clean_text(current_payload.get("Description"))
+
+                    combined_sec = int(existing_sec + incoming_sec)
+                    combined_hrs = round(existing_hrs + incoming_hrs, 2)
+                    if combined_hrs <= 0 and combined_sec > 0:
+                        combined_hrs = round(math.ceil(((combined_sec / 3600.0) * 10.0) - 1e-9) / 10.0, 2)
+
+                    if existing_desc and incoming_desc:
+                        if _norm_key(existing_desc) == _norm_key(incoming_desc):
+                            merged_desc = existing_desc
+                        else:
+                            merged_desc = f"{existing_desc}; {incoming_desc}"
+                    else:
+                        merged_desc = existing_desc or incoming_desc
+
+                    rate_num = _parse_float(current_payload.get("Hourly Rate/Flat Fee"), existing_rate) or existing_rate
+                    pct_num = float(_normalize_share_fraction(current_payload.get("Percentage", existing_pct)))
+                    amt_combined = round(combined_hrs * rate_num * pct_num, 2)
+                    total_combined = round(amt_combined * 1.13, 2)
+
+                    effective_payload["Description"] = merged_desc
+                    effective_payload["Time (in hrs)"] = combined_hrs
+                    effective_payload["RawSeconds"] = combined_sec
+                    effective_payload["Hourly Rate/Flat Fee"] = _format_rate_number(rate_num)
+                    effective_payload["Percentage"] = pct_num
+                    effective_payload["Amount to CS"] = amt_combined
+                    effective_payload["Total Inclusive of HST"] = total_combined
+                    if not _clean_text(effective_payload.get("Invoice")) and existing_inv:
+                        effective_payload["Invoice"] = existing_inv
 
             action = "updated"
             template_row_idx: int | None = None
@@ -592,8 +858,12 @@ class LegacyDocketsSyncService:
                     target_row_idx = max_row + 1
                     max_row = target_row_idx
             else:
+                if normalized_mode == "combine":
+                    action = "combined"
+                elif normalized_mode == "overwrite":
+                    action = "overwritten"
                 existing_matter_val = _norm_key(ws.cell(target_row_idx, c_matter).value)
-                incoming_matter_val = _norm_key(current_payload.get("Matter_ID"))
+                incoming_matter_val = _norm_key(effective_payload.get("Matter_ID"))
                 existing_client_val = _clean_text(ws.cell(target_row_idx, c_client).value)
                 existing_sub_val = ws.cell(target_row_idx, c_sub).value
                 if existing_client_val and existing_matter_val and existing_matter_val == incoming_matter_val:
@@ -605,32 +875,32 @@ class LegacyDocketsSyncService:
             if template_row_idx is not None and template_row_idx > header_row:
                 self._copy_row_styles(ws, template_row_idx, target_row_idx, min_col, max_col)
 
-            is_flat_fee = _clean_text(current_payload.get("EntryType")).casefold() == "flat fee"
+            is_flat_fee = _clean_text(effective_payload.get("EntryType")).casefold() == "flat fee"
 
             cell_date = ws.cell(target_row_idx, c_date)
-            cell_date.value = _parse_datetime_midnight(current_payload.get("Date"))
+            cell_date.value = _parse_datetime_midnight(effective_payload.get("Date"))
             cell_date.number_format = LEGACY_DATE_NUMBER_FORMAT
 
             if preserve_existing_client:
                 ws.cell(target_row_idx, c_client).value = existing_client_val
                 ws.cell(target_row_idx, c_sub).value = existing_sub_val
             else:
-                ws.cell(target_row_idx, c_client).value = _clean_text(current_payload.get("Client")) or None
-                sub_val = _clean_text(current_payload.get("Sub-Client2"))
+                ws.cell(target_row_idx, c_client).value = _clean_text(effective_payload.get("Client")) or None
+                sub_val = _clean_text(effective_payload.get("Sub-Client2"))
                 ws.cell(target_row_idx, c_sub).value = sub_val if sub_val else None
-            ws.cell(target_row_idx, c_desc).value = _clean_text(current_payload.get("Description"))
+            ws.cell(target_row_idx, c_desc).value = _clean_text(effective_payload.get("Description"))
 
             cell_hours = ws.cell(target_row_idx, c_hours)
-            cell_hours.value = round(_parse_float(current_payload.get("Time (in hrs)"), 0.0), 2)
+            cell_hours.value = round(_parse_float(effective_payload.get("Time (in hrs)"), 0.0), 2)
 
             cell_rate = ws.cell(target_row_idx, c_rate)
-            cell_rate.value = _format_rate_number(current_payload.get("Hourly Rate/Flat Fee"))
+            cell_rate.value = _format_rate_number(effective_payload.get("Hourly Rate/Flat Fee"))
 
             cell_pct = ws.cell(target_row_idx, c_pct)
-            cell_pct.value = _normalize_share_fraction(current_payload.get("Percentage", 1))
+            cell_pct.value = _normalize_share_fraction(effective_payload.get("Percentage", 1))
             cell_pct.number_format = LEGACY_PERCENT_NUMBER_FORMAT
 
-            amt_numeric = round(_parse_float(current_payload.get("Amount to CS"), 0.0), 2)
+            amt_numeric = round(_parse_float(effective_payload.get("Amount to CS"), 0.0), 2)
             cell_amt = ws.cell(target_row_idx, c_amt)
             cell_amt.value = self._resolve_formula_or_value(
                 ws,
@@ -643,7 +913,7 @@ class LegacyDocketsSyncService:
             if not cell_amt.number_format or cell_amt.number_format == "General":
                 cell_amt.number_format = LEGACY_CURRENCY_NUMBER_FORMAT
 
-            total_numeric = round(_parse_float(current_payload.get("Total Inclusive of HST"), 0.0), 2)
+            total_numeric = round(_parse_float(effective_payload.get("Total Inclusive of HST"), 0.0), 2)
             cell_total = ws.cell(target_row_idx, c_total)
             cell_total.value = self._resolve_formula_or_value(
                 ws,
@@ -656,11 +926,11 @@ class LegacyDocketsSyncService:
             if not cell_total.number_format or cell_total.number_format == "General":
                 cell_total.number_format = LEGACY_CURRENCY_NUMBER_FORMAT
 
-            inv_val = _clean_text(current_payload.get("Invoice"))
+            inv_val = _clean_text(effective_payload.get("Invoice"))
             ws.cell(target_row_idx, c_inv).value = inv_val if inv_val else None
-            ws.cell(target_row_idx, c_matter).value = _clean_text(current_payload.get("Matter_ID")) or None
-            ws.cell(target_row_idx, c_sec).value = int(round(_parse_float(current_payload.get("RawSeconds"), 0.0)))
-            ws.cell(target_row_idx, c_type).value = _clean_text(current_payload.get("EntryType")) or "Hourly"
+            ws.cell(target_row_idx, c_matter).value = _clean_text(effective_payload.get("Matter_ID")) or None
+            ws.cell(target_row_idx, c_sec).value = int(round(_parse_float(effective_payload.get("RawSeconds"), 0.0)))
+            ws.cell(target_row_idx, c_type).value = _clean_text(effective_payload.get("EntryType")) or "Hourly"
 
             # Update Table1_1.ref and autoFilter.ref if expanded
             new_ref = f"{get_column_letter(min_col)}{header_row}:{get_column_letter(max_col)}{max_row}"
@@ -700,19 +970,33 @@ class LegacyDocketsSyncService:
 
             os.replace(str(temp_path), str(workbook_path))
 
+            row_sig_dict = {
+                "date": _iso_date_str(effective_payload.get("Date")),
+                "matter_id": _clean_text(effective_payload.get("Matter_ID")),
+                "raw_seconds": int(round(_parse_float(effective_payload.get("RawSeconds"), 0.0))),
+                "time_hrs": round(_parse_float(effective_payload.get("Time (in hrs)"), 0.0), 2),
+                "description": _clean_text(effective_payload.get("Description")),
+            }
             if entry_id and isinstance(wb_entries, dict):
                 wb_entries[entry_id] = {
                     "row": int(target_row_idx),
-                    "signature": list(self._signature_from_payload(current_payload)),
+                    "signature": list(self._signature_from_payload(effective_payload)),
+                    "rowSignature": row_sig_dict,
                     "updatedAt": datetime.now().isoformat(timespec="seconds"),
                 }
 
+            status_code = "APPENDED" if action == "added" else "SYNCED"
             return {
                 "ok": True,
+                "status": status_code,
+                "conflict": False,
                 "action": action,
+                "resolutionMode": normalized_mode or ("append" if action == "added" else "update"),
                 "row": int(target_row_idx),
                 "tableRef": new_ref,
                 "workbookPath": str(workbook_path),
+                "entryId": entry_id,
+                "rowSignature": row_sig_dict,
             }
         finally:
             self._close_workbook(wb)
@@ -1043,6 +1327,40 @@ class LegacyDocketsSyncService:
             self._save_json_state(self._sync_map_path(), sync_map)
         return flushed
 
+    def _save_pending_conflict(self, conflict_record: Mapping[str, Any]) -> None:
+        conflict_file = self._pending_conflicts_path()
+        state = self._load_json_state(conflict_file)
+        conflicts = state.setdefault("conflicts", {})
+        if not isinstance(conflicts, dict):
+            conflicts = {}
+            state["conflicts"] = conflicts
+        conflict_id = _clean_text(conflict_record.get("conflictId"))
+        if conflict_id:
+            conflicts[conflict_id] = dict(conflict_record)
+            state["latestConflictId"] = conflict_id
+            self._save_json_state(conflict_file, state)
+
+    def _remove_pending_conflict(self, conflict_id: str) -> None:
+        clean_id = _clean_text(conflict_id)
+        if not clean_id:
+            return
+        conflict_file = self._pending_conflicts_path()
+        state = self._load_json_state(conflict_file)
+        conflicts = state.get("conflicts")
+        if isinstance(conflicts, dict) and clean_id in conflicts:
+            conflicts.pop(clean_id, None)
+            if state.get("latestConflictId") == clean_id:
+                remaining_ids = list(conflicts.keys())
+                state["latestConflictId"] = remaining_ids[-1] if remaining_ids else ""
+            self._save_json_state(conflict_file, state)
+
+    def get_pending_conflicts(self) -> list[dict[str, Any]]:
+        state = self._load_json_state(self._pending_conflicts_path())
+        conflicts = state.get("conflicts")
+        if isinstance(conflicts, dict):
+            return [dict(v) for v in conflicts.values() if isinstance(v, dict)]
+        return []
+
     def sync_docket_entry(
         self,
         current_payload: Mapping[str, Any],
@@ -1050,10 +1368,20 @@ class LegacyDocketsSyncService:
         previous_payload: Mapping[str, Any] | None = None,
         is_update: bool = False,
         target_paths: Sequence[Path] | None = None,
+        resolution_mode: str | None = None,
+        target_row: int | None = None,
+        confirm_billed_overwrite: bool = True,
     ) -> dict[str, Any]:
         targets = list(target_paths) if target_paths is not None else self.paths.legacy_dockets_sync_targets()
         if not targets:
-            return {"ok": True, "syncedCount": 0, "queuedCount": 0, "results": []}
+            return {
+                "ok": True,
+                "status": "NO_TARGETS",
+                "conflict": False,
+                "syncedCount": 0,
+                "queuedCount": 0,
+                "results": [],
+            }
 
         sync_map = self._load_json_state(self._sync_map_path())
         self.flush_pending_syncs(sync_map=sync_map)
@@ -1062,6 +1390,7 @@ class LegacyDocketsSyncService:
         synced_count = 0
         queued_count = 0
         warnings: list[str] = []
+        conflict_results: list[dict[str, Any]] = []
 
         for wb_path in targets:
             if not wb_path.is_file():
@@ -1073,9 +1402,15 @@ class LegacyDocketsSyncService:
                     previous_payload,
                     is_update,
                     sync_map,
+                    resolution_mode=resolution_mode,
+                    target_row=target_row,
+                    confirm_billed_overwrite=confirm_billed_overwrite,
                 )
                 results.append(res)
-                synced_count += 1
+                if res.get("conflict") or res.get("status") == "CONFLICT":
+                    conflict_results.append(res)
+                elif res.get("ok"):
+                    synced_count += 1
             except (PermissionError, OSError) as exc:
                 warn_msg = (
                     f"Dockets.xlsm ({wb_path.name}) is currently locked by Excel; "
@@ -1107,10 +1442,167 @@ class LegacyDocketsSyncService:
                 )
 
         self._save_json_state(self._sync_map_path(), sync_map)
+
+        if conflict_results:
+            primary_conflict = conflict_results[0]
+            conflict_id = f"CONF-{uuid4().hex[:10].upper()}"
+            existing_rows = list(primary_conflict.get("existingRows") or [])
+            incoming_entry = dict(primary_conflict.get("incomingEntry") or current_payload)
+            conflict_reason = str(primary_conflict.get("conflictReason") or "EXISTING_DATE_MATTER_ROW")
+            selected_row = int(
+                primary_conflict.get("selectedTargetRow")
+                or (existing_rows[0]["row"] if existing_rows else 0)
+            )
+            conflict_record = {
+                "conflictId": conflict_id,
+                "status": "CONFLICT",
+                "conflict": True,
+                "conflictReason": conflict_reason,
+                "requiresBilledConfirmation": bool(primary_conflict.get("requiresBilledConfirmation")),
+                "existingInvoice": str(primary_conflict.get("existingInvoice") or ""),
+                "incomingEntry": incoming_entry,
+                "previousPayload": dict(previous_payload) if previous_payload is not None else None,
+                "isUpdate": bool(is_update),
+                "existingRows": existing_rows,
+                "selectedTargetRow": selected_row,
+                "targetPaths": [str(p) for p in targets if p.is_file()],
+                "workbookPath": str(primary_conflict.get("workbookPath") or ""),
+                "createdAt": datetime.now().isoformat(timespec="seconds"),
+            }
+            self._save_pending_conflict(conflict_record)
+            return {
+                "ok": bool(primary_conflict.get("ok", True)),
+                "status": "CONFLICT",
+                "conflict": True,
+                "conflictId": conflict_id,
+                "conflictReason": conflict_reason,
+                "requiresBilledConfirmation": bool(primary_conflict.get("requiresBilledConfirmation")),
+                "existingInvoice": str(primary_conflict.get("existingInvoice") or ""),
+                "incomingEntry": incoming_entry,
+                "existingRows": existing_rows,
+                "selectedTargetRow": selected_row,
+                "workbookPath": str(primary_conflict.get("workbookPath") or ""),
+                "syncedCount": synced_count,
+                "queuedCount": queued_count,
+                "warnings": warnings,
+                "results": results,
+                "message": str(
+                    primary_conflict.get("message")
+                    or "Potential conflict detected in legacy Dockets.xlsm."
+                ),
+            }
+
+        normalized_mode = self._normalize_resolution_mode(resolution_mode)
+        if normalized_mode == "skip":
+            top_status = "SKIPPED"
+            toast_msg = "Saved in CSPM only (skipped Dockets.xlsm)"
+        elif synced_count > 0:
+            top_status = "APPENDED" if any(r.get("action") == "added" for r in results) else "SYNCED"
+            toast_msg = "Saved & synced to Dockets.xlsm"
+        elif queued_count > 0:
+            top_status = "QUEUED"
+            toast_msg = ""
+        else:
+            top_status = "IDLE"
+            toast_msg = ""
+
+        first_sig = next(
+            (r.get("rowSignature") for r in results if isinstance(r.get("rowSignature"), dict)),
+            {
+                "date": _iso_date_str(current_payload.get("Date")),
+                "matter_id": _clean_text(current_payload.get("Matter_ID")),
+                "raw_seconds": int(round(_parse_float(current_payload.get("RawSeconds"), 0.0))),
+                "time_hrs": round(_parse_float(current_payload.get("Time (in hrs)"), 0.0), 2),
+                "description": _clean_text(current_payload.get("Description")),
+            },
+        )
         return {
             "ok": True,
+            "status": top_status,
+            "conflict": False,
+            "resolutionMode": normalized_mode or "",
+            "toastMessage": toast_msg,
+            "entryId": _clean_text(current_payload.get("entryId")),
+            "rowSignature": first_sig,
             "syncedCount": synced_count,
             "queuedCount": queued_count,
             "warnings": warnings,
             "results": results,
         }
+
+    def resolve_conflict(
+        self,
+        conflict_or_id: str | Mapping[str, Any] | None,
+        resolution_mode: str,
+        *,
+        target_row: int | None = None,
+        confirm_billed_overwrite: bool = True,
+        target_paths: Sequence[Path] | None = None,
+    ) -> dict[str, Any]:
+        """Execute one of the 4 user conflict resolution actions: overwrite, append, combine, or skip."""
+        normalized_mode = self._normalize_resolution_mode(resolution_mode)
+        if not normalized_mode:
+            raise ValueError("resolution_mode is required ('overwrite', 'append', 'combine', or 'skip').")
+
+        conflict_id = ""
+        conflict_record: dict[str, Any] = {}
+        state = self._load_json_state(self._pending_conflicts_path())
+        stored_conflicts = state.get("conflicts") if isinstance(state.get("conflicts"), dict) else {}
+
+        if isinstance(conflict_or_id, str):
+            conflict_id = _clean_text(conflict_or_id)
+            if conflict_id and conflict_id in stored_conflicts:
+                conflict_record = dict(stored_conflicts[conflict_id])
+        elif isinstance(conflict_or_id, Mapping):
+            nested = conflict_or_id.get("legacyDocketsSync")
+            source_map = nested if isinstance(nested, Mapping) else conflict_or_id
+            conflict_id = _clean_text(source_map.get("conflictId"))
+            if conflict_id and conflict_id in stored_conflicts:
+                conflict_record = dict(stored_conflicts[conflict_id])
+            else:
+                conflict_record = dict(source_map)
+
+        if not conflict_record and state.get("latestConflictId"):
+            latest_id = _clean_text(state.get("latestConflictId"))
+            if latest_id and latest_id in stored_conflicts:
+                conflict_id = latest_id
+                conflict_record = dict(stored_conflicts[latest_id])
+
+        incoming_entry = conflict_record.get("incomingEntry")
+        if not isinstance(incoming_entry, Mapping):
+            if isinstance(conflict_or_id, Mapping) and "Date" in conflict_or_id and "Matter_ID" in conflict_or_id:
+                incoming_entry = conflict_or_id
+            else:
+                return {
+                    "ok": False,
+                    "status": "ERROR",
+                    "conflict": False,
+                    "message": f"Conflict record {conflict_id or ''} not found.",
+                }
+
+        resolved_target_row = target_row
+        if resolved_target_row is None and conflict_record.get("selectedTargetRow"):
+            try:
+                resolved_target_row = int(conflict_record["selectedTargetRow"])
+            except (TypeError, ValueError):
+                resolved_target_row = None
+
+        resolved_paths: list[Path] | None = None
+        if target_paths is not None:
+            resolved_paths = list(target_paths)
+        elif isinstance(conflict_record.get("targetPaths"), list) and conflict_record.get("targetPaths"):
+            resolved_paths = [Path(str(p)) for p in conflict_record["targetPaths"]]
+
+        res = self.sync_docket_entry(
+            incoming_entry,
+            previous_payload=conflict_record.get("previousPayload"),
+            is_update=bool(conflict_record.get("isUpdate")),
+            target_paths=resolved_paths,
+            resolution_mode=normalized_mode,
+            target_row=resolved_target_row,
+            confirm_billed_overwrite=confirm_billed_overwrite,
+        )
+        if not res.get("conflict") and conflict_id:
+            self._remove_pending_conflict(conflict_id)
+        return res
+

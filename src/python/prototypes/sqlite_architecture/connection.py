@@ -32,34 +32,87 @@ def get_db_path() -> str:
     os.makedirs(proto_root, exist_ok=True)
     return os.path.join(proto_root, 'cspm_prototype.db')
 
-def get_connection() -> sqlite3.Connection:
+def get_connection(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
     """
     Returns a thread-local SQLite connection with strict pragmas enforced.
+    When db_path is provided (e.g. PathService.sqlite_db_path() -> %LOCALAPPDATA%/CSPM/data/cspm.db),
+    connects to that database with WAL mode enabled.
     """
-    db_path = get_db_path()
-    
-    if not hasattr(_local, 'conn') or _local.conn is None:
-        # uri=True enables WAL mode correctly in some sqlite drivers
-        _local.conn = sqlite3.connect(db_path, check_same_thread=True, timeout=5.0)
-        _local.conn.row_factory = sqlite3.Row
-        
-        # Enforce architecture requirements
-        _local.conn.execute("PRAGMA foreign_keys = ON;")
-        _local.conn.execute("PRAGMA journal_mode = WAL;")
-        _local.conn.execute("PRAGMA synchronous = NORMAL;")
-    
-    return _local.conn
+    resolved_path = os.fspath(db_path) if db_path is not None else get_db_path()
+    parent_dir = os.path.dirname(os.path.abspath(resolved_path))
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
 
-def close_connection():
+    conn_map = getattr(_local, "conn_map", None)
+    if conn_map is None:
+        conn_map = {}
+        _local.conn_map = conn_map
+
+    norm_key = os.path.normcase(os.path.abspath(resolved_path))
+    conn = conn_map.get(norm_key)
+    if conn is not None:
+        try:
+            conn.execute("SELECT 1")
+        except sqlite3.Error:
+            conn = None
+            conn_map.pop(norm_key, None)
+
+    if conn is None:
+        conn = sqlite3.connect(resolved_path, check_same_thread=False, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA busy_timeout = 5000;")
+        conn_map[norm_key] = conn
+
+    if db_path is None:
+        _local.conn = conn
+    return conn
+
+
+def close_connection(db_path: str | os.PathLike | None = None):
     """
-    Closes the thread-local connection cleanly.
+    Closes the thread-local connection(s) cleanly.
     """
-    if hasattr(_local, 'conn') and _local.conn is not None:
-        _local.conn.close()
+    conn_map = getattr(_local, "conn_map", None) or {}
+    if db_path is not None:
+        norm_key = os.path.normcase(os.path.abspath(os.fspath(db_path)))
+        conn = conn_map.pop(norm_key, None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return
+
+    for conn in list(conn_map.values()):
+        try:
+            conn.close()
+        except Exception:
+            pass
+    conn_map.clear()
+    if hasattr(_local, "conn") and _local.conn is not None:
+        try:
+            _local.conn.close()
+        except Exception:
+            pass
         _local.conn = None
+
 
 def _ensure_column_migrations(conn: sqlite3.Connection) -> None:
     """Idempotently add any new columns to pre-existing SQLite tables before creating views."""
+    time_entry_cols = [
+        ("matter_name", "TEXT DEFAULT ''"),
+        ("client_name", "TEXT DEFAULT ''"),
+        ("raw_seconds", "INTEGER NOT NULL DEFAULT 0"),
+        ("entry_status", "TEXT NOT NULL DEFAULT 'SAVED'"),
+        ("started_at_utc", "TEXT"),
+        ("last_heartbeat_utc", "TEXT"),
+        ("legacy_dockets_sync_status", "TEXT NOT NULL DEFAULT 'PENDING_SYNC'"),
+        ("legacy_dockets_synced_at", "TEXT"),
+        ("legacy_dockets_row_signature", "TEXT"),
+    ]
     table_additions = {
         "Client": [
             ("legal_name", "TEXT DEFAULT ''"),
@@ -171,6 +224,8 @@ def _ensure_column_migrations(conn: sqlite3.Connection) -> None:
             ("default_biller_entity", "TEXT DEFAULT 'SOLE_PROP'"),
             ("kyc_completed", "INTEGER DEFAULT 0"),
         ],
+        "TimeEntry": time_entry_cols,
+        "time_entries": time_entry_cols,
     }
     for table_name, cols in table_additions.items():
         cur = conn.execute(
@@ -188,23 +243,25 @@ def _ensure_column_migrations(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_def}")
 
 
-def init_schema():
+def init_schema(db_path: str | os.PathLike | None = None) -> sqlite3.Connection:
     """
-    Initializes the database schema if it doesn't exist.
+    Initializes the database schema if it doesn't exist and returns the connection.
     """
-    schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+    schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
     if not os.path.exists(schema_path):
         raise FileNotFoundError("schema.sql not found in the database module.")
-        
-    with open(schema_path, 'r', encoding='utf-8') as f:
+
+    with open(schema_path, "r", encoding="utf-8") as f:
         schema_sql = f.read()
-        
-    conn = get_connection()
+
+    conn = get_connection(db_path)
     try:
         _ensure_column_migrations(conn)
         conn.executescript(schema_sql)
         _ensure_column_migrations(conn)
+        conn.execute("PRAGMA journal_mode = WAL;")
         conn.commit()
     except Exception as e:
         conn.rollback()
         raise e
+    return conn

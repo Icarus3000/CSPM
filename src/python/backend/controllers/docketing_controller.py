@@ -602,3 +602,50 @@ class DocketingController(QObject):
         worker.signals.result.connect(partial(self._on_invoice_log_updated, worker))
         worker.signals.error.connect(partial(self._on_invoice_log_update_error, worker))
         self._start_worker(worker)
+
+    @property
+    def sqlite_repo(self):
+        if hasattr(self._excel_repo, "_get_sqlite_repo"):
+            return self._excel_repo._get_sqlite_repo()
+        return None
+
+    @Slot("QVariantMap", result=dict)
+    def upsertLiveDocketHeartbeat(self, payload):
+        """Persist a real-time timer or draft docket heartbeat to SQLite cspm.db (WAL mode)."""
+        try:
+            if hasattr(self._excel_repo, "upsert_sqlite_docket_heartbeat"):
+                return dict(self._excel_repo.upsert_sqlite_docket_heartbeat(dict(payload or {})) or {})
+            sq = self.sqlite_repo
+            if sq is not None:
+                return dict(sq.upsert_live_docket_heartbeat(dict(payload or {})) or {})
+            return {"ok": False, "message": "SQLite repository unavailable"}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(result=dict)
+    def reconcileUnsyncedDocketsOnStartup(self):
+        """Reconcile PENDING_SYNC and PENDING_CRASH_RECOVERY SQLite dockets on startup."""
+        try:
+            if hasattr(self._excel_repo, "reconcile_unsynced_dockets_on_startup"):
+                return dict(self._excel_repo.reconcile_unsynced_dockets_on_startup() or {})
+            return {"ok": True, "syncedEntries": [], "conflicts": [], "crashRecoveryDockets": []}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc), "syncedEntries": [], "conflicts": [], "crashRecoveryDockets": []}
+
+    @Slot(str, str, str, result=dict)
+    def resolveCrashRecoveryDocket(self, entry_id, action, time_option="heartbeat"):
+        """Resolve a crash-recovered docket ('save_and_sync', 'sync_and_keep_paused', or 'discard')."""
+        try:
+            if hasattr(self._excel_repo, "resolve_crash_recovery_docket"):
+                return dict(
+                    self._excel_repo.resolve_crash_recovery_docket(
+                        str(entry_id or ""),
+                        str(action or ""),
+                        time_option=str(time_option or "heartbeat"),
+                    )
+                    or {}
+                )
+            return {"ok": False, "message": "Crash recovery resolution unavailable"}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+

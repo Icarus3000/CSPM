@@ -2209,9 +2209,10 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         timerOwnerId = "TDV_" + String(Date.now()) + "_" + String(Math.floor(Math.random() * 1000000))
     }
 
-    function acquireTimerLock(showPrompt, forceTakeover) {
+    function acquireTimerLock(showPrompt, forceTakeover, allowSimultaneous) {
         if (showPrompt === undefined) showPrompt = true
         if (forceTakeover === undefined) forceTakeover = false
+        if (allowSimultaneous === undefined) allowSimultaneous = false
         ensureTimerOwnerId()
         if (!appRef || !appRef.acquireGlobalTimerLock) return true
         var result = {}
@@ -2222,7 +2223,8 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
                 "descriptor": buildTimerLockDescriptor(),
                 "tileIndex": root.tileIndex,
                 "laneKey": "docketing_deadlines",
-                "forceTakeover": forceTakeover ? 1 : 0
+                "forceTakeover": forceTakeover ? 1 : 0,
+                "allowSimultaneous": allowSimultaneous ? 1 : 0
             })
         } catch (e0) {
             timerLockNotice = "Timer lock error. Try again."
@@ -2355,7 +2357,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         if (!result || !result.ok) return
         if (!result.active) {
             // Best-effort self-heal if lock state was cleared.
-            acquireTimerLock(false, false)
+            acquireTimerLock(false, false, false)
             return
         }
         var holder = result.holder ? result.holder : ({})
@@ -2370,7 +2372,19 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             timerLockPopup.close()
             return
         }
-        if (!acquireTimerLock(false, true)) {
+        if (!acquireTimerLock(false, true, false)) {
+            return
+        }
+        timerLockPopup.close()
+        startTimerAfterLock()
+    }
+
+    function runBothTimersSimultaneouslyHere() {
+        if (root.isBucketLocked()) {
+            timerLockPopup.close()
+            return
+        }
+        if (!acquireTimerLock(false, false, true)) {
             return
         }
         timerLockPopup.close()
@@ -7348,7 +7362,7 @@ Behavior on border.color {
         focus: true
         dim: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        width: root.ratioPxW(0.40, 340)
+        width: root.ratioPxW(0.42, 380)
         padding: root.ratioPx(0.010, 10)
 
         background: Rectangle {
@@ -7365,7 +7379,7 @@ Behavior on border.color {
 
             Text {
                 Layout.fillWidth: true
-                text: "Timer Already Running"
+                text: "Simultaneous Timer Warning"
                 color: root._text
                 font.pixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 12))
                 font.weight: Font.DemiBold
@@ -7377,7 +7391,7 @@ Behavior on border.color {
                 text: {
                     var holder = root.timerLockHolder || ({})
                     var descriptor = String(holder.descriptor || holder.ownerLabel || "another docket window")
-                    return "A timer is already running in " + descriptor + ". Stop it there, then start here."
+                    return "Another timer is already running for " + descriptor + ". What would you like to do?"
                 }
                 color: SemanticTheme.inkPrimary(root.t, root.appStyle)
                 font.pixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 9))
@@ -7391,7 +7405,7 @@ Behavior on border.color {
                     t: root.t
                     metrics: root.responsiveMetrics
                     sfxBus: root.sfxBus
-                    text: "Switch Here"
+                    text: "Pause Other & Start This One"
                     primary: true
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.max(root.fieldHeightPx, root.ratioPx(0.045, 42))
@@ -7404,13 +7418,12 @@ Behavior on border.color {
                     t: root.t
                     metrics: root.responsiveMetrics
                     sfxBus: root.sfxBus
-                    text: "Open Docket"
+                    text: "Run Both Simultaneously"
                     primary: false
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.max(root.fieldHeightPx, root.ratioPx(0.045, 42))
                     onClicked: {
-                        timerLockPopup.close()
-                        root.jumpToLockHolder()
+                        root.runBothTimersSimultaneouslyHere()
                     }
                 }
             }

@@ -343,6 +343,8 @@ class AppController(QObject):
     importProgress = Signal(str, int, int)  # phase, current, total
     importFinished = Signal(dict)  # full results dict
     importDuplicateFound = Signal(dict)  # duplicate prompt payload with requestId
+    legacyDocketsSyncConflictDetected = Signal(dict)
+    pendingLegacyDocketsConflictChanged = Signal()
     # Statement preparation reads and reconciles workbook data.  These signals
     # keep that work off the QML event loop so a report tab can render its
     # loading state immediately instead of appearing to hang.
@@ -5375,11 +5377,121 @@ class AppController(QObject):
         try:
             sync_info = result.get("legacyDocketsSync")
             if isinstance(sync_info, dict):
+                if sync_info.get("conflict") or sync_info.get("status") == "CONFLICT":
+                    self._pending_legacy_dockets_conflict = dict(sync_info)
+                    self.pendingLegacyDocketsConflictChanged.emit()
+                    self.legacyDocketsSyncConflictDetected.emit(dict(sync_info))
+                    tray = getattr(self, "_tray_controller", None)
+                    if tray is not None and hasattr(tray, "onLegacyDocketsSyncConflict"):
+                        tray.onLegacyDocketsSyncConflict(dict(sync_info))
+                    return
+                toast_msg = str(sync_info.get("toastMessage") or "").strip()
+                if toast_msg:
+                    self.toast.emit(toast_msg)
                 for warn_msg in sync_info.get("warnings") or []:
                     if warn_msg:
                         self.toast.emit(str(warn_msg))
         except Exception:
             pass
+
+    @Property("QVariantMap", notify=pendingLegacyDocketsConflictChanged)
+    def pendingLegacyDocketsConflict(self) -> dict:
+        return dict(getattr(self, "_pending_legacy_dockets_conflict", None) or {})
+
+    @Property(bool, notify=pendingLegacyDocketsConflictChanged)
+    def hasLegacyDocketsConflict(self) -> bool:
+        pending = getattr(self, "_pending_legacy_dockets_conflict", None)
+        return bool(isinstance(pending, dict) and pending.get("conflict"))
+
+    @Slot(str, str, int, bool, result=dict)
+    def resolveLegacyDocketsSyncConflict(
+        self,
+        conflict_id: str,
+        resolution_mode: str,
+        target_row: int = 0,
+        confirm_billed_overwrite: bool = True,
+    ) -> dict:
+        try:
+            pending = dict(getattr(self, "_pending_legacy_dockets_conflict", None) or {})
+            conflict_ref = str(conflict_id or "").strip() or pending
+            res = dict(
+                self._excel_repo.resolve_legacy_dockets_conflict(
+                    conflict_ref,
+                    str(resolution_mode or ""),
+                    target_row=int(target_row) if int(target_row or 0) > 0 else None,
+                    confirm_billed_overwrite=bool(confirm_billed_overwrite),
+                )
+                or {}
+            )
+            if res.get("requiresBilledConfirmation"):
+                self._pending_legacy_dockets_conflict = dict(res)
+                self.pendingLegacyDocketsConflictChanged.emit()
+                return res
+
+            if not res.get("conflict"):
+                self._pending_legacy_dockets_conflict = {}
+                self.pendingLegacyDocketsConflictChanged.emit()
+                tray = getattr(self, "_tray_controller", None)
+                if tray is not None and hasattr(tray, "clearLegacyDocketsSyncConflict"):
+                    tray.clearLegacyDocketsSyncConflict()
+                toast_msg = str(res.get("toastMessage") or "").strip()
+                if toast_msg:
+                    self.toast.emit(toast_msg)
+            return res
+        except Exception as exc:
+            self._report_failure(
+                "Could not resolve legacy Dockets.xlsm conflict",
+                context="repo.time.resolve_legacy_conflict",
+                exc=exc,
+            )
+            return {"ok": False, "status": "ERROR", "conflict": False, "message": str(exc)}
+
+    @Slot(result=dict)
+    def dismissLegacyDocketsSyncConflict(self) -> dict:
+        pending = dict(getattr(self, "_pending_legacy_dockets_conflict", None) or {})
+        cid = str(pending.get("conflictId") or "").strip()
+        return self.resolveLegacyDocketsSyncConflict(cid, "skip", 0, True)
+
+    @Slot(result=dict)
+    def reconcileUnsyncedDocketsOnStartup(self) -> dict:
+        tray = getattr(self, "_tray_controller", None)
+        if tray is not None and hasattr(tray, "reconcileUnsyncedDocketsOnStartup"):
+            return dict(tray.reconcileUnsyncedDocketsOnStartup() or {})
+        if hasattr(self._excel_repo, "reconcile_unsynced_dockets_on_startup"):
+            return dict(self._excel_repo.reconcile_unsynced_dockets_on_startup() or {})
+        return {"ok": False}
+
+    @Slot(str, str, str, result=dict)
+    def resolveCrashRecoveryDocket(self, entry_id: str, action: str, time_option: str = "heartbeat") -> dict:
+        tray = getattr(self, "_tray_controller", None)
+        if tray is not None and hasattr(tray, "resolveCrashRecoveryDocket"):
+            return dict(tray.resolveCrashRecoveryDocket(entry_id, action, time_option) or {})
+        if hasattr(self._excel_repo, "resolve_crash_recovery_docket"):
+            return dict(
+                self._excel_repo.resolve_crash_recovery_docket(entry_id, action, time_option=time_option) or {}
+            )
+        return {"ok": False}
+
+    @Slot(result=bool)
+    def hasUnsavedOrActiveDocketOnClose(self) -> bool:
+        tray = getattr(self, "_tray_controller", None)
+        if tray is not None and hasattr(tray, "hasUnsavedOrActiveDocketOnClose"):
+            return bool(tray.hasUnsavedOrActiveDocketOnClose())
+        return False
+
+    @Slot(str, result=bool)
+    def requestCloseWithSafeguard(self, source: str = "main_window") -> bool:
+        tray = getattr(self, "_tray_controller", None)
+        if tray is not None and hasattr(tray, "requestCloseWithSafeguard"):
+            return bool(tray.requestCloseWithSafeguard(source))
+        return False
+
+    @Slot(str, result=dict)
+    def resolveCloseSafeguard(self, action: str) -> dict:
+        tray = getattr(self, "_tray_controller", None)
+        if tray is not None and hasattr(tray, "resolveCloseSafeguard"):
+            return dict(tray.resolveCloseSafeguard(action) or {})
+        return {"ok": False}
 
     @Slot("QVariantMap", result=dict)
     def syncActiveTimerState(self, payload):
@@ -5543,6 +5655,7 @@ class AppController(QObject):
             data = dict(payload or {})
             owner_id = str(data.get("ownerId", "") or "").strip()
             force_takeover = bool(data.get("forceTakeover", False))
+            allow_simultaneous = bool(data.get("allowSimultaneous", False))
             if not owner_id:
                 return {
                     "ok": False,
@@ -5557,12 +5670,26 @@ class AppController(QObject):
             takeover_happened = False
             previous_holder = {}
 
-            if holder_id and holder_id != owner_id:
+            tray = getattr(self, "_tray_controller", None)
+            if not holder_id and tray is not None and bool(getattr(tray, "hasRunningTimer", False)):
+                tray_desc = str(getattr(tray, "runningTimerSummaryLabel", "") or getattr(tray, "displayMatterName", "") or "System Tray Timer")
+                tray_elapsed = str(getattr(tray, "displayElapsedFormatted", "00:00:00") or "00:00:00")
+                holder = {
+                    "ownerId": "system-tray-timer",
+                    "ownerLabel": "System Tray Mini-Popup",
+                    "descriptor": f"{tray_desc} — {tray_elapsed}",
+                    "elapsedFormatted": tray_elapsed,
+                    "tileIndex": -1,
+                    "laneKey": "",
+                }
+                holder_id = "system-tray-timer"
+
+            if holder_id and holder_id != owner_id and not allow_simultaneous:
                 if not force_takeover:
                     return {
                         "ok": True,
                         "granted": False,
-                        "message": "A timer is already running in another window.",
+                        "message": "Another timer is already running.",
                         "holder": holder,
                         "takenOver": False,
                     }
@@ -5583,7 +5710,6 @@ class AppController(QObject):
             state["globalTimerLock"] = lock_payload
             self._save_runtime_state(state)
 
-            tray = getattr(self, "_tray_controller", None)
             if tray is not None and hasattr(tray, "syncMainTimerState"):
                 descriptor = str(data.get("descriptor") or "").strip()
                 c_name = str(data.get("clientName") or data.get("clientText") or "").strip()
@@ -5595,6 +5721,8 @@ class AppController(QObject):
                         m_name = parts[-1]
                 tray.syncMainTimerState({
                     "isRunning": True,
+                    "allowSimultaneous": bool(allow_simultaneous),
+                    "pauseOtherRunningTimers": bool(force_takeover and not allow_simultaneous),
                     "elapsedSeconds": int(data.get("elapsedSeconds", getattr(self, "_active_timer_state", {}).get("elapsedSeconds", 0)) or 0),
                     "clientId": str(data.get("clientId") or ""),
                     "clientName": c_name,

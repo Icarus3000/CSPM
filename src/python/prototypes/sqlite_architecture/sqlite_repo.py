@@ -506,110 +506,517 @@ class SqliteMatterRepo:
 
 
 class SqliteTimeRepo:
-    def list_time_entries(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        conn = get_connection()
-        query = "SELECT * FROM TimeEntry ORDER BY date DESC, created_at DESC"
-        cursor = conn.execute(query)
-        rows = [dict(row) for row in cursor.fetchall()]
+    def _conn(self) -> sqlite3.Connection:
+        db_path = getattr(self, "_db_path", None)
+        return get_connection(db_path)
 
-        results = []
-        for row in rows:
-            biller = row.get("biller_entity") or infer_biller_from_date(row.get("date"))
-            item = {
-                "EntryID": row["time_id"],
-                "MatterID": row["matter_id"],
-                "ClientID": row.get("client_id") or "",
-                "ParentID": row.get("parent_id") or "",
-                "Date": row["date"],
-                "Hours": float(row.get("hours") or 0.0),
-                "ClientRate": float(row.get("rate") or 0.0),
-                "SharePct": float(row.get("share_pct") or 100.0),
-                "GrossToClient": float(row.get("amount") or 0.0),
-                "AmountToYou": float(row.get("amount_to_you") or row.get("amount") or 0.0),
-                "HST": float(row.get("hst") or 0.0),
-                "TotalInclHST": float(row.get("total_incl_hst") or 0.0),
-                "Description": row.get("description") or "",
-                "Status": row.get("status") or ("Billed" if row.get("is_billed") else "Unbilled"),
-                "InvoiceRef": row.get("billed_invoice_id") or "",
-                "BillerEntity": biller,
-                # Legacy camelCase keys
-                "entryId": row["time_id"],
-                "matterId": row["matter_id"],
-                "date": row["date"],
-                "hours": float(row.get("hours") or 0.0),
-                "rate": float(row.get("rate") or 0.0),
-                "amount": float(row.get("amount") or 0.0),
-                "description": row.get("description") or "",
-                "status": row.get("status") or ("Billed" if row.get("is_billed") else "Draft"),
-                "billerEntity": biller,
-            }
-            if filters:
-                biller_filter = filters.get("biller_entity") or filters.get("BillerEntity")
-                if biller_filter and item["BillerEntity"] != biller_filter:
+    @staticmethod
+    def _format_time_entry_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        biller = row.get("biller_entity") or infer_biller_from_date(row.get("date"))
+        entry_id = str(row.get("entry_id") or row.get("time_id") or "")
+        raw_secs = int(row.get("raw_seconds") or 0)
+        hours_val = float(row.get("hours") or 0.0)
+        if raw_secs <= 0 and hours_val > 0:
+            raw_secs = int(round(hours_val * 3600))
+        entry_status = str(row.get("entry_status") or "SAVED").strip().upper() or "SAVED"
+        sync_status = str(row.get("legacy_dockets_sync_status") or "PENDING_SYNC").strip().upper() or "PENDING_SYNC"
+        return {
+            "EntryID": entry_id,
+            "MatterID": row.get("matter_id") or "",
+            "MatterName": row.get("matter_name") or "",
+            "ClientID": row.get("client_id") or "",
+            "ClientName": row.get("client_name") or "",
+            "ParentID": row.get("parent_id") or "",
+            "Date": row.get("date") or "",
+            "Hours": hours_val,
+            "RawSeconds": raw_secs,
+            "ClientRate": float(row.get("rate") or 0.0),
+            "SharePct": float(row.get("share_pct") or 100.0),
+            "GrossToClient": float(row.get("amount") or 0.0),
+            "AmountToYou": float(row.get("amount_to_you") or row.get("amount") or 0.0),
+            "HST": float(row.get("hst") or 0.0),
+            "TotalInclHST": float(row.get("total_incl_hst") or 0.0),
+            "Description": row.get("description") or "",
+            "Status": row.get("status") or ("Billed" if row.get("is_billed") else "Unbilled"),
+            "EntryStatus": entry_status,
+            "StartedAtUTC": row.get("started_at_utc"),
+            "LastHeartbeatUTC": row.get("last_heartbeat_utc"),
+            "LegacyDocketsSyncStatus": sync_status,
+            "LegacyDocketsSyncedAt": row.get("legacy_dockets_synced_at"),
+            "LegacyDocketsRowSignature": row.get("legacy_dockets_row_signature"),
+            "InvoiceRef": row.get("billed_invoice_id") or "",
+            "BillerEntity": biller,
+            # Snake & camelCase aliases
+            "entry_id": entry_id,
+            "entryId": entry_id,
+            "matter_id": row.get("matter_id") or "",
+            "matterId": row.get("matter_id") or "",
+            "matter_name": row.get("matter_name") or "",
+            "matterName": row.get("matter_name") or "",
+            "client_id": row.get("client_id") or "",
+            "clientId": row.get("client_id") or "",
+            "client_name": row.get("client_name") or "",
+            "clientName": row.get("client_name") or "",
+            "date": row.get("date") or "",
+            "hours": hours_val,
+            "raw_seconds": raw_secs,
+            "rawSeconds": raw_secs,
+            "rate": float(row.get("rate") or 0.0),
+            "amount": float(row.get("amount") or 0.0),
+            "description": row.get("description") or "",
+            "status": row.get("status") or ("Billed" if row.get("is_billed") else "Draft"),
+            "entry_status": entry_status,
+            "entryStatus": entry_status,
+            "started_at_utc": row.get("started_at_utc"),
+            "startedAtUtc": row.get("started_at_utc"),
+            "last_heartbeat_utc": row.get("last_heartbeat_utc"),
+            "lastHeartbeatUtc": row.get("last_heartbeat_utc"),
+            "legacy_dockets_sync_status": sync_status,
+            "legacyDocketsSyncStatus": sync_status,
+            "legacy_dockets_synced_at": row.get("legacy_dockets_synced_at"),
+            "legacyDocketsSyncedAt": row.get("legacy_dockets_synced_at"),
+            "legacy_dockets_row_signature": row.get("legacy_dockets_row_signature"),
+            "legacyDocketsRowSignature": row.get("legacy_dockets_row_signature"),
+            "billerEntity": biller,
+        }
+
+    def list_time_entries(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        seen_ids: set[str] = set()
+        results: List[Dict[str, Any]] = []
+
+        for tbl_query in (
+            "SELECT * FROM time_entries ORDER BY date DESC, updated_at DESC",
+            "SELECT * FROM TimeEntry ORDER BY date DESC, created_at DESC",
+        ):
+            try:
+                cursor = conn.execute(tbl_query)
+                rows = [dict(r) for r in cursor.fetchall()]
+            except sqlite3.Error:
+                rows = []
+            for row in rows:
+                eid = str(row.get("entry_id") or row.get("time_id") or "")
+                if not eid or eid in seen_ids:
                     continue
-            results.append(item)
+                seen_ids.add(eid)
+                item = self._format_time_entry_row(row)
+                if filters:
+                    biller_filter = filters.get("biller_entity") or filters.get("BillerEntity")
+                    if biller_filter and item["BillerEntity"] != biller_filter:
+                        continue
+                    date_filter = filters.get("date") or filters.get("Date")
+                    if date_filter and item["Date"] != normalize_iso_date(date_filter):
+                        continue
+                results.append(item)
         return results
 
-    def save_time_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        conn = get_connection()
-        entry_id = payload.get("EntryID") or payload.get("entryId")
-        matter_id = payload.get("MatterID") or payload.get("matterId") or ""
-        client_id = payload.get("ClientID") or payload.get("clientId") or ""
-        parent_id = payload.get("ParentID") or payload.get("parentId") or ""
-        date = normalize_iso_date(payload.get("Date") or payload.get("date"), get_utc_now()[:10])
-        hours = float(payload.get("Hours") if "Hours" in payload else payload.get("hours", 0.0))
-        rate = float(payload.get("ClientRate") if "ClientRate" in payload else payload.get("rate", 0.0))
-        share_pct = float(payload.get("SharePct", 100.0))
-        desc = payload.get("Description") or payload.get("description") or ""
+    def get_time_entry_by_id(self, entry_id: str) -> Optional[Dict[str, Any]]:
+        target_id = str(entry_id or "").strip()
+        if not target_id:
+            return None
+        conn = self._conn()
+        for sql in (
+            "SELECT * FROM time_entries WHERE entry_id = ?",
+            "SELECT * FROM TimeEntry WHERE time_id = ?",
+        ):
+            try:
+                row = conn.execute(sql, (target_id,)).fetchone()
+                if row is not None:
+                    return self._format_time_entry_row(dict(row))
+            except sqlite3.Error:
+                continue
+        return None
+
+    def upsert_live_docket_heartbeat(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Atomic SQLite UPSERT into time_entries for live timer heartbeats and draft edits."""
+        import json as _json
+
+        conn = self._conn()
+        now = get_utc_now()
+        entry_id = str(
+            payload.get("entry_id")
+            or payload.get("EntryID")
+            or payload.get("entryId")
+            or payload.get("time_id")
+            or ""
+        ).strip()
+        if not entry_id:
+            entry_id = f"TIM-{uuid.uuid4().hex[:8].upper()}"
+
+        existing = self.get_time_entry_by_id(entry_id) or {}
+        matter_id = str(
+            payload.get("matter_id")
+            if "matter_id" in payload
+            else (payload.get("MatterID") or payload.get("matterId") or existing.get("MatterID") or "")
+        ).strip()
+        matter_name = str(
+            payload.get("matter_name")
+            if "matter_name" in payload
+            else (payload.get("MatterName") or payload.get("matterName") or existing.get("MatterName") or "")
+        ).strip()
+        client_id = str(
+            payload.get("client_id")
+            if "client_id" in payload
+            else (payload.get("ClientID") or payload.get("clientId") or existing.get("ClientID") or "")
+        ).strip()
+        client_name = str(
+            payload.get("client_name")
+            if "client_name" in payload
+            else (payload.get("ClientName") or payload.get("clientName") or existing.get("ClientName") or "")
+        ).strip()
+        parent_id = str(
+            payload.get("parent_id")
+            if "parent_id" in payload
+            else (payload.get("ParentID") or payload.get("parentId") or existing.get("ParentID") or "")
+        ).strip()
+        date_iso = normalize_iso_date(
+            payload.get("date") or payload.get("Date") or existing.get("Date"),
+            now[:10],
+        )
+
+        raw_seconds_val = payload.get(
+            "raw_seconds",
+            payload.get("RawSeconds", payload.get("rawSeconds", existing.get("RawSeconds", 0))),
+        )
+        try:
+            raw_seconds = max(0, int(round(float(raw_seconds_val or 0))))
+        except Exception:
+            raw_seconds = 0
+
+        if "hours" in payload or "Hours" in payload:
+            try:
+                hours = float(payload.get("hours") if "hours" in payload else payload.get("Hours", 0.0))
+            except Exception:
+                hours = round(raw_seconds / 3600.0, 2)
+        else:
+            hours = round(raw_seconds / 3600.0, 2)
+
+        if raw_seconds <= 0 and hours > 0:
+            raw_seconds = int(round(hours * 3600))
+
+        rate = float(payload.get("rate") if "rate" in payload else payload.get("ClientRate", existing.get("ClientRate", 475.0)))
+        share_pct = float(payload.get("share_pct", payload.get("SharePct", existing.get("SharePct", 100.0))))
+        desc = str(
+            payload.get("description")
+            if "description" in payload
+            else (payload.get("Description") if "Description" in payload else (existing.get("Description") or ""))
+        )
+
         amount_dec = to_decimal(payload.get("GrossToClient") if "GrossToClient" in payload else hours * rate)
         amount_to_you_dec = to_decimal(
             payload.get("AmountToYou") if "AmountToYou" in payload else (amount_dec * to_decimal(share_pct) / Decimal(100))
         )
         hst_dec = to_decimal(payload.get("HST") if "HST" in payload else (amount_to_you_dec * Decimal("0.13")))
         total_incl_dec = to_decimal(payload.get("TotalInclHST") if "TotalInclHST" in payload else (amount_to_you_dec + hst_dec))
-        status = payload.get("Status") or payload.get("status") or "Unbilled"
-        invoice_ref = payload.get("InvoiceRef") or payload.get("billed_invoice_id") or ""
-        is_billed = 1 if (invoice_ref or status.lower() in ("billed", "invoiced", "paid")) else 0
-        biller_entity = payload.get("BillerEntity") or payload.get("billerEntity") or infer_biller_from_date(date)
-        now = get_utc_now()
 
-        if not entry_id:
-            entry_id = f"TIM-{uuid.uuid4().hex[:8].upper()}"
+        entry_status = str(
+            payload.get("entry_status")
+            or payload.get("EntryStatus")
+            or payload.get("entryStatus")
+            or existing.get("EntryStatus")
+            or "RUNNING"
+        ).strip().upper()
+        if entry_status not in ("RUNNING", "PAUSED", "SAVED"):
+            entry_status = "SAVED"
+
+        if "started_at_utc" in payload or "StartedAtUTC" in payload or "startedAtUtc" in payload:
+            started_at_utc = (
+                payload.get("started_at_utc")
+                or payload.get("StartedAtUTC")
+                or payload.get("startedAtUtc")
+            )
+        elif entry_status == "RUNNING":
+            started_at_utc = existing.get("StartedAtUTC") or now
+        else:
+            started_at_utc = None
+
+        last_heartbeat_utc = str(
+            payload.get("last_heartbeat_utc")
+            or payload.get("LastHeartbeatUTC")
+            or payload.get("lastHeartbeatUtc")
+            or now
+        )
+
+        default_sync_status = "PENDING_CRASH_RECOVERY" if entry_status in ("RUNNING", "PAUSED") else "PENDING_SYNC"
+        legacy_sync_status = str(
+            payload.get("legacy_dockets_sync_status")
+            or payload.get("LegacyDocketsSyncStatus")
+            or payload.get("legacyDocketsSyncStatus")
+            or default_sync_status
+        ).strip().upper()
+        if legacy_sync_status not in ("PENDING_CRASH_RECOVERY", "PENDING_SYNC", "SYNCED", "SKIPPED"):
+            legacy_sync_status = default_sync_status
+
+        legacy_synced_at = (
+            payload.get("legacy_dockets_synced_at")
+            or payload.get("LegacyDocketsSyncedAt")
+            or payload.get("legacyDocketsSyncedAt")
+            or existing.get("LegacyDocketsSyncedAt")
+        )
+
+        sig_raw = (
+            payload.get("legacy_dockets_row_signature")
+            if "legacy_dockets_row_signature" in payload
+            else (
+                payload.get("LegacyDocketsRowSignature")
+                if "LegacyDocketsRowSignature" in payload
+                else existing.get("LegacyDocketsRowSignature")
+            )
+        )
+        if isinstance(sig_raw, dict):
+            legacy_row_signature = _json.dumps(sig_raw, sort_keys=True)
+        elif sig_raw is not None:
+            legacy_row_signature = str(sig_raw)
+        else:
+            legacy_row_signature = None
+
+        status = str(payload.get("Status") or payload.get("status") or ("Draft" if entry_status != "SAVED" else "Unbilled"))
+        invoice_ref = str(payload.get("InvoiceRef") or payload.get("billed_invoice_id") or existing.get("InvoiceRef") or "")
+        is_billed = 1 if (invoice_ref or status.lower() in ("billed", "invoiced", "paid")) else 0
+        biller_entity = str(
+            payload.get("BillerEntity")
+            or payload.get("billerEntity")
+            or existing.get("BillerEntity")
+            or infer_biller_from_date(date_iso)
+        )
+        created_at = str(existing.get("created_at") or now)
 
         conn.execute(
-            """INSERT OR REPLACE INTO TimeEntry (
-                   time_id, matter_id, client_id, parent_id, date, hours, rate, rate_cents,
-                   share_pct, amount, amount_cents, amount_to_you, amount_to_you_cents,
+            """INSERT INTO time_entries (
+                   entry_id, time_id, matter_id, matter_name, client_id, client_name, parent_id,
+                   date, hours, raw_seconds, rate, rate_cents, share_pct,
+                   amount, amount_cents, amount_to_you, amount_to_you_cents,
                    hst, hst_cents, total_incl_hst, total_incl_hst_cents,
-                   description, status, is_billed, billed_invoice_id, biller_entity,
-                   created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   description, status, entry_status, started_at_utc, last_heartbeat_utc,
+                   legacy_dockets_sync_status, legacy_dockets_synced_at, legacy_dockets_row_signature,
+                   is_billed, billed_invoice_id, biller_entity, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(entry_id) DO UPDATE SET
+                   time_id=excluded.time_id,
+                   matter_id=excluded.matter_id,
+                   matter_name=excluded.matter_name,
+                   client_id=excluded.client_id,
+                   client_name=excluded.client_name,
+                   parent_id=excluded.parent_id,
+                   date=excluded.date,
+                   hours=excluded.hours,
+                   raw_seconds=excluded.raw_seconds,
+                   rate=excluded.rate,
+                   rate_cents=excluded.rate_cents,
+                   share_pct=excluded.share_pct,
+                   amount=excluded.amount,
+                   amount_cents=excluded.amount_cents,
+                   amount_to_you=excluded.amount_to_you,
+                   amount_to_you_cents=excluded.amount_to_you_cents,
+                   hst=excluded.hst,
+                   hst_cents=excluded.hst_cents,
+                   total_incl_hst=excluded.total_incl_hst,
+                   total_incl_hst_cents=excluded.total_incl_hst_cents,
+                   description=excluded.description,
+                   status=excluded.status,
+                   entry_status=excluded.entry_status,
+                   started_at_utc=excluded.started_at_utc,
+                   last_heartbeat_utc=excluded.last_heartbeat_utc,
+                   legacy_dockets_sync_status=excluded.legacy_dockets_sync_status,
+                   legacy_dockets_synced_at=excluded.legacy_dockets_synced_at,
+                   legacy_dockets_row_signature=excluded.legacy_dockets_row_signature,
+                   is_billed=excluded.is_billed,
+                   billed_invoice_id=excluded.billed_invoice_id,
+                   biller_entity=excluded.biller_entity,
+                   updated_at=excluded.updated_at
+            """,
             (
-                entry_id, matter_id, client_id, parent_id, date, hours, rate, to_cents(rate),
-                share_pct, float(amount_dec), to_cents(amount_dec),
+                entry_id, entry_id, matter_id, matter_name, client_id, client_name, parent_id,
+                date_iso, hours, raw_seconds, rate, to_cents(rate), share_pct,
+                float(amount_dec), to_cents(amount_dec),
                 float(amount_to_you_dec), to_cents(amount_to_you_dec),
                 float(hst_dec), to_cents(hst_dec),
                 float(total_incl_dec), to_cents(total_incl_dec),
-                desc, status, is_billed, invoice_ref, biller_entity, now, now
+                desc, status, entry_status, started_at_utc, last_heartbeat_utc,
+                legacy_sync_status, legacy_synced_at, legacy_row_signature,
+                is_billed, invoice_ref, biller_entity, created_at, now,
             ),
         )
+
+        # Also mirror into TimeEntry if matter_id satisfies FK or FK check succeeds
+        if matter_id:
+            try:
+                conn.execute(
+                    """INSERT OR REPLACE INTO TimeEntry (
+                           time_id, matter_id, matter_name, client_id, client_name, parent_id,
+                           date, hours, raw_seconds, rate, rate_cents, share_pct,
+                           amount, amount_cents, amount_to_you, amount_to_you_cents,
+                           hst, hst_cents, total_incl_hst, total_incl_hst_cents,
+                           description, status, entry_status, started_at_utc, last_heartbeat_utc,
+                           legacy_dockets_sync_status, legacy_dockets_synced_at, legacy_dockets_row_signature,
+                           is_billed, billed_invoice_id, biller_entity, created_at, updated_at
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        entry_id, matter_id, matter_name, client_id, client_name, parent_id,
+                        date_iso, hours, raw_seconds, rate, to_cents(rate), share_pct,
+                        float(amount_dec), to_cents(amount_dec),
+                        float(amount_to_you_dec), to_cents(amount_to_you_dec),
+                        float(hst_dec), to_cents(hst_dec),
+                        float(total_incl_dec), to_cents(total_incl_dec),
+                        desc, status, entry_status, started_at_utc, last_heartbeat_utc,
+                        legacy_sync_status, legacy_synced_at, legacy_row_signature,
+                        is_billed, invoice_ref, biller_entity, created_at, now,
+                    ),
+                )
+            except sqlite3.IntegrityError:
+                pass
+
         conn.commit()
-        return {"ok": True, "entryId": entry_id, "EntryID": entry_id, "amount": float(amount_dec), "BillerEntity": biller_entity}
+        return self.get_time_entry_by_id(entry_id) or {
+            "ok": True,
+            "entryId": entry_id,
+            "EntryID": entry_id,
+            "entry_status": entry_status,
+            "raw_seconds": raw_seconds,
+            "legacy_dockets_sync_status": legacy_sync_status,
+        }
+
+    def save_time_entry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(payload or {})
+        if "entry_status" not in merged and "EntryStatus" not in merged and "entryStatus" not in merged:
+            merged["entry_status"] = "SAVED"
+        if (
+            "legacy_dockets_sync_status" not in merged
+            and "LegacyDocketsSyncStatus" not in merged
+            and "legacyDocketsSyncStatus" not in merged
+        ):
+            merged["legacy_dockets_sync_status"] = "PENDING_SYNC"
+        saved = self.upsert_live_docket_heartbeat(merged)
+        return {
+            "ok": True,
+            "entryId": saved.get("EntryID"),
+            "EntryID": saved.get("EntryID"),
+            "amount": float(saved.get("GrossToClient") or 0.0),
+            "BillerEntity": saved.get("BillerEntity"),
+            **saved,
+        }
+
+    def mark_legacy_dockets_sync_status(
+        self,
+        entry_id: str,
+        sync_status: str,
+        *,
+        synced_at: Optional[str] = None,
+        row_signature: Optional[Any] = None,
+        entry_status: Optional[str] = None,
+        raw_seconds: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        import json as _json
+
+        target_id = str(entry_id or "").strip()
+        if not target_id:
+            return {"ok": False, "message": "entry_id is required"}
+
+        conn = self._conn()
+        now = get_utc_now()
+        norm_sync = str(sync_status or "PENDING_SYNC").strip().upper()
+        if norm_sync == "SYNCED" and not synced_at:
+            synced_at = now
+
+        sig_str: Optional[str] = None
+        if isinstance(row_signature, dict):
+            sig_str = _json.dumps(row_signature, sort_keys=True)
+        elif row_signature is not None:
+            sig_str = str(row_signature)
+
+        existing = self.get_time_entry_by_id(target_id)
+        if existing is None:
+            return {"ok": False, "message": f"Entry not found: {target_id}"}
+
+        final_entry_status = str(entry_status or existing.get("EntryStatus") or "SAVED").strip().upper()
+        final_raw_secs = int(raw_seconds if raw_seconds is not None else (existing.get("RawSeconds") or 0))
+        final_hours = round(final_raw_secs / 3600.0, 2) if raw_seconds is not None else float(existing.get("Hours") or 0.0)
+        final_sig = sig_str if sig_str is not None else existing.get("LegacyDocketsRowSignature")
+        final_synced_at = synced_at if synced_at is not None else existing.get("LegacyDocketsSyncedAt")
+        started_utc = None if final_entry_status != "RUNNING" else existing.get("StartedAtUTC")
+
+        for tbl, pk in (("time_entries", "entry_id"), ("TimeEntry", "time_id")):
+            try:
+                conn.execute(
+                    f"""UPDATE {tbl}
+                        SET legacy_dockets_sync_status = ?,
+                            legacy_dockets_synced_at = ?,
+                            legacy_dockets_row_signature = ?,
+                            entry_status = ?,
+                            raw_seconds = ?,
+                            hours = ?,
+                            started_at_utc = ?,
+                            last_heartbeat_utc = ?,
+                            updated_at = ?
+                        WHERE {pk} = ?""",
+                    (
+                        norm_sync,
+                        final_synced_at,
+                        final_sig,
+                        final_entry_status,
+                        final_raw_secs,
+                        final_hours,
+                        started_utc,
+                        now,
+                        now,
+                        target_id,
+                    ),
+                )
+            except sqlite3.Error:
+                continue
+        conn.commit()
+        return {"ok": True, **(self.get_time_entry_by_id(target_id) or {})}
+
+    def list_unsynced_or_crash_recovery_dockets(self) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        try:
+            cursor = conn.execute(
+                """SELECT * FROM time_entries
+                   WHERE legacy_dockets_sync_status IN ('PENDING_SYNC', 'PENDING_CRASH_RECOVERY')
+                      OR entry_status IN ('RUNNING', 'PAUSED')
+                   ORDER BY date ASC, updated_at ASC"""
+            )
+            rows = [dict(r) for r in cursor.fetchall()]
+        except sqlite3.Error:
+            rows = []
+        return [self._format_time_entry_row(r) for r in rows]
 
     def delete_time_entry(self, entry_id: str) -> bool:
-        conn = get_connection()
-        cursor = conn.execute("DELETE FROM TimeEntry WHERE time_id = ?", (entry_id,))
+        conn = self._conn()
+        deleted = 0
+        for tbl, pk in (("time_entries", "entry_id"), ("TimeEntry", "time_id")):
+            try:
+                cursor = conn.execute(f"DELETE FROM {tbl} WHERE {pk} = ?", (entry_id,))
+                deleted += cursor.rowcount
+            except sqlite3.Error:
+                continue
         conn.commit()
-        return cursor.rowcount > 0
+        return deleted > 0
 
     def get_unbilled_time(self, matter_id: str) -> List[Dict[str, Any]]:
-        conn = get_connection()
+        conn = self._conn()
+        try:
+            cursor = conn.execute("SELECT * FROM time_entries WHERE matter_id = ? AND is_billed = 0", (matter_id,))
+            rows = [dict(row) for row in cursor.fetchall()]
+            if rows:
+                return rows
+        except sqlite3.Error:
+            pass
         cursor = conn.execute("SELECT * FROM TimeEntry WHERE matter_id = ? AND is_billed = 0", (matter_id,))
         return [dict(row) for row in cursor.fetchall()]
 
 
 class SQLiteRepository(SqliteFinanceRepo, SqliteClientRepo, SqliteMatterRepo, SqliteTimeRepo):
     """Unified SQLite Repository with full parity to ExcelRepo for Multi-Biller, Shareholder Loan, CCA, HST, and Income Tax."""
+
+    def __init__(self, db_path: Optional[Any] = None):
+        self._db_path = db_path
+        if db_path is not None:
+            try:
+                from .connection import init_schema
+            except ImportError:
+                from src.python.prototypes.sqlite_architecture.connection import init_schema
+            init_schema(db_path)
 
     # ------------------------------------------------------------------
     # Billing Entities (tblBillingEntities / billing_entities)

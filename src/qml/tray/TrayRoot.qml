@@ -4,31 +4,208 @@ import Qt.labs.platform
 
 Item {
     id: root
-    
-    property real lastHideTime: 0
+
+    property int resizeEdgeThickness: 6
+    property int resizeCornerSize: 12
+
+    function persistMiniPopupGeometry() {
+        if (typeof trayController !== "undefined" && trayController && trayController.saveMiniPopupGeometry) {
+            if (flyoutWindow.width >= flyoutWindow.minimumWidth && flyoutWindow.height >= flyoutWindow.minimumHeight) {
+                trayController.saveMiniPopupGeometry(
+                    flyoutWindow.x,
+                    flyoutWindow.y,
+                    flyoutWindow.width,
+                    flyoutWindow.height
+                )
+            }
+        }
+    }
+
+    function hideMiniPopup() {
+        root.persistMiniPopupGeometry()
+        flyoutWindow.hide()
+    }
+
+    Timer {
+        id: geometrySaveDebounce
+        interval: 250
+        repeat: false
+        onTriggered: root.persistMiniPopupGeometry()
+    }
 
     Window {
         id: flyoutWindow
-        flags: Qt.Popup | Qt.FramelessWindowHint
+        objectName: "trayMiniPopupWindow"
+        title: "CSPM Today's Dockets"
+        flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
         color: "transparent"
-        
-        Shortcut {
-            sequence: "Esc"
-            onActivated: flyoutWindow.hide()
+        width: 380
+        height: 280
+        minimumWidth: 320
+        minimumHeight: 220
+
+        onXChanged: {
+            if (visible) geometrySaveDebounce.restart()
         }
-        
-        Connections {
-            target: flyoutWindow
-            function onActiveChanged() {
-                if (!flyoutWindow.active && flyoutWindow.visible) {
-                    root.lastHideTime = Date.now()
-                    flyoutWindow.hide()
-                }
-            }
+        onYChanged: {
+            if (visible) geometrySaveDebounce.restart()
+        }
+        onWidthChanged: {
+            if (visible) geometrySaveDebounce.restart()
+        }
+        onHeightChanged: {
+            if (visible) geometrySaveDebounce.restart()
+        }
+
+        Shortcut {
+            sequences: ["Escape"]
+            context: Qt.WindowShortcut
+            onActivated: root.hideMiniPopup()
         }
 
         TrayTimekeepingFlyout {
+            id: flyoutContent
             anchors.fill: parent
+            onMinimizeRequested: root.hideMiniPopup()
+        }
+
+        // 8-Directional Edge & Corner Resize Zones
+        // Top Edge
+        MouseArea {
+            objectName: "resizeTopEdge"
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: root.resizeCornerSize
+            anchors.rightMargin: root.resizeCornerSize
+            height: root.resizeEdgeThickness
+            cursorShape: Qt.SizeVerCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.TopEdge)
+            }
+        }
+
+        // Bottom Edge
+        MouseArea {
+            objectName: "resizeBottomEdge"
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: root.resizeCornerSize
+            anchors.rightMargin: root.resizeCornerSize
+            height: root.resizeEdgeThickness
+            cursorShape: Qt.SizeVerCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.BottomEdge)
+            }
+        }
+
+        // Left Edge
+        MouseArea {
+            objectName: "resizeLeftEdge"
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.topMargin: root.resizeCornerSize
+            anchors.bottomMargin: root.resizeCornerSize
+            width: root.resizeEdgeThickness
+            cursorShape: Qt.SizeHorCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.LeftEdge)
+            }
+        }
+
+        // Right Edge
+        MouseArea {
+            objectName: "resizeRightEdge"
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.topMargin: root.resizeCornerSize
+            anchors.bottomMargin: root.resizeCornerSize
+            width: root.resizeEdgeThickness
+            cursorShape: Qt.SizeHorCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.RightEdge)
+            }
+        }
+
+        // Top-Left Corner
+        MouseArea {
+            objectName: "resizeTopLeftCorner"
+            anchors.top: parent.top
+            anchors.left: parent.left
+            width: root.resizeCornerSize
+            height: root.resizeCornerSize
+            cursorShape: Qt.SizeFDiagCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.TopLeftCorner)
+            }
+        }
+
+        // Top-Right Corner
+        MouseArea {
+            objectName: "resizeTopRightCorner"
+            anchors.top: parent.top
+            anchors.right: parent.right
+            width: root.resizeCornerSize
+            height: root.resizeCornerSize
+            cursorShape: Qt.SizeBDiagCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.TopRightCorner)
+            }
+        }
+
+        // Bottom-Left Corner
+        MouseArea {
+            objectName: "resizeBottomLeftCorner"
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            width: root.resizeCornerSize
+            height: root.resizeCornerSize
+            cursorShape: Qt.SizeBDiagCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.BottomLeftCorner)
+            }
+        }
+
+        // Bottom-Right Corner + Visual Resize Grip (⋱)
+        MouseArea {
+            objectName: "resizeBottomRightCorner"
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            width: root.resizeCornerSize + 2
+            height: root.resizeCornerSize + 2
+            cursorShape: Qt.SizeFDiagCursor
+            acceptedButtons: Qt.LeftButton
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                flyoutWindow.startSystemResize(Qt.BottomRightCorner)
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.rightMargin: 3
+                anchors.bottomMargin: 1
+                text: "⋱"
+                font.pixelSize: 11
+                color: "#64748B"
+            }
         }
     }
 
@@ -145,27 +322,37 @@ Item {
     Connections {
         target: trayController
         function onFlyoutGeometryCalculated(x, y, w, h) {
-            // If the window just hid due to losing focus from the user clicking the tray icon,
-            // we ignore this re-open request so it acts like a true toggle.
-            if (Date.now() - root.lastHideTime < 250) {
-                return;
-            }
             if (flyoutWindow.visible) {
-                flyoutWindow.hide()
+                root.hideMiniPopup()
             } else {
-                flyoutWindow.width = w
-                flyoutWindow.height = h
+                if (typeof trayController !== "undefined" && trayController && trayController.refreshTodayDockets) {
+                    trayController.refreshTodayDockets()
+                }
+                flyoutWindow.width = Math.max(flyoutWindow.minimumWidth, w)
+                flyoutWindow.height = Math.max(flyoutWindow.minimumHeight, h)
                 flyoutWindow.x = x
                 flyoutWindow.y = y
+                flyoutWindow.flags = Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
                 flyoutWindow.show()
+                flyoutWindow.raise()
                 flyoutWindow.requestActivate()
             }
         }
-        
+
         function onPromptMissingDescriptions() {
             if (!flyoutWindow.visible) {
                 trayController.calculate_flyout_geometry()
             } else {
+                flyoutWindow.raise()
+                flyoutWindow.requestActivate()
+            }
+        }
+
+        function onLegacyDocketsSyncConflictDetected() {
+            if (!flyoutWindow.visible) {
+                trayController.calculate_flyout_geometry()
+            } else {
+                flyoutWindow.raise()
                 flyoutWindow.requestActivate()
             }
         }

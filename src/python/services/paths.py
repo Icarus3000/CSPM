@@ -87,6 +87,13 @@ class AppPaths:
     def dockets_workbook_path(self) -> Path:
         return self.data_dir() / "Dockets.xlsm"
 
+    def sqlite_db_path(self) -> Path:
+        """Resolve SQLite database path (%LOCALAPPDATA%/CSPM/data/cspm.db or test/dev data_dir/cspm.db)."""
+        env_override = os.environ.get("CSPM_SQLITE_DB_PATH", "").strip()
+        if env_override:
+            return Path(os.path.expandvars(env_override)).expanduser()
+        return self.data_dir() / "cspm.db"
+
     def _is_isolated_test_root(self) -> bool:
         if os.environ.get("PYTEST_CURRENT_TEST", "").strip():
             return True

@@ -2502,13 +2502,27 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
     function presentMainCloseGuard(reason) {
         if (mainWin.detachedMode || mainWin.forceClose || mainWin.isClosing) return false;
+        var hasTrayUnsaved = false;
+        try {
+            if (typeof trayController !== "undefined" && trayController && trayController.hasUnsavedOrActiveDocketOnClose) {
+                hasTrayUnsaved = Boolean(trayController.hasUnsavedOrActiveDocketOnClose());
+                if (hasTrayUnsaved && trayController.requestCloseWithSafeguard) {
+                    trayController.requestCloseWithSafeguard("main_window");
+                }
+            }
+        } catch (eTray) {
+            hasTrayUnsaved = false;
+        }
         var details = collectCloseGuardRows();
         if (!details || !details.rows || details.rows.length <= 0) {
-            closeCloseGuard();
-            return false;
+            if (!hasTrayUnsaved) {
+                closeCloseGuard();
+                return false;
+            }
+            details = {"rows": [], "detachedCount": 0, "unsavedCount": 1, "runningTimerCount": 1};
         }
-        var mainRow = details.rows[0];
-        var mainHasRisk = !!(mainRow && (mainRow.hasUnsavedWork || mainRow.hasRunningTimer));
+        var mainRow = details.rows.length > 0 ? details.rows[0] : null;
+        var mainHasRisk = !!(mainRow && (mainRow.hasUnsavedWork || mainRow.hasRunningTimer)) || hasTrayUnsaved;
         var hasDetached = details.detachedCount > 0;
         if (!hasDetached && !mainHasRisk) {
             closeCloseGuard();
@@ -2518,7 +2532,14 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         closeGuardDetachedCount = details.detachedCount;
         closeGuardUnsavedCount = details.unsavedCount;
         closeGuardRunningTimerCount = details.runningTimerCount;
-        if (hasDetached && mainHasRisk) {
+        if (hasTrayUnsaved) {
+            closeGuardTitle = "Unsaved / Active Docket Safeguard";
+            var trayMsg = (typeof trayController !== "undefined" && trayController && trayController.closeSafeguardMessage)
+                ? String(trayController.closeSafeguardMessage || "").trim() : "";
+            closeGuardMessage = trayMsg.length > 0
+                ? trayMsg
+                : "You have active or paused dockets with unsaved time. Choose how to proceed before closing CSPM.";
+        } else if (hasDetached && mainHasRisk) {
             closeGuardTitle = "Unsaved Work Across Open Windows";
             closeGuardMessage = "You still have " + details.detachedCount
                 + " detached windows and active unsaved work in main ("
@@ -12945,6 +12966,10 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
             console.log("[TRAY-SIGNAL] onRequestExitFromTray received in QML");
             mainWin.requestExitFromTrayAnimation();
         }
+        function onRequestMinimizeToTray() {
+            mainWin.closeCloseGuard();
+            mainWin.requestMinimizeToTrayAnimation();
+        }
         function onNavigateToModule(tileIndex, nodeId, state) {
             if (mainWin.trayRestoreActive) {
                 mainWin._pendingTrayNavigation = {"tileIndex": tileIndex, "nodeId": nodeId, "state": state || {}};
@@ -13186,52 +13211,23 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
                 Item {
                     width: parent.width
-                    height: reviewWindowsButton.height + closeGuardCard.actionHintGap + reviewWindowsHint.implicitHeight
-
-                    PillButton {
-                        id: reviewWindowsButton
-                        t: closeGuardCard.promptTheme
-                        metrics: mainWin.uiMetrics
-                        text: "Review Windows"
-                        primary: false
-                        width: parent.width
-                        height: closeGuardCard.actionHeight
-                        onClicked: {
-                            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
-                                mainWin.sfxBusRef.playUiClick("open", 0.48);
-                            }
-                            mainWin.closeGuardReviewWindows();
-                        }
-                    }
-
-                    Text {
-                        id: reviewWindowsHint
-                        width: parent.width
-                        anchors.top: reviewWindowsButton.bottom
-                        anchors.topMargin: closeGuardCard.actionHintGap
-                        color: Qt.rgba(closeGuardCard.promptTextColor.r, closeGuardCard.promptTextColor.g, closeGuardCard.promptTextColor.b, 0.90)
-                        font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
-                        text: "Cancel exit and review open windows."
-                        wrapMode: Text.WordWrap
-                        horizontalAlignment: Text.AlignHCenter
-                    }
-                }
-
-                Item {
-                    width: parent.width
                     height: saveAllExitButton.height + closeGuardCard.actionHintGap + saveAllExitHint.implicitHeight
 
                     PillButton {
                         id: saveAllExitButton
+                        objectName: "mainCloseSafeguardSaveSyncQuitButton"
                         t: closeGuardCard.promptTheme
                         metrics: mainWin.uiMetrics
-                        text: "Save All and Exit"
+                        text: "Save & Sync All to Dockets.xlsm, Then Quit"
                         primary: true
                         width: parent.width
                         height: closeGuardCard.actionHeight
                         onClicked: {
                             if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
                                 mainWin.sfxBusRef.playUiClick("confirm", 0.74);
+                            }
+                            if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
+                                trayController.resolveCloseSafeguard("save_sync_and_quit");
                             }
                             mainWin.closeGuardSaveAllAndExit();
                         }
@@ -13244,7 +13240,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         anchors.topMargin: closeGuardCard.actionHintGap
                         color: Qt.rgba(closeGuardCard.promptTextColor.r, closeGuardCard.promptTextColor.g, closeGuardCard.promptTextColor.b, 0.90)
                         font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
-                        text: "Checkpoint all open window state, then exit."
+                        text: "Save all active/paused dockets, sync to Dockets.xlsm, and exit CSPM."
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
                     }
@@ -13252,32 +13248,112 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
 
                 Item {
                     width: parent.width
-                    height: exitWithoutSavingButton.height + closeGuardCard.actionHintGap + exitWithoutSavingHint.implicitHeight
+                    height: pauseSyncExitButton.height + closeGuardCard.actionHintGap + pauseSyncExitHint.implicitHeight
 
                     PillButton {
-                        id: exitWithoutSavingButton
+                        id: pauseSyncExitButton
+                        objectName: "mainCloseSafeguardPauseSyncQuitButton"
                         t: closeGuardCard.promptTheme
                         metrics: mainWin.uiMetrics
-                        text: "Exit Without Saving"
+                        text: "Pause, Sync Current Time to Dockets.xlsm & Quit (Resume Next Launch)"
                         primary: false
                         width: parent.width
                         height: closeGuardCard.actionHeight
                         onClicked: {
                             if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
-                                mainWin.sfxBusRef.playUiClick("danger", 0.72);
+                                mainWin.sfxBusRef.playUiClick("confirm", 0.68);
                             }
-                            mainWin.closeGuardExitWithoutSaving();
+                            if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
+                                trayController.resolveCloseSafeguard("pause_sync_and_quit");
+                            }
+                            mainWin.closeGuardSaveAllAndExit();
                         }
                     }
 
                     Text {
-                        id: exitWithoutSavingHint
+                        id: pauseSyncExitHint
                         width: parent.width
-                        anchors.top: exitWithoutSavingButton.bottom
+                        anchors.top: pauseSyncExitButton.bottom
                         anchors.topMargin: closeGuardCard.actionHintGap
                         color: Qt.rgba(closeGuardCard.promptTextColor.r, closeGuardCard.promptTextColor.g, closeGuardCard.promptTextColor.b, 0.90)
                         font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
-                        text: "Close now and discard unsaved changes."
+                        text: "Pause active timers, sync current elapsed time to Dockets.xlsm, and resume next launch."
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    height: minimizeToTrayGuardButton.height + closeGuardCard.actionHintGap + minimizeToTrayGuardHint.implicitHeight
+
+                    PillButton {
+                        id: minimizeToTrayGuardButton
+                        objectName: "mainCloseSafeguardMinimizeTrayButton"
+                        t: closeGuardCard.promptTheme
+                        metrics: mainWin.uiMetrics
+                        text: "Minimize to System Tray Instead"
+                        primary: false
+                        width: parent.width
+                        height: closeGuardCard.actionHeight
+                        onClicked: {
+                            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
+                                mainWin.sfxBusRef.playUiClick("open", 0.56);
+                            }
+                            if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
+                                trayController.resolveCloseSafeguard("minimize_to_tray");
+                            } else {
+                                mainWin.closeCloseGuard();
+                                mainWin.requestMinimizeToTrayAnimation();
+                            }
+                        }
+                    }
+
+                    Text {
+                        id: minimizeToTrayGuardHint
+                        width: parent.width
+                        anchors.top: minimizeToTrayGuardButton.bottom
+                        anchors.topMargin: closeGuardCard.actionHintGap
+                        color: Qt.rgba(closeGuardCard.promptTextColor.r, closeGuardCard.promptTextColor.g, closeGuardCard.promptTextColor.b, 0.90)
+                        font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
+                        text: "Keep CSPM running in the system tray so timers continue uninterrupted."
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    height: reviewWindowsButton.height + closeGuardCard.actionHintGap + reviewWindowsHint.implicitHeight
+
+                    PillButton {
+                        id: reviewWindowsButton
+                        objectName: "mainCloseSafeguardCancelButton"
+                        t: closeGuardCard.promptTheme
+                        metrics: mainWin.uiMetrics
+                        text: "Cancel"
+                        primary: false
+                        width: parent.width
+                        height: closeGuardCard.actionHeight
+                        onClicked: {
+                            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
+                                mainWin.sfxBusRef.playUiClick("open", 0.48);
+                            }
+                            if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
+                                trayController.resolveCloseSafeguard("cancel");
+                            }
+                            mainWin.closeGuardReviewWindows();
+                        }
+                    }
+
+                    Text {
+                        id: reviewWindowsHint
+                        width: parent.width
+                        anchors.top: reviewWindowsButton.bottom
+                        anchors.topMargin: closeGuardCard.actionHintGap
+                        color: Qt.rgba(closeGuardCard.promptTextColor.r, closeGuardCard.promptTextColor.g, closeGuardCard.promptTextColor.b, 0.90)
+                        font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
+                        text: "Cancel exit and return to CSPM."
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
                     }

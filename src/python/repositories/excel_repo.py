@@ -6754,20 +6754,93 @@ class ExcelRepo:
         persisted = self._find_time_entry(entry_id)
         verified = self._compare_rows_loose(entry_row, persisted)
 
+        live_sqlite_id = _clean_text((payload or {}).get("sqliteEntryId") or (payload or {}).get("liveEntryId"))
+        prior_row_sig = None
+        sq = self._get_sqlite_repo()
+        if sq is not None and live_sqlite_id and live_sqlite_id != entry_id:
+            try:
+                live_row = sq.get_time_entry_by_id(live_sqlite_id)
+                if live_row and live_row.get("LegacyDocketsRowSignature"):
+                    prior_row_sig = live_row.get("LegacyDocketsRowSignature")
+                sq.delete_time_entry(live_sqlite_id)
+            except Exception:
+                pass
+
         legacy_sync: Dict[str, Any] = {}
         if verified and not bool((payload or {}).get("skipLegacyDocketsSync")):
             matter_num = _clean_text((matter_row or {}).get(sc.COL_MATTER_NUMBER))
             sub_client = _clean_text((payload or {}).get("subClient") or (payload or {}).get("subClient2"))
+            legacy_entry_row = dict(entry_row)
+            if previous_row is not None and not requested_entry_id:
+                own_raw_seconds = int(normalized.get("rawSeconds") or 0)
+                if normalized.get("useExactHours") and normalized.get("hours") is not None:
+                    own_hours = float(normalized["hours"])
+                    own_raw_seconds = int(round(own_hours * 3600))
+                elif own_raw_seconds > 0:
+                    own_hours = math.ceil(((own_raw_seconds / 3600.0) * 10.0) - 1e-9) / 10.0
+                elif normalized.get("hours") is not None and float(normalized.get("hours") or 0.0) > 0:
+                    own_hours = round(float(normalized["hours"]), 2)
+                    own_raw_seconds = int(round(own_hours * 3600))
+                else:
+                    own_hours = round(float(aggregate_hours), 2)
+                    own_raw_seconds = int(aggregate_raw_seconds)
+                own_amounts = calc_amounts(
+                    hours=own_hours,
+                    client_rate=normalized["clientRate"],
+                    your_share_pct=normalized["sharePct"],
+                    hst_rate=0.13,
+                )
+                legacy_entry_row[sc.COL_TIME_DESC] = incoming_description or description_text
+                legacy_entry_row[sc.COL_TIME_HOURS] = round(float(own_hours), 2)
+                legacy_entry_row[sc.COL_TIME_SECONDS] = int(own_raw_seconds)
+                legacy_entry_row[sc.COL_TIME_GROSS] = own_amounts["gross_to_client"]
+                legacy_entry_row[sc.COL_TIME_NET] = own_amounts["amount_to_you"]
+                legacy_entry_row[sc.COL_TIME_HST] = own_amounts["hst_on_you"]
+                legacy_entry_row[sc.COL_TIME_TOTAL] = own_amounts["total_you_incl_hst"]
+
             legacy_sync = self._sync_time_entry_to_legacy_dockets(
-                entry_row,
+                legacy_entry_row,
                 previous_row=previous_row,
-                is_update=(previous_row is not None),
+                is_update=bool((payload or {}).get("isLegacyUpdate", False)),
                 fallback_client_name=_clean_text(client_row.get(sc.COL_CLIENT_NAME)) or normalized["clientName"],
                 fallback_parent_name=parent_name,
                 fallback_sub_client_name=sub_client,
                 fallback_matter_number=matter_num,
                 is_fee_entry=False,
+                resolution_mode=(payload or {}).get("legacyResolutionMode"),
+                target_row=(payload or {}).get("legacyTargetRow"),
+                prior_row_signature_override=prior_row_sig,
             )
+        elif verified:
+            if sq is not None and entry_id:
+                try:
+                    sq.upsert_live_docket_heartbeat(
+                        {
+                            "entry_id": entry_id,
+                            "matter_id": _clean_text(entry_row.get(sc.COL_TIME_MATTER_ID)),
+                            "matter_name": _clean_text((matter_row or {}).get(sc.COL_MATTER_NUMBER)),
+                            "client_id": _clean_text(entry_row.get(sc.COL_TIME_CLIENT_ID)),
+                            "client_name": _clean_text(client_row.get(sc.COL_CLIENT_NAME)) or normalized["clientName"],
+                            "parent_id": _clean_text(entry_row.get(sc.COL_TIME_PARENT_ID)),
+                            "date": _clean_text(entry_row.get(sc.COL_TIME_DATE)),
+                            "hours": float(self._parse_float(entry_row.get(sc.COL_TIME_HOURS)) or 0.0),
+                            "raw_seconds": int(self._parse_float(entry_row.get(sc.COL_TIME_SECONDS)) or 0),
+                            "rate": float(self._parse_float(entry_row.get(sc.COL_TIME_RATE)) or 475.0),
+                            "share_pct": float(self._parse_float(entry_row.get(sc.COL_TIME_SHARE_PCT)) or 100.0),
+                            "GrossToClient": float(self._parse_float(entry_row.get(sc.COL_TIME_GROSS)) or 0.0),
+                            "AmountToYou": float(self._parse_float(entry_row.get(sc.COL_TIME_NET)) or 0.0),
+                            "HST": float(self._parse_float(entry_row.get(sc.COL_TIME_HST)) or 0.0),
+                            "TotalInclHST": float(self._parse_float(entry_row.get(sc.COL_TIME_TOTAL)) or 0.0),
+                            "description": _clean_text(entry_row.get(sc.COL_TIME_DESC)),
+                            "status": _clean_text(entry_row.get(sc.COL_TIME_STATUS)) or "Unbilled",
+                            "entry_status": "SAVED",
+                            "started_at_utc": None,
+                            "legacy_dockets_sync_status": "PENDING_SYNC",
+                            "legacy_dockets_row_signature": prior_row_sig,
+                        }
+                    )
+                except Exception:
+                    pass
 
         return {
             "ok": bool(verified),
@@ -7275,6 +7348,33 @@ class ExcelRepo:
             is_fee_entry=is_fee_entry or self._is_fee_entry(dict(entry_row)),
         )
 
+    def _get_sqlite_repo(self):
+        repo = getattr(self, "_sqlite_repo_instance", None)
+        if repo is not None:
+            return repo
+        try:
+            from prototypes.sqlite_architecture.sqlite_repo import SQLiteRepository
+
+            db_path = self.paths.sqlite_db_path() if hasattr(self, "paths") and self.paths is not None else None
+            if db_path is not None:
+                repo = SQLiteRepository(db_path=db_path)
+                self._sqlite_repo_instance = repo
+                return repo
+        except Exception as exc:
+            logger.debug("[excel_repo] Could not initialize SQLiteRepository: %s", exc)
+        return None
+
+    def upsert_sqlite_docket_heartbeat(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist live timer heartbeat or draft edit to SQLite time_entries (WAL mode)."""
+        sq = self._get_sqlite_repo()
+        if sq is None:
+            return {"ok": False, "message": "SQLite repository unavailable"}
+        try:
+            return sq.upsert_live_docket_heartbeat(dict(payload or {}))
+        except Exception as exc:
+            logger.warning("[excel_repo] SQLite docket heartbeat error: %s", exc)
+            return {"ok": False, "message": str(exc)}
+
     def _sync_time_entry_to_legacy_dockets(
         self,
         entry_row: Mapping[str, Any],
@@ -7286,10 +7386,53 @@ class ExcelRepo:
         fallback_sub_client_name: str = "",
         fallback_matter_number: str = "",
         is_fee_entry: bool = False,
+        resolution_mode: Optional[str] = None,
+        target_row: Optional[int] = None,
+        confirm_billed_overwrite: bool = True,
+        entry_status_override: str = "SAVED",
+        prior_row_signature_override: Optional[Any] = None,
     ) -> Dict[str, Any]:
+        entry_id = _clean_text(entry_row.get(sc.COL_TIME_ENTRY_ID))
+        sq = self._get_sqlite_repo()
+        existing_sq = sq.get_time_entry_by_id(entry_id) if (sq is not None and entry_id) else None
+        raw_prior_sig = prior_row_signature_override or (
+            existing_sq.get("LegacyDocketsRowSignature") if existing_sq else None
+        )
+
+        if sq is not None and entry_id:
+            try:
+                sq.upsert_live_docket_heartbeat(
+                    {
+                        "entry_id": entry_id,
+                        "matter_id": _clean_text(entry_row.get(sc.COL_TIME_MATTER_ID)),
+                        "matter_name": _clean_text(fallback_matter_number),
+                        "client_id": _clean_text(entry_row.get(sc.COL_TIME_CLIENT_ID)),
+                        "client_name": _clean_text(fallback_client_name),
+                        "parent_id": _clean_text(entry_row.get(sc.COL_TIME_PARENT_ID)),
+                        "date": _clean_text(entry_row.get(sc.COL_TIME_DATE)),
+                        "hours": float(self._parse_float(entry_row.get(sc.COL_TIME_HOURS)) or 0.0),
+                        "raw_seconds": int(self._parse_float(entry_row.get(sc.COL_TIME_SECONDS)) or 0),
+                        "rate": float(self._parse_float(entry_row.get(sc.COL_TIME_RATE)) or 475.0),
+                        "share_pct": float(self._parse_float(entry_row.get(sc.COL_TIME_SHARE_PCT)) or 100.0),
+                        "GrossToClient": float(self._parse_float(entry_row.get(sc.COL_TIME_GROSS)) or 0.0),
+                        "AmountToYou": float(self._parse_float(entry_row.get(sc.COL_TIME_NET)) or 0.0),
+                        "HST": float(self._parse_float(entry_row.get(sc.COL_TIME_HST)) or 0.0),
+                        "TotalInclHST": float(self._parse_float(entry_row.get(sc.COL_TIME_TOTAL)) or 0.0),
+                        "description": _clean_text(entry_row.get(sc.COL_TIME_DESC)),
+                        "status": _clean_text(entry_row.get(sc.COL_TIME_STATUS)) or "Unbilled",
+                        "entry_status": entry_status_override or "SAVED",
+                        "started_at_utc": None,
+                        "legacy_dockets_sync_status": "PENDING_SYNC",
+                        "legacy_dockets_row_signature": raw_prior_sig,
+                    }
+                )
+            except Exception as exc:
+                logger.debug("[excel_repo] SQLite pre-sync upsert warning: %s", exc)
+
         if getattr(self, "_import_batch_active", False):
             return {"ok": True, "skipped": True, "reason": "import_batch_active"}
         try:
+            import json as _json
             from services.legacy_dockets_sync_service import LegacyDocketsSyncService
 
             sync_service = LegacyDocketsSyncService(self.paths)
@@ -7306,16 +7449,344 @@ class ExcelRepo:
                 if previous_row is not None
                 else None
             )
+            # If this entry was already synced earlier (e.g., via "Enter Current Time into Dockets.xlsm Now & Keep Tab Open (Paused)")
+            # and has a stored legacy_dockets_row_signature in SQLite, use that signature as previous_payload so resuming & saving updates cleanly!
+            effective_is_update = bool(is_update)
+            if previous_payload is None and raw_prior_sig:
+                try:
+                    sig_obj = _json.loads(str(raw_prior_sig)) if isinstance(raw_prior_sig, str) else raw_prior_sig
+                    if isinstance(sig_obj, dict) and sig_obj.get("date") and sig_obj.get("matter_id"):
+                        previous_payload = dict(current_payload)
+                        previous_payload["Date"] = str(sig_obj.get("date") or current_payload.get("Date") or "")
+                        previous_payload["Matter_ID"] = str(sig_obj.get("matter_id") or current_payload.get("Matter_ID") or "")
+                        previous_payload["RawSeconds"] = int(sig_obj.get("raw_seconds") or 0)
+                        previous_payload["Time (in hrs)"] = float(sig_obj.get("time_hrs") or 0.0)
+                        previous_payload["Description"] = str(sig_obj.get("description") or "")
+                        effective_is_update = True
+                except Exception:
+                    pass
+
             result = sync_service.sync_docket_entry(
                 current_payload,
                 previous_payload=previous_payload,
-                is_update=is_update,
+                is_update=effective_is_update,
+                resolution_mode=resolution_mode,
+                target_row=int(target_row) if target_row is not None else None,
+                confirm_billed_overwrite=confirm_billed_overwrite,
             )
             self._legacy_docket_rows_signature = ""
+
+            if sq is not None and entry_id:
+                status_str = str(result.get("status") or "").upper()
+                if status_str in ("SYNCED", "APPENDED") and not result.get("conflict"):
+                    sq.mark_legacy_dockets_sync_status(
+                        entry_id,
+                        "SYNCED",
+                        row_signature=result.get("rowSignature"),
+                        entry_status=entry_status_override or "SAVED",
+                    )
+                elif status_str == "SKIPPED":
+                    sq.mark_legacy_dockets_sync_status(
+                        entry_id,
+                        "SKIPPED",
+                        entry_status=entry_status_override or "SAVED",
+                    )
             return result
         except Exception as exc:
             logger.warning("[excel_repo] Non-fatal legacy Dockets.xlsm sync error: %s", exc)
             return {"ok": False, "warning": str(exc)}
+
+    def resolve_legacy_dockets_conflict(
+        self,
+        conflict_or_id: Any,
+        resolution_mode: str,
+        *,
+        target_row: Optional[int] = None,
+        confirm_billed_overwrite: bool = True,
+    ) -> Dict[str, Any]:
+        """Resolve a pending legacy Dockets.xlsm sync conflict using overwrite, append, combine, or skip."""
+        try:
+            from services.legacy_dockets_sync_service import LegacyDocketsSyncService
+
+            sync_service = LegacyDocketsSyncService(self.paths)
+            res = sync_service.resolve_conflict(
+                conflict_or_id,
+                resolution_mode,
+                target_row=int(target_row) if target_row is not None and int(target_row) > 0 else None,
+                confirm_billed_overwrite=bool(confirm_billed_overwrite),
+            )
+            self._legacy_docket_rows_signature = ""
+            entry_id = _clean_text(res.get("entryId"))
+            sq = self._get_sqlite_repo()
+            if sq is not None and entry_id and not res.get("conflict"):
+                status_str = str(res.get("status") or "").upper()
+                if status_str in ("SYNCED", "APPENDED"):
+                    sq.mark_legacy_dockets_sync_status(
+                        entry_id,
+                        "SYNCED",
+                        row_signature=res.get("rowSignature"),
+                    )
+                elif status_str == "SKIPPED":
+                    sq.mark_legacy_dockets_sync_status(entry_id, "SKIPPED")
+            return res
+        except Exception as exc:
+            logger.warning("[excel_repo] Could not resolve legacy Dockets.xlsm conflict: %s", exc)
+            return {"ok": False, "status": "ERROR", "conflict": False, "message": str(exc)}
+
+    def reconcile_unsynced_dockets_on_startup(self) -> Dict[str, Any]:
+        """Reconcile unsynced SQLite time_entries ('PENDING_SYNC' and 'PENDING_CRASH_RECOVERY') on CSPM startup."""
+        sq = self._get_sqlite_repo()
+        if sq is None:
+            return {
+                "ok": True,
+                "syncedEntries": [],
+                "conflicts": [],
+                "crashRecoveryDockets": [],
+            }
+
+        from datetime import timezone
+
+        rows = sq.list_unsynced_or_crash_recovery_dockets()
+        synced_entries: List[Dict[str, Any]] = []
+        conflicts: List[Dict[str, Any]] = []
+        crash_recovery_dockets: List[Dict[str, Any]] = []
+        restored_paused_dockets: List[Dict[str, Any]] = []
+        now_dt = datetime.now(timezone.utc)
+
+        for r in rows:
+            entry_id = _clean_text(r.get("EntryID"))
+            if not entry_id:
+                continue
+            entry_status = _clean_text(r.get("EntryStatus")).upper() or "SAVED"
+            sync_status = _clean_text(r.get("LegacyDocketsSyncStatus")).upper() or "PENDING_SYNC"
+
+            # 0. Cleanly paused & synced on previous close ("Pause, Sync Current Time to Dockets.xlsm & Quit")
+            if entry_status == "PAUSED" and sync_status == "SYNCED":
+                restored_paused_dockets.append({
+                    **r,
+                    "entryId": entry_id,
+                    "wasRunning": False,
+                    "wasRunningAtCrash": False,
+                    "entryStatusAtCrash": "PAUSED",
+                    "heartbeatSeconds": max(0, int(r.get("RawSeconds") or 0)),
+                    "wallClockSeconds": max(0, int(r.get("RawSeconds") or 0)),
+                })
+                continue
+
+            # 1. 'PENDING_CRASH_RECOVERY' rows (or timers that were 'RUNNING' / 'PAUSED' when PC crashed)
+            if sync_status == "PENDING_CRASH_RECOVERY" or entry_status in ("RUNNING", "PAUSED"):
+                was_running = entry_status == "RUNNING"
+                heartbeat_secs = max(0, int(r.get("RawSeconds") or 0))
+                wall_clock_secs = heartbeat_secs
+                started_utc_str = _clean_text(r.get("StartedAtUTC"))
+                heartbeat_utc_str = _clean_text(r.get("LastHeartbeatUTC"))
+                if was_running:
+                    ref_ts_str = heartbeat_utc_str or started_utc_str
+                    if ref_ts_str:
+                        try:
+                            ref_dt = datetime.fromisoformat(ref_ts_str.replace("Z", "+00:00"))
+                            if ref_dt.tzinfo is None:
+                                ref_dt = ref_dt.replace(tzinfo=timezone.utc)
+                            gap_secs = max(0, int((now_dt - ref_dt).total_seconds()))
+                            wall_clock_secs = heartbeat_secs + gap_secs
+                        except Exception:
+                            wall_clock_secs = heartbeat_secs
+                    if started_utc_str:
+                        try:
+                            start_dt = datetime.fromisoformat(started_utc_str.replace("Z", "+00:00"))
+                            if start_dt.tzinfo is None:
+                                start_dt = start_dt.replace(tzinfo=timezone.utc)
+                            wall_from_start = max(0, int((now_dt - start_dt).total_seconds()))
+                            wall_clock_secs = max(wall_clock_secs, wall_from_start)
+                        except Exception:
+                            pass
+
+                # Put into safe PAUSED state in SQLite while keeping PENDING_CRASH_RECOVERY
+                sq.upsert_live_docket_heartbeat(
+                    {
+                        **r,
+                        "entry_id": entry_id,
+                        "entry_status": "PAUSED",
+                        "started_at_utc": started_utc_str or None,
+                        "last_heartbeat_utc": heartbeat_utc_str or now_dt.isoformat(),
+                        "legacy_dockets_sync_status": "PENDING_CRASH_RECOVERY",
+                    }
+                )
+                crash_item = {
+                    **r,
+                    "entryId": entry_id,
+                    "wasRunning": was_running,
+                    "wasRunningAtCrash": was_running,
+                    "entryStatusAtCrash": entry_status,
+                    "heartbeatSeconds": heartbeat_secs,
+                    "wallClockSeconds": wall_clock_secs,
+                    "startedAtUtc": started_utc_str,
+                    "lastHeartbeatUtc": heartbeat_utc_str,
+                }
+                crash_recovery_dockets.append(crash_item)
+                continue
+
+            # 2. 'PENDING_SYNC' rows (Saved in SQLite before crash or while Dockets.xlsm was locked)
+            if sync_status == "PENDING_SYNC":
+                excel_row = self._find_time_entry(entry_id)
+                if not excel_row:
+                    raw_secs = max(0, int(r.get("RawSeconds") or 0))
+                    hrs_val = float(r.get("Hours") or 0.0)
+                    if hrs_val <= 0 and raw_secs > 0:
+                        hrs_val = round(math.ceil(((raw_secs / 3600.0) * 10.0) - 1e-9) / 10.0, 2)
+                    rate_val = float(r.get("ClientRate") or 475.0)
+                    share_val = float(r.get("SharePct") or 100.0)
+                    amounts = calc_amounts(hours=hrs_val, client_rate=rate_val, your_share_pct=share_val, hst_rate=0.13)
+                    excel_row = {
+                        sc.COL_TIME_ENTRY_ID: entry_id,
+                        sc.COL_TIME_DATE: _clean_text(r.get("Date")) or datetime.now().strftime("%Y-%m-%d"),
+                        sc.COL_TIME_CLIENT_ID: _clean_text(r.get("ClientID")),
+                        sc.COL_TIME_MATTER_ID: _clean_text(r.get("MatterID")),
+                        sc.COL_TIME_PARENT_ID: _clean_text(r.get("ParentID")),
+                        sc.COL_TIME_DESC: _clean_text(r.get("Description")) or "Time entry",
+                        sc.COL_TIME_HOURS: hrs_val,
+                        sc.COL_TIME_RATE: rate_val,
+                        sc.COL_TIME_SHARE_PCT: share_val,
+                        sc.COL_TIME_GROSS: amounts["gross_to_client"],
+                        sc.COL_TIME_NET: amounts["amount_to_you"],
+                        sc.COL_TIME_HST: amounts["hst_on_you"],
+                        sc.COL_TIME_TOTAL: amounts["total_you_incl_hst"],
+                        sc.COL_TIME_SECONDS: raw_secs,
+                        sc.COL_TIME_STATUS: _clean_text(r.get("Status")) or "Unbilled",
+                        sc.COL_TIME_ENTRY_STATUS: "SAVED",
+                        sc.COL_TIME_CREATED: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                    try:
+                        self.ensure_schema()
+                        self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, entry_id, excel_row)
+                    except Exception:
+                        pass
+
+                sync_res = self._sync_time_entry_to_legacy_dockets(
+                    excel_row,
+                    is_update=False,
+                    fallback_client_name=_clean_text(r.get("ClientName")),
+                    fallback_matter_number=_clean_text(r.get("MatterName")) or _clean_text(r.get("MatterID")),
+                )
+                if sync_res.get("conflict") or str(sync_res.get("status") or "").upper() == "CONFLICT":
+                    conflicts.append(sync_res)
+                elif sync_res.get("ok") and str(sync_res.get("status") or "").upper() in ("SYNCED", "APPENDED"):
+                    synced_entries.append({"entryId": entry_id, "syncResult": sync_res})
+
+        return {
+            "ok": True,
+            "syncedEntries": synced_entries,
+            "conflicts": conflicts,
+            "crashRecoveryDockets": crash_recovery_dockets,
+            "restoredPausedDockets": restored_paused_dockets,
+        }
+
+    def resolve_crash_recovery_docket(
+        self,
+        entry_id: str,
+        action: str,
+        *,
+        time_option: str = "heartbeat",
+        wall_clock_seconds: Optional[int] = None,
+        resolution_mode: Optional[str] = None,
+        target_row: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Resolve a crash-recovered docket from SQLite ('save_and_sync', 'sync_and_keep_paused', or 'discard')."""
+        from datetime import timezone
+
+        target_id = _clean_text(entry_id)
+        norm_action = _clean_text(action).lower()
+        sq = self._get_sqlite_repo()
+        if sq is None or not target_id:
+            return {"ok": False, "message": "SQLite repository or entry_id unavailable"}
+
+        raw_row = sq.get_time_entry_by_id(target_id)
+        if raw_row is None:
+            return {"ok": False, "message": f"Recovered docket {target_id} not found"}
+        row = raw_row.to_dict() if hasattr(raw_row, "to_dict") else dict(raw_row)
+
+        if norm_action == "discard":
+            sq.delete_time_entry(target_id)
+            return {"ok": True, "action": "discard", "entryId": target_id}
+
+        chosen_seconds = int(row.get("RawSeconds") or 0)
+        if _clean_text(time_option).lower() in ("wall_clock", "wallclock", "option_b", "b"):
+            if wall_clock_seconds is not None and int(wall_clock_seconds) >= chosen_seconds:
+                chosen_seconds = int(wall_clock_seconds)
+            else:
+                ref_ts_str = _clean_text(row.get("LastHeartbeatUTC") or row.get("StartedAtUTC"))
+                if ref_ts_str:
+                    try:
+                        ref_dt = datetime.fromisoformat(ref_ts_str.replace("Z", "+00:00"))
+                        if ref_dt.tzinfo is None:
+                            ref_dt = ref_dt.replace(tzinfo=timezone.utc)
+                        gap = max(0, int((datetime.now(timezone.utc) - ref_dt).total_seconds()))
+                        chosen_seconds += gap
+                    except Exception:
+                        pass
+
+        keep_paused = norm_action in ("sync_and_keep_paused", "keep_paused", "pause_and_sync")
+        target_entry_status = "PAUSED" if keep_paused else "SAVED"
+
+        hrs_val = (
+            round(math.ceil(((chosen_seconds / 3600.0) * 10.0) - 1e-9) / 10.0, 2)
+            if chosen_seconds > 0
+            else float(row.get("Hours") or 0.0)
+        )
+        rate_val = float(row.get("ClientRate") or 475.0)
+        share_val = float(row.get("SharePct") or 100.0)
+        amounts = calc_amounts(hours=hrs_val, client_rate=rate_val, your_share_pct=share_val, hst_rate=0.13)
+
+        entry_row = {
+            sc.COL_TIME_ENTRY_ID: target_id,
+            sc.COL_TIME_DATE: _clean_text(row.get("Date")) or datetime.now().strftime("%Y-%m-%d"),
+            sc.COL_TIME_CLIENT_ID: _clean_text(row.get("ClientID")),
+            sc.COL_TIME_MATTER_ID: _clean_text(row.get("MatterID")),
+            sc.COL_TIME_PARENT_ID: _clean_text(row.get("ParentID")),
+            sc.COL_TIME_DESC: _clean_text(row.get("Description")) or "Time entry",
+            sc.COL_TIME_HOURS: hrs_val,
+            sc.COL_TIME_RATE: rate_val,
+            sc.COL_TIME_SHARE_PCT: share_val,
+            sc.COL_TIME_GROSS: amounts["gross_to_client"],
+            sc.COL_TIME_NET: amounts["amount_to_you"],
+            sc.COL_TIME_HST: amounts["hst_on_you"],
+            sc.COL_TIME_TOTAL: amounts["total_you_incl_hst"],
+            sc.COL_TIME_SECONDS: chosen_seconds,
+            sc.COL_TIME_STATUS: "Draft" if keep_paused else "Unbilled",
+            sc.COL_TIME_ENTRY_STATUS: target_entry_status,
+            sc.COL_TIME_CREATED: datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        try:
+            self.ensure_schema()
+            self._upsert_row_by_key(TBL_TIME, sc.COL_TIME_ENTRY_ID, target_id, entry_row)
+        except Exception:
+            pass
+
+        sync_res = self._sync_time_entry_to_legacy_dockets(
+            entry_row,
+            is_update=False,
+            fallback_client_name=_clean_text(row.get("ClientName")),
+            fallback_matter_number=_clean_text(row.get("MatterName")) or _clean_text(row.get("MatterID")),
+            resolution_mode=resolution_mode,
+            target_row=target_row,
+            entry_status_override=target_entry_status,
+        )
+        sq.mark_legacy_dockets_sync_status(
+            target_id,
+            "SYNCED" if (sync_res.get("ok") and not sync_res.get("conflict")) else "PENDING_SYNC",
+            row_signature=sync_res.get("rowSignature"),
+            entry_status=target_entry_status,
+            raw_seconds=chosen_seconds,
+        )
+        return {
+            "ok": True,
+            "action": norm_action,
+            "entryId": target_id,
+            "entryStatus": target_entry_status,
+            "keepPausedTab": bool(keep_paused),
+            "rawSeconds": chosen_seconds,
+            "legacyDocketsSync": sync_res,
+        }
 
     def update_time_entry(self, entry_id: str, changes: Dict[str, Any]) -> Dict[str, Any]:
         self.ensure_schema()

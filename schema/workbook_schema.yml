@@ -289,6 +289,18 @@ tables:
     type: datetime
   - name: BillerEntity
     type: text
+  - name: EntryStatus
+    type: text
+  - name: StartedAtUTC
+    type: text
+  - name: LastHeartbeatUTC
+    type: text
+  - name: LegacyDocketsSyncStatus
+    type: text
+  - name: LegacyDocketsSyncedAt
+    type: text
+  - name: LegacyDocketsRowSignature
+    type: text
 - sheet: Trademarks
   table: tblTrademarks
   primary_key: TrademarkID

@@ -2338,6 +2338,23 @@ def main() -> None:
             if not tray_qml_loaded:
                 raise RuntimeError("TrayRoot.qml did not create a root object.")
             _boot_log("END: loaded deferred TrayRoot.qml")
+
+            def _run_startup_docket_reconciliation() -> None:
+                try:
+                    if getattr(app, "_cspm_shutdown_started", False):
+                        return
+                    rec = tray_controller.reconcileUnsyncedDocketsOnStartup() or {}
+                    if bool(tray_controller.hasCrashRecoveryPrompt) or bool(tray_controller.hasLegacyDocketsSyncConflict):
+                        tray_controller.calculate_flyout_geometry()
+                    elif list(rec.get("syncedEntries") or []):
+                        count = len(list(rec.get("syncedEntries") or []))
+                        app_controller.toast.emit(
+                            f"Synced {count} pending docket(s) to Dockets.xlsm on startup."
+                        )
+                except Exception:
+                    logging.getLogger("startup").debug("Startup docket reconciliation failed", exc_info=True)
+
+            QTimer.singleShot(250, _run_startup_docket_reconciliation)
         except Exception as exc:
             logging.getLogger("startup").exception("Failed to load deferred TrayRoot.qml")
             tray_qml_ready_callbacks.clear()
