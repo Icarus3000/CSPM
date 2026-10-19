@@ -1919,6 +1919,11 @@ class ExcelRepo:
                 if _clean_text(row.get(sc.COL_MATTER_NUMBER)).lower() == lookup_lc:
                     selected = row
                     break
+        if selected is None:
+            for row in matter_rows:
+                if self._matter_row_matches_lookup(row, lookup):
+                    selected = row
+                    break
 
         if selected is None:
             return {"ok": False, "message": f"Matter not found: {lookup}", "matter": {}}
@@ -6493,11 +6498,20 @@ class ExcelRepo:
         matter_row = None
 
         if requested_matter_id:
-            for candidate in [self._canonicalize_matter_row(r) for r in self._read_table_rows(TBL_MATTERS)]:
-                if _clean_text(candidate.get(sc.COL_MATTER_ID)).lower() == requested_matter_id.lower():
+            canonical_matters = [self._canonicalize_matter_row(r) for r in self._read_table_rows(TBL_MATTERS)]
+            for candidate in canonical_matters:
+                cand_id = _clean_text(candidate.get(sc.COL_MATTER_ID)).lower()
+                cand_num = _clean_text(candidate.get(sc.COL_MATTER_NUMBER)).lower()
+                if cand_id == requested_matter_id.lower() or (cand_num and cand_num == requested_matter_id.lower()):
                     matter_row = candidate
                     matter_id = _clean_text(candidate.get(sc.COL_MATTER_ID))
                     break
+            if matter_row is None:
+                for candidate in canonical_matters:
+                    if self._matter_row_matches_lookup(candidate, requested_matter_id):
+                        matter_row = candidate
+                        matter_id = _clean_text(candidate.get(sc.COL_MATTER_ID))
+                        break
 
         if matter_row is not None:
             self._ensure_matter_is_open_for_new_entry(matter_row, "time")
@@ -7807,10 +7821,12 @@ class ExcelRepo:
         if requested_matter_id:
             for row in matter_rows:
                 row_id = _clean_text(row.get(sc.COL_MATTER_ID))
-                if row_id.lower() == requested_matter_id.lower():
+                row_number = _clean_text(row.get(sc.COL_MATTER_NUMBER))
+                if row_id.lower() == requested_matter_id.lower() or (
+                    row_number and row_number.lower() == requested_matter_id.lower()
+                ) or self._matter_row_matches_lookup(row, requested_matter_id):
                     row_name = _clean_text(row.get(sc.COL_MATTER_NAME))
                     row_display = _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME))
-                    row_number = _clean_text(row.get(sc.COL_MATTER_NUMBER))
                     row_client_id = _clean_text(row.get(sc.COL_MATTER_CLIENT_ID))
                     matter_id = row_id
                     matter_name = row_display or row_name or row_number or matter_name
@@ -7828,6 +7844,7 @@ class ExcelRepo:
                     or row_display.lower() == matter_name.lower()
                     or row_number.lower() == matter_name.lower()
                     or row_label.lower() == matter_name.lower()
+                    or self._matter_row_matches_lookup(row, matter_name)
                 ):
                     row_client_id = _clean_text(row.get(sc.COL_MATTER_CLIENT_ID))
                     if client_id and row_client_id and row_client_id.lower() != client_id.lower():
@@ -12814,6 +12831,8 @@ class ExcelRepo:
 
         return {
             "entryId": self._pick_text(payload, ["entryId", sc.COL_TIME_ENTRY_ID]),
+            "clientId": self._pick_text(payload, ["clientId", "selectedClientId", sc.COL_TIME_CLIENT_ID, sc.COL_CLIENT_ID]),
+            "matterId": self._pick_text(payload, ["matterId", "selectedMatterId", sc.COL_TIME_MATTER_ID, sc.COL_MATTER_ID]),
             "forceDuplicate": self._to_bool_int(
                 self._pick_value(payload, ["forceDuplicate", "addDuplicate"]),
                 default=0,
@@ -13332,6 +13351,59 @@ class ExcelRepo:
         self._append_row_to_table(TBL_CLIENTS, new_row)
         return new_row
 
+    def _matter_row_matches_lookup(self, row: Dict[str, Any], lookup_text: str) -> bool:
+        target = _clean_text(lookup_text)
+        if not target:
+            return False
+        target_lc = target.lower()
+        row_id_lc = _clean_text(row.get(sc.COL_MATTER_ID)).lower()
+        row_num_lc = _clean_text(row.get(sc.COL_MATTER_NUMBER)).lower()
+        row_name_lc = _clean_text(row.get(sc.COL_MATTER_NAME)).lower()
+        row_disp_lc = _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME)).lower()
+        row_type_lc = _clean_text(row.get(sc.COL_MATTER_TYPE)).lower()
+        row_desc_lc = _clean_text(row.get(sc.COL_MATTER_DESCRIPTION)).lower()
+        row_court_lc = _clean_text(row.get(sc.COL_MATTER_COURT_FILE_NO)).lower()
+
+        short_suffix_lc = ""
+        if row_num_lc and "-" in row_num_lc:
+            parts = [p.strip() for p in row_num_lc.split("-") if p.strip()]
+            if len(parts) >= 2:
+                short_suffix_lc = f"{parts[-2]}-{parts[-1]}"
+
+        candidates = {
+            c
+            for c in (
+                row_id_lc,
+                row_num_lc,
+                row_name_lc,
+                row_disp_lc,
+                row_court_lc,
+                f"legacy matter {row_num_lc}" if row_num_lc else "",
+                f"legacy matter {row_id_lc}" if row_id_lc else "",
+            )
+            if c
+        }
+        for sep in (" - ", " \u2014 ", " \u2022 "):
+            for label in (row_name_lc, row_disp_lc, row_type_lc, row_desc_lc):
+                if not label:
+                    continue
+                if row_num_lc:
+                    candidates.add(f"{row_num_lc}{sep}{label}")
+                    candidates.add(f"{label}{sep}{row_num_lc}")
+                if short_suffix_lc:
+                    candidates.add(f"{label}{sep}{short_suffix_lc}")
+                    candidates.add(f"{short_suffix_lc}{sep}{label}")
+
+        if target_lc in candidates:
+            return True
+        if row_num_lc and (
+            target_lc.startswith(f"{row_num_lc} \u2014")
+            or target_lc.startswith(f"{row_num_lc} -")
+            or target_lc.startswith(f"{row_num_lc} \u2022")
+        ):
+            return True
+        return False
+
     def _get_or_create_matter(
         self,
         matter_name: str,
@@ -13342,29 +13414,13 @@ class ExcelRepo:
     ) -> Dict[str, Any]:
         name = _clean_text(matter_name)
         name_lc = name.lower()
-        rows = self._read_table_rows(TBL_MATTERS)
+        raw_rows = self._read_table_rows(TBL_MATTERS)
+        rows = sorted(
+            raw_rows,
+            key=lambda r: 0 if self._is_matter_row_active(self._canonicalize_matter_row(r)) else 1,
+        )
         for row in rows:
-            row_name_lc = _clean_text(row.get(sc.COL_MATTER_NAME)).lower()
-            row_disp_lc = _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME)).lower()
-            row_num_lc = _clean_text(row.get(sc.COL_MATTER_NUMBER)).lower()
-            combined_candidates = {
-                c
-                for c in (
-                    row_name_lc,
-                    row_disp_lc,
-                    row_num_lc,
-                    f"{row_num_lc} \u2014 {row_name_lc}" if row_num_lc and row_name_lc else "",
-                    f"{row_num_lc} - {row_name_lc}" if row_num_lc and row_name_lc else "",
-                    f"{row_num_lc} \u2014 {row_disp_lc}" if row_num_lc and row_disp_lc else "",
-                    f"{row_num_lc} - {row_disp_lc}" if row_num_lc and row_disp_lc else "",
-                )
-                if c
-            }
-            prefix_match = bool(
-                row_num_lc
-                and (name_lc.startswith(f"{row_num_lc} \u2014") or name_lc.startswith(f"{row_num_lc} -"))
-            )
-            if name_lc and (name_lc in combined_candidates or prefix_match):
+            if name_lc and self._matter_row_matches_lookup(row, name):
                 canonical = self._canonicalize_matter_row(row)
                 row_client_id = _clean_text(canonical.get(sc.COL_MATTER_CLIENT_ID))
                 if client_id and row_client_id and row_client_id.lower() != _clean_text(client_id).lower():
@@ -13512,6 +13568,9 @@ class ExcelRepo:
                 return row
         for row in rows:
             if _clean_text(row.get(sc.COL_MATTER_NUMBER)).lower() == target_lc:
+                return row
+        for row in rows:
+            if self._matter_row_matches_lookup(row, target):
                 return row
         return None
 

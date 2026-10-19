@@ -108,14 +108,36 @@ Rectangle {
     }
 
     property bool newTimerPickerOpen: false
+    property bool editingElapsedInline: false
     property string activeDropdownTarget: ""
     property var clientSuggestions: []
     property var matterSuggestions: []
 
+    function openInlineTimeEditor() {
+        editingElapsedInline = true
+        manualTimeEditField.text = flyout.elapsedText === "00:00:00" ? "" : flyout.elapsedText
+        manualTimeEditField.forceActiveFocus()
+        manualTimeEditField.selectAll()
+    }
+
+    function commitInlineManualTime() {
+        if (!editingElapsedInline) return
+        var rawVal = String(manualTimeEditField.text || "").trim()
+        editingElapsedInline = false
+        if (rawVal.length <= 0) return
+        if (typeof trayController !== "undefined" && trayController && trayController.setPrimaryManualTime) {
+            trayController.setPrimaryManualTime(rawVal)
+        }
+    }
+
     function openNewTimerPicker() {
+        editingElapsedInline = false
         newClientInput.text = ""
         newMatterInput.text = ""
         newDescInput.text = ""
+        if (typeof newTimeInput !== "undefined" && newTimeInput) {
+            newTimeInput.text = ""
+        }
         activeDropdownTarget = ""
         refreshNewTimerSuggestions()
         newTimerPickerOpen = true
@@ -148,17 +170,41 @@ Rectangle {
         var cVal = String(newClientInput.text || "").trim()
         var mVal = String(newMatterInput.text || "").trim()
         var dVal = String(newDescInput.text || "").trim()
+        var tVal = String((typeof newTimeInput !== "undefined" && newTimeInput) ? newTimeInput.text : "").trim()
         if (typeof trayController !== "undefined" && trayController) {
             if (cVal.length <= 0 && mVal.length > 0 && trayController.getClientForMatter) {
                 cVal = String(trayController.getClientForMatter(mVal) || "").trim()
             }
-            if (trayController.startNewTimerWithDescription) {
+            if (tVal.length > 0 && trayController.startNewTimerWithManualTime) {
+                trayController.startNewTimerWithManualTime(cVal, mVal, dVal, tVal)
+            } else if (trayController.startNewTimerWithDescription) {
                 trayController.startNewTimerWithDescription(cVal, mVal, dVal)
             } else if (trayController.start_new_timer) {
                 trayController.start_new_timer(cVal, mVal)
                 if (dVal.length > 0 && trayController.updatePrimaryDescription) {
                     trayController.updatePrimaryDescription(dVal)
                 }
+            }
+        }
+        activeDropdownTarget = ""
+        newTimerPickerOpen = false
+    }
+
+    function commitManualSaveFromPicker() {
+        var cVal = String(newClientInput.text || "").trim()
+        var mVal = String(newMatterInput.text || "").trim()
+        var dVal = String(newDescInput.text || "").trim()
+        var tVal = String((typeof newTimeInput !== "undefined" && newTimeInput) ? newTimeInput.text : "").trim()
+        if (tVal.length <= 0) {
+            commitNewTimerFromPicker()
+            return
+        }
+        if (typeof trayController !== "undefined" && trayController) {
+            if (cVal.length <= 0 && mVal.length > 0 && trayController.getClientForMatter) {
+                cVal = String(trayController.getClientForMatter(mVal) || "").trim()
+            }
+            if (trayController.saveManualTimeEntry) {
+                trayController.saveManualTimeEntry(cVal, mVal, dVal, tVal)
             }
         }
         activeDropdownTarget = ""
@@ -215,14 +261,66 @@ Rectangle {
                 }
             }
 
-            Text {
-                id: elapsedTimeText
-                objectName: "trayElapsedText"
-                text: flyout.elapsedText
-                font.pixelSize: 18
-                font.bold: true
-                color: flyout.isRunningNow ? theme.timerGreen : theme.textPrimary
+            Rectangle {
+                id: elapsedTimeContainer
+                visible: !flyout.editingElapsedInline
+                radius: 4
+                color: elapsedMouse.containsMouse ? theme.surface : "transparent"
+                implicitWidth: elapsedTimeText.implicitWidth + 6
+                implicitHeight: 24
                 Layout.alignment: Qt.AlignVCenter
+
+                Text {
+                    id: elapsedTimeText
+                    objectName: "trayElapsedText"
+                    anchors.centerIn: parent
+                    text: flyout.elapsedText
+                    font.pixelSize: 18
+                    font.bold: true
+                    color: flyout.isRunningNow ? theme.timerGreen : theme.textPrimary
+                }
+
+                MouseArea {
+                    id: elapsedMouse
+                    objectName: "trayElapsedClickArea"
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: flyout.openInlineTimeEditor()
+                }
+            }
+
+            Rectangle {
+                id: manualTimeEditBox
+                visible: flyout.editingElapsedInline
+                Layout.preferredWidth: 92
+                Layout.preferredHeight: 24
+                radius: 5
+                color: theme.surface
+                border.width: 1
+                border.color: theme.accentBlue
+                Layout.alignment: Qt.AlignVCenter
+
+                TextField {
+                    id: manualTimeEditField
+                    objectName: "trayManualTimeInput"
+                    anchors.fill: parent
+                    anchors.leftMargin: 4
+                    anchors.rightMargin: 4
+                    placeholderText: "e.g. 1.5h / 45m"
+                    placeholderTextColor: theme.textSecondary
+                    color: theme.textPrimary
+                    font.pixelSize: 12
+                    font.bold: true
+                    selectByMouse: true
+                    verticalAlignment: TextInput.AlignVCenter
+                    background: Item {}
+                    onAccepted: flyout.commitInlineManualTime()
+                    onEditingFinished: flyout.commitInlineManualTime()
+                    Keys.onEscapePressed: {
+                        flyout.editingElapsedInline = false
+                    }
+                }
             }
 
             Item { Layout.fillWidth: true }
@@ -249,6 +347,9 @@ Rectangle {
                     color: flyout.isRunningNow ? "#D97706" : theme.timerGreen
                 }
                 onClicked: {
+                    if (flyout.editingElapsedInline) {
+                        flyout.commitInlineManualTime()
+                    }
                     if (typeof trayController !== "undefined" && trayController && trayController.togglePrimaryTimer) {
                         trayController.togglePrimaryTimer()
                     }
@@ -277,6 +378,9 @@ Rectangle {
                     color: theme.accentBlue
                 }
                 onClicked: {
+                    if (flyout.editingElapsedInline) {
+                        flyout.commitInlineManualTime()
+                    }
                     if (descField.activeFocus && typeof trayController !== "undefined" && trayController && trayController.updatePrimaryDescription) {
                         trayController.updatePrimaryDescription(descField.text)
                     }
@@ -503,23 +607,54 @@ Rectangle {
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 6
+                spacing: 4
 
                 Text {
-                    text: "New Timer (00:00:00)"
-                    font.pixelSize: 12
+                    text: "New / Manual"
+                    font.pixelSize: 11
                     font.bold: true
                     color: theme.textPrimary
+                }
+
+                Rectangle {
+                    id: newTimeInputBox
                     Layout.fillWidth: true
+                    Layout.preferredHeight: 22
+                    radius: 4
+                    color: theme.surface
+                    border.width: 1
+                    border.color: newTimeInput.activeFocus ? theme.accentBlue : theme.border
+
+                    TextField {
+                        id: newTimeInput
+                        objectName: "trayNewTimeInput"
+                        anchors.fill: parent
+                        anchors.leftMargin: 5
+                        anchors.rightMargin: 5
+                        placeholderText: "00:00:00 or 1.5h / 45m"
+                        placeholderTextColor: theme.textSecondary
+                        color: theme.textPrimary
+                        font.pixelSize: 11
+                        selectByMouse: true
+                        verticalAlignment: TextInput.AlignVCenter
+                        background: Item {}
+                        onAccepted: {
+                            if (String(newTimeInput.text || "").trim().length > 0) {
+                                flyout.commitManualSaveFromPicker()
+                            } else {
+                                flyout.commitNewTimerFromPicker()
+                            }
+                        }
+                    }
                 }
 
                 Button {
                     id: cancelNewTimerBtn
                     objectName: "trayCancelNewTimerButton"
-                    implicitWidth: 52
+                    implicitWidth: 46
                     implicitHeight: 22
                     text: "Cancel"
-                    font.pixelSize: 11
+                    font.pixelSize: 10
                     contentItem: Text {
                         text: cancelNewTimerBtn.text
                         font: cancelNewTimerBtn.font
@@ -540,12 +675,35 @@ Rectangle {
                 }
 
                 Button {
+                    id: confirmSaveManualTimerBtn
+                    objectName: "trayConfirmSaveManualTimerButton"
+                    visible: String(newTimeInput.text || "").trim().length > 0
+                    implicitWidth: 42
+                    implicitHeight: 22
+                    text: "Save"
+                    font.pixelSize: 10
+                    font.bold: true
+                    contentItem: Text {
+                        text: confirmSaveManualTimerBtn.text
+                        font: confirmSaveManualTimerBtn.font
+                        color: "#FFFFFF"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 5
+                        color: theme.accentBlue
+                    }
+                    onClicked: flyout.commitManualSaveFromPicker()
+                }
+
+                Button {
                     id: confirmStartNewTimerBtn
                     objectName: "trayConfirmStartNewTimerButton"
-                    implicitWidth: 54
+                    implicitWidth: 44
                     implicitHeight: 22
                     text: "Start"
-                    font.pixelSize: 11
+                    font.pixelSize: 10
                     font.bold: true
                     contentItem: Text {
                         text: confirmStartNewTimerBtn.text

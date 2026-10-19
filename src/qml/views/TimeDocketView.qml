@@ -3753,12 +3753,28 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             var mId = String(m.matterId || "").trim().toLowerCase()
             var mNum = String(m.matterNumber || "").trim().toLowerCase()
             var mName = String(m.matterName || "").trim().toLowerCase()
+            var mType = String(m.matterType || "").trim().toLowerCase()
             var dName = String(m.displayName || "").replace(/\s+\u2014\s+/g, " - ").trim().toLowerCase()
             var mStr = mNum + (mName ? " - " + mName : "")
+            var mRev = (mName && mNum) ? (mName + " - " + mNum) : ""
+            var shortSuffix = ""
+            if (mNum.indexOf("-") >= 0) {
+                var numParts = mNum.split("-")
+                if (numParts.length >= 2) {
+                    shortSuffix = numParts[numParts.length - 2] + "-" + numParts[numParts.length - 1]
+                }
+            }
+            var mShortName = (mName && shortSuffix) ? (mName + " - " + shortSuffix) : ""
+            var mShortDisp = (dName && shortSuffix) ? (dName + " - " + shortSuffix) : ""
+            var mShortType = (mType && shortSuffix) ? (mType + " - " + shortSuffix) : ""
             var score = -1
             if (mId && mId === cleanMSel) score = 1000
             else if (mNum && mNum === cleanMSel) score = 900
             else if (mStr && mStr === cleanMSel) score = 850
+            else if (mRev && mRev === cleanMSel) score = 820
+            else if (mShortName && mShortName === cleanMSel) score = 800
+            else if (mShortDisp && mShortDisp === cleanMSel) score = 790
+            else if (mShortType && mShortType === cleanMSel) score = 780
             else if (dName && dName === cleanMSel) score = 700
             else if (mName && mName === cleanMSel) score = 500
             else if (mNum && cleanMSel.indexOf(mNum) === 0) score = 450
@@ -3817,8 +3833,22 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         
         var nextDate = String(row.Date || row.date || "").trim()
         var nextClient = String(row.clientName || "").trim()
+        var explicitMatterId = String(row.MatterID || row.matterId || "").trim()
         var nextMatter = String(row.matterName || "").trim()
         if (nextMatter.toLowerCase() === "no matter") nextMatter = ""
+        var resolvedMatterRec = null
+        if (explicitMatterId.length > 0) {
+            resolvedMatterRec = root.getMatterRecordById(explicitMatterId) || root.getMatterRecordFromName(explicitMatterId)
+        }
+        if (!resolvedMatterRec && nextMatter.length > 0) {
+            resolvedMatterRec = root.getMatterRecordFromName(nextMatter)
+        }
+        if (resolvedMatterRec) {
+            nextMatter = root.matterDisplayLabel(resolvedMatterRec)
+            if (nextClient.length <= 0 && String(resolvedMatterRec.clientName || "").trim().length > 0) {
+                nextClient = String(resolvedMatterRec.clientName || "").trim()
+            }
+        }
         var nextDescription = String(row.Description || row.description || "").trim()
         var nextStatus = normalizedDocketStatus(String(row.Status || row.status || "Draft"))
         var nextTask = String(row.Task || row.activity || "").trim()
@@ -3845,6 +3875,14 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         root.updateCascadingDropdowns("client")
         root.setComboTextStrict(matterCombo, nextMatter)
         root.updateCascadingDropdowns("matter")
+        if (resolvedMatterRec) {
+            root.selectedMatterId = String(resolvedMatterRec.matterId || explicitMatterId || "")
+            if (String(resolvedMatterRec.clientId || "").trim().length > 0) {
+                root.selectedClientId = String(resolvedMatterRec.clientId || "").trim()
+            }
+        } else if (explicitMatterId.length > 0) {
+            root.selectedMatterId = explicitMatterId
+        }
         root.setComboTextStrict(taskCombo, nextTask)
         
         root.lastSavedEntryId = String(row.EntryID || row.entryId || row.Id || "")
@@ -7859,13 +7897,14 @@ Behavior on border.color {
                 var newClient = String(cmd.clientName || "").trim()
                 var newMatter = String(cmd.matterName || "").replace(/\s+\u2014\s+/g, " - ").trim()
                 var newDesc = String(cmd.description || "")
+                var initSecs = Math.max(0, Math.floor(Number(cmd.elapsedSeconds || 0)))
 
                 root._hydrating = true
                 root.isRunning = false
                 root.activeSegmentStartedAtMs = 0
-                root.activeSegmentBaseSeconds = 0
-                root.pausedRawSeconds = 0
-                root.elapsedSeconds = 0
+                root.activeSegmentBaseSeconds = initSecs
+                root.pausedRawSeconds = initSecs
+                root.elapsedSeconds = initSecs
                 root.lastPersistedSeconds = 0
                 root.lastSavedEntryId = ""
                 root.persistedBucketKey = ""
@@ -7905,6 +7944,37 @@ Behavior on border.color {
                 root._hydrating = false
                 root.dirty = true
                 root.toggleTimer()
+            } else if (action === "set_manual_time") {
+                var manualSecs = Math.max(0, Math.floor(Number(cmd.elapsedSeconds || 0)))
+                root._hydrating = true
+                if (cmd.clientName && String(cmd.clientName).trim().length > 0) {
+                    root.setComboTextStrict(clientCombo, String(cmd.clientName).trim())
+                    root.updateCascadingDropdowns("client")
+                }
+                if (cmd.matterName && String(cmd.matterName).trim().length > 0) {
+                    var normM = String(cmd.matterName).replace(/\s+\u2014\s+/g, " - ").trim()
+                    root.setComboTextStrict(matterCombo, normM)
+                    root.updateCascadingDropdowns("matter")
+                }
+                if (cmd.matterId && String(cmd.matterId).trim().length > 0) {
+                    root.selectedMatterId = String(cmd.matterId).trim()
+                }
+                if (cmd.clientId && String(cmd.clientId).trim().length > 0) {
+                    root.selectedClientId = String(cmd.clientId).trim()
+                }
+                if (cmd.description !== undefined && descInput) {
+                    descInput.text = String(cmd.description || "")
+                }
+                root.elapsedSeconds = manualSecs
+                root.pausedRawSeconds = manualSecs
+                root.activeSegmentBaseSeconds = manualSecs
+                if (root.isRunning) {
+                    root.activeSegmentStartedAtMs = Date.now()
+                }
+                root.syncTimeFieldFromElapsed()
+                root.calculateFees()
+                root._hydrating = false
+                root.dirty = true
             } else if (action === "resume" || action === "start") {
                 if (!root.isRunning && !root.isBucketLocked()) {
                     var cmdClient = String(cmd.clientName || "").trim()

@@ -426,8 +426,19 @@ class DocketRepo:
         parent_id = _clean_text(parent_row.get(sc.COL_PARENT_ID)) if parent_row else ""
 
         matter_id = ""
+        requested_matter_id = _clean_text(normalized.get("matterId"))
         matter_row = None
-        if normalized["matterName"]:
+        if requested_matter_id:
+            for candidate in [self.db._canonicalize_matter_row(r) for r in self.db._read_table_rows(TBL_MATTERS)]:
+                if self.db._matter_row_matches_lookup(candidate, requested_matter_id):
+                    matter_row = candidate
+                    matter_id = _clean_text(candidate.get(sc.COL_MATTER_ID))
+                    if _clean_text(candidate.get(sc.COL_MATTER_CLIENT_ID)):
+                        client_id = _clean_text(candidate.get(sc.COL_MATTER_CLIENT_ID))
+                    if _clean_text(candidate.get(sc.COL_MATTER_PARENT_ID)):
+                        parent_id = _clean_text(candidate.get(sc.COL_MATTER_PARENT_ID))
+                    break
+        if matter_row is None and normalized["matterName"]:
             matter_row = self.db._get_or_create_matter(
                 matter_name=normalized["matterName"],
                 client_id=client_id,
@@ -438,7 +449,7 @@ class DocketRepo:
             matter_id = _clean_text(matter_row.get(sc.COL_MATTER_ID))
             if not parent_id:
                 parent_id = _clean_text(matter_row.get(sc.COL_MATTER_PARENT_ID))
-        elif not normalized.get("allowClientOnlyDraft", False):
+        elif matter_row is None and not normalized.get("allowClientOnlyDraft", False):
             raise ValueError("Matter is required for time entry.")
 
         if matter_row is not None and float(normalized.get("clientRate") or 0.0) <= 0.0:
@@ -686,9 +697,19 @@ class DocketRepo:
                 client_row = row
                 break
 
+        requested_matter_id = self.db._pick_text(raw, ["matterId", "selectedMatterId", sc.COL_TIME_MATTER_ID, sc.COL_MATTER_ID])
         matter_id = ""
         matter_row: Optional[Dict[str, Any]] = None
-        if matter_name:
+        if requested_matter_id:
+            for row in matter_rows:
+                if self.db._matter_row_matches_lookup(row, requested_matter_id):
+                    matter_id = _clean_text(row.get(sc.COL_MATTER_ID))
+                    matter_name = _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME)) or _clean_text(row.get(sc.COL_MATTER_NAME)) or matter_name
+                    matter_row = row
+                    if _clean_text(row.get(sc.COL_MATTER_CLIENT_ID)):
+                        client_id = _clean_text(row.get(sc.COL_MATTER_CLIENT_ID))
+                    break
+        if matter_row is None and matter_name:
             for row in matter_rows:
                 row_name = _clean_text(row.get(sc.COL_MATTER_NAME))
                 row_display = _clean_text(row.get(sc.COL_MATTER_DISPLAY_NAME))
@@ -697,6 +718,7 @@ class DocketRepo:
                     row_name.lower() == matter_name.lower()
                     or row_display.lower() == matter_name.lower()
                     or row_number.lower() == matter_name.lower()
+                    or self.db._matter_row_matches_lookup(row, matter_name)
                 ):
                     row_client_id = _clean_text(row.get(sc.COL_MATTER_CLIENT_ID))
                     if client_id and row_client_id and row_client_id.lower() != client_id.lower():
@@ -707,7 +729,7 @@ class DocketRepo:
                     if not client_id:
                         client_id = row_client_id
                     break
-        elif not allow_client_only:
+        elif matter_row is None and not allow_client_only:
             return {
                 "ok": True,
                 "exists": False,

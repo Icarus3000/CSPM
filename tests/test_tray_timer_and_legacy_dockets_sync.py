@@ -428,3 +428,75 @@ def test_start_new_timer_switches_matter_and_preserves_custom_ui_ribbon(tmp_path
     tray.shutdown()
 
 
+def test_tray_manual_time_entry_and_matter_deduplication(tmp_path: Path) -> None:
+    paths, repo, _legacy_path = _create_isolated_cspm_repo(tmp_path)
+    _app = QCoreApplication.instance() or QCoreApplication([])
+    mock_icon = MagicMock()
+    mock_app_controller = SimpleNamespace(
+        _excel_repo=repo,
+        _theme_name="Dark",
+        _tray_icon=mock_icon,
+        saveTimeDocketEntry=lambda payload: repo.add_time_entry(payload),
+    )
+    tray = TrayController(mock_app_controller)
+
+    # 1. Verify parsing of various manual time formats
+    assert tray.parseManualTimeSeconds("2.8") == 10080
+    assert tray.parseManualTimeSeconds("1.5h") == 5400
+    assert tray.parseManualTimeSeconds("45m") == 2700
+    assert tray.parseManualTimeSeconds("1h 30m") == 5400
+    assert tray.parseManualTimeSeconds("02:48:00") == 10080
+    assert tray.parseManualTimeSeconds("0:30") == 1800
+
+    # 2. Verify reversed WIP billing wizard label ("Corporate Reorganization - 26-0093" and em-dash variant)
+    # resolves to existing MAT-001 without spawning a duplicate matter
+    m_rev_dash = repo._get_or_create_matter(
+        matter_name="Corporate Reorganization - 26-0093",
+        client_id="CLI-001",
+        parent_id="PAR-001",
+        default_rate=475.0,
+        default_share_pct=100.0,
+    )
+    assert m_rev_dash[sc.COL_MATTER_ID] == "MAT-001"
+    m_rev_em = repo._get_or_create_matter(
+        matter_name="Corporate Reorganization \u2014 26-0093",
+        client_id="CLI-001",
+        parent_id="PAR-001",
+        default_rate=475.0,
+        default_share_pct=100.0,
+    )
+    assert m_rev_em[sc.COL_MATTER_ID] == "MAT-001"
+
+    # 3. Direct manual time entry save from tray (+ New -> Save)
+    saved_ok = tray.saveManualTimeEntry(
+        "Megatech Integrated Services Ltd.",
+        "Corporate Reorganization \u2014 26-0093",
+        "Manual time entry from tray popup",
+        "2.8",
+    )
+    assert saved_ok is True
+    assert tray.hasRunningTimer is False
+    assert tray.displayStatus == "LATEST"
+    assert tray.displayElapsedSeconds == 10080
+    assert tray.displayElapsedFormatted == "02:48:00"
+    assert tray.displayMatterName == "MEGA-COR-26-0093 \u2014 Corporate Reorganization"
+
+    # Verify only 1 matter exists in TBL_MATTERS (no phantom matter created)
+    all_matters = repo._read_table_rows(TBL_MATTERS)
+    assert len(all_matters) == 1
+    assert all_matters[0][sc.COL_MATTER_ID] == "MAT-001"
+
+    # 4. Start timer and override elapsed time inline via setPrimaryManualTime
+    tray.startNewTimerWithManualTime(
+        "Megatech Integrated Services Ltd.",
+        "MEGA-COR-26-0093 \u2014 Corporate Reorganization",
+        "Timer started with manual offset",
+        "45m",
+    )
+    assert tray.hasRunningTimer is True
+    assert tray.displayElapsedSeconds >= 2700
+    assert tray.setPrimaryManualTime("1.5h") is True
+    assert 5400 <= tray.displayElapsedSeconds <= 5402
+    tray.shutdown()
+
+

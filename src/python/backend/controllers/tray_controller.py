@@ -127,6 +127,65 @@ def _normalize_matter_label(raw_label: str) -> str:
     return text
 
 
+def _format_matter_directory_label(m: dict) -> str:
+    if not isinstance(m, dict):
+        return ""
+    m_num = str(m.get("matterNumber") or "").strip()
+    m_name = str(m.get("matterName") or m.get("displayName") or "").strip()
+    if m_num and m_name:
+        if m_name.lower().startswith(m_num.lower()):
+            return _normalize_matter_label(m_name)
+        return f"{m_num} — {m_name}"
+    return _normalize_matter_label(m_num or m_name)
+
+
+def _parse_manual_time_input(raw_time: str) -> Optional[int]:
+    import re
+    text = str(raw_time or "").strip().lower()
+    if not text:
+        return None
+    # 1. HH:MM:SS or MM:SS / HH:MM
+    if ":" in text:
+        parts = [p.strip() for p in text.split(":")]
+        try:
+            if len(parts) == 3:
+                h = float(parts[0] or 0)
+                m = float(parts[1] or 0)
+                s = float(parts[2] or 0)
+                return max(0, int(round(h * 3600 + m * 60 + s)))
+            if len(parts) == 2:
+                h = float(parts[0] or 0)
+                m = float(parts[1] or 0)
+                return max(0, int(round(h * 3600 + m * 60)))
+        except (ValueError, TypeError):
+            return None
+    # 2. Combined hours and minutes e.g. "1h 30m", "2hr 15min"
+    hm_match = re.match(
+        r"^\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\s*(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)?\s*$",
+        text,
+    )
+    if hm_match:
+        h = float(hm_match.group(1))
+        m = float(hm_match.group(2))
+        return max(0, int(round(h * 3600 + m * 60)))
+    # 3. Minutes only e.g. "45m", "45 min", "90mins"
+    m_match = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\s*$", text)
+    if m_match:
+        m = float(m_match.group(1))
+        return max(0, int(round(m * 60)))
+    # 4. Seconds only e.g. "90s", "90 sec"
+    s_match = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\s*$", text)
+    if s_match:
+        s = float(s_match.group(1))
+        return max(0, int(round(s)))
+    # 5. Decimal hours with optional h/hr/hrs suffix e.g. "2.8", "1.5h", "0.5 hrs"
+    h_match = re.match(r"^\s*(\d+(?:\.\d+)?|\.\d+)\s*(?:h|hr|hrs|hour|hours)?\s*$", text)
+    if h_match:
+        h = float(h_match.group(1))
+        return max(0, int(round(h * 3600)))
+    return None
+
+
 class TrayController(QObject):
     activeTimersChanged = Signal()
     recordedEntriesChanged = Signal()
@@ -193,30 +252,69 @@ class TrayController(QObject):
         if c_name in {"(blank)", "(none)"}:
             c_name = ""
         m_id = str(matter_id or "").strip()
-        m_name = _normalize_matter_label(matter_name)
+        raw_m_name = str(matter_name or "").strip()
+        if raw_m_name in {"(blank)", "(none)"}:
+            raw_m_name = ""
+        m_name = _normalize_matter_label(raw_m_name)
 
         repo = getattr(self._app_controller, "_excel_repo", None)
         if repo is not None:
             try:
-                if (m_id or m_name) and ("—" not in m_name or not c_name):
-                    directory = repo.list_active_matter_directory()
-                    for m in directory or []:
+                if m_id or m_name:
+                    directory = repo.list_active_matter_directory() or []
+                    for m in directory:
                         cand_id = str(m.get("matterId") or "").strip()
                         cand_num = str(m.get("matterNumber") or "").strip()
                         cand_title = str(m.get("matterName") or m.get("displayName") or "").strip()
-                        cand_combined = f"{cand_num} — {cand_title}".strip(" —") if cand_num else cand_title
+                        cand_type = str(m.get("matterType") or "").strip()
+                        cand_combined = _format_matter_directory_label(m)
                         cand_dash = f"{cand_num} - {cand_title}".strip(" -") if cand_num else cand_title
+                        short_suffix = ""
+                        if cand_num and "-" in cand_num:
+                            parts = [p.strip() for p in cand_num.split("-") if p.strip()]
+                            if len(parts) >= 2:
+                                short_suffix = f"{parts[-2]}-{parts[-1]}"
+                        match_set = {
+                            s.casefold()
+                            for s in (
+                                cand_id,
+                                cand_num,
+                                cand_title,
+                                cand_combined,
+                                cand_dash,
+                                f"{cand_title} - {cand_num}" if (cand_title and cand_num) else "",
+                                f"{cand_title} — {cand_num}" if (cand_title and cand_num) else "",
+                                f"{cand_title} - {short_suffix}" if (cand_title and short_suffix) else "",
+                                f"{cand_title} — {short_suffix}" if (cand_title and short_suffix) else "",
+                                f"{cand_type} - {short_suffix}" if (cand_type and short_suffix) else "",
+                                f"{cand_type} — {short_suffix}" if (cand_type and short_suffix) else "",
+                            )
+                            if s
+                        }
+                        cand_client_name = str(m.get("clientName") or "").strip()
+                        cand_client_id = str(m.get("clientId") or "").strip()
+                        if c_id and cand_client_id and cand_client_id.casefold() != c_id.casefold():
+                            continue
+                        if c_name and cand_client_name and cand_client_name.casefold() != c_name.casefold():
+                            # Only skip on clientName mismatch if we aren't matching an exact MatterID or MatterNumber
+                            if not (
+                                (m_id and m_id.casefold() in {cand_id.casefold(), cand_num.casefold()})
+                                or (cand_num and m_name.casefold().startswith(cand_num.casefold()))
+                            ):
+                                continue
                         if (
-                            (m_id and cand_id.casefold() == m_id.casefold())
-                            or (m_id and cand_num.casefold() == m_id.casefold())
-                            or (m_name and m_name.casefold() in {cand_num.casefold(), cand_title.casefold(), cand_combined.casefold(), cand_dash.casefold()})
+                            (m_id and m_id.casefold() in match_set)
+                            or (m_name and m_name.casefold() in match_set)
+                            or (raw_m_name and raw_m_name.casefold() in match_set)
+                            or (cand_num and m_name.casefold().startswith(f"{cand_num.casefold()} —"))
+                            or (cand_num and raw_m_name.casefold().startswith(f"{cand_num.casefold()} -"))
                         ):
                             m_id = cand_id or m_id
                             m_name = cand_combined or m_name
                             if not c_name:
-                                c_name = str(m.get("clientName") or "").strip()
+                                c_name = cand_client_name
                             if not c_id:
-                                c_id = str(m.get("clientId") or "").strip()
+                                c_id = cand_client_id
                             break
             except Exception:
                 pass
@@ -654,6 +752,88 @@ class TrayController(QObject):
         if t is not None:
             self.stop_timer(t.timer_id)
 
+    @Slot(str, result=int)
+    def parseManualTimeSeconds(self, time_text: str) -> int:
+        parsed = _parse_manual_time_input(time_text)
+        return int(parsed) if parsed is not None else -1
+
+    @Slot(str, result=bool)
+    def setPrimaryManualTime(self, time_text: str) -> bool:
+        parsed_sec = _parse_manual_time_input(time_text)
+        if parsed_sec is None:
+            return False
+        self._current_monotonic = time.monotonic()
+        t = self._primary_active_timer()
+        if t is not None:
+            t._state.accumulated_elapsed_seconds = int(parsed_sec)
+            if t._state.is_running:
+                t._state.started_at_monotonic = self._current_monotonic
+            t._current_elapsed = int(parsed_sec)
+            t.changed.emit()
+            self.update_timers()
+            self.mainTimerCommandRequested.emit({
+                "action": "set_manual_time",
+                "timerId": t.timer_id,
+                "elapsedSeconds": int(parsed_sec),
+                "isRunning": bool(t.isRunning),
+            })
+            return True
+
+        e = self._primary_recorded_entry()
+        if e is not None:
+            c_id, c_name, m_id, m_name = self._resolve_client_and_matter_labels(
+                getattr(e, "client_id", ""),
+                e.client_display_name,
+                getattr(e, "matter_id", ""),
+                e.matter_display_name,
+            )
+            new_timer = TrayActiveTimer(
+                "main_timer",
+                c_id,
+                c_name or e.client_display_name,
+                m_id,
+                m_name or e.matter_display_name,
+                TimerState(int(parsed_sec), False, None),
+                description=e.description,
+                parent=self,
+            )
+            self._timers = [new_timer]
+            self.activeTimersChanged.emit()
+            self.update_timers()
+            self.mainTimerCommandRequested.emit({
+                "action": "set_manual_time",
+                "timerId": "main_timer",
+                "elapsedSeconds": int(parsed_sec),
+                "isRunning": False,
+                "clientId": c_id,
+                "clientName": new_timer.client_display_name,
+                "matterId": m_id,
+                "matterName": new_timer.matter_display_name,
+                "description": new_timer.description,
+            })
+            return True
+
+        new_timer = TrayActiveTimer(
+            "main_timer",
+            "",
+            "Ad Hoc Client",
+            "",
+            "General Consultation",
+            TimerState(int(parsed_sec), False, None),
+            description="",
+            parent=self,
+        )
+        self._timers = [new_timer]
+        self.activeTimersChanged.emit()
+        self.update_timers()
+        self.mainTimerCommandRequested.emit({
+            "action": "set_manual_time",
+            "timerId": "main_timer",
+            "elapsedSeconds": int(parsed_sec),
+            "isRunning": False,
+        })
+        return True
+
     @Slot(str)
     def updatePrimaryDescription(self, desc: str):
         clean_desc = str(desc or "")
@@ -673,6 +853,22 @@ class TrayController(QObject):
         saved_entry_id = ""
         elapsed_sec = 0
         if timer:
+            if not timer.matter_id or not timer.client_id:
+                c_id, c_name, m_id, m_name = self._resolve_client_and_matter_labels(
+                    timer.client_id,
+                    timer.client_display_name,
+                    timer.matter_id,
+                    timer.matter_display_name,
+                )
+                if c_id:
+                    timer.client_id = c_id
+                if c_name:
+                    timer.client_display_name = c_name
+                if m_id:
+                    timer.matter_id = m_id
+                if m_name:
+                    timer.matter_display_name = m_name
+
             elapsed_sec = timer._state.get_elapsed_seconds(self._current_monotonic)
             hours = math.ceil((elapsed_sec / 3600.0) * 10) / 10.0 if elapsed_sec > 0 else 0.0
             date_str = datetime.date.today().strftime("%Y-%m-%d")
@@ -872,11 +1068,7 @@ class TrayController(QObject):
                 for m in directory:
                     if not isinstance(m, dict):
                         continue
-                    disp = _normalize_matter_label(m.get("displayName") or "")
-                    if not disp:
-                        m_num = str(m.get("matterNumber") or "").strip()
-                        m_name = str(m.get("matterName") or "").strip()
-                        disp = f"{m_num} — {m_name}" if (m_num and m_name) else (m_num or m_name)
+                    disp = _format_matter_directory_label(m)
                     if disp and disp not in out:
                         out.append(disp)
                 if out:
@@ -897,20 +1089,12 @@ class TrayController(QObject):
         try:
             repo = getattr(self._app_controller, '_excel_repo', None)
             directory = repo.list_active_matter_directory() if repo else self._app_controller.listActiveMatterDirectory()
-            
-            def _label(m):
-                disp = _normalize_matter_label(m.get('displayName', ''))
-                if not disp:
-                    m_num = str(m.get('matterNumber') or '').strip()
-                    m_name = str(m.get('matterName') or '').strip()
-                    disp = f"{m_num} — {m_name}" if (m_num and m_name) else (m_num or m_name)
-                return disp
 
             # Filter the directory by clientName matching exactly
-            filtered = [_label(m) for m in directory if m.get('clientName', '').lower() == client_name.lower()]
+            filtered = [_format_matter_directory_label(m) for m in directory if m.get('clientName', '').lower() == client_name.lower()]
             if not filtered:
                 # Fallback to partial match if exact match fails
-                filtered = [_label(m) for m in directory if client_name.lower() in m.get('clientName', '').lower()]
+                filtered = [_format_matter_directory_label(m) for m in directory if client_name.lower() in m.get('clientName', '').lower()]
             return [name for name in filtered if name]
         except Exception as exc:
             import logging
@@ -929,11 +1113,12 @@ class TrayController(QObject):
             for m in directory:
                 disp_raw = str(m.get('displayName', '')).strip().lower()
                 disp_norm = _normalize_matter_label(m.get('displayName', '')).lower()
+                disp_full = _format_matter_directory_label(m).lower()
                 m_num = str(m.get('matterNumber', '')).strip().lower()
                 m_name = str(m.get('matterName', '')).strip().lower()
                 if (
-                    target_raw in (disp_raw, disp_norm, m_num, m_name)
-                    or target_norm in (disp_raw, disp_norm)
+                    target_raw in (disp_raw, disp_norm, disp_full, m_num, m_name)
+                    or target_norm in (disp_raw, disp_norm, disp_full)
                     or (m_num and target_raw.startswith(m_num))
                 ):
                     return m.get('clientName', '')
@@ -963,6 +1148,10 @@ class TrayController(QObject):
 
     @Slot(str, str, str)
     def startNewTimerWithDescription(self, client_name, matter_name, description=""):
+        self.startNewTimerWithManualTime(client_name, matter_name, description, "")
+
+    @Slot(str, str, str, str, result=bool)
+    def startNewTimerWithManualTime(self, client_name, matter_name, description="", time_text="") -> bool:
         # If there is an active or paused timer with accumulated time, save it before starting the new one
         existing_primary = self._primary_active_timer()
         if existing_primary is not None:
@@ -971,6 +1160,12 @@ class TrayController(QObject):
                 self.stop_timer(existing_primary.timer_id)
             else:
                 self._timers = [x for x in self._timers if x.timer_id != existing_primary.timer_id]
+
+        initial_sec = 0
+        if str(time_text or "").strip():
+            parsed = _parse_manual_time_input(time_text)
+            if parsed is not None:
+                initial_sec = max(0, int(parsed))
 
         new_id = "main_timer"
         clean_client = str(client_name or "").strip()
@@ -989,13 +1184,14 @@ class TrayController(QObject):
         c_label = resolved_client or clean_client
         m_label = resolved_matter or _normalize_matter_label(clean_matter)
 
+        self._current_monotonic = time.monotonic()
         t = TrayActiveTimer(
             new_id,
             c_id,
             c_label,
             m_id,
             m_label,
-            TimerState(0, True, self._current_monotonic),
+            TimerState(initial_sec, True, self._current_monotonic),
             description=clean_desc,
             parent=self,
         )
@@ -1006,13 +1202,60 @@ class TrayController(QObject):
         self.mainTimerCommandRequested.emit({
             "action": "start_new",
             "timerId": new_id,
-            "elapsedSeconds": 0,
+            "elapsedSeconds": int(initial_sec),
             "clientId": c_id,
             "clientName": c_label,
             "matterId": m_id,
             "matterName": m_label,
             "description": clean_desc,
         })
+        return True
+
+    @Slot(str, str, str, str, result=bool)
+    def saveManualTimeEntry(self, client_name, matter_name, description="", time_text="") -> bool:
+        parsed = _parse_manual_time_input(time_text)
+        if parsed is None or parsed <= 0:
+            return False
+
+        # Save any existing active timer with accumulated time first
+        existing_primary = self._primary_active_timer()
+        if existing_primary is not None:
+            elapsed_now = existing_primary._state.get_elapsed_seconds(self._current_monotonic)
+            if elapsed_now > 0:
+                self.stop_timer(existing_primary.timer_id)
+            else:
+                self._timers = [x for x in self._timers if x.timer_id != existing_primary.timer_id]
+
+        clean_client = str(client_name or "").strip()
+        clean_matter = str(matter_name or "").strip()
+        clean_desc = str(description or "").strip()
+        if not clean_client and clean_matter:
+            clean_client = self.getClientForMatter(clean_matter) or ""
+        if not clean_client:
+            clean_client = "Ad Hoc Client"
+        if not clean_matter:
+            clean_matter = "General Consultation"
+
+        c_id, resolved_client, m_id, resolved_matter = self._resolve_client_and_matter_labels(
+            "", clean_client, "", clean_matter
+        )
+        c_label = resolved_client or clean_client
+        m_label = resolved_matter or _normalize_matter_label(clean_matter)
+
+        self._current_monotonic = time.monotonic()
+        temp_timer = TrayActiveTimer(
+            "main_timer",
+            c_id,
+            c_label,
+            m_id,
+            m_label,
+            TimerState(int(parsed), False, None),
+            description=clean_desc,
+            parent=self,
+        )
+        self._timers = [temp_timer]
+        self.stop_timer("main_timer")
+        return True
         
     @Slot()
     def open_cspm(self):
