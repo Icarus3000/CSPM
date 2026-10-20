@@ -231,7 +231,11 @@ Rectangle {
     property string pendingDeleteSummaryLabel: ""
     property string pendingDeleteElapsedFormatted: "00:00:00"
     property string pendingDeleteDescription: ""
-    property bool pendingDeleteIsSaved: false
+    property string pendingCancelKind: ""
+    property bool pendingCancelRunning: false
+    property bool pendingCancelHasTime: false
+    property string pendingCancelSavedFormatted: "00:00:00"
+    property string pendingCancelUnsavedFormatted: "00:00:00"
 
     readonly property var activeTabObject: {
         var tabs = flyout.todayTabsModel || []
@@ -243,26 +247,21 @@ Rectangle {
         return tabs.length > 0 ? tabs[0] : null
     }
 
+    // A tab is a SAVED docket only when the backend reports it as SAVED. Resumed saved
+    // dockets (RUNNING/PAUSED) and unsaved drafts can be cancelled; saved ones cannot.
     readonly property bool isCurrentTabSavedDocket: {
-        if (flyout.statusBadgeText === "LATEST" || flyout.statusBadgeText === "SAVED") {
-            return true
-        }
         var t = flyout.activeTabObject
-        if (t && (Boolean(t.isSaved) || String(t.status || "") === "SAVED" || String(t.entryId || "").trim().length > 0)) {
-            return true
+        if (t) {
+            return String(t.status || "") === "SAVED"
         }
-        var descLower = String(flyout.descriptionRawText || "").trim().toLowerCase()
-        if (descLower === "auto-saved on system shutdown") {
-            return true
-        }
-        return false
+        return flyout.statusBadgeText === "LATEST" || flyout.statusBadgeText === "SAVED"
     }
 
     Shortcut {
         sequence: "Ctrl+Delete"
         context: Qt.WindowShortcut
         onActivated: {
-            flyout.requestCancelOrDeleteTab(flyout.activeTabId)
+            flyout.requestCancelOrDeleteTab(flyout.activeTabId, false)
         }
     }
 
@@ -277,102 +276,72 @@ Rectangle {
         return cleanId === flyout.activeTabId ? flyout.activeTabObject : null
     }
 
-    function executeCancelOrDeleteTab(tabId) {
-        var cleanId = String(tabId || flyout.pendingDeleteTabId || flyout.activeTabId || "").trim()
-        flyout.deleteConfirmOpen = false
-        flyout.pendingDeleteTabId = ""
-        if (flyout.editingElapsedInline) {
-            flyout.editingElapsedInline = false
-        }
-        if (typeof trayController !== "undefined" && trayController && trayController.cancelOrDeleteDocketTab) {
-            trayController.cancelOrDeleteDocketTab(cleanId, true)
-            return
-        }
-        if (typeof docketApp !== "undefined" && docketApp && docketApp.cancelOrDeleteDocketTab) {
-            docketApp.cancelOrDeleteDocketTab(cleanId, true)
-            return
-        }
-        if (typeof app !== "undefined" && app && app.cancelOrDeleteDocketTab) {
-            app.cancelOrDeleteDocketTab(cleanId, true)
-        }
-    }
-
-    function executeResetDocketTimer(tabId) {
-        var cleanId = String(tabId || flyout.pendingDeleteTabId || flyout.activeTabId || "").trim()
-        flyout.deleteConfirmOpen = false
-        flyout.pendingDeleteTabId = ""
-        if (flyout.editingElapsedInline) {
-            flyout.editingElapsedInline = false
-        }
-        var res = null
-        if (typeof trayController !== "undefined" && trayController && trayController.resetDocketTimer) {
-            res = trayController.resetDocketTimer(cleanId)
-        } else if (typeof docketApp !== "undefined" && docketApp && docketApp.resetDocketTimer) {
-            res = docketApp.resetDocketTimer(cleanId)
-        } else if (typeof app !== "undefined" && app && app.resetDocketTimer) {
-            res = app.resetDocketTimer(cleanId)
-        }
-        if (descField && String(descField.text || "").trim().toLowerCase() === "auto-saved on system shutdown") {
-            descField.text = ""
-        } else if (res && res.description !== undefined && descField) {
-            descField.text = String(res.description || "")
-        }
-    }
-
-    function requestCancelOrDeleteTab(tabId) {
+    // Tray Cancel: unsaved timers/drafts only. Always asks what to do (never deletes saved dockets).
+    function requestCancelOrDeleteTab(tabId, fromTabClose) {
         if (flyout.editingElapsedInline) {
             flyout.commitInlineManualTime()
         }
         if (descField.activeFocus && typeof trayController !== "undefined" && trayController && trayController.updatePrimaryDescription) {
             trayController.updatePrimaryDescription(descField.text)
         }
-        var cleanId = String(tabId || flyout.activeTabId || "").trim()
-        var tabObj = flyout.findTabObjectById(cleanId)
-        var isActive = (cleanId.length <= 0 || cleanId === flyout.activeTabId)
-
-        var entryIdStr = tabObj ? String(tabObj.entryId || "").trim() : ""
-        var tabStatusStr = tabObj ? String(tabObj.status || "").trim() : (isActive ? flyout.statusBadgeText : "IDLE")
-        var isSavedFlag = Boolean(
-            (tabObj && Boolean(tabObj.isSaved))
-            || entryIdStr.length > 0
-            || tabStatusStr === "SAVED"
-            || tabStatusStr === "LATEST"
-            || (isActive && flyout.isCurrentTabSavedDocket)
-        )
-        var elapsedSec = tabObj
-            ? Number(tabObj.elapsedSeconds || 0)
-            : (typeof trayController !== "undefined" && trayController && trayController.displayElapsedSeconds !== undefined
-                ? Number(trayController.displayElapsedSeconds || 0)
-                : 0)
-        var rawDesc = tabObj
-            ? String(tabObj.description || "").trim()
-            : String(isActive && descField ? descField.text : flyout.descriptionRawText).trim()
-        if (isActive && descField && String(descField.text || "").trim().length > 0) {
-            rawDesc = String(descField.text || "").trim()
-        }
-        var isAutoShutdownDesc = (rawDesc.toLowerCase() === "auto-saved on system shutdown")
-        var hasCustomDesc = (rawDesc.length > 0 && !isAutoShutdownDesc)
-
-        // Instant 1-Click Cancel: unsaved draft, < 60s elapsed, and no custom user-typed description
-        if (!isSavedFlag && !isAutoShutdownDesc && elapsedSec < 60 && !hasCustomDesc) {
-            flyout.executeCancelOrDeleteTab(cleanId)
+        if (typeof trayController === "undefined" || !trayController || !trayController.describeDocketTabForCancel) {
             return
         }
-
-        // Otherwise show the compact inline confirmation overlay with 3 explicit actions
-        var cName = tabObj ? String(tabObj.clientName || "").trim() : String(flyout.clientNameText || "").trim()
-        var mName = tabObj ? String(tabObj.matterName || tabObj.shortLabel || "").trim() : String(flyout.matterNameText || "").trim()
-        var summary = mName.length > 0 ? (cName.length > 0 ? (cName + " • " + mName) : mName) : (cName.length > 0 ? cName : "Current Docket")
-        var elapsedFmt = tabObj
-            ? String(tabObj.elapsedFormatted || "00:00:00")
-            : String(flyout.elapsedText || "00:00:00")
-
+        var cleanId = String(tabId || flyout.activeTabId || "").trim()
+        var info = trayController.describeDocketTabForCancel(cleanId)
+        if (!info || !info.ok) {
+            return
+        }
+        if (String(info.kind || "") === "saved") {
+            if (fromTabClose && trayController.closeOrHideDocketTab) {
+                // Closing a saved tab only hides it from the strip (reload brings it back).
+                trayController.closeOrHideDocketTab(cleanId)
+            } else if (trayController.show_tray_toast) {
+                trayController.show_tray_toast(String(info.message || "Saved dockets can only be deleted in CSPM."))
+            }
+            return
+        }
+        var cName = String(info.clientName || "").trim()
+        var mName = String(info.matterName || "").trim()
+        var dText = String(info.description || "").trim()
+        if (fromTabClose && String(info.kind || "") === "draft" && !info.hasTime
+                && cName.length <= 0 && mName.length <= 0 && dText.length <= 0) {
+            // Completely blank draft tab: closing it loses nothing.
+            trayController.cancelUnsavedDocketTab(cleanId, "discard")
+            return
+        }
+        var summary = mName.length > 0 ? (cName.length > 0 ? (cName + " \u2022 " + mName) : mName) : (cName.length > 0 ? cName : "Unassigned docket")
         flyout.pendingDeleteTabId = cleanId
         flyout.pendingDeleteSummaryLabel = summary
-        flyout.pendingDeleteElapsedFormatted = elapsedFmt
-        flyout.pendingDeleteDescription = rawDesc
-        flyout.pendingDeleteIsSaved = Boolean(isSavedFlag || isAutoShutdownDesc)
+        flyout.pendingDeleteElapsedFormatted = String(info.elapsedFormatted || "00:00:00")
+        flyout.pendingDeleteDescription = dText
+        flyout.pendingCancelKind = String(info.kind || "")
+        flyout.pendingCancelRunning = Boolean(info.isRunning)
+        flyout.pendingCancelHasTime = Boolean(info.hasTime)
+        flyout.pendingCancelSavedFormatted = String(info.savedFormatted || "00:00:00")
+        flyout.pendingCancelUnsavedFormatted = String(info.unsavedFormatted || "00:00:00")
         flyout.deleteConfirmOpen = true
+    }
+
+    function runCancelAction(action) {
+        var tabId = String(flyout.pendingDeleteTabId || flyout.activeTabId || "").trim()
+        flyout.deleteConfirmOpen = false
+        flyout.pendingDeleteTabId = ""
+        if (typeof trayController === "undefined" || !trayController) {
+            return
+        }
+        if (action === "save") {
+            if (trayController.selectDocketTab) {
+                trayController.selectDocketTab(tabId)
+            }
+            if (trayController.stopAndSavePrimaryTimer) {
+                trayController.stopAndSavePrimaryTimer()
+            }
+            return
+        }
+        if (trayController.cancelUnsavedDocketTab) {
+            trayController.cancelUnsavedDocketTab(tabId, action)
+        }
     }
 
     function openInlineTimeEditor() {
@@ -681,7 +650,7 @@ Rectangle {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: function(mouse) {
                                         mouse.accepted = true
-                                        flyout.requestCancelOrDeleteTab(String(modelData.tabId || ""))
+                                        flyout.requestCancelOrDeleteTab(String(modelData.tabId || ""), true)
                                     }
                                 }
                             }
@@ -721,6 +690,36 @@ Rectangle {
                         }
                         if (typeof trayController !== "undefined" && trayController && trayController.createNewDraftTab) {
                             trayController.createNewDraftTab()
+                        }
+                    }
+                }
+
+                // Reload every docket tab for today (saved today + unsaved timers/drafts)
+                ToolButton {
+                    id: reloadTodayTabsBtn
+                    objectName: "trayReloadTodayDocketsButton"
+                    implicitWidth: 22
+                    implicitHeight: 22
+                    padding: 0
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Reload all of today's dockets"
+                    contentItem: Text {
+                        text: "\u21bb"
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: theme.accentBlue
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 4
+                        color: reloadTodayTabsBtn.hovered ? "#1E293B" : "transparent"
+                        border.width: 1
+                        border.color: theme.border
+                    }
+                    onClicked: {
+                        if (typeof trayController !== "undefined" && trayController && trayController.reloadTodayDockets) {
+                            trayController.reloadTodayDockets()
                         }
                     }
                 }
@@ -931,19 +930,23 @@ Rectangle {
                 }
             }
 
-            // Cancel (for unsaved draft/running timer) or Delete (for saved/auto-saved docket)
+            // Cancel: unsaved timers/drafts only. Saved dockets are deleted only in the main app.
             Button {
                 id: cancelOrDeleteBtn
                 objectName: "trayCancelOrDeleteButton"
                 visible: true
+                enabled: !flyout.isCurrentTabSavedDocket
+                opacity: enabled ? 1.0 : 0.4
                 hoverEnabled: true
                 implicitWidth: 48
                 implicitHeight: 24
-                text: flyout.isCurrentTabSavedDocket ? "Delete" : "Cancel"
+                text: "Cancel"
                 font.pixelSize: 11
                 font.bold: true
                 ToolTip.visible: hovered
-                ToolTip.text: (flyout.isCurrentTabSavedDocket ? "Delete saved docket" : "Cancel timer / draft") + " (Ctrl+Del)"
+                ToolTip.text: flyout.isCurrentTabSavedDocket
+                    ? "Saved dockets can only be deleted in CSPM \u203a Time Dockets"
+                    : "Cancel unsaved timer / draft (Ctrl+Del)"
                 contentItem: Text {
                     text: cancelOrDeleteBtn.text
                     font: cancelOrDeleteBtn.font
@@ -958,7 +961,7 @@ Rectangle {
                     border.color: cancelOrDeleteBtn.hovered ? "#F87171" : "#EF4444"
                 }
                 onClicked: {
-                    flyout.requestCancelOrDeleteTab(flyout.activeTabId)
+                    flyout.requestCancelOrDeleteTab(flyout.activeTabId, false)
                 }
             }
 
@@ -2363,7 +2366,7 @@ Rectangle {
                 objectName: "traySafeguardPauseSyncQuitButton"
                 Layout.fillWidth: true
                 implicitHeight: 26
-                text: "2. Pause, Sync Current Time & Quit (Resume Next Launch)"
+                text: "2. Pause & Keep as Drafts, Then Quit (Reopen Next Launch)"
                 font.pixelSize: 10
                 font.bold: true
                 contentItem: Text {
@@ -2380,7 +2383,7 @@ Rectangle {
                 }
                 onClicked: {
                     if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
-                        trayController.resolveCloseSafeguard("pause_sync_and_quit")
+                        trayController.resolveCloseSafeguard("pause_keep_drafts_and_quit")
                     }
                 }
             }
@@ -2420,6 +2423,42 @@ Rectangle {
                     }
                 }
 
+                // Discard unsaved timer time (two clicks) and quit
+                Button {
+                    id: safeguardDiscardBtn
+                    objectName: "traySafeguardDiscardQuitButton"
+                    property bool armed: false
+                    Layout.fillWidth: true
+                    implicitHeight: 24
+                    text: armed ? "Click again: discard" : "Discard & Quit"
+                    font.pixelSize: 10
+                    font.bold: true
+                    contentItem: Text {
+                        text: safeguardDiscardBtn.text
+                        font: safeguardDiscardBtn.font
+                        color: safeguardDiscardBtn.armed ? "#FFFFFF" : "#FCA5A5"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    background: Rectangle {
+                        radius: 5
+                        color: safeguardDiscardBtn.armed ? "#DC2626" : "transparent"
+                        border.width: 1
+                        border.color: "#EF4444"
+                    }
+                    onClicked: {
+                        if (!armed) {
+                            armed = true
+                            return
+                        }
+                        armed = false
+                        if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
+                            trayController.resolveCloseSafeguard("discard_and_quit")
+                        }
+                    }
+                }
+
                 // 4. Cancel
                 Button {
                     id: safeguardCancelBtn
@@ -2452,11 +2491,11 @@ Rectangle {
     }
 
     // =========================================================================
-    // OVERLAY 5: Compact Inline Cancel / Delete / Reset Confirmation Overlay
+    // OVERLAY 5: Compact "Cancel unsaved docket" options (never deletes saved dockets)
     // =========================================================================
     Rectangle {
         id: deleteConfirmOverlay
-        objectName: "trayDeleteConfirmOverlay"
+        objectName: "trayCancelUnsavedOverlay"
         anchors.fill: parent
         radius: flyout.radius
         color: "#F20F172A"
@@ -2470,8 +2509,8 @@ Rectangle {
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 12
-            spacing: 6
+            anchors.margins: 10
+            spacing: 4
 
             RowLayout {
                 Layout.fillWidth: true
@@ -2481,13 +2520,13 @@ Rectangle {
                     width: 8
                     height: 8
                     radius: 4
-                    color: "#EF4444"
+                    color: "#F59E0B"
                 }
 
                 Text {
-                    text: flyout.pendingDeleteIsSaved
-                        ? "Delete or Reset Saved Docket?"
-                        : "Cancel or Reset Active Timer?"
+                    text: flyout.pendingCancelKind === "resumed_saved"
+                        ? "Cancel the time added to this saved docket?"
+                        : "Cancel this unsaved docket?"
                     font.pixelSize: 12
                     font.bold: true
                     color: "#F8FAFC"
@@ -2498,17 +2537,17 @@ Rectangle {
 
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: deleteConfirmInfoCol.implicitHeight + 10
+                implicitHeight: cancelInfoCol.implicitHeight + 8
                 radius: 6
                 color: "#1E293B"
                 border.width: 1
                 border.color: "#334155"
 
                 ColumnLayout {
-                    id: deleteConfirmInfoCol
+                    id: cancelInfoCol
                     anchors.fill: parent
-                    anchors.margins: 6
-                    spacing: 2
+                    anchors.margins: 4
+                    spacing: 1
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -2527,23 +2566,14 @@ Rectangle {
                             text: flyout.pendingDeleteElapsedFormatted
                             font.pixelSize: 11
                             font.bold: true
-                            color: "#FCA5A5"
+                            color: "#FCD34D"
                         }
                     }
 
                     Text {
-                        visible: flyout.pendingDeleteDescription.length > 0
-                        text: flyout.pendingDeleteDescription
-                        font.pixelSize: 10
-                        color: "#CBD5E1"
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
-                    }
-
-                    Text {
-                        text: flyout.pendingDeleteIsSaved
-                            ? "Removes this docket from CSPM and its unbilled row from Dockets.xlsm."
-                            : "Stops the timer and removes this docket tab from CSPM."
+                        text: flyout.pendingCancelKind === "resumed_saved"
+                            ? ("Saved docket stays at " + flyout.pendingCancelSavedFormatted + " \u2022 unsaved added time " + flyout.pendingCancelUnsavedFormatted)
+                            : "Not saved yet. Saved dockets can only be deleted in CSPM \u203a Time Dockets."
                         font.pixelSize: 9
                         color: "#94A3B8"
                         wrapMode: Text.WordWrap
@@ -2554,96 +2584,159 @@ Rectangle {
 
             Item { Layout.fillHeight: true }
 
-            // 1. Delete Docket (Destructive Primary)
-            Button {
-                id: confirmDeleteDocketBtn
-                objectName: "trayConfirmDeleteDocketButton"
+            RowLayout {
                 Layout.fillWidth: true
-                implicitHeight: 28
-                hoverEnabled: true
-                text: "Delete Docket"
-                font.pixelSize: 11
-                font.bold: true
-                contentItem: Text {
-                    text: confirmDeleteDocketBtn.text
-                    font: confirmDeleteDocketBtn.font
-                    color: "#FFFFFF"
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                spacing: 4
+
+                // Save (explicit user choice)
+                Button {
+                    id: cancelOptSaveBtn
+                    objectName: "trayCancelOptionSaveButton"
+                    visible: flyout.pendingCancelKind === "timer"
+                        || flyout.pendingCancelKind === "resumed_saved"
+                        || (flyout.pendingCancelKind === "draft" && flyout.pendingCancelHasTime)
+                    Layout.fillWidth: true
+                    implicitHeight: 24
+                    hoverEnabled: true
+                    text: flyout.pendingCancelKind === "resumed_saved" ? "Save added time" : "Save docket now"
+                    font.pixelSize: 10
+                    font.bold: true
+                    contentItem: Text {
+                        text: cancelOptSaveBtn.text
+                        font: cancelOptSaveBtn.font
+                        color: "#FFFFFF"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    background: Rectangle {
+                        radius: 5
+                        color: theme.timerGreen
+                        opacity: cancelOptSaveBtn.hovered ? 0.85 : 1.0
+                    }
+                    onClicked: flyout.runCancelAction("save")
                 }
-                background: Rectangle {
-                    radius: 5
-                    color: confirmDeleteDocketBtn.hovered ? "#F87171" : "#EF4444"
-                    border.width: 1
-                    border.color: "#FCA5A5"
-                }
-                onClicked: {
-                    flyout.executeCancelOrDeleteTab(flyout.pendingDeleteTabId)
+
+                // Pause & keep as an unsaved draft tab
+                Button {
+                    id: cancelOptPauseBtn
+                    objectName: "trayCancelOptionPauseButton"
+                    visible: flyout.pendingCancelRunning
+                    Layout.fillWidth: true
+                    implicitHeight: 24
+                    hoverEnabled: true
+                    text: "Pause & keep as draft"
+                    font.pixelSize: 10
+                    font.bold: true
+                    contentItem: Text {
+                        text: cancelOptPauseBtn.text
+                        font: cancelOptPauseBtn.font
+                        color: "#FFFFFF"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    background: Rectangle {
+                        radius: 5
+                        color: theme.accentBlue
+                        opacity: cancelOptPauseBtn.hovered ? 0.85 : 1.0
+                    }
+                    onClicked: flyout.runCancelAction("pause")
                 }
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 6
+                spacing: 4
 
-                // 2. Reset to 00:00:00
+                // Reset the unsaved clock to 00:00:00 but keep the tab
                 Button {
-                    id: confirmResetTimerBtn
-                    objectName: "trayConfirmResetTimerButton"
+                    id: cancelOptResetBtn
+                    objectName: "trayCancelOptionResetButton"
+                    visible: (flyout.pendingCancelKind === "timer" || flyout.pendingCancelKind === "draft") && flyout.pendingCancelHasTime
                     Layout.fillWidth: true
-                    implicitHeight: 26
+                    implicitHeight: 24
                     hoverEnabled: true
                     text: "Reset to 00:00:00"
-                    font.pixelSize: 11
+                    font.pixelSize: 10
                     font.bold: true
                     contentItem: Text {
-                        text: confirmResetTimerBtn.text
-                        font: confirmResetTimerBtn.font
-                        color: confirmResetTimerBtn.hovered ? "#F8FAFC" : "#38BDF8"
+                        text: cancelOptResetBtn.text
+                        font: cancelOptResetBtn.font
+                        color: cancelOptResetBtn.hovered ? "#F8FAFC" : "#38BDF8"
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
                     }
                     background: Rectangle {
                         radius: 5
-                        color: confirmResetTimerBtn.hovered ? "#1E3A8A" : "#1E293B"
+                        color: cancelOptResetBtn.hovered ? "#1E3A8A" : "#1E293B"
                         border.width: 1
                         border.color: "#38BDF8"
                     }
-                    onClicked: {
-                        flyout.executeResetDocketTimer(flyout.pendingDeleteTabId)
-                    }
+                    onClicked: flyout.runCancelAction("reset_zero")
                 }
 
-                // 3. Keep
+                // Discard unsaved time (a saved docket is never changed)
                 Button {
-                    id: confirmKeepDocketBtn
-                    objectName: "trayConfirmKeepDocketButton"
-                    Layout.preferredWidth: 84
-                    implicitHeight: 26
+                    id: cancelOptDiscardBtn
+                    objectName: "trayCancelOptionDiscardButton"
+                    Layout.fillWidth: true
+                    implicitHeight: 24
                     hoverEnabled: true
-                    text: "Keep"
-                    font.pixelSize: 11
+                    text: flyout.pendingCancelKind === "resumed_saved"
+                        ? ("Discard added " + flyout.pendingCancelUnsavedFormatted)
+                        : (flyout.pendingCancelKind === "draft" && !flyout.pendingCancelHasTime
+                            ? "Close blank draft"
+                            : ("Discard (lose " + flyout.pendingDeleteElapsedFormatted + ")"))
+                    font.pixelSize: 10
                     font.bold: true
                     contentItem: Text {
-                        text: confirmKeepDocketBtn.text
-                        font: confirmKeepDocketBtn.font
-                        color: confirmKeepDocketBtn.hovered ? "#F8FAFC" : theme.textSecondary
+                        text: cancelOptDiscardBtn.text
+                        font: cancelOptDiscardBtn.font
+                        color: "#FFFFFF"
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
                     }
                     background: Rectangle {
                         radius: 5
-                        color: confirmKeepDocketBtn.hovered ? "#334155" : "transparent"
+                        color: cancelOptDiscardBtn.hovered ? "#F87171" : "#EF4444"
                         border.width: 1
-                        border.color: theme.border
+                        border.color: "#FCA5A5"
                     }
-                    onClicked: {
-                        flyout.deleteConfirmOpen = false
-                        flyout.pendingDeleteTabId = ""
-                    }
+                    onClicked: flyout.runCancelAction("discard")
+                }
+            }
+
+            // Go back (nothing changes)
+            Button {
+                id: confirmKeepDocketBtn
+                objectName: "trayCancelOptionGoBackButton"
+                Layout.fillWidth: true
+                implicitHeight: 22
+                hoverEnabled: true
+                text: "Go back \u2014 keep everything as is"
+                font.pixelSize: 10
+                font.bold: true
+                contentItem: Text {
+                    text: confirmKeepDocketBtn.text
+                    font: confirmKeepDocketBtn.font
+                    color: confirmKeepDocketBtn.hovered ? "#F8FAFC" : theme.textSecondary
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 5
+                    color: confirmKeepDocketBtn.hovered ? "#334155" : "transparent"
+                    border.width: 1
+                    border.color: theme.border
+                }
+                onClicked: {
+                    flyout.deleteConfirmOpen = false
+                    flyout.pendingDeleteTabId = ""
                 }
             }
         }
     }
 }
-

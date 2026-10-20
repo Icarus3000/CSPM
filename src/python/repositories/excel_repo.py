@@ -7419,11 +7419,44 @@ class ExcelRepo:
                 "entry_status": entry_status,
                 "updated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             }
+            # Optional tray metadata used to restore unsaved timers/drafts as paused tabs.
+            for extra_key in ("linked_entry_id", "saved_seconds", "timer_id", "origin"):
+                if extra_key in payload and payload.get(extra_key) not in (None, ""):
+                    entries[entry_id][extra_key] = payload.get(extra_key)
             data["updatedAt"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             primary_path.parent.mkdir(parents=True, exist_ok=True)
             primary_path.write_text(_json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         except Exception as exc:
             logger.debug("[excel_repo] Could not update timer_recovery.json: %s", exc)
+
+    def read_timer_recovery_entries(self) -> List[Dict[str, Any]]:
+        """Return unsaved tray timer/draft records kept in the primary timer_recovery.json.
+
+        Read-only; local state file only (never CSPM.xlsm / Dockets.xlsm).
+        """
+        recovery_paths = self._get_timer_recovery_paths()
+        if not recovery_paths:
+            return []
+        primary_path = recovery_paths[0]
+        if not primary_path.exists():
+            return []
+        try:
+            import json as _json
+
+            loaded = _json.loads(primary_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.debug("[excel_repo] Could not read timer_recovery.json: %s", exc)
+            return []
+        entries = loaded.get("entries") if isinstance(loaded, dict) else None
+        if not isinstance(entries, dict):
+            return []
+        out: List[Dict[str, Any]] = []
+        for key, value in entries.items():
+            if isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("entry_id", _clean_text(key))
+                out.append(item)
+        return out
 
     def _remove_from_timer_recovery(self, tab_or_entry_id: str, *, matter_id: str = "", date_iso: str = "") -> bool:
         target = _clean_text(tab_or_entry_id)
