@@ -6,7 +6,8 @@
 - [x] Expose explicit **Save time** and **Start timer** actions; manual save validates duration, reports failure without closing the form, preserves existing docket identity when editing, and never starts a timer.
 - [x] Show only today's saved entries, timers and explicit drafts; leave the tab strip empty when none exist. Preserve historical entries and original recovery dates privately.
 - [x] Restore the required usage/checkpoint reader on native Windows without changing quota policy or account authentication.
-- [ ] Complete focused validation and standalone delivery; see implementation snapshot for results.
+- [x] Integrated verification: 106 passed, one skipped, eight subtests passed; standalone executable built and deployed.
+- [ ] Publish source: local commit `ca6d4e8` push rejected because remote main advanced; integrate remote changes after the required usage pause.
 - [ ] User acceptance: matter-first and client-first selection; save `0.5` / `30m` without starting a timer; no yesterday tabs when today is empty.
 
 ## 2026-10-19: Fix `LazyRepoFacade` & `AppPaths` Legacy `Dockets.xlsm` Auto-Sync & Remediate Oct 19 `88 Queen` / `Braun, Scott` Dockets

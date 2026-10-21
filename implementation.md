@@ -24,12 +24,16 @@ and native Windows adaptations in `scripts/usage_control/allowance.py` and
 `fcntl`, directory fsync and pipe select APIs; Windows locking/pipe polling now
 uses the same documented read-only account RPC and unchanged fail-closed policy.
 
-Sandbox-safe validation completed so far: Python compile, governed QML lint
-(exit 0 with existing warnings), eight strict-today regressions, and Windows
-usage tests (62 passed, one symlink-privilege skip). Final integrated save/QML
-tests and standalone delivery are being completed. No outside-sandbox real
-WebEngine startup has been validated for this change. Foreground user acceptance
-remains pending; use `.\launch.ps1` to exercise this same docket-entry issue.
+Sandbox-safe validation: Python compile, governed QML lint (exit 0 with warnings),
+and the integrated suite (106 passed, one Windows symlink-privilege skip, eight
+subtests passed), including real hidden QML suggestion clicks and isolated
+workbook persistence. The delivery pipeline committed source as `ca6d4e8`, built
+the standalone executable and deployed it to the configured program directory
+on October 21 at 11:57 Toronto time. Git push was rejected because remote main
+advanced; source integration/publication remains pending after the required
+usage-reserve pause. No outside-sandbox real WebEngine startup was validated for
+this change. Foreground user acceptance remains pending; use `.\launch.ps1` to
+exercise this same docket-entry issue.
 
 ## 2026-10-19: `America/Toronto` IANA `tzdata` Packaging, Frozen `TZPATH` Bootstrap & Release Builder Preflight/Post-Bundle Gates
 
