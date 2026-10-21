@@ -22,8 +22,16 @@ manual-entry tests with actual hidden QML controls. An isolated replay of the
 actual workbook pair completed a protected cloud pull, verified recovery copies,
 and confirmed all production workbooks and original sync state stayed unchanged.
 The preceding source integration was pushed and verified on GitHub at `343450f`.
-Final standalone delivery and foreground retry are pending; real WebEngine
-validation has not yet been run for this follow-up.
+Final integrated verification passed 88 checks. Source fix `13b3042` was pushed
+to GitHub and the standalone executable rebuilt/deployed at 12:13 Toronto.
+Outside-sandbox packaged startup using isolated copies of the actual workbook
+pair completed its protected cloud pull, reached ready in 19.28 seconds, and
+closed normally with the lease released and no new dockets. The original
+production workbooks and sync state remained unchanged. A separate real Windows
+QtWebEngine probe loaded synthetic in-memory HTML and evaluated JavaScript with
+the expected marker and result, using a temporary off-record profile; this is
+renderer validation, separate from the packaged startup check. Foreground user
+acceptance remains: reopen CSPM and retry the `1.1` hour docket after checkout.
 
 ## 2026-10-21: Tray manual docket entry and today's-only mini window
 

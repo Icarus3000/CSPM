@@ -8,7 +8,9 @@
 - [x] Replay the actual workbook pair on isolated copies: safe cloud pull and recovery backups verified; production workbooks and sync state unchanged.
 - [x] Show the backend's actual save error in the tray picker and keep entered details open (18 focused manual-entry checks passed).
 - [x] Publish the earlier local/remote source integration to GitHub (`343450f`).
-- [ ] Rebuild/deploy/publish the hash-comparison and error-message fixes; user should reopen CSPM and retry the `1.1` hour docket.
+- [x] Rebuild/deploy/publish the hash-comparison and error-message fixes (`13b3042`); integrated 88 checks passed.
+- [x] Outside-sandbox packaged startup on isolated real-workbook copies: safe cloud pull, ready in 19.28 seconds, normal exit and released checkout; production files/state unchanged. Separate actual QtWebEngine HTML/JavaScript probe passed.
+- [ ] User acceptance: reopen CSPM so normal checkout refreshes the local data, then retry the `1.1` hour docket.
 
 ## 2026-10-21: Simple tray docket entry and strictly today's tabs
 
