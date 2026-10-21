@@ -13255,7 +13255,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         objectName: "mainCloseSafeguardPauseSyncQuitButton"
                         t: closeGuardCard.promptTheme
                         metrics: mainWin.uiMetrics
-                        text: "Pause, Sync Current Time to Dockets.xlsm & Quit (Resume Next Launch)"
+                        text: "Pause & Keep Unsaved Timers for Next Launch, Then Quit"
                         primary: false
                         width: parent.width
                         height: closeGuardCard.actionHeight
@@ -13264,7 +13264,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                                 mainWin.sfxBusRef.playUiClick("confirm", 0.68);
                             }
                             if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
-                                trayController.resolveCloseSafeguard("pause_sync_and_quit");
+                                trayController.resolveCloseSafeguard("pause_keep_drafts_and_quit");
                             }
                             mainWin.closeGuardSaveAllAndExit();
                         }
@@ -13277,7 +13277,53 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         anchors.topMargin: closeGuardCard.actionHintGap
                         color: Qt.rgba(closeGuardCard.promptTextColor.r, closeGuardCard.promptTextColor.g, closeGuardCard.promptTextColor.b, 0.90)
                         font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
-                        text: "Pause active timers, sync current elapsed time to Dockets.xlsm, and resume next launch."
+                        text: "Pause timers and keep their unsaved time as drafts. Nothing is written to Dockets.xlsm; they reopen as paused tabs next launch."
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                Item {
+                    id: discardUnsavedGuardItem
+                    property bool armed: false
+                    width: parent.width
+                    height: discardUnsavedExitButton.height + closeGuardCard.actionHintGap + discardUnsavedExitHint.implicitHeight
+
+                    PillButton {
+                        id: discardUnsavedExitButton
+                        objectName: "mainCloseSafeguardDiscardQuitButton"
+                        t: closeGuardCard.promptTheme
+                        metrics: mainWin.uiMetrics
+                        text: discardUnsavedGuardItem.armed
+                            ? "Click Again to Discard Unsaved Timer Time & Quit"
+                            : "Discard Unsaved Timer Time & Quit"
+                        primary: false
+                        width: parent.width
+                        height: closeGuardCard.actionHeight
+                        onClicked: {
+                            if (!discardUnsavedGuardItem.armed) {
+                                discardUnsavedGuardItem.armed = true;
+                                return;
+                            }
+                            discardUnsavedGuardItem.armed = false;
+                            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
+                                mainWin.sfxBusRef.playUiClick("confirm", 0.62);
+                            }
+                            if (typeof trayController !== "undefined" && trayController && trayController.resolveCloseSafeguard) {
+                                trayController.resolveCloseSafeguard("discard_and_quit");
+                            }
+                            mainWin.closeGuardSaveAllAndExit();
+                        }
+                    }
+
+                    Text {
+                        id: discardUnsavedExitHint
+                        width: parent.width
+                        anchors.top: discardUnsavedExitButton.bottom
+                        anchors.topMargin: closeGuardCard.actionHintGap
+                        color: Qt.rgba(closeGuardCard.promptTextColor.r, closeGuardCard.promptTextColor.g, closeGuardCard.promptTextColor.b, 0.90)
+                        font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
+                        text: "Throw away timer time that was never saved. Saved dockets are not changed."
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
                     }

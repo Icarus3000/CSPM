@@ -4016,6 +4016,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             "focusNodeTitle": String(root.currentNavNode().title || ""),
             "elapsedSeconds": root.elapsedSeconds,
             "lastPersistedSeconds": root.lastPersistedSeconds,
+            "lastSavedEntryId": root.lastSavedEntryId,
             "persistedBucketKey": root.persistedBucketKey,
             "docketStatusText": root.docketStatusText,
             "isRunning": root.isRunning,
@@ -8077,6 +8078,25 @@ Behavior on border.color {
                 root._hydrating = false
                 root.dirty = false
                 root.refreshDocketReportAfterSave()
+            } else if (action === "tray_discard_unsaved" || action === "tray_reset_unsaved") {
+                // The tray cancelled UNSAVED time. Only react when it was this form's own timer.
+                if (String(cmd.timerId || "") !== String(root.timerOwnerId || "")) return
+                try { if (docketTimer) docketTimer.stop() } catch (e6) {}
+                var keepSecs = (action === "tray_reset_unsaved")
+                    ? Math.max(0, Math.floor(Number(cmd.elapsedSeconds || 0)))
+                    : Math.max(0, Math.floor(Number(cmd.savedSeconds || 0)))
+                root._hydrating = true
+                root.isRunning = false
+                root.activeSegmentStartedAtMs = 0
+                root.activeSegmentBaseSeconds = keepSecs
+                root.pausedRawSeconds = keepSecs
+                root.elapsedSeconds = keepSecs
+                root.timerProtectedMode = false
+                releaseTimerLock()
+                root.syncTimeFieldFromElapsed()
+                root.calculateFees()
+                root._hydrating = false
+                root.dirty = false
             } else if (action === "reset_timer") {
                 try { if (docketTimer) docketTimer.stop() } catch (e5) {}
                 root._hydrating = true

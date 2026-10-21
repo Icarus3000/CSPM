@@ -163,3 +163,20 @@ def test_today_running_timer_remains_selectable(make_tray):
     assert tabs[0]["status"] == "RUNNING"
     assert controller.selectDocketTab(tabs[0]["tabId"])
     assert controller.hasDisplayEntry
+
+
+def test_local_recovery_preserves_original_date_and_stays_out_of_today(make_tray):
+    yesterday = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+    recovery = {"entry_id": "T-LIVE-yesterday", "date": yesterday, "raw_seconds": 300, "entry_status": "PAUSED",
+                "client_id": "client", "client_name": "Client", "matter_id": "matter",
+                "matter_name": "Matter", "description": "Yesterday's unsaved work"}
+    repo = SimpleNamespace(_read_table_rows=lambda _table: [],
+                           read_timer_recovery_entries=lambda: [recovery],
+                           reconcile_unsynced_dockets_on_startup=lambda: {})
+    controller = make_tray(repo)
+    assert controller.todayDocketTabs == []
+    assert not controller.hasDisplayEntry
+    assert len(controller._timers) == 1
+    assert controller._timers[0].recorded_date == yesterday
+    assert controller._timers[0].elapsedSeconds == 300
+    assert controller.hasUnsavedOrActiveDocketOnClose()

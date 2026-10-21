@@ -2344,6 +2344,12 @@ def main() -> None:
                     if getattr(app, "_cspm_shutdown_started", False):
                         return
                     rec = tray_controller.reconcileUnsyncedDocketsOnStartup() or {}
+                    restored_local = int(rec.get("restoredLocalDrafts") or 0)
+                    if restored_local > 0:
+                        app_controller.toast.emit(
+                            f"Restored {restored_local} unsaved docket timer(s) from your last session as paused tabs. "
+                            "Nothing was saved \u2014 open the tray to Save or Cancel them."
+                        )
                     if bool(tray_controller.hasCrashRecoveryPrompt) or bool(tray_controller.hasLegacyDocketsSyncConflict):
                         tray_controller.calculate_flyout_geometry()
                     elif list(rec.get("syncedEntries") or []):

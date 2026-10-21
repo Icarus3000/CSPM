@@ -14,6 +14,28 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
+_TIMER_LOG_NAME = "tray.timers"
+
+
+def _timer_log():
+    import logging
+    return logging.getLogger(_TIMER_LOG_NAME)
+
+
+def _is_persisted_entry_id(entry_id) -> bool:
+    """True only for IDs that refer to a real saved docket row (e.g. ``T_ab12cd34ef``).
+
+    Transient live-timer (``T-LIVE-*``) and draft-tab (``T-DRAFT-*``) heartbeat IDs are
+    never treated as saved dockets, so tray Cancel can never delete a saved row through them.
+    """
+    text = str(entry_id or "").strip()
+    if not text:
+        return False
+    upper = text.upper()
+    if upper.startswith("T-LIVE-") or upper.startswith("T-DRAFT-"):
+        return False
+    return True
+
 
 class TrayActiveTimer(QObject):
     changed = Signal()
@@ -30,7 +52,11 @@ class TrayActiveTimer(QObject):
         today_iso = datetime.date.today().isoformat()
         self.recorded_date = str(date_str or today_iso)[:10]
         self.sqlite_entry_id = str(sqlite_entry_id or f"T-LIVE-{timer_id}-{today_iso}").strip()
-        self.linked_entry_id = str(sqlite_entry_id or "").strip() if str(sqlite_entry_id or "").startswith("T") and not str(sqlite_entry_id or "").startswith("T-LIVE-") else ""
+        raw_sqlite_id = str(sqlite_entry_id or "").strip()
+        self.linked_entry_id = raw_sqlite_id if raw_sqlite_id.startswith("T") and _is_persisted_entry_id(raw_sqlite_id) else ""
+        # Seconds already persisted in the linked saved docket (0 for brand-new timers).
+        # Only time above this baseline is "unsaved" and may be discarded by tray Cancel.
+        self.saved_seconds = 0
         self.started_at_utc = (
             datetime.datetime.now(datetime.timezone.utc).isoformat()
             if self._state.is_running
@@ -298,13 +324,18 @@ class TrayController(QObject):
         self._crash_recovery_dockets = []
         self._close_safeguard_visible = False
         self._close_safeguard_source = ""
+        self._pending_local_restore_count = 0
         
         if hasattr(self._app_controller, 'themeChanged'):
             self._app_controller.themeChanged.connect(self._sync_theme)
             
         self._sync_theme()
         self._hydrate_latest_entry_from_repo()
-        self.reconcileUnsyncedDocketsOnStartup()
+        self._init_in_progress = True
+        try:
+            self.reconcileUnsyncedDocketsOnStartup()
+        finally:
+            self._init_in_progress = False
             
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update_timers)
@@ -532,6 +563,8 @@ class TrayController(QObject):
                 "tabId": tab_id,
                 "timerId": t.timer_id,
                 "entryId": linked_entry_id,
+                "savedSeconds": int(getattr(t, "saved_seconds", 0) or 0),
+                "hasUnsavedTime": bool(self._timer_has_unsaved_time(t)),
                 "status": status,
                 "statusDot": dot_state,
                 "label": short_lbl,
@@ -544,8 +577,8 @@ class TrayController(QObject):
                 "matterName": str(t.matter_display_name or ""),
                 "description": str(t.description or ""),
                 "date": today_iso,
-                "isSaved": bool(linked_entry_id),
-                "isDraft": not bool(linked_entry_id),
+                "isSaved": _is_persisted_entry_id(linked_entry_id),
+                "isDraft": not _is_persisted_entry_id(linked_entry_id),
                 "canClose": True,
                 "isSelected": False,
             })
@@ -789,6 +822,347 @@ class TrayController(QObject):
         self.primaryTimerChanged.emit()
         return True
 
+    # ------------------------------------------------------------------
+    # Tray mini-dialog CANCEL (unsaved timers/drafts only).
+    # Saved dockets are never deleted or zeroed from the tray; deletion of saved
+    # dockets is available only in the main CSPM app (Time Dockets).
+    # ------------------------------------------------------------------
+    def _resolve_tab_target(self, tab_id: str):
+        raw = str(tab_id or self.selectedTabId or "").strip()
+        if raw.startswith("draft:"):
+            return "draft", next((d for d in self._draft_tabs if str(d.get("tabId") or "") == raw), None), raw
+        if raw.startswith("timer:"):
+            tid = raw.split(":", 1)[1]
+            return "timer", next((t for t in self._timers if t.timer_id == tid), None), raw
+        if raw.startswith("entry:"):
+            eid = raw.split(":", 1)[1]
+            return "entry", next((e for e in self._entries if e.entry_id == eid), None), raw
+        t_obj = next((t for t in self._timers if t.timer_id == raw), None)
+        if t_obj is not None:
+            return "timer", t_obj, f"timer:{raw}"
+        e_obj = next((e for e in self._entries if e.entry_id == raw), None)
+        if e_obj is not None:
+            return "entry", e_obj, f"entry:{raw}"
+        return "", None, raw
+
+    def _emit_all_tab_signals(self) -> None:
+        self.activeTimersChanged.emit()
+        self.recordedEntriesChanged.emit()
+        self.summaryChanged.emit()
+        self.selectedTabChanged.emit()
+        self.todayDocketTabsChanged.emit()
+        self.primaryTimerChanged.emit()
+
+    def _select_next_tab_after_removal(self, prior_index: int = 0) -> None:
+        remaining = self._build_today_docket_tabs()
+        if remaining:
+            idx = min(max(0, int(prior_index)), len(remaining) - 1)
+            self._selected_tab_id = str(remaining[idx].get("tabId") or "draft:1")
+        else:
+            self._selected_tab_id = "draft:1"
+
+    def _discard_timer(self, t, *, reason: str) -> None:
+        """Drop a tray timer's UNSAVED time. A linked saved docket is left exactly as saved."""
+        linked = str(getattr(t, "linked_entry_id", "") or "")
+        _timer_log().info(
+            "discard unsaved timer=%s (%ss, saved baseline %ss, linked=%s) client=%s matter=%s reason=%s",
+            t.timer_id, int(self._timer_elapsed_now(t)), int(getattr(t, "saved_seconds", 0) or 0),
+            linked or "-", t.client_display_name, t.matter_display_name, reason,
+        )
+        self._timers = [x for x in self._timers if x is not t]
+        self._hidden_tab_ids.discard(f"timer:{t.timer_id}")
+        self._remove_local_recovery(getattr(t, "sqlite_entry_id", ""))
+        self._delete_transient_sqlite_row(getattr(t, "sqlite_entry_id", ""))
+        self.mainTimerCommandRequested.emit({
+            "action": "tray_discard_unsaved",
+            "timerId": t.timer_id,
+            "entryId": linked if _is_persisted_entry_id(linked) else "",
+            "savedSeconds": int(getattr(t, "saved_seconds", 0) or 0),
+        })
+
+    def _discard_draft(self, d: dict, *, reason: str) -> None:
+        tab_id = str(d.get("tabId") or "")
+        sq_id = str(d.get("sqliteEntryId") or "")
+        _timer_log().info(
+            "discard draft tab=%s (%ss) client=%s matter=%s reason=%s",
+            tab_id, int(d.get("elapsedSeconds") or 0), d.get("clientName") or "", d.get("matterName") or "", reason,
+        )
+        self._draft_tabs = [x for x in self._draft_tabs if x is not d]
+        self._hidden_tab_ids.discard(tab_id)
+        self._remove_local_recovery(sq_id)
+        self._delete_transient_sqlite_row(sq_id)
+
+    def _preserve_unsaved_tray_time(self, *, reason: str) -> int:
+        """Pause all tray timers and keep their UNSAVED time in local recovery (no dockets written)."""
+        self._current_monotonic = time.monotonic()
+        count = 0
+        for t in list(self._timers):
+            if t.isRunning:
+                t._state.accumulated_elapsed_seconds = t._state.get_elapsed_seconds(self._current_monotonic)
+                t._state.is_running = False
+                t._state.started_at_monotonic = None
+                t._current_elapsed = t._state.accumulated_elapsed_seconds
+                t.started_at_utc = None
+                t.changed.emit()
+            if self._timer_has_unsaved_time(t):
+                self._upsert_timer_to_sqlite(t, sync_status="PENDING_CRASH_RECOVERY")
+                count += 1
+        for d in list(self._draft_tabs):
+            if int(d.get("elapsedSeconds") or 0) > 0:
+                self._upsert_draft_to_sqlite(d, force=True)
+                count += 1
+        _timer_log().info("preserved %d unsaved tray timer(s)/draft(s) as local recovery drafts; reason=%s", count, reason)
+        return count
+
+    def _discard_all_unsaved_tray_time(self, *, reason: str) -> int:
+        count = 0
+        for t in list(self._timers):
+            if self._timer_has_unsaved_time(t):
+                self._discard_timer(t, reason=reason)
+                count += 1
+        for d in list(self._draft_tabs):
+            if int(d.get("elapsedSeconds") or 0) > 0:
+                self._discard_draft(d, reason=reason)
+                count += 1
+        return count
+
+    @Slot(result="QVariantMap")
+    @Slot(str, result="QVariantMap")
+    def describeDocketTabForCancel(self, tab_id: str = "") -> dict:
+        """Describe what tray Cancel may do for a tab (kind: saved | timer | resumed_saved | draft)."""
+        kind, obj, raw = self._resolve_tab_target(tab_id)
+        if kind == "entry":
+            return {
+                "ok": True,
+                "tabId": raw,
+                "kind": "saved",
+                "canCancel": False,
+                "message": "Saved dockets can only be deleted in CSPM \u203a Time Dockets.",
+            }
+        if kind == "draft":
+            d = obj or {}
+            sec = max(0, int(d.get("elapsedSeconds") or 0))
+            return {
+                "ok": True,
+                "tabId": raw,
+                "kind": "draft",
+                "canCancel": True,
+                "isRunning": False,
+                "elapsedSeconds": sec,
+                "elapsedFormatted": format_elapsed(sec),
+                "savedSeconds": 0,
+                "unsavedSeconds": sec,
+                "unsavedFormatted": format_elapsed(sec),
+                "hasTime": sec > 0,
+                "clientName": str(d.get("clientName") or ""),
+                "matterName": str(d.get("matterName") or ""),
+                "description": str(d.get("description") or ""),
+            }
+        if kind == "timer" and obj is not None:
+            elapsed = self._timer_elapsed_now(obj)
+            linked = str(getattr(obj, "linked_entry_id", "") or "")
+            is_linked = _is_persisted_entry_id(linked)
+            saved = max(0, int(getattr(obj, "saved_seconds", 0) or 0)) if is_linked else 0
+            unsaved = max(0, elapsed - saved) if is_linked else elapsed
+            return {
+                "ok": True,
+                "tabId": raw,
+                "kind": "resumed_saved" if is_linked else "timer",
+                "canCancel": True,
+                "isRunning": bool(obj.isRunning),
+                "elapsedSeconds": elapsed,
+                "elapsedFormatted": format_elapsed(elapsed),
+                "savedSeconds": saved,
+                "savedFormatted": format_elapsed(saved),
+                "unsavedSeconds": unsaved,
+                "unsavedFormatted": format_elapsed(unsaved),
+                "hasTime": elapsed > 0,
+                "entryId": linked if is_linked else "",
+                "clientName": str(obj.client_display_name or ""),
+                "matterName": str(obj.matter_display_name or ""),
+                "description": str(obj.description or ""),
+            }
+        return {"ok": False, "tabId": raw, "kind": "none", "canCancel": False, "message": "Docket tab not found."}
+
+    @Slot(str, str, result="QVariantMap")
+    def cancelUnsavedDocketTab(self, tab_id: str, action: str = "discard") -> dict:
+        """Tray Cancel actions for UNSAVED work only.
+
+        action:
+          - 'discard'    : drop the unsaved timer/draft (resumed saved docket keeps its saved time)
+          - 'reset_zero' : keep the tab, set its unsaved clock back to 00:00:00
+          - 'pause'      : pause a running timer and keep it as an unsaved draft tab
+        Saved dockets are refused (``savedLocked``); delete those in the main CSPM app.
+        """
+        act = str(action or "discard").strip().lower().replace("-", "_").replace(" ", "_")
+        kind, obj, raw = self._resolve_tab_target(tab_id)
+        prior_tabs = self._build_today_docket_tabs()
+        prior_index = next((i for i, item in enumerate(prior_tabs) if item.get("tabId") == raw), 0)
+
+        if kind == "entry":
+            return {
+                "ok": False,
+                "savedLocked": True,
+                "tabId": raw,
+                "message": "Saved dockets can only be deleted in CSPM \u203a Time Dockets.",
+            }
+
+        if kind == "draft":
+            if obj is None:
+                return {"ok": True, "tabId": raw, "action": act, "message": "Nothing to cancel."}
+            if act in ("reset_zero", "reset"):
+                obj["elapsedSeconds"] = 0
+                self._remove_local_recovery(str(obj.get("sqliteEntryId") or ""))
+                self._emit_all_tab_signals()
+                return {"ok": True, "tabId": raw, "action": "reset_zero"}
+            if act == "pause":
+                return {"ok": True, "tabId": raw, "action": "pause"}
+            self._discard_draft(obj, reason="tray-cancel")
+            self._select_next_tab_after_removal(prior_index)
+            self._emit_all_tab_signals()
+            return {"ok": True, "tabId": raw, "action": "discard", "selectedTabId": self._selected_tab_id}
+
+        if kind == "timer" and obj is not None:
+            is_linked = _is_persisted_entry_id(getattr(obj, "linked_entry_id", ""))
+            if act == "pause":
+                if obj.isRunning:
+                    self.pause_timer(obj.timer_id)
+                return {"ok": True, "tabId": raw, "action": "pause"}
+            if act in ("reset_zero", "reset"):
+                self._current_monotonic = time.monotonic()
+                baseline = max(0, int(getattr(obj, "saved_seconds", 0) or 0)) if is_linked else 0
+                obj._state.accumulated_elapsed_seconds = baseline
+                obj._state.is_running = False
+                obj._state.started_at_monotonic = None
+                obj._current_elapsed = baseline
+                obj.started_at_utc = None
+                self._remove_local_recovery(getattr(obj, "sqlite_entry_id", ""))
+                if not is_linked:
+                    self._delete_transient_sqlite_row(getattr(obj, "sqlite_entry_id", ""))
+                obj.changed.emit()
+                _timer_log().info("reset unsaved timer=%s to %ss (keep tab)", obj.timer_id, baseline)
+                self.mainTimerCommandRequested.emit({
+                    "action": "tray_reset_unsaved",
+                    "timerId": obj.timer_id,
+                    "elapsedSeconds": baseline,
+                })
+                self._emit_all_tab_signals()
+                return {"ok": True, "tabId": raw, "action": "reset_zero", "elapsedSeconds": baseline}
+            self._discard_timer(obj, reason="tray-cancel")
+            if is_linked:
+                # Bring the untouched saved docket back into today's tabs.
+                self._hydrate_latest_entry_from_repo()
+            self._select_next_tab_after_removal(prior_index)
+            self._emit_all_tab_signals()
+            return {"ok": True, "tabId": raw, "action": "discard", "selectedTabId": self._selected_tab_id}
+
+        return {"ok": False, "tabId": raw, "message": "Docket tab not found."}
+
+    @Slot()
+    def reloadTodayDockets(self):
+        """Re-show every docket tab for today (saved today + unsaved timers/drafts)."""
+        self._hidden_tab_ids.clear()
+        self._hydrate_latest_entry_from_repo()
+        if not self._selected_tab_id:
+            tabs = self._build_today_docket_tabs()
+            if tabs:
+                self._selected_tab_id = tabs[0]["tabId"]
+        self._emit_all_tab_signals()
+
+    def _restore_local_recovery_dockets(self) -> int:
+        """Restore unsaved tray timers/drafts kept in timer_recovery.json as PAUSED tabs."""
+        repo = getattr(self._app_controller, "_excel_repo", None)
+        if repo is None or not hasattr(repo, "read_timer_recovery_entries"):
+            return 0
+        try:
+            items = list(repo.read_timer_recovery_entries() or [])
+        except Exception:
+            return 0
+        known: set[str] = set()
+        for t in self._timers:
+            known.add(str(getattr(t, "sqlite_entry_id", "") or ""))
+            known.add(str(getattr(t, "linked_entry_id", "") or ""))
+        for d in self._draft_tabs:
+            known.add(str(d.get("sqliteEntryId") or ""))
+        known.discard("")
+        restored = 0
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            eid = str(item.get("entry_id") or "").strip()
+            status = str(item.get("entry_status") or "").strip().upper()
+            if not eid or eid in known or status not in ("RUNNING", "PAUSED"):
+                continue
+            try:
+                sec = max(0, int(float(item.get("raw_seconds") or 0)))
+                baseline = max(0, int(float(item.get("saved_seconds") or 0)))
+            except (TypeError, ValueError):
+                continue
+            linked = str(item.get("linked_entry_id") or "").strip()
+            is_linked = _is_persisted_entry_id(linked) or (_is_persisted_entry_id(eid) and eid.startswith("T"))
+            if sec <= 0 or (is_linked and sec == baseline):
+                self._remove_local_recovery(eid)
+                continue
+            c_id, c_name, m_id, m_name = self._resolve_client_and_matter_labels(
+                str(item.get("client_id") or ""),
+                str(item.get("client_name") or ""),
+                str(item.get("matter_id") or ""),
+                str(item.get("matter_name") or item.get("matter_id") or ""),
+            )
+            disp_c = c_name or str(item.get("client_name") or "") or "Unassigned Client"
+            disp_m = m_name or str(item.get("matter_name") or "") or "Unassigned Matter"
+            desc = str(item.get("description") or "")
+            if str(item.get("origin") or "") == "tray_draft" or eid.upper().startswith("T-DRAFT-"):
+                self._draft_counter += 1
+                self._draft_tabs.append({
+                    "tabId": f"draft:{self._draft_counter}",
+                    "draftNumber": self._draft_counter,
+                    "sqliteEntryId": eid,
+                    "clientId": c_id,
+                    "clientName": disp_c if c_name or item.get("client_name") else "",
+                    "matterId": m_id,
+                    "matterName": disp_m if m_name or item.get("matter_name") else "",
+                    "description": desc,
+                    "elapsedSeconds": sec,
+                    "date": str(item.get("date") or datetime.date.today().isoformat())[:10],
+                    "legacyDocketsSyncStatus": "PENDING_CRASH_RECOVERY",
+                })
+            else:
+                t_obj = TrayActiveTimer(
+                    f"recovered_{eid}",
+                    c_id,
+                    disp_c,
+                    m_id,
+                    disp_m,
+                    TimerState(sec, False, None),
+                    description=desc,
+                    parent=self,
+                    sqlite_entry_id=eid,
+                    date_str=str(item.get("date") or datetime.date.today().isoformat())[:10],
+                )
+                if _is_persisted_entry_id(linked):
+                    t_obj.linked_entry_id = linked
+                if _is_persisted_entry_id(t_obj.linked_entry_id):
+                    t_obj.saved_seconds = baseline
+                t_obj.legacy_dockets_sync_status = "PENDING_CRASH_RECOVERY"
+                t_obj.recovered_from_local = True
+                self._timers.append(t_obj)
+            known.add(eid)
+            restored += 1
+            _timer_log().info(
+                "restored unsaved %s from local recovery: id=%s %ss client=%s matter=%s",
+                "draft" if eid.upper().startswith("T-DRAFT-") else "timer", eid, sec, disp_c, disp_m,
+            )
+        if restored:
+            self._pending_local_restore_count += restored
+            if not self._selected_tab_id or self._selected_tab_id.startswith("entry:"):
+                tabs = self._build_today_docket_tabs()
+                first_unsaved = next((x["tabId"] for x in tabs if x.get("status") in ("PAUSED", "IDLE")), "")
+                if first_unsaved:
+                    self._selected_tab_id = first_unsaved
+            self._emit_all_tab_signals()
+        return restored
+
     @Slot(result="QVariantMap")
     @Slot(str, result="QVariantMap")
     @Slot(str, bool, result="QVariantMap")
@@ -798,6 +1172,9 @@ class TrayController(QObject):
         remove_from_legacy_dockets: bool = True,
     ) -> dict:
         """
+        MAIN-APP ONLY (DocketingController / AppController). The tray mini-dialog uses
+        ``cancelUnsavedDocketTab`` instead and can never delete a saved docket.
+
         Stop the target timer (if running) and permanently remove the docket tab/entry
         from the active tab model, SQLite time_entries, CSPM.xlsm (tblTimeEntries),
         timer_recovery.json, and (if unbilled) Dockets.xlsm (Table1_1).
@@ -1175,6 +1552,22 @@ class TrayController(QObject):
 
         t = self._selected_active_timer()
         if t is not None:
+            changing_bucket = bool(final_c or final_m) and not self._timer_matches_bucket(t, c_id, final_c, m_id, final_m)
+            if changing_bucket and _is_persisted_entry_id(getattr(t, "linked_entry_id", "")):
+                # This timer carries time that belongs to an already-saved docket. Re-labelling it
+                # would move that time onto another client/matter, so open a fresh 00:00:00 draft.
+                _timer_log().info(
+                    "relabel blocked: timer=%s linked=%s keeps %ss; opening new draft for %s / %s",
+                    t.timer_id, t.linked_entry_id, int(self._timer_elapsed_now(t)), final_c, final_m,
+                )
+                self._open_draft_for_bucket(c_id, final_c, m_id, final_m, clean_desc)
+                return
+            if changing_bucket:
+                _timer_log().info(
+                    "timer=%s assigned to %s / %s (was %s / %s, %ss unsaved)",
+                    t.timer_id, final_c, final_m, t.client_display_name, t.matter_display_name,
+                    int(self._timer_elapsed_now(t)),
+                )
             if final_c:
                 t.client_id = c_id or t.client_id
                 t.client_display_name = final_c
@@ -1192,17 +1585,38 @@ class TrayController(QObject):
 
         e = self._selected_recorded_entry()
         if e is not None:
-            if final_c:
-                e.client_id = c_id or getattr(e, "client_id", "")
-                e.client_display_name = final_c
-            if final_m:
-                e.matter_id = m_id or getattr(e, "matter_id", "")
-                e.matter_display_name = final_m
+            same_bucket = (
+                (not final_c or self._norm_bucket_label(final_c) == self._norm_bucket_label(e.client_display_name))
+                and (not final_m or self._norm_bucket_label(final_m) == self._norm_bucket_label(e.matter_display_name))
+            )
+            if not same_bucket:
+                # A saved docket is never re-labelled from the tray: choosing a different
+                # client/matter on a saved tab starts a brand-new 00:00:00 draft instead.
+                _timer_log().info(
+                    "saved docket %s not re-labelled; opening new draft for %s / %s",
+                    e.entry_id, final_c, final_m,
+                )
+                self._open_draft_for_bucket(c_id, final_c, m_id, final_m, clean_desc)
+                return
             if clean_desc:
                 e.description = clean_desc
             e.changed.emit()
             self.todayDocketTabsChanged.emit()
             self.primaryTimerChanged.emit()
+
+    def _open_draft_for_bucket(self, client_id: str, client_name: str, matter_id: str, matter_name: str, description: str = "") -> str:
+        tab_id = self.createNewDraftTab()
+        d = self._find_selected_draft()
+        if d is not None:
+            d["clientId"] = str(client_id or "")
+            d["clientName"] = str(client_name or "")
+            d["matterId"] = str(matter_id or "")
+            d["matterName"] = str(matter_name or "")
+            if description:
+                d["description"] = str(description)
+            self.todayDocketTabsChanged.emit()
+            self.primaryTimerChanged.emit()
+        return tab_id
 
     @Property(bool, notify=primaryTimerChanged)
     def hasRunningTimer(self) -> bool:
@@ -1508,6 +1922,113 @@ class TrayController(QObject):
     def dismissLegacyDocketsConflict(self) -> dict:
         return self.resolveLegacyDocketsConflict("skip", 0, True)
 
+    # ------------------------------------------------------------------
+    # Unsaved-time bookkeeping and local recovery (timer_recovery.json).
+    # The local recovery file works even when the SQLite layer is unavailable,
+    # so unsaved tray time survives exit/crash WITHOUT creating any docket rows.
+    # ------------------------------------------------------------------
+    def _timer_elapsed_now(self, t) -> int:
+        try:
+            return max(0, int(t._state.get_elapsed_seconds(time.monotonic())))
+        except Exception:
+            return max(0, int(getattr(t, "_current_elapsed", 0) or 0))
+
+    def _timer_has_unsaved_time(self, t) -> bool:
+        """Running timers, or paused time above the linked saved docket's baseline."""
+        if t is None:
+            return False
+        if t.isRunning:
+            return True
+        elapsed = self._timer_elapsed_now(t)
+        if _is_persisted_entry_id(getattr(t, "linked_entry_id", "")):
+            return elapsed != max(0, int(getattr(t, "saved_seconds", 0) or 0))
+        return elapsed > 0
+
+    @staticmethod
+    def _norm_bucket_label(value) -> str:
+        text = " ".join(str(value or "").replace("\u2014", "-").split()).casefold()
+        if text in {"", "unassigned matter", "unassigned client", "general consultation", "ad hoc client", "matter", "client", "recent matter", "recent client"}:
+            return ""
+        return text
+
+    def _timer_matches_bucket(self, t, client_id, client_name, matter_id, matter_name) -> bool:
+        """True when the timer already belongs to the given client/matter bucket."""
+        t_mid = str(getattr(t, "matter_id", "") or "").strip()
+        m_id = str(matter_id or "").strip()
+        if t_mid and m_id:
+            return t_mid == m_id
+        t_tok = _extract_matter_number_token(getattr(t, "matter_display_name", ""))
+        m_tok = _extract_matter_number_token(matter_name)
+        if t_tok and m_tok:
+            return t_tok.casefold() == m_tok.casefold()
+        t_mn = self._norm_bucket_label(getattr(t, "matter_display_name", ""))
+        mn = self._norm_bucket_label(matter_name)
+        if t_mn and mn:
+            return t_mn == mn or t_mn.startswith(mn) or mn.startswith(t_mn)
+        t_cid = str(getattr(t, "client_id", "") or "").strip()
+        c_id = str(client_id or "").strip()
+        if t_cid and c_id:
+            return t_cid == c_id
+        t_cn = self._norm_bucket_label(getattr(t, "client_display_name", ""))
+        cn = self._norm_bucket_label(client_name)
+        if t_cn and cn:
+            return t_cn == cn
+        return True
+
+    def _lookup_saved_seconds(self, entry_id) -> int:
+        """Seconds currently stored for a saved docket (0 when unknown / not saved)."""
+        if not _is_persisted_entry_id(entry_id):
+            return 0
+        found = next((e for e in self._entries if e.entry_id == entry_id), None)
+        if found is not None:
+            return max(0, int(found.exactSeconds or 0))
+        repo = getattr(self._app_controller, "_excel_repo", None)
+        try:
+            if repo is not None and hasattr(repo, "_find_time_entry"):
+                row = repo._find_time_entry(str(entry_id))
+                if row:
+                    from domain import schema_constants as sc
+                    raw = row.get(sc.COL_TIME_SECONDS)
+                    if raw in (None, ""):
+                        return max(0, int(round(float(row.get(sc.COL_TIME_HOURS) or 0.0) * 3600)))
+                    return max(0, int(float(raw)))
+        except Exception:
+            pass
+        return 0
+
+    def _write_local_recovery(self, payload: dict) -> bool:
+        repo = getattr(self._app_controller, "_excel_repo", None)
+        if repo is None or not hasattr(repo, "_upsert_timer_recovery_entry"):
+            return False
+        try:
+            repo._upsert_timer_recovery_entry(payload)
+            return True
+        except Exception:
+            return False
+
+    def _remove_local_recovery(self, entry_id) -> bool:
+        eid = str(entry_id or "").strip()
+        repo = getattr(self._app_controller, "_excel_repo", None)
+        if not eid or repo is None or not hasattr(repo, "_remove_from_timer_recovery"):
+            return False
+        try:
+            return bool(repo._remove_from_timer_recovery(eid))
+        except Exception:
+            return False
+
+    def _delete_transient_sqlite_row(self, entry_id) -> None:
+        """Delete only T-LIVE / T-DRAFT heartbeat rows; saved docket rows are never touched."""
+        eid = str(entry_id or "").strip()
+        if not eid or _is_persisted_entry_id(eid):
+            return
+        sq = self._get_sqlite_repo()
+        if sq is None:
+            return
+        try:
+            sq.delete_time_entry(eid)
+        except Exception:
+            pass
+
     def _get_sqlite_repo(self):
         repo = getattr(self._app_controller, "_excel_repo", None)
         if repo is not None and hasattr(repo, "_get_sqlite_repo"):
@@ -1524,9 +2045,9 @@ class TrayController(QObject):
         return None
 
     def _upsert_timer_to_sqlite(self, t: TrayActiveTimer, *, sync_status: Optional[str] = None) -> dict:
+        if t is None:
+            return {"ok": False, "message": "No timer"}
         sq = self._get_sqlite_repo()
-        if sq is None or t is None:
-            return {"ok": False, "message": "SQLite repository unavailable"}
         try:
             self._current_monotonic = time.monotonic()
             elapsed_sec = max(0, int(t._state.get_elapsed_seconds(self._current_monotonic)))
@@ -1564,21 +2085,28 @@ class TrayController(QObject):
                 "last_heartbeat_utc": now_utc,
                 "legacy_dockets_sync_status": eff_sync_status,
                 "legacy_dockets_row_signature": getattr(t, "legacy_dockets_row_signature", None),
+                "linked_entry_id": str(getattr(t, "linked_entry_id", "") or ""),
+                "saved_seconds": max(0, int(getattr(t, "saved_seconds", 0) or 0)),
+                "timer_id": str(t.timer_id or ""),
+                "origin": "tray_timer",
             }
-            repo = getattr(self._app_controller, "_excel_repo", None)
-            if repo is not None and hasattr(repo, "_upsert_timer_recovery_entry"):
-                try:
-                    repo._upsert_timer_recovery_entry(payload)
-                except Exception:
-                    pass
+            # Local recovery is the exit/crash safety net: it only holds UNSAVED time and
+            # never writes CSPM.xlsm / Dockets.xlsm.
+            if self._timer_has_unsaved_time(t):
+                local_ok = self._write_local_recovery(payload)
+            else:
+                self._remove_local_recovery(eid)
+                local_ok = True
+            if sq is None:
+                return {"ok": bool(local_ok), "localOnly": True, "entryId": eid}
             return dict(sq.upsert_live_docket_heartbeat(payload) or {})
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
 
     def _upsert_draft_to_sqlite(self, d: dict, *, force: bool = False) -> dict:
         sq = self._get_sqlite_repo()
-        if sq is None or not isinstance(d, dict):
-            return {"ok": False, "message": "SQLite repository unavailable"}
+        if not isinstance(d, dict):
+            return {"ok": False, "message": "Invalid draft"}
         has_content = bool(
             d.get("clientName")
             or d.get("matterName")
@@ -1611,13 +2139,16 @@ class TrayController(QObject):
                 "started_at_utc": None,
                 "last_heartbeat_utc": now_utc,
                 "legacy_dockets_sync_status": "PENDING_CRASH_RECOVERY",
+                "timer_id": str(d.get("tabId") or ""),
+                "origin": "tray_draft",
             }
-            repo = getattr(self._app_controller, "_excel_repo", None)
-            if repo is not None and hasattr(repo, "_upsert_timer_recovery_entry"):
-                try:
-                    repo._upsert_timer_recovery_entry(payload)
-                except Exception:
-                    pass
+            if sec > 0:
+                local_ok = self._write_local_recovery(payload)
+            else:
+                self._remove_local_recovery(eid)
+                local_ok = True
+            if sq is None:
+                return {"ok": bool(local_ok), "localOnly": True, "entryId": eid}
             return dict(sq.upsert_live_docket_heartbeat(payload) or {})
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
@@ -1693,7 +2224,7 @@ class TrayController(QObject):
         try:
             res = dict(repo.reconcile_unsynced_dockets_on_startup() or {})
         except Exception as exc:
-            return {"ok": False, "message": str(exc), "syncedEntries": [], "conflicts": [], "crashRecoveryDockets": []}
+            res = {"ok": False, "message": str(exc), "syncedEntries": [], "conflicts": [], "crashRecoveryDockets": []}
 
         # 1. Handle any conflicts from PENDING_SYNC rows
         conflicts = list(res.get("conflicts") or [])
@@ -1733,6 +2264,7 @@ class TrayController(QObject):
                 date_str=str(item.get("Date") or datetime.date.today().isoformat())[:10],
             )
             t_obj.linked_entry_id = eid
+            t_obj.saved_seconds = sec
             t_obj.legacy_dockets_sync_status = "SYNCED"
             t_obj.legacy_dockets_row_signature = item.get("LegacyDocketsRowSignature")
             self._timers.append(t_obj)
@@ -1799,6 +2331,11 @@ class TrayController(QObject):
             formatted_crash_list.append(formatted_item)
 
         self._crash_recovery_dockets = formatted_crash_list
+        # Unsaved tray time kept locally at the last exit/crash (works without SQLite).
+        self._restore_local_recovery_dockets()
+        restored_local = int(self._pending_local_restore_count or 0)
+        if not getattr(self, "_init_in_progress", False):
+            self._pending_local_restore_count = 0
         if formatted_crash_list or restored_paused:
             self.activeTimersChanged.emit()
             self.selectedTabChanged.emit()
@@ -1813,6 +2350,7 @@ class TrayController(QObject):
             "conflicts": conflicts,
             "crashRecoveryDockets": formatted_crash_list,
             "restoredPausedDockets": restored_paused,
+            "restoredLocalDrafts": restored_local,
         }
 
     @Slot(str, str, str, result="QVariantMap")
@@ -1877,6 +2415,8 @@ class TrayController(QObject):
                 t_obj.legacy_dockets_sync_status = (
                     "SYNCED" if (sync_info.get("ok") and not sync_info.get("conflict")) else "PENDING_SYNC"
                 )
+                if t_obj.legacy_dockets_sync_status == "SYNCED":
+                    t_obj.saved_seconds = chosen_sec
                 if sync_info.get("rowSignature"):
                     t_obj.legacy_dockets_row_signature = sync_info.get("rowSignature")
                 t_obj.changed.emit()
@@ -1946,7 +2486,7 @@ class TrayController(QObject):
         for t in self._timers:
             elapsed_sec = max(0, int(t._state.get_elapsed_seconds(self._current_monotonic)))
             sync_st = str(getattr(t, "legacy_dockets_sync_status", "PENDING_CRASH_RECOVERY") or "").upper()
-            if t.isRunning or (elapsed_sec > 0 and sync_st != "SYNCED"):
+            if self._timer_has_unsaved_time(t):
                 items.append({
                     "timerId": t.timer_id,
                     "entryId": str(getattr(t, "sqlite_entry_id", "") or ""),
@@ -1961,7 +2501,7 @@ class TrayController(QObject):
         for d in self._draft_tabs:
             sec = max(0, int(d.get("elapsedSeconds") or 0))
             sync_st = str(d.get("legacyDocketsSyncStatus") or "PENDING_CRASH_RECOVERY").upper()
-            if sec > 0 and sync_st != "SYNCED":
+            if sec > 0:
                 items.append({
                     "timerId": str(d.get("tabId") or ""),
                     "entryId": str(d.get("sqliteEntryId") or ""),
@@ -2059,7 +2599,29 @@ class TrayController(QObject):
             self.minimizeMainWindowToTray()
             return {"ok": True, "action": "minimize_to_tray", "quitting": False}
 
-        if norm in ("pause_sync_and_quit", "pause_and_sync_then_quit", "pause_sync_quit"):
+        if norm in (
+            "pause_keep_drafts_and_quit",
+            "keep_drafts_and_quit",
+            "pause_and_keep_drafts",
+            "pause_sync_and_quit",
+            "pause_and_sync_then_quit",
+            "pause_sync_quit",
+        ):
+            # Pause every tray timer and keep its UNSAVED time as a local draft that is
+            # restored as a paused tab on the next launch. Nothing is written to
+            # CSPM.xlsm / Dockets.xlsm until the user explicitly saves.
+            preserved = self._preserve_unsaved_tray_time(reason="close-safeguard-pause")
+            self._pause_sync_quit_completed = True
+            self._perform_confirmed_exit(skip_force_stop=True)
+            return {"ok": True, "action": "pause_keep_drafts_and_quit", "quitting": True, "preservedCount": preserved}
+
+        if norm in ("discard_and_quit", "discard_unsaved_and_quit", "discard_quit"):
+            discarded = self._discard_all_unsaved_tray_time(reason="close-safeguard-discard")
+            self._pause_sync_quit_completed = True
+            self._perform_confirmed_exit(skip_force_stop=True)
+            return {"ok": True, "action": "discard_and_quit", "quitting": True, "discardedCount": discarded}
+
+        if norm in ("legacy_pause_sync_and_quit",):
             self._current_monotonic = time.monotonic()
             repo = getattr(self._app_controller, "_excel_repo", None)
             for t in list(self._timers):
@@ -2114,9 +2676,10 @@ class TrayController(QObject):
             self._perform_confirmed_exit(skip_force_stop=True)
             return {"ok": True, "action": "pause_sync_and_quit", "quitting": True}
 
-        # Default Option 1: 'save_and_sync_then_quit'
+        # Default Option 1: 'save_and_sync_then_quit' (explicit user choice)
         for t in list(self._timers):
-            self.stop_timer(t.timer_id)
+            if self._timer_has_unsaved_time(t):
+                self.stop_timer(t.timer_id)
         for d in list(self._draft_tabs):
             sec = int(d.get("elapsedSeconds") or 0)
             if sec > 0:
@@ -2196,10 +2759,44 @@ class TrayController(QObject):
             raw_client_id, raw_client_name, raw_matter_id, raw_matter_name
         )
 
+        bucket_c = c_name or raw_client_name
+        bucket_m = m_name or raw_matter_name
         existing = next((t for t in self._timers if t.timer_id == timer_id), None)
         if existing is None and self._timers and not allow_simultaneous and len(self._timers) == 1:
-            if not is_running or pause_others or self._timers[0].timer_id == "main_timer":
-                existing = self._timers[0]
+            candidate = self._timers[0]
+            if (not is_running or pause_others or candidate.timer_id == "main_timer") and self._timer_matches_bucket(
+                candidate, c_id, bucket_c, m_id, bucket_m
+            ):
+                existing = candidate
+
+        if (
+            existing is not None
+            and not clear_timer
+            and (bucket_c or bucket_m)
+            and not self._timer_matches_bucket(existing, c_id, bucket_c, m_id, bucket_m)
+        ):
+            # The main docket form switched to a different client/matter. Never carry this
+            # timer's seconds (or re-label it) onto the new client/matter.
+            if self._timer_has_unsaved_time(existing):
+                old_id = existing.timer_id
+                existing.timer_id = f"{old_id}-kept-{int(time.time())}"
+                if self._selected_tab_id == f"timer:{old_id}":
+                    self._selected_tab_id = f"timer:{existing.timer_id}"
+                _timer_log().info(
+                    "main form moved to %s / %s; kept prior unsaved timer as separate tab %s (%s / %s, %ss)",
+                    bucket_c, bucket_m, existing.timer_id, existing.client_display_name,
+                    existing.matter_display_name, int(self._timer_elapsed_now(existing)),
+                )
+            else:
+                self._timers = [t for t in self._timers if t is not existing]
+                self._remove_local_recovery(getattr(existing, "sqlite_entry_id", ""))
+                self._delete_transient_sqlite_row(getattr(existing, "sqlite_entry_id", ""))
+                _timer_log().info(
+                    "main form moved to %s / %s; released idle tray timer %s without carrying time",
+                    bucket_c, bucket_m, existing.timer_id,
+                )
+            existing = None
+            self.activeTimersChanged.emit()
 
         if is_running and pause_others:
             for other in self._timers:
@@ -2238,6 +2835,13 @@ class TrayController(QObject):
                 if "description" in data or "descriptionText" in data:
                     latest.description = raw_desc
                 latest.changed.emit()
+            self.update_timers()
+            return
+
+        if existing is None and not is_running:
+            # A paused/idle main docket form (for example one that is merely displaying a
+            # saved docket) never spawns a tray timer. The main window's own close guard
+            # protects unsaved form time; only a RUNNING main timer is mirrored to the tray.
             self.update_timers()
             return
 
@@ -2282,6 +2886,13 @@ class TrayController(QObject):
                 description=raw_desc,
                 parent=self,
                 sqlite_entry_id=str(data.get("entryId") or ""),
+            )
+            if _is_persisted_entry_id(new_timer.linked_entry_id):
+                new_timer.saved_seconds = self._lookup_saved_seconds(new_timer.linked_entry_id)
+            _timer_log().info(
+                "mirrored running main timer %s: %s / %s from %ss (saved baseline %ss)",
+                new_timer.timer_id, new_timer.client_display_name, new_timer.matter_display_name,
+                int(elapsed_sec), int(new_timer.saved_seconds),
             )
             self._timers.insert(0, new_timer)
             self._selected_tab_id = f"timer:{new_timer.timer_id}"
@@ -2364,13 +2975,23 @@ class TrayController(QObject):
             self._selected_tab_id = f"entry:{entry_id}"
             self.activeTimersChanged.emit()
         elif self._timers and not any(t.isRunning for t in self._timers):
-            t0 = self._timers[0]
-            if c_name:
-                t0.client_display_name = c_name
-            if m_name:
-                t0.matter_display_name = m_name
-            t0._description = desc
-            t0.changed.emit()
+            # Only a paused timer that is linked to THIS saved docket is refreshed; an
+            # unrelated paused timer is never re-labelled with another docket's client/matter.
+            t0 = next(
+                (t for t in self._timers if entry_id and str(getattr(t, "linked_entry_id", "") or "") == entry_id),
+                None,
+            )
+            if t0 is not None:
+                if c_name:
+                    t0.client_display_name = c_name
+                if m_name:
+                    t0.matter_display_name = m_name
+                t0._description = desc
+                t0.saved_seconds = raw_sec
+                t0._state.accumulated_elapsed_seconds = raw_sec
+                t0._current_elapsed = raw_sec
+                self._remove_local_recovery(getattr(t0, "sqlite_entry_id", ""))
+                t0.changed.emit()
 
         sync_info = data.get("legacyDocketsSync")
         if isinstance(sync_info, dict):
@@ -2687,7 +3308,26 @@ class TrayController(QObject):
             except Exception as e:
                 print(f"[TrayController] Error saving docket: {e}")
 
+            if not save_result.get("ok"):
+                _timer_log().warning(
+                    "save failed for timer=%s (%s / %s, %ss); timer kept so no time is lost: %s",
+                    timer.timer_id, timer.client_display_name, timer.matter_display_name,
+                    int(elapsed_sec), save_result.get("message") or save_result.get("error") or "no result",
+                )
+                self._last_sync_status_message = "Docket was NOT saved \u2014 timer kept. " + str(
+                    save_result.get("message") or save_result.get("error") or ""
+                ).strip()
+                self.legacySyncConflictChanged.emit()
+                self.show_tray_toast("Docket was not saved \u2014 the timer was kept.")
+                return
+            self._remove_local_recovery(getattr(timer, "sqlite_entry_id", ""))
+            self._delete_transient_sqlite_row(getattr(timer, "sqlite_entry_id", ""))
             saved_entry_id = str(save_result.get("entryId") or linked_eid or "").strip()
+            _timer_log().info(
+                "timer=%s saved by user as docket %s (%ss) for %s / %s",
+                timer.timer_id, saved_entry_id or "-", int(elapsed_sec),
+                timer.client_display_name, timer.matter_display_name,
+            )
             sync_info = save_result.get("legacyDocketsSync")
             if isinstance(sync_info, dict):
                 if sync_info.get("conflict") or sync_info.get("status") == "CONFLICT":
@@ -2774,6 +3414,11 @@ class TrayController(QObject):
                 sqlite_entry_id=entry.entry_id,
             )
             t.linked_entry_id = entry.entry_id
+            t.saved_seconds = max(0, int(entry._exact_seconds or 0))
+            _timer_log().info(
+                "resumed saved docket %s (%s / %s) from saved %ss",
+                entry.entry_id, entry.client_display_name, entry.matter_display_name, int(t.saved_seconds),
+            )
             self._entries = [e for e in self._entries if e.entry_id != entry.entry_id]
             self.recordedEntriesChanged.emit()
             self._timers = [x for x in self._timers if x.timer_id != new_id]
@@ -3314,8 +3959,7 @@ class TrayController(QObject):
             self.requestCloseWithSafeguard("tray_exit")
             self.calculate_flyout_geometry()
             return
-        for t in list(self._timers):
-            self.stop_timer(t.timer_id)
+        # No timer holds unsaved time here, so nothing is stopped or saved implicitly.
             
         missing = self.missingDescriptionEntries
         if missing:
@@ -3328,19 +3972,17 @@ class TrayController(QObject):
 
     @Slot()
     def force_shutdown_save(self):
-        """Forcefully stops all timers and fills in missing descriptions so the app can shutdown safely."""
+        """Shutdown safety net: pause tray timers and keep UNSAVED time as local recovery drafts.
+
+        This never creates, edits or re-dates dockets (CSPM.xlsm / Dockets.xlsm) and never
+        writes placeholder descriptions. Preserved drafts come back as paused tabs on the
+        next launch, where the user explicitly Saves or Cancels them.
+        """
         if self._pause_sync_quit_completed:
             return
         import logging
-        logging.info("Forcing shutdown save of all running timers.")
-        for t in list(self._timers):
-            if not t.description or not t.description.strip():
-                t.description = "Auto-saved on system shutdown"
-            self.stop_timer(t.timer_id)
-            
-        for e in self._entries:
-            if not e.description or not e.description.strip():
-                e.description = "Auto-saved on system shutdown"
+        preserved = self._preserve_unsaved_tray_time(reason="shutdown")
+        logging.info("Shutdown: kept %d unsaved tray timer(s) as local drafts (no dockets created).", preserved)
 
     @Slot()
     def force_exit(self):
