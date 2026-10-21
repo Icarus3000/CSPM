@@ -5,8 +5,12 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import time
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
+from scripts.usage_control import allowance
 from scripts.usage_control.allowance import evaluate, normalize_response, read_live
 
 
@@ -206,8 +210,63 @@ print(json.dumps({{'method':'notice'}})+'\\n'+json.dumps({{'id':2,'result':{valu
         self.assertNotIn("SECRET", json.dumps(result))
 
     def test_timeout_settles_reader(self):
-        result = self.run_reader("import time\ntime.sleep(10)\n", timeout=0.05)
+        launched = []
+        original_popen = allowance.subprocess.Popen
+
+        def record_process(*args, **kwargs):
+            process = original_popen(*args, **kwargs)
+            launched.append(process)
+            return process
+
+        started = time.monotonic()
+        with patch.object(allowance.subprocess, "Popen", side_effect=record_process):
+            result = self.run_reader("import time\ntime.sleep(10)\n", timeout=0.05)
         self.assertEqual(result["diagnostic_code"], "account_read_timeout")
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(len(launched), 1)
+        self.assertIsNotNone(launched[0].poll())
+        self.assertTrue(launched[0].stdin.closed)
+        self.assertTrue(launched[0].stdout.closed)
+
+    def test_partial_line_cannot_extend_timeout(self):
+        body = """
+import sys,time
+sys.stdin.readline()
+sys.stdout.write('{"id":1');sys.stdout.flush()
+time.sleep(10)
+"""
+        result = self.run_reader(body, timeout=0.1)
+        self.assertEqual(result["diagnostic_code"], "account_read_timeout")
+        self.assertFalse(evaluate(result, NOW)["work_allowed"])
+
+    def test_closed_reader_fails_closed(self):
+        result = self.run_reader("import sys\nsys.stdin.readline()\n")
+        self.assertEqual(result["diagnostic_code"], "account_reader_closed")
+        self.assertFalse(evaluate(result, NOW)["work_allowed"])
+
+    def test_fragmented_json_replies(self):
+        value = repr(response())
+        body = f"""
+import json,sys,time
+sys.stdin.readline()
+for piece in ('{{"id":1,', '"result":{{}}}}\\n'):
+    sys.stdout.write(piece);sys.stdout.flush();time.sleep(0.02)
+sys.stdin.readline();sys.stdin.readline()
+print(json.dumps({{'id':2,'result':{value}}}),flush=True)
+"""
+        self.assertEqual(self.run_reader(body)["status"], "ok")
+
+    def test_windows_resolves_linux_default_using_native_codex(self):
+        with patch.object(allowance, "os", SimpleNamespace(name="nt")), patch.object(allowance.shutil, "which", return_value="C:/native/codex.exe"), patch.object(allowance.subprocess, "Popen", side_effect=OSError) as popen:
+            result = read_live(["/usr/local/bin/codex", "app-server"], NOW)
+        self.assertEqual(popen.call_args.args[0], ["C:/native/codex.exe", "app-server"])
+        self.assertEqual(result["status"], "unavailable")
+
+    def test_missing_windows_native_codex_does_not_spawn(self):
+        with patch.object(allowance, "os", SimpleNamespace(name="nt")), patch.object(allowance.shutil, "which", return_value=None), patch.object(allowance.subprocess, "Popen") as popen:
+            result = read_live(["/usr/local/bin/codex", "app-server"], NOW)
+        popen.assert_not_called()
+        self.assertEqual(result["diagnostic_code"], "account_reader_unavailable")
 
     def test_missing_executable_and_broken_json(self):
         self.assertEqual(read_live(["/missing/codex"], NOW)["status"], "unavailable")

@@ -1,5 +1,36 @@
 # Implementation History
 
+## 2026-10-21: Tray manual docket entry and today's-only mini window
+
+The tray docket picker now offers explicit **Save time** and **Start timer**
+actions. Choosing a matter fills its client; choosing a client fills its sole
+matter or offers that client's matters. Client changes clear stale matter
+queries, while typing a matter can search across clients. Suggestion delegates
+use their ListView's explicit picker host, addressing the installed log's
+`ReferenceError: flyout is not defined`. Duration validation and failed saves
+keep the picker open. Editing manual time preserves the selected entry rather
+than creating a duplicate, and saving manual time does not start a timer.
+
+The backend removes the historical-latest fallback and automatic empty draft.
+Only current-day entries appear in the mini window; date rollover hides older
+tabs without deleting their data. Recovered timers retain their original date
+and remain protected by recovery/close safeguards. Empty-window controls open
+the new-entry picker instead of acting on a hidden historical timer.
+
+Important files: `src/qml/tray/TrayTimekeepingFlyout.qml`,
+`src/python/backend/controllers/tray_controller.py`, focused tray regressions,
+and native Windows adaptations in `scripts/usage_control/allowance.py` and
+`workspace.py`. The required usage reader previously failed on Linux-only
+`fcntl`, directory fsync and pipe select APIs; Windows locking/pipe polling now
+uses the same documented read-only account RPC and unchanged fail-closed policy.
+
+Sandbox-safe validation completed so far: Python compile, governed QML lint
+(exit 0 with existing warnings), eight strict-today regressions, and Windows
+usage tests (62 passed, one symlink-privilege skip). Final integrated save/QML
+tests and standalone delivery are being completed. No outside-sandbox real
+WebEngine startup has been validated for this change. Foreground user acceptance
+remains pending; use `.\launch.ps1` to exercise this same docket-entry issue.
+
 ## 2026-10-19: `America/Toronto` IANA `tzdata` Packaging, Frozen `TZPATH` Bootstrap & Release Builder Preflight/Post-Bundle Gates
 
 1. **Root Cause Resolution (`requirements-release-windows.lock.txt` & PyInstaller `tzdata` Packaging)**:

@@ -199,7 +199,7 @@ def test_main_timer_syncs_to_tray_indicator_and_minimalist_popup(tmp_path: Path)
             "description": "Final saved docket description",
             "rawSeconds": 1800,
             "hours": 0.5,
-            "date": "2026-10-18",
+            "date": dt.date.today().isoformat(),
             "stoppedTimer": True,
         }
     )
@@ -855,12 +855,11 @@ def test_tray_cancel_delete_and_reset_docket_timer(tmp_path: Path) -> None:
     assert tray.hasRunningTimer is False
     assert len(tray.activeTimers) == 0
     assert sqlite_repo.get_time_entry_by_id(sq_live_id) is None
-    # With no remaining timers/entries, tab strip falls back to a clean 00:00:00 draft tab with canClose=True
+    # With no entries for today, the tab strip is empty until the user adds one.
     tabs_after_cancel = tray.todayDocketTabs
-    assert len(tabs_after_cancel) == 1
-    assert tabs_after_cancel[0]["tabId"] == "draft:1"
-    assert tabs_after_cancel[0]["elapsedFormatted"] == "00:00:00"
-    assert tabs_after_cancel[0]["canClose"] is True
+    assert tabs_after_cancel == []
+    assert tray.selectedTabId == ""
+    assert tray.displayElapsedFormatted == "00:00:00"
 
     # 2. Save an auto-shutdown docket entry (synced to Dockets.xlsm Table1_1), reset it to 00:00:00, then delete it
     tray.startNewTimerWithManualTime(

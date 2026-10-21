@@ -1,5 +1,14 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-21: Simple tray docket entry and strictly today's tabs
+
+- [x] Make matter/client selection reciprocal, clear stale matter searches when changing client, and repair the suggestion-click QML scope error seen in the installed runtime log.
+- [x] Expose explicit **Save time** and **Start timer** actions; manual save validates duration, reports failure without closing the form, preserves existing docket identity when editing, and never starts a timer.
+- [x] Show only today's saved entries, timers and explicit drafts; leave the tab strip empty when none exist. Preserve historical entries and original recovery dates privately.
+- [x] Restore the required usage/checkpoint reader on native Windows without changing quota policy or account authentication.
+- [ ] Complete focused validation and standalone delivery; see implementation snapshot for results.
+- [ ] User acceptance: matter-first and client-first selection; save `0.5` / `30m` without starting a timer; no yesterday tabs when today is empty.
+
 ## 2026-10-19: Fix `LazyRepoFacade` & `AppPaths` Legacy `Dockets.xlsm` Auto-Sync & Remediate Oct 19 `88 Queen` / `Braun, Scott` Dockets
 
 - [x] Fix `LazyRepoFacade._resolve` (`src/python/backend/repo_facade.py`) and `DocketRepo` (`src/python/repositories/docket_repo.py`) so `add_time_entry` routes to the authoritative `ExcelRepo.add_time_entry` (which invokes `_sync_time_entry_to_legacy_dockets` and SQLite `cspm.db` sync) instead of being shadowed by a stale method on `DocketRepo`.

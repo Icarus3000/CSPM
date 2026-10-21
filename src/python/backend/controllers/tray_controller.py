@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 
 class TrayActiveTimer(QObject):
     changed = Signal()
-    def __init__(self, timer_id, client_id, client_name, matter_id, matter_name, state: TimerState, description="", parent=None, sqlite_entry_id=""):
+    def __init__(self, timer_id, client_id, client_name, matter_id, matter_name, state: TimerState, description="", parent=None, sqlite_entry_id="", date_str=""):
         super().__init__(parent)
         self.timer_id = timer_id
         self.client_id = client_id
@@ -28,6 +28,7 @@ class TrayActiveTimer(QObject):
         self._description = description
         self._current_elapsed = self._state.get_elapsed_seconds(time.monotonic())
         today_iso = datetime.date.today().isoformat()
+        self.recorded_date = str(date_str or today_iso)[:10]
         self.sqlite_entry_id = str(sqlite_entry_id or f"T-LIVE-{timer_id}-{today_iso}").strip()
         self.linked_entry_id = str(sqlite_entry_id or "").strip() if str(sqlite_entry_id or "").startswith("T") and not str(sqlite_entry_id or "").startswith("T-LIVE-") else ""
         self.started_at_utc = (
@@ -413,7 +414,7 @@ class TrayController(QObject):
         return c_id, c_name, m_id, m_name
 
     def _hydrate_latest_entry_from_repo(self):
-        """Seed today's saved dockets (and fallback latest entry) from tblTimeEntries."""
+        """Refresh today's saved dockets without falling back to historical entries."""
         repo = getattr(self._app_controller, "_excel_repo", None)
         if repo is None or not hasattr(repo, "_read_table_rows"):
             return
@@ -421,24 +422,17 @@ class TrayController(QObject):
             from repositories.excel_repo import TBL_TIME
             from domain import schema_constants as sc
             rows = repo._read_table_rows(TBL_TIME)
-            if not rows:
-                return
             today_iso = datetime.date.today().isoformat()
             non_merged_rows = [
                 r for r in rows
                 if str(r.get(sc.COL_TIME_STATUS) or "").strip().casefold() != "merged"
             ]
-            if not non_merged_rows:
-                return
-
             today_rows = [
                 r for r in non_merged_rows
                 if str(r.get(sc.COL_TIME_DATE) or "").strip()[:10] == today_iso
             ]
-            target_rows = today_rows if today_rows else [non_merged_rows[-1]]
-
             hydrated_entries: list[TrayRecordedEntry] = []
-            for row in reversed(target_rows):
+            for row in reversed(today_rows):
                 c_id = str(row.get(sc.COL_TIME_CLIENT_ID) or "").strip()
                 m_id = str(row.get(sc.COL_TIME_MATTER_ID) or "").strip()
                 _, c_name, _, m_name = self._resolve_client_and_matter_labels(c_id, "", m_id, m_id)
@@ -460,7 +454,6 @@ class TrayController(QObject):
                     matter_id=m_id,
                     parent=self,
                 )
-                entry.is_today_tab = (date_str == today_iso) or bool(today_rows)
                 hydrated_entries.append(entry)
 
             self._entries = hydrated_entries
@@ -494,20 +487,30 @@ class TrayController(QObject):
         
     @Property(str, notify=summaryChanged)
     def recordedTodayFormatted(self):
-        val = calculate_recorded_today([e.decimal_hours for e in self._entries])
+        val = calculate_recorded_today([e.decimal_hours for e in self._entries if self._is_today_docket(e.recorded_date)])
         return f"{val:.1f} h"
 
     @Property(str, notify=summaryChanged)
     def activeNowFormatted(self):
-        val = calculate_active_now_seconds([t._state for t in self._timers], self._current_monotonic)
+        val = calculate_active_now_seconds([t._state for t in self._timers if self._is_today_docket(t.recorded_date)], self._current_monotonic)
         return format_elapsed(val)
 
     @Property(str, notify=summaryChanged)
     def totalTodayFormatted(self):
-        recorded = calculate_recorded_today([e.decimal_hours for e in self._entries])
-        active = calculate_active_now_seconds([t._state for t in self._timers], self._current_monotonic)
+        recorded = calculate_recorded_today([e.decimal_hours for e in self._entries if self._is_today_docket(e.recorded_date)])
+        active = calculate_active_now_seconds([t._state for t in self._timers if self._is_today_docket(t.recorded_date)], self._current_monotonic)
         total = calculate_total_today(recorded, active)
         return f"{total:.1f} h"
+
+    @staticmethod
+    def _is_today_docket(date_str) -> bool:
+        return str(date_str or "").strip()[:10] == datetime.date.today().isoformat()
+
+    def _today_timers(self) -> list[TrayActiveTimer]:
+        return [t for t in self._timers if self._is_today_docket(t.recorded_date) and f"timer:{t.timer_id}" not in self._hidden_tab_ids]
+
+    def _today_entries(self) -> list[TrayRecordedEntry]:
+        return [e for e in self._entries if self._is_today_docket(e.recorded_date) and f"entry:{e.entry_id}" not in self._hidden_tab_ids]
 
     def _build_today_docket_tabs(self) -> list[dict]:
         tabs: list[dict] = []
@@ -515,7 +518,7 @@ class TrayController(QObject):
         today_iso = datetime.date.today().isoformat()
 
         # 1. Active or paused timers
-        for idx, t in enumerate(self._timers, start=1):
+        for idx, t in enumerate(self._today_timers(), start=1):
             tab_id = f"timer:{t.timer_id}"
             if tab_id in self._hidden_tab_ids:
                 continue
@@ -547,19 +550,12 @@ class TrayController(QObject):
                 "isSelected": False,
             })
 
-        # 2. Saved entries from today (or added/updated during this session)
-        for idx, e in enumerate(self._entries, start=1):
+        # 2. Saved entries dated today, including saves made during this session.
+        for idx, e in enumerate(self._today_entries(), start=1):
             if e.entry_id in seen_entry_ids:
                 continue
             tab_id = f"entry:{e.entry_id}"
             if tab_id in self._hidden_tab_ids:
-                continue
-            is_today = (
-                str(e.recorded_date or "")[:10] == today_iso
-                or bool(getattr(e, "is_today_tab", False))
-                or len(self._entries) == 1
-            )
-            if not is_today:
                 continue
             short_lbl = _compute_tab_short_label(e.matter_display_name, e.client_display_name, idx)
             tabs.append({
@@ -587,7 +583,7 @@ class TrayController(QObject):
         # 3. Unsaved blank/draft tabs created today via '+'
         for d in self._draft_tabs:
             tab_id = str(d.get("tabId") or "")
-            if not tab_id or tab_id in self._hidden_tab_ids:
+            if not tab_id or tab_id in self._hidden_tab_ids or not self._is_today_docket(d.get("date")):
                 continue
             draft_num = int(d.get("draftNumber") or 1)
             short_lbl = _compute_tab_short_label(
@@ -618,35 +614,10 @@ class TrayController(QObject):
                 "isSelected": False,
             })
 
-        # If no tabs exist at all, provide a default Draft #1 tab
-        if not tabs:
-            default_tab_id = "draft:1"
-            tabs.append({
-                "tabId": default_tab_id,
-                "timerId": "",
-                "entryId": "",
-                "status": "IDLE",
-                "statusDot": "idle",
-                "label": "Draft #1",
-                "shortLabel": "Draft #1",
-                "elapsedSeconds": 0,
-                "elapsedFormatted": "00:00:00",
-                "clientId": "",
-                "clientName": "",
-                "matterId": "",
-                "matterName": "",
-                "description": "",
-                "date": today_iso,
-                "isSaved": False,
-                "isDraft": True,
-                "canClose": True,
-                "isSelected": True,
-            })
-
         valid_ids = {item["tabId"] for item in tabs}
         if not self._selected_tab_id or self._selected_tab_id not in valid_ids:
             running_tab = next((item["tabId"] for item in tabs if item["status"] == "RUNNING"), "")
-            self._selected_tab_id = running_tab or tabs[0]["tabId"]
+            self._selected_tab_id = running_tab or (tabs[0]["tabId"] if tabs else "")
 
         for item in tabs:
             item["isSelected"] = (item["tabId"] == self._selected_tab_id)
@@ -667,7 +638,7 @@ class TrayController(QObject):
         if not sel.startswith("draft:"):
             return None
         for d in self._draft_tabs:
-            if str(d.get("tabId") or "") == sel:
+            if str(d.get("tabId") or "") == sel and self._is_today_docket(d.get("date")) and sel not in self._hidden_tab_ids:
                 return d
         return None
 
@@ -675,7 +646,7 @@ class TrayController(QObject):
         sel = str(self._selected_tab_id or "")
         if sel.startswith("timer:"):
             tid = sel.split(":", 1)[1]
-            found = next((t for t in self._timers if t.timer_id == tid), None)
+            found = next((t for t in self._today_timers() if t.timer_id == tid), None)
             if found is not None:
                 return found
         if sel.startswith("entry:") or sel.startswith("draft:"):
@@ -686,7 +657,7 @@ class TrayController(QObject):
         sel = str(self._selected_tab_id or "")
         if sel.startswith("entry:"):
             eid = sel.split(":", 1)[1]
-            found = next((e for e in self._entries if e.entry_id == eid), None)
+            found = next((e for e in self._today_entries() if e.entry_id == eid), None)
             if found is not None:
                 return found
         if sel.startswith("timer:") or sel.startswith("draft:"):
@@ -697,22 +668,22 @@ class TrayController(QObject):
         sel = str(self._selected_tab_id or "")
         if sel.startswith("timer:"):
             tid = sel.split(":", 1)[1]
-            found = next((t for t in self._timers if t.timer_id == tid), None)
+            found = next((t for t in self._today_timers() if t.timer_id == tid), None)
             if found is not None:
                 return found
-        for t in self._timers:
+        for t in self._today_timers():
             if t.isRunning:
                 return t
-        return self._timers[0] if self._timers else None
+        return next(iter(self._today_timers()), None)
 
     def _primary_recorded_entry(self) -> Optional[TrayRecordedEntry]:
         sel = str(self._selected_tab_id or "")
         if sel.startswith("entry:"):
             eid = sel.split(":", 1)[1]
-            found = next((e for e in self._entries if e.entry_id == eid), None)
+            found = next((e for e in self._today_entries() if e.entry_id == eid), None)
             if found is not None:
                 return found
-        return self._entries[0] if self._entries else None
+        return next(iter(self._today_entries()), None)
 
     @Slot(str, result=bool)
     def selectDocketTab(self, tab_id: str) -> bool:
@@ -985,13 +956,13 @@ class TrayController(QObject):
                 except Exception:
                     pass
 
-        # 6. Select the next available tab (or initialize clean 00:00:00 draft if none remain)
+        # 6. Select the next available tab, leaving the strip empty when none remain.
         remaining_tabs = self._build_today_docket_tabs()
         if remaining_tabs:
             next_idx = min(max(0, prior_index), len(remaining_tabs) - 1)
-            self._selected_tab_id = str(remaining_tabs[next_idx].get("tabId") or "draft:1")
+            self._selected_tab_id = str(remaining_tabs[next_idx].get("tabId") or "")
         else:
-            self._selected_tab_id = "draft:1"
+            self._selected_tab_id = ""
         remaining_tabs = self._build_today_docket_tabs()
 
         self.activeTimersChanged.emit()
@@ -1259,7 +1230,7 @@ class TrayController(QObject):
         if self._find_selected_draft() is not None:
             d = self._find_selected_draft() or {}
             return bool(d.get("clientName") or d.get("matterName") or d.get("description") or d.get("elapsedSeconds"))
-        return bool(self._timers or self._entries)
+        return bool(self._today_timers() or self._today_entries())
 
     @Property(str, notify=primaryTimerChanged)
     def displayStatus(self) -> str:
@@ -1583,7 +1554,7 @@ class TrayController(QObject):
                 "matter_name": str(t.matter_display_name or ""),
                 "client_id": str(t.client_id or ""),
                 "client_name": str(t.client_display_name or ""),
-                "date": today_iso,
+                "date": t.recorded_date,
                 "raw_seconds": elapsed_sec,
                 "hours": hrs,
                 "description": str(t.description or ""),
@@ -1759,6 +1730,7 @@ class TrayController(QObject):
                 description=str(item.get("Description") or ""),
                 parent=self,
                 sqlite_entry_id=eid,
+                date_str=str(item.get("Date") or datetime.date.today().isoformat())[:10],
             )
             t_obj.linked_entry_id = eid
             t_obj.legacy_dockets_sync_status = "SYNCED"
@@ -1798,6 +1770,7 @@ class TrayController(QObject):
                     description=desc,
                     parent=self,
                     sqlite_entry_id=eid,
+                    date_str=str(item.get("Date") or datetime.date.today().isoformat())[:10],
                 )
                 t_obj.linked_entry_id = eid
                 t_obj.legacy_dockets_sync_status = "PENDING_CRASH_RECOVERY"
@@ -1931,7 +1904,7 @@ class TrayController(QObject):
                 existing_e._exact_seconds = chosen_sec
                 existing_e.decimal_hours = hrs
                 existing_e._description = desc
-                existing_e.is_today_tab = True
+                existing_e.recorded_date = date_str
                 existing_e.changed.emit()
             else:
                 new_e = TrayRecordedEntry(
@@ -1947,7 +1920,6 @@ class TrayController(QObject):
                     matter_id=m_id,
                     parent=self,
                 )
-                new_e.is_today_tab = True
                 self._entries.insert(0, new_e)
             self._selected_tab_id = f"entry:{target_id}"
             if sync_info.get("conflict") or sync_info.get("status") == "CONFLICT":
@@ -2355,7 +2327,6 @@ class TrayController(QObject):
             if m_name:
                 existing.matter_display_name = m_name
             existing._description = desc
-            existing.is_today_tab = True
             existing.changed.emit()
             if self._entries[0] is not existing:
                 self._entries.remove(existing)
@@ -2374,7 +2345,6 @@ class TrayController(QObject):
                 matter_id=m_id,
                 parent=self,
             )
-            new_entry.is_today_tab = True
             self._entries.insert(0, new_entry)
 
         if bool(data.get("stoppedTimer", False)):
@@ -2672,7 +2642,7 @@ class TrayController(QObject):
 
             elapsed_sec = timer._state.get_elapsed_seconds(self._current_monotonic)
             hours = math.ceil((elapsed_sec / 3600.0) * 10) / 10.0 if elapsed_sec > 0 else 0.0
-            date_str = datetime.date.today().strftime("%Y-%m-%d")
+            date_str = timer.recorded_date
             time_str = datetime.datetime.now().strftime("%I:%M %p")
             
             rate = 0.0
@@ -2746,7 +2716,6 @@ class TrayController(QObject):
                 existing_entry.decimal_hours = float(save_result.get("aggregateHoursRounded") or hours)
                 if timer.description:
                     existing_entry._description = timer.description
-                existing_entry.is_today_tab = True
                 existing_entry.changed.emit()
                 self._entries.remove(existing_entry)
                 self._entries.insert(0, existing_entry)
@@ -2768,7 +2737,6 @@ class TrayController(QObject):
                     matter_id=timer.matter_id,
                     parent=self,
                 )
-                new_entry.is_today_tab = True
                 self._entries.insert(0, new_entry)
                 self.recordedEntriesChanged.emit()
 
@@ -2801,6 +2769,7 @@ class TrayController(QObject):
                 entry.matter_display_name,
                 TimerState(entry._exact_seconds, True, self._current_monotonic),
                 description=entry.description,
+                date_str=entry.recorded_date,
                 parent=self,
                 sqlite_entry_id=entry.entry_id,
             )
@@ -3117,56 +3086,95 @@ class TrayController(QObject):
 
     @Slot(str, str, str, str, result=bool)
     def saveManualTimeEntry(self, client_name, matter_name, description="", time_text="") -> bool:
+        """Save a new manual entry without consuming an unrelated selected tab."""
+        return self._save_manual_time_entry(client_name, matter_name, description, time_text, selected=False)
+
+    @Slot(str, str, str, str, result=bool)
+    def saveSelectedManualTimeEntry(self, client_name, matter_name, description="", time_text="") -> bool:
+        """Replace the selected docket's time; never start its timer."""
+        return self._save_manual_time_entry(client_name, matter_name, description, time_text, selected=True)
+
+    def _save_manual_time_entry(self, client_name, matter_name, description, time_text, *, selected: bool) -> bool:
         parsed = _parse_manual_time_input(time_text)
         if parsed is None or parsed <= 0:
             return False
-
-        draft_sqlite_id = ""
-        sel_draft = self._find_selected_draft()
-        if sel_draft is not None:
-            draft_id = str(sel_draft.get("tabId") or "")
-            draft_sqlite_id = str(sel_draft.get("sqliteEntryId") or "").strip()
-            self._draft_tabs = [d for d in self._draft_tabs if str(d.get("tabId") or "") != draft_id]
-
-        existing_primary = self._selected_active_timer()
-        if existing_primary is not None and not existing_primary.isRunning:
-            elapsed_now = existing_primary._state.get_elapsed_seconds(self._current_monotonic)
-            if elapsed_now <= 0:
-                if not draft_sqlite_id and getattr(existing_primary, "sqlite_entry_id", ""):
-                    draft_sqlite_id = str(existing_primary.sqlite_entry_id)
-                self._timers = [x for x in self._timers if x.timer_id != existing_primary.timer_id]
-
         clean_client = str(client_name or "").strip()
         clean_matter = str(matter_name or "").strip()
         clean_desc = str(description or "").strip()
-        if not clean_client and clean_matter:
-            clean_client = self.getClientForMatter(clean_matter) or ""
-        if not clean_client:
-            clean_client = "Ad Hoc Client"
-        if not clean_matter:
-            clean_matter = "General Consultation"
-
+        if clean_matter:
+            clean_client = self.getClientForMatter(clean_matter) or clean_client
+        if not clean_client and not clean_matter:
+            return False
         c_id, resolved_client, m_id, resolved_matter = self._resolve_client_and_matter_labels(
             "", clean_client, "", clean_matter
         )
         c_label = resolved_client or clean_client
         m_label = resolved_matter or _normalize_matter_label(clean_matter)
 
-        self._current_monotonic = time.monotonic()
-        temp_id = f"manual_{int(time.time() * 1000)}"
-        temp_timer = TrayActiveTimer(
-            temp_id,
-            c_id,
-            c_label,
-            m_id,
-            m_label,
-            TimerState(int(parsed), False, None),
-            description=clean_desc,
-            sqlite_entry_id=draft_sqlite_id,
-            parent=self,
-        )
-        self._timers.insert(0, temp_timer)
-        self.stop_timer(temp_id)
+        draft = self._find_selected_draft() if selected else None
+        timer = self._selected_active_timer() if selected and draft is None else None
+        entry = self._selected_recorded_entry() if selected and draft is None and timer is None else None
+        entry_id = str(getattr(entry, "entry_id", "") or getattr(timer, "linked_entry_id", "") or "")
+        sqlite_id = str((draft or {}).get("sqliteEntryId") or getattr(timer, "sqlite_entry_id", "") or entry_id)
+        date_str = str(getattr(entry, "recorded_date", "") or getattr(timer, "recorded_date", "") or datetime.date.today().isoformat())[:10]
+        rate = 0.0
+        repo = getattr(self._app_controller, "_excel_repo", None)
+        if repo is not None:
+            try:
+                profile = repo.get_matter_profile(m_id or m_label)
+                if isinstance(profile, dict) and profile.get("ok"):
+                    rate = float((profile.get("matter") or {}).get("defaultRate") or 0.0)
+            except Exception:
+                pass
+        payload = {
+            "entryId": entry_id,
+            "sqliteEntryId": sqlite_id,
+            "clientId": c_id,
+            "clientName": c_label,
+            "clientText": c_label,
+            "matterId": m_id,
+            "matterName": m_label,
+            "matterText": m_label,
+            "description": clean_desc,
+            "descriptionText": clean_desc,
+            "date": date_str,
+            "dateText": date_str,
+            "hours": math.ceil((int(parsed) / 3600.0) * 10.0) / 10.0,
+            "rawSeconds": int(parsed),
+            "elapsedSeconds": int(parsed),
+            "rate": rate,
+            "allowClientOnlyDraft": 0 if (m_id or m_label) else 1,
+            "isLegacyUpdate": bool(entry_id),
+            "source": "system_tray",
+        }
+        try:
+            save = getattr(self._app_controller, "saveTimeDocketEntry", None)
+            if not callable(save):
+                return False
+            result = dict(save(payload) or {})
+        except Exception:
+            import logging
+            logging.getLogger("tray.manual").exception("Could not save manual docket entry")
+            return False
+        saved_id = str(result.get("entryId") or "").strip()
+        if not result.get("ok") or not saved_id:
+            return False
+
+        # A failed save leaves every existing draft, timer and recorded row intact.
+        if draft is not None:
+            self._draft_tabs = [d for d in self._draft_tabs if d is not draft]
+        notification = dict(payload)
+        notification.update(result)
+        notification["rawSeconds"] = int(result.get("aggregateRawSeconds") or parsed)
+        notification["hours"] = float(result.get("aggregateHoursRounded") or payload["hours"])
+        notification["stoppedTimer"] = True
+        notification["timerId"] = timer.timer_id if timer is not None else f"manual_saved_{time.time_ns()}"
+        self.onDocketSaved(notification)
+        if timer is not None:
+            self.mainTimerCommandRequested.emit({
+                "action": "stopped_and_saved", "timerId": timer.timer_id,
+                "entryId": saved_id, "elapsedSeconds": int(parsed),
+            })
         return True
         
     @Slot()

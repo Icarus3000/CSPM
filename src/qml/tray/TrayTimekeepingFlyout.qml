@@ -32,14 +32,7 @@ Rectangle {
     }
 
     readonly property var fallbackEntry: {
-        if (typeof trayController === "undefined" || !trayController) return null
-        if (trayController.activeTimers && trayController.activeTimers.length > 0) {
-            return trayController.activeTimers[0]
-        }
-        if (trayController.recordedEntries && trayController.recordedEntries.length > 0) {
-            return trayController.recordedEntries[0]
-        }
-        return null
+        return flyout.todayTabsModel.length > 0 ? flyout.todayTabsModel[0] : null
     }
 
     readonly property string statusBadgeText: {
@@ -63,9 +56,6 @@ Rectangle {
     }
 
     readonly property bool hasActiveOrPaused: {
-        if (typeof trayController !== "undefined" && trayController && trayController.hasActiveOrPausedTimer !== undefined) {
-            return Boolean(trayController.hasActiveOrPausedTimer)
-        }
         return statusBadgeText === "RUNNING" || statusBadgeText === "PAUSED"
     }
 
@@ -89,12 +79,12 @@ Rectangle {
     readonly property string clientNameText: {
         if (typeof trayController !== "undefined" && trayController && trayController.displayClientName !== undefined) {
             var c = String(trayController.displayClientName || "").trim()
-            return c.length > 0 ? c : (hasEntryToDisplay ? "No client selected (Click to choose)" : "No active or recent timer")
+            return c.length > 0 ? c : (hasEntryToDisplay ? "Choose a client or matter" : "No dockets today — click + New")
         }
         if (fallbackEntry && fallbackEntry.client) {
             return String(fallbackEntry.client)
         }
-        return "No active or recent timer"
+        return "No dockets today — click + New"
     }
 
     readonly property string matterNameText: {
@@ -225,6 +215,8 @@ Rectangle {
     property string activeDropdownTarget: ""
     property var clientSuggestions: []
     property var matterSuggestions: []
+    property bool pickerSearchAllMatters: false
+    property string pickerErrorText: ""
 
     property bool deleteConfirmOpen: false
     property string pendingDeleteTabId: ""
@@ -376,6 +368,10 @@ Rectangle {
     }
 
     function openInlineTimeEditor() {
+        if (!hasEntryToDisplay) {
+            openNewTimerPicker(false)
+            return
+        }
         editingElapsedInline = true
         manualTimeEditField.text = flyout.elapsedText === "00:00:00" ? "" : flyout.elapsedText
         manualTimeEditField.forceActiveFocus()
@@ -394,7 +390,9 @@ Rectangle {
 
     function openNewTimerPicker(assignCurrentTab) {
         editingElapsedInline = false
-        pickerAssignsCurrentTab = Boolean(assignCurrentTab)
+        pickerAssignsCurrentTab = Boolean(assignCurrentTab) && hasEntryToDisplay
+        pickerErrorText = ""
+        pickerSearchAllMatters = false
         var curClient = (typeof trayController !== "undefined" && trayController && trayController.displayClientName)
             ? String(trayController.displayClientName || "").trim() : ""
         var curMatter = (typeof trayController !== "undefined" && trayController && trayController.displayMatterName)
@@ -410,7 +408,7 @@ Rectangle {
         activeDropdownTarget = ""
         refreshNewTimerSuggestions()
         newTimerPickerOpen = true
-        newClientInput.forceActiveFocus()
+        newMatterInput.forceActiveFocus()
     }
 
     function refreshNewTimerSuggestions() {
@@ -428,14 +426,51 @@ Rectangle {
         }
         try {
             matterSuggestions = trayController.filterMattersByClientAndText
-                ? (trayController.filterMattersByClientAndText(cQuery, mQuery) || [])
+                ? (trayController.filterMattersByClientAndText(pickerSearchAllMatters ? "" : cQuery, mQuery) || [])
                 : []
         } catch (e1) {
             matterSuggestions = []
         }
     }
 
+    function selectPickerSuggestion(chosen) {
+        pickerErrorText = ""
+        if (activeDropdownTarget === "client") {
+            newClientInput.text = chosen
+            newMatterInput.text = ""
+            pickerSearchAllMatters = false
+            refreshNewTimerSuggestions()
+            if (matterSuggestions.length === 1) {
+                newMatterInput.text = String(matterSuggestions[0])
+                activeDropdownTarget = ""
+                newTimeInput.forceActiveFocus()
+            } else {
+                newMatterInput.forceActiveFocus()
+                activeDropdownTarget = "matter"
+            }
+        } else {
+            newMatterInput.text = chosen
+            var client = String(trayController.getClientForMatter(chosen) || "").trim()
+            if (client.length > 0) newClientInput.text = client
+            activeDropdownTarget = ""
+            newTimeInput.forceActiveFocus()
+        }
+    }
+
+    function validatePickerSelection() {
+        pickerErrorText = ""
+        var matter = String(newMatterInput.text || "").trim()
+        var client = matter.length > 0 ? String(trayController.getClientForMatter(matter) || "").trim() : ""
+        if (client.length === 0) {
+            pickerErrorText = "Choose a matter, or choose a client and then its matter."
+            return false
+        }
+        newClientInput.text = client
+        return true
+    }
+
     function commitAssignCurrentTabFromPicker() {
+        if (!validatePickerSelection()) return
         var cVal = String(newClientInput.text || "").trim()
         var mVal = String(newMatterInput.text || "").trim()
         var dVal = String(newDescInput.text || "").trim()
@@ -456,10 +491,15 @@ Rectangle {
     }
 
     function commitNewTimerFromPicker() {
+        if (!validatePickerSelection()) return
         var cVal = String(newClientInput.text || "").trim()
         var mVal = String(newMatterInput.text || "").trim()
         var dVal = String(newDescInput.text || "").trim()
         var tVal = String((typeof newTimeInput !== "undefined" && newTimeInput) ? newTimeInput.text : "").trim()
+        if (tVal.length > 0 && trayController.parseManualTimeSeconds(tVal) < 0) {
+            pickerErrorText = "Enter a valid time, for example 0.5h or 30m."
+            return
+        }
         if (typeof trayController !== "undefined" && trayController) {
             if (cVal.length <= 0 && mVal.length > 0 && trayController.getClientForMatter) {
                 cVal = String(trayController.getClientForMatter(mVal) || "").trim()
@@ -488,20 +528,26 @@ Rectangle {
     }
 
     function commitManualSaveFromPicker() {
+        if (!validatePickerSelection()) return
         var cVal = String(newClientInput.text || "").trim()
         var mVal = String(newMatterInput.text || "").trim()
         var dVal = String(newDescInput.text || "").trim()
         var tVal = String((typeof newTimeInput !== "undefined" && newTimeInput) ? newTimeInput.text : "").trim()
-        if (tVal.length <= 0) {
-            commitNewTimerFromPicker()
+        if (tVal.length <= 0 || trayController.parseManualTimeSeconds(tVal) <= 0) {
+            pickerErrorText = "Enter a time, for example 0.5, 30m or 00:30:00."
+            newTimeInput.forceActiveFocus()
             return
         }
         if (typeof trayController !== "undefined" && trayController) {
             if (cVal.length <= 0 && mVal.length > 0 && trayController.getClientForMatter) {
                 cVal = String(trayController.getClientForMatter(mVal) || "").trim()
             }
-            if (trayController.saveManualTimeEntry) {
-                trayController.saveManualTimeEntry(cVal, mVal, dVal, tVal)
+            var saved = pickerAssignsCurrentTab
+                ? trayController.saveSelectedManualTimeEntry(cVal, mVal, dVal, tVal)
+                : trayController.saveManualTimeEntry(cVal, mVal, dVal, tVal)
+            if (!saved) {
+                pickerErrorText = "Time could not be saved. Check CSPM's data status and try again."
+                return
             }
         }
         activeDropdownTarget = ""
@@ -885,6 +931,10 @@ Rectangle {
                     color: flyout.isRunningNow ? "#D97706" : theme.timerGreen
                 }
                 onClicked: {
+                    if (!flyout.hasEntryToDisplay) {
+                        flyout.openNewTimerPicker(false)
+                        return
+                    }
                     if (flyout.editingElapsedInline) {
                         flyout.commitInlineManualTime()
                     }
@@ -935,7 +985,7 @@ Rectangle {
             Button {
                 id: cancelOrDeleteBtn
                 objectName: "trayCancelOrDeleteButton"
-                visible: true
+                visible: flyout.hasEntryToDisplay
                 hoverEnabled: true
                 implicitWidth: 48
                 implicitHeight: 24
@@ -1200,7 +1250,7 @@ Rectangle {
                 spacing: 4
 
                 Text {
-                    text: flyout.pickerAssignsCurrentTab ? "Select Matter" : "New / Manual"
+                    text: flyout.pickerAssignsCurrentTab ? "Edit docket" : "New docket"
                     font.pixelSize: 11
                     font.bold: true
                     color: theme.textPrimary
@@ -1221,22 +1271,23 @@ Rectangle {
                         anchors.fill: parent
                         anchors.leftMargin: 5
                         anchors.rightMargin: 5
-                        placeholderText: "00:00:00 or 1.5h / 45m"
+                        placeholderText: "Time: 0.5h or 30m"
                         placeholderTextColor: theme.textSecondary
                         color: theme.textPrimary
                         font.pixelSize: 11
                         selectByMouse: true
                         verticalAlignment: TextInput.AlignVCenter
                         background: Item {}
-                        onAccepted: {
-                            if (String(newTimeInput.text || "").trim().length > 0) {
-                                flyout.commitManualSaveFromPicker()
-                            } else {
-                                flyout.commitNewTimerFromPicker()
-                            }
-                        }
+                        onAccepted: flyout.commitManualSaveFromPicker()
                     }
                 }
+
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Item { Layout.fillWidth: true }
 
                 Button {
                     id: cancelNewTimerBtn
@@ -1290,10 +1341,10 @@ Rectangle {
                 Button {
                     id: confirmSaveManualTimerBtn
                     objectName: "trayConfirmSaveManualTimerButton"
-                    visible: String(newTimeInput.text || "").trim().length > 0
-                    implicitWidth: 42
+                    visible: true
+                    implicitWidth: 66
                     implicitHeight: 22
-                    text: "Save"
+                    text: "Save time"
                     font.pixelSize: 10
                     font.bold: true
                     contentItem: Text {
@@ -1313,9 +1364,9 @@ Rectangle {
                 Button {
                     id: confirmStartNewTimerBtn
                     objectName: "trayConfirmStartNewTimerButton"
-                    implicitWidth: 44
+                    implicitWidth: 70
                     implicitHeight: 22
-                    text: "Start"
+                    text: "Start timer"
                     font.pixelSize: 10
                     font.bold: true
                     contentItem: Text {
@@ -1371,7 +1422,13 @@ Rectangle {
                             flyout.refreshNewTimerSuggestions()
                             flyout.activeDropdownTarget = "client"
                         }
-                        onAccepted: flyout.commitNewTimerFromPicker()
+                        onAccepted: {
+                            var matches = trayController.filterClients(text)
+                            if (matches.length === 1) {
+                                flyout.activeDropdownTarget = "client"
+                                flyout.selectPickerSuggestion(String(matches[0]))
+                            }
+                        }
                     }
 
                     Text {
@@ -1425,10 +1482,19 @@ Rectangle {
                             }
                         }
                         onTextEdited: {
+                            flyout.pickerSearchAllMatters = true
                             flyout.refreshNewTimerSuggestions()
                             flyout.activeDropdownTarget = "matter"
                         }
-                        onAccepted: flyout.commitNewTimerFromPicker()
+                        onAccepted: {
+                            if (flyout.matterSuggestions.length === 1) {
+                                flyout.activeDropdownTarget = "matter"
+                                flyout.selectPickerSuggestion(String(flyout.matterSuggestions[0]))
+                            } else if (flyout.validatePickerSelection()) {
+                                flyout.activeDropdownTarget = ""
+                                newTimeInput.forceActiveFocus()
+                            }
+                        }
                     }
 
                     Text {
@@ -1470,7 +1536,7 @@ Rectangle {
                     selectByMouse: true
                     verticalAlignment: TextInput.AlignVCenter
                     background: Item {}
-                    onAccepted: flyout.commitNewTimerFromPicker()
+                    onAccepted: flyout.commitManualSaveFromPicker()
                 }
             }
 
@@ -1489,10 +1555,14 @@ Rectangle {
 
                 ListView {
                     id: suggestionListView
+                    readonly property var pickerHost: flyout
+                    objectName: "trayPickerSuggestionList"
                     anchors.fill: parent
                     anchors.margins: 2
                     model: flyout.activeDropdownTarget === "client" ? flyout.clientSuggestions : flyout.matterSuggestions
                     delegate: Rectangle {
+                        required property var modelData
+                        readonly property var pickerHost: ListView.view.pickerHost
                         width: suggestionListView.width
                         height: 24
                         radius: 4
@@ -1515,33 +1585,21 @@ Rectangle {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                var chosen = String(modelData || "")
-                                if (flyout.activeDropdownTarget === "client") {
-                                    newClientInput.text = chosen
-                                    flyout.refreshNewTimerSuggestions()
-                                    if (flyout.matterSuggestions.length === 1) {
-                                        newMatterInput.text = String(flyout.matterSuggestions[0] || "")
-                                        flyout.activeDropdownTarget = ""
-                                    } else {
-                                        newMatterInput.text = ""
-                                        flyout.refreshNewTimerSuggestions()
-                                        flyout.activeDropdownTarget = "matter"
-                                    }
-                                } else {
-                                    newMatterInput.text = chosen
-                                    if (typeof trayController !== "undefined" && trayController && trayController.getClientForMatter) {
-                                        var resolvedC = String(trayController.getClientForMatter(chosen) || "").trim()
-                                        if (resolvedC.length > 0) {
-                                            newClientInput.text = resolvedC
-                                        }
-                                    }
-                                    flyout.activeDropdownTarget = ""
-                                }
-                            }
+                            objectName: "trayPickerSuggestionClickArea"
+                            onClicked: parent.pickerHost.selectPickerSuggestion(String(parent.modelData || ""))
                         }
                     }
                 }
+            }
+
+            Text {
+                objectName: "trayPickerErrorText"
+                Layout.fillWidth: true
+                visible: flyout.pickerErrorText.length > 0
+                text: flyout.pickerErrorText
+                color: "#EF4444"
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
             }
 
             Item {

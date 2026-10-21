@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows has byte-range locks instead of flock.
+    fcntl = None
+    import msvcrt
 import hashlib
 import json
 import os
@@ -39,11 +43,12 @@ def atomic_json(path: Path, data: dict) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        if os.name != "nt":
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -62,8 +67,12 @@ def state_lock(directory: Path):
     fd = os.open(directory / "control.lock", os.O_CREAT | os.O_RDWR, 0o600)
     try:
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            else:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError:
             raise RuntimeError("another_monitor_owns_state") from None
         yield
     finally:

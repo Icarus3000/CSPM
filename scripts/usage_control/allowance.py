@@ -19,6 +19,7 @@ import json
 import math
 import os
 import select
+import shutil
 import subprocess
 import time
 from typing import Any
@@ -145,6 +146,31 @@ class _ReadFailure(Exception):
     pass
 
 
+def _pipe_ready(stream, timeout: float) -> bool:
+    if os.name != "nt":
+        return bool(select.select([stream], [], [], timeout)[0])
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    peek = ctypes.WinDLL("kernel32", use_last_error=True).PeekNamedPipe
+    peek.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+                     wintypes.LPVOID, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+    peek.restype = wintypes.BOOL
+    handle = msvcrt.get_osfhandle(stream.fileno())
+    deadline = time.monotonic() + timeout
+    while True:
+        available = wintypes.DWORD()
+        if not peek(handle, None, 0, None, ctypes.byref(available), None):
+            raise _ReadFailure("account_reader_closed")
+        if available.value:
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.01, remaining))
+
+
 def read_live(command: list[str], now: datetime, timeout: float = 25) -> dict:
     """Read fresh account quotas in an isolated, account-only stdio subprocess.
 
@@ -158,6 +184,11 @@ def read_live(command: list[str], now: datetime, timeout: float = 25) -> dict:
         return unavailable(now, "invalid_reader_command")
     if not _number(timeout) or timeout <= 0:
         return unavailable(now, "invalid_reader_timeout")
+    if os.name == "nt" and command[0] == "/usr/local/bin/codex":
+        executable = shutil.which("codex")
+        if not executable:
+            return unavailable(now, "account_reader_unavailable")
+        command = [executable, *command[1:]]
     process = None
     try:
         process = subprocess.Popen(
@@ -201,8 +232,7 @@ def read_live(command: list[str], now: datetime, timeout: float = 25) -> dict:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise _ReadFailure("account_read_timeout")
-                ready, _, _ = select.select([process.stdout], [], [], remaining)
-                if not ready:
+                if not _pipe_ready(process.stdout, remaining):
                     raise _ReadFailure("account_read_timeout")
                 chunk = os.read(process.stdout.fileno(), 65536)
                 if not chunk:

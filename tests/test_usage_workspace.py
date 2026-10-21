@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -208,7 +209,8 @@ class WorkspacePersistenceTests(GitFixture):
     def test_inventory_records_rename_dirty_and_newline_filename_without_changing_work(self):
         self.git("mv", "tracked name.txt", "renamed file.txt")
         (self.root / "dirty.txt").write_bytes(b"uncommitted\n")
-        untracked = self.root / "untracked\nname.txt"
+        # NTFS forbids embedded newlines; keep the original POSIX edge case.
+        untracked = self.root / ("untracked name.txt" if os.name == "nt" else "untracked\nname.txt")
         untracked.write_bytes(b"preserve me\n")
         before = self.git("status", "--porcelain=v1", "-z", "--untracked-files=all")
         result = workspace.git_inventory(self.root)
@@ -223,15 +225,28 @@ class WorkspacePersistenceTests(GitFixture):
         self.assertEqual(untracked.read_bytes(), b"preserve me\n")
         self.assertEqual((self.root / "dirty.txt").read_bytes(), b"uncommitted\n")
 
-    def test_sensitive_and_symlink_contents_are_not_hashed(self):
+    def test_sensitive_contents_are_not_hashed(self):
         (self.root / "auth.json").write_text("PRIVATE_CREDENTIAL_VALUE")
         (self.root / ".env").write_text("PRIVATE_AUTH_VALUE")
         (self.root / ".env.production").write_text("PRIVATE_PRODUCTION_AUTH")
-        (self.root / "linked.txt").symlink_to(self.root / "auth.json")
         result = workspace.git_inventory(self.root)
         for item in result["changes"]:
             self.assertNotIn("sha256", item)
             self.assertFalse(item["content_recorded"])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+
+    def test_symlink_contents_are_not_hashed(self):
+        (self.root / "auth.json").write_text("PRIVATE_CREDENTIAL_VALUE")
+        try:
+            (self.root / "linked.txt").symlink_to(self.root / "auth.json")
+        except OSError as error:
+            if os.name == "nt" and error.winerror == 1314:
+                self.skipTest("Windows symlinks require Developer Mode or elevated privilege")
+            raise
+        result = workspace.git_inventory(self.root)
+        linked = next(item for item in result["changes"] if item["path"] == "linked.txt")
+        self.assertNotIn("sha256", linked)
+        self.assertFalse(linked["content_recorded"])
         self.assertNotIn("PRIVATE", json.dumps(result))
 
     def test_unavailable_git_is_marked_unknown_without_invented_filename(self):
@@ -264,8 +279,10 @@ except RuntimeError:
     def test_atomic_write_is_private_and_invalid_serialization_preserves_old_state(self):
         path = self.state / "state.json"
         workspace.atomic_json(path, {"generation": 1})
-        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-        self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+        # POSIX modes are not Windows ACLs; Windows inherits the workspace ACL.
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
         with self.assertRaises(ValueError):
             workspace.atomic_json(path, {"generation": float("nan")})
         self.assertEqual(workspace.read_json(path), {"generation": 1})
