@@ -515,7 +515,9 @@ Rectangle {
                 ? trayController.saveSelectedManualTimeEntry(cVal, mVal, dVal, tVal)
                 : trayController.saveManualTimeEntry(cVal, mVal, dVal, tVal)
             if (!saved) {
-                pickerErrorText = "Time could not be saved. Check CSPM's data status and try again."
+                var saveError = String(trayController.lastManualSaveError || "").trim()
+                pickerErrorText = saveError.length > 0
+                    ? saveError : "Time could not be saved. Your entry is still open; try again."
                 return
             }
         }
@@ -1600,6 +1602,7 @@ Rectangle {
                 Layout.fillWidth: true
                 visible: flyout.pickerErrorText.length > 0
                 text: flyout.pickerErrorText
+                textFormat: Text.PlainText
                 color: "#EF4444"
                 font.pixelSize: 11
                 wrapMode: Text.WordWrap

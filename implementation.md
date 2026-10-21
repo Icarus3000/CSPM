@@ -1,5 +1,30 @@
 # Implementation History
 
+## 2026-10-21: Manual-save failure traced to hash case, Git integration published
+
+The screenshot's `1.1` hour entry failed because CSPM had opened read-only after
+a false synchronization conflict. Runtime SHA-256 digests are uppercase while
+the recorded base hashes were lowercase. `SyncService._synchronize` now
+normalizes the saved spelling before comparing it; the underlying file identity,
+two-workbook synchronization, backups and exclusive writer rules are unchanged.
+The current local workbooks exactly match that recorded ancestor. Cloud changes
+are legitimate later updates, including the prior phantom-row cleanup; no
+competing local edits need merging. Normal startup can therefore pull the newer
+cloud package through the existing protected checkout path.
+
+`TrayController.lastManualSaveError` now retains the backend's returned failure
+message; the QML picker displays it as plain text, preserves the form and clears
+the error on retry. This replaces the vague data-status instruction.
+
+Sandbox-safe validation: 29 synchronization tests, including lowercase/mixed-case
+cloud-only/local-only/both-changed cases and backup preservation, plus 18 focused
+manual-entry tests with actual hidden QML controls. An isolated replay of the
+actual workbook pair completed a protected cloud pull, verified recovery copies,
+and confirmed all production workbooks and original sync state stayed unchanged.
+The preceding source integration was pushed and verified on GitHub at `343450f`.
+Final standalone delivery and foreground retry are pending; real WebEngine
+validation has not yet been run for this follow-up.
+
 ## 2026-10-21: Tray manual docket entry and today's-only mini window
 
 The tray docket picker now offers explicit **Save time** and **Start timer**

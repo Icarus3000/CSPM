@@ -96,6 +96,52 @@ def test_checkout_blocks_second_machine_then_publishes_verified_release(tmp_path
     assert second.publish_and_release()["ok"]
 
 
+@pytest.mark.parametrize("hash_case", ["lower", "mixed"])
+@pytest.mark.parametrize("changed_side", ["cloud", "local", "both"])
+def test_saved_hash_letter_case_preserves_real_ancestry_and_conflicts(
+    tmp_path: Path, hash_case: str, changed_side: str
+) -> None:
+    cloud, local = tmp_path / "cloud", tmp_path / "local"
+    _write_package(cloud, "base")
+    initial = _service(tmp_path, "a", cloud, local)
+    assert initial.checkout_from_cloud()["ok"]
+    assert initial.publish_and_release()["ok"]
+    state = json.loads(initial.state_file.read_text(encoding="utf-8"))
+    for record in state["files"].values():
+        digest = record["baseHash"]
+        record["baseHash"] = digest.lower() if hash_case == "lower" else "".join(
+            char.lower() if index % 2 else char.upper() for index, char in enumerate(digest)
+        )
+    initial.state_file.write_text(json.dumps(state), encoding="utf-8")
+    if changed_side in {"cloud", "both"}:
+        _write_package(cloud, "cloud-update")
+    if changed_side in {"local", "both"}:
+        _write_package(local, "local-update")
+    before = {str(path): path.read_bytes() for folder in (local, cloud)
+              for path in folder.glob("*.xlsm")}
+    restarted = _service(tmp_path, "a", cloud, local)
+
+    result = restarted.checkout_from_cloud()
+
+    if changed_side == "both":
+        assert not result["ok"] and result["status"] == "conflict"
+        assert {str(path): path.read_bytes() for folder in (local, cloud)
+                for path in folder.glob("*.xlsm")} == before
+        assert not (cloud / restarted.LEASE_FILE_NAME).exists()
+        return
+    assert result["ok"]
+    assert result["status"] == ("pull" if changed_side == "cloud" else "push")
+    preserved = cloud if changed_side == "cloud" else local
+    for name in restarted._FILES:
+        assert (cloud / name).read_bytes() == (local / name).read_bytes()
+        assert (preserved / name).read_bytes() == before[str(preserved / name)]
+        assert restarted._get_state()["files"][name]["baseHash"] == restarted._sha256(cloud / name)
+        assert Path(result["recoveryCopies"][name]).read_bytes() == before[
+            str((local if changed_side == "cloud" else cloud) / name)
+        ]
+    assert restarted.publish_and_release()["ok"]
+
+
 def test_publish_refuses_cloud_change_after_checkout_and_preserves_both_copies(tmp_path: Path) -> None:
     cloud = tmp_path / "cloud"
     local = tmp_path / "local"

@@ -698,7 +698,10 @@ class SyncService:
             local_is_blank = local_package_blank or not self._usable(local_path)
             local_hash = "" if local_is_blank else self._sha256(local_path)
             saved = state.get("files", {}).get(name, {})
-            base_hash = str(saved.get("baseHash", "")) if isinstance(saved, dict) else ""
+            # SHA-256 hexadecimal spelling is case-insensitive. Older recovery
+            # tools wrote lowercase digests; compare the same bytes using the
+            # uppercase representation returned by _sha256.
+            base_hash = str(saved.get("baseHash", "")).upper() if isinstance(saved, dict) else ""
             records[name] = {
                 "cloudHash": cloud_hash,
                 "localHash": local_hash,

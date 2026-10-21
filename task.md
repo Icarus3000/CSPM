@@ -1,5 +1,15 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-21: False read-only conflict blocked manual docket saves
+
+- [x] Diagnose the installed log's `PermissionError`: saved synchronization hashes used lowercase hexadecimal while runtime hashes used uppercase, falsely reporting both copies changed.
+- [x] Normalize recorded base hashes before comparison; preserve real divergence and write-lease protections.
+- [x] Validate cloud-only pull, local-only push, true conflict, original-file preservation and recovery copies for lowercase/mixed-case state (29 synchronization tests passed).
+- [x] Replay the actual workbook pair on isolated copies: safe cloud pull and recovery backups verified; production workbooks and sync state unchanged.
+- [x] Show the backend's actual save error in the tray picker and keep entered details open (18 focused manual-entry checks passed).
+- [x] Publish the earlier local/remote source integration to GitHub (`343450f`).
+- [ ] Rebuild/deploy/publish the hash-comparison and error-message fixes; user should reopen CSPM and retry the `1.1` hour docket.
+
 ## 2026-10-21: Simple tray docket entry and strictly today's tabs
 
 - [x] Make matter/client selection reciprocal, clear stale matter searches when changing client, and repair the suggestion-click QML scope error seen in the installed runtime log.

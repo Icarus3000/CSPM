@@ -36,6 +36,7 @@ def test_invalid_manual_time_does_not_start_or_save(manual_tray, duration):
     commands = []
     tray.mainTimerCommandRequested.connect(commands.append)
     assert tray.saveManualTimeEntry("Client", "Matter", "Review", duration) is False
+    assert tray.lastManualSaveError == "Enter a time, for example 0.5, 30m or 00:30:00."
     backend.saveTimeDocketEntry.assert_not_called()
     assert tray._timers == [] and tray._entries == [] and commands == []
 
@@ -66,6 +67,48 @@ def test_failed_manual_save_preserves_selected_draft(manual_tray, save_result):
     assert tray.saveSelectedManualTimeEntry("Client", "Matter", "Review", "0.5") is False
     assert tray._draft_tabs == before and tray.selectedTabId == draft_id
     assert tray._timers == [] and tray._entries == []
+    assert tray.lastManualSaveError == "Time could not be saved. Your entry is still open; try again."
+
+
+@pytest.mark.parametrize("selected", [False, True])
+def test_manual_save_exposes_backend_rejection_without_changing_draft(manual_tray, selected):
+    tray, backend = manual_tray
+    draft_id = tray.createNewDraftTab()
+    before = [dict(d) for d in tray._draft_tabs]
+    message = (
+        "CSPM cannot save because this local copy is read-only. "
+        "Check out the shared data from the cloud before making financial or practice-data changes."
+    )
+    backend.saveTimeDocketEntry.return_value = {"ok": False, "message": message}
+    changed = []
+    tray.manualSaveErrorChanged.connect(lambda: changed.append(tray.lastManualSaveError))
+    save = tray.saveSelectedManualTimeEntry if selected else tray.saveManualTimeEntry
+    assert save("Client", "Matter", "Review", "1.1") is False
+    assert tray.lastManualSaveError == message
+    assert changed == [message]
+    assert tray._draft_tabs == before and tray.selectedTabId == draft_id
+    assert tray._timers == [] and tray._entries == []
+
+
+@pytest.mark.parametrize("message", [None, "", "   ", {"internal": "details"}])
+def test_manual_save_uses_plain_fallback_when_backend_has_no_text_message(manual_tray, message):
+    tray, backend = manual_tray
+    backend.saveTimeDocketEntry.return_value = {"ok": False, "message": message}
+    assert tray.saveManualTimeEntry("Client", "Matter", "Review", "0.5") is False
+    assert tray.lastManualSaveError == "Time could not be saved. Your entry is still open; try again."
+
+
+def test_manual_save_error_resets_on_validation_and_successful_retry(manual_tray):
+    tray, backend = manual_tray
+    backend.saveTimeDocketEntry.return_value = {"ok": False, "message": "Read-only"}
+    assert tray.saveManualTimeEntry("Client", "Matter", "Review", "0.5") is False
+    assert tray.lastManualSaveError == "Read-only"
+    assert tray.saveManualTimeEntry("Client", "Matter", "Review", "invalid") is False
+    assert "Read-only" not in tray.lastManualSaveError
+    backend.saveTimeDocketEntry.return_value = {"ok": True, "entryId": "T-SAVED"}
+    assert tray.saveManualTimeEntry("Client", "Matter", "Review", "0.5") is True
+    assert tray.lastManualSaveError == ""
+    assert tray._timers == [] and len(tray._entries) == 1
 
 
 def test_selected_manual_save_updates_same_saved_entry(manual_tray):
@@ -136,6 +179,7 @@ invoke("openNewTimerPicker(false)")
 client = field("trayNewClientInput")
 matter = field("trayNewMatterInput")
 duration = field("trayNewTimeInput")
+description = field("trayNewDescriptionInput")
 assert client.property("text") == "" and matter.property("text") == ""
 # Exercise the real delegate's click handler: this used to throw flyout undefined.
 client.setProperty("text", "One Client")
@@ -173,13 +217,26 @@ assert item.property("newTimerPickerOpen") is True
 assert item.property("pickerErrorText")
 backend.saveTimeDocketEntry.assert_not_called()
 duration.setProperty("text", "30m")
-backend.saveTimeDocketEntry.return_value = {"ok": False, "message": "Read-only"}
+description.setProperty("text", "Review closing record")
+save_error = (
+    "CSPM cannot save because this local copy is read-only. "
+    "Check out the shared data from the cloud before making financial or practice-data changes."
+)
+backend.saveTimeDocketEntry.return_value = {"ok": False, "message": save_error}
 invoke("commitManualSaveFromPicker()")
 assert item.property("newTimerPickerOpen") is True
+assert item.property("pickerErrorText") == save_error
+error_label = field("trayPickerErrorText")
+assert error_label.property("text") == save_error
+engine.globalObject().setProperty("saveErrorLabel", engine.newQObject(error_label))
+assert engine.evaluate("saveErrorLabel.textFormat === 0").toBool()  # Text.PlainText
+assert duration.property("text") == "30m"
+assert description.property("text") == "Review closing record"
 assert tray._timers == [] and tray._entries == []
 backend.saveTimeDocketEntry.return_value = {"ok": True, "entryId": "T-UI"}
 invoke("commitManualSaveFromPicker()")
 assert item.property("newTimerPickerOpen") is False
+assert item.property("pickerErrorText") == "" and tray.lastManualSaveError == ""
 assert tray._timers == [] and tray._entries[0]._exact_seconds == 1800
 tray._timer.stop()
 tray._sqlite_edit_debounce_timer.stop()

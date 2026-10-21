@@ -276,6 +276,7 @@ class TrayController(QObject):
     closeSafeguardChanged = Signal()
     closeSafeguardRequested = Signal('QVariantMap')
     mainTimerCommandRequested = Signal('QVariantMap')
+    manualSaveErrorChanged = Signal()
     themeChanged = Signal()
     promptMissingDescriptions = Signal()
     flyoutGeometryCalculated = Signal(int, int, int, int)
@@ -321,6 +322,7 @@ class TrayController(QObject):
         self._simultaneous_warning = {}
         self._legacy_sync_conflict = {}
         self._last_sync_status_message = ""
+        self._last_manual_save_error = ""
         self._crash_recovery_dockets = []
         self._close_safeguard_visible = False
         self._close_safeguard_source = ""
@@ -3739,9 +3741,21 @@ class TrayController(QObject):
         """Replace the selected docket's time; never start its timer."""
         return self._save_manual_time_entry(client_name, matter_name, description, time_text, selected=True)
 
+    @Property(str, notify=manualSaveErrorChanged)
+    def lastManualSaveError(self) -> str:
+        return self._last_manual_save_error
+
+    def _set_manual_save_error(self, message: str) -> None:
+        if self._last_manual_save_error != message:
+            self._last_manual_save_error = message
+            self.manualSaveErrorChanged.emit()
+
     def _save_manual_time_entry(self, client_name, matter_name, description, time_text, *, selected: bool) -> bool:
+        self._set_manual_save_error("")
+        fallback_error = "Time could not be saved. Your entry is still open; try again."
         parsed = _parse_manual_time_input(time_text)
         if parsed is None or parsed <= 0:
+            self._set_manual_save_error("Enter a time, for example 0.5, 30m or 00:30:00.")
             return False
         clean_client = str(client_name or "").strip()
         clean_matter = str(matter_name or "").strip()
@@ -3749,6 +3763,7 @@ class TrayController(QObject):
         if clean_matter:
             clean_client = self.getClientForMatter(clean_matter) or clean_client
         if not clean_client and not clean_matter:
+            self._set_manual_save_error("Choose a matter, or choose a client and then its matter.")
             return False
         c_id, resolved_client, m_id, resolved_matter = self._resolve_client_and_matter_labels(
             "", clean_client, "", clean_matter
@@ -3795,14 +3810,18 @@ class TrayController(QObject):
         try:
             save = getattr(self._app_controller, "saveTimeDocketEntry", None)
             if not callable(save):
+                self._set_manual_save_error("Time entry saving is unavailable. Open CSPM and try again.")
                 return False
             result = dict(save(payload) or {})
         except Exception:
             import logging
             logging.getLogger("tray.manual").exception("Could not save manual docket entry")
+            self._set_manual_save_error(fallback_error)
             return False
         saved_id = str(result.get("entryId") or "").strip()
         if not result.get("ok") or not saved_id:
+            message = result.get("message")
+            self._set_manual_save_error(message.strip() if isinstance(message, str) and message.strip() else fallback_error)
             return False
 
         # A failed save leaves every existing draft, timer and recorded row intact.
