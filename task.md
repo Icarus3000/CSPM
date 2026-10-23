@@ -1,5 +1,13 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-23: Clear Stale Shared Checkout Lock, Startup Read-Only Checkout Warning Modal/Banner & Legacy Import QML Fixes
+
+- [x] Archive and clear the stale `.cspm_checkout.json` lock held by `iMacFedora` (`2026-10-23T11:36:14.432015+00:00`) in `OneDrive - LPN/CSPM_Shared_Data/.cspm_checkout.json`.
+- [x] Add `SyncService.force_clear_shared_checkout()` (`src/python/services/sync_service.py`) and `AppController` properties/slots `checkoutBlockStatus`, `checkoutBlockMessage`, `getStartupReadOnlyWarning()`, and `forceClearSharedDataCheckout()` (`src/python/backend/app_controller.py`), and surface `"READ-ONLY — <reason>"` in `dataSourceStatusLabel` when shared checkout is blocked.
+- [x] Present a prominent startup modal warning (`CSPMReadOnlyCheckoutPromptOverlay` in `src/qml/DetachedShellWindow.qml`) and error toast once the main window settles whenever shared data opens read-only (with 1-click `"Retry Checkout Now"`, `"Clear Stale Checkout Lock & Enable Saving"`, and `"Continue in Read-Only Mode"`), and wire `DataSourceStatusBanner.qml` / `ProfessionalAppShell.qml` with `"Clear Stale Lock"` + `"Retry Checkout"`.
+- [x] Fix strict `ComponentBehavior: Bound` QML bindings in `src/qml/views/LegacyDocketsImportView.qml` (`required property string modelData` on the `"Breakdown of New Additions"` repeater delegate and `Boolean(...)` visibility guards) and `src/qml/views/AnalysisReviewGridWindow.qml` (`Boolean(...)` on `CheckBox.checked`).
+- [x] Run `py_compile`, `./scripts/qmllint.ps1`, `pytest`, commit and push to Git cloud (`origin/main`), and recompile/deploy standalone `C:\Programs\CSPM\CSPM.exe` via `./scripts/build_and_push.py`.
+
 ## 2026-10-21: False read-only conflict blocked manual docket saves
 
 - [x] Diagnose the installed log's `PermissionError`: saved synchronization hashes used lowercase hexadecimal while runtime hashes used uppercase, falsely reporting both copies changed.

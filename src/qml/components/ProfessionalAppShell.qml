@@ -195,7 +195,7 @@ Item {
         visible: root.shellEnabled
         z: 35
         t: root.t
-        appRef: root.appRoot
+        appRef: (root.appRoot && root.appRoot.appRef) ? root.appRoot.appRef : root.appRoot
         appStyle: root.appStyle
         status: root.appRoot.dataSourceStatus
         statusLabel: root.appRoot.dataSourceStatusLabel

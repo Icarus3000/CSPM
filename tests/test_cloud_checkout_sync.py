@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "python"))
 from services.paths import AppPaths
 from services.sync_service import SyncService
 
@@ -561,3 +563,58 @@ def test_auto_recovery_does_not_reclaim_a_same_installation_live_process_checkou
     assert not blocked["ok"]
     assert blocked["status"] == "checkout-held"
     assert json.loads((cloud / owner.LEASE_FILE_NAME).read_text(encoding="utf-8")) == live_lease
+
+
+def test_force_clear_shared_checkout_archives_and_acquires_and_exposes_startup_warning(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from backend.app_controller import AppController
+
+    cloud = tmp_path / "cloud"
+    local_a = tmp_path / "local-a"
+    local_b = tmp_path / "local-b"
+    _write_package(cloud, "base")
+    _write_package(local_b, "base")
+
+    first = _service(tmp_path, "a", cloud, local_a)
+    assert first.checkout_from_cloud()["ok"]
+
+    second = _service(tmp_path, "b", cloud, local_b)
+    controller = SimpleNamespace(
+        _governed_source_verified=False,
+        _governed_source_identity="",
+        _checkout_block_status="",
+        _checkout_block_message="",
+        _pending_startup_readonly_warning="",
+        _paths=second.paths,
+        _sync_service=second,
+        dataSourceStatusChanged=MagicMock(),
+        toast=MagicMock(),
+    )
+    controller.dataSourceStatus = AppController.dataSourceStatus.fget(controller)
+    AppController._checkout_shared_data(controller, "startup practice briefing preload")
+    controller.dataSourceStatus = AppController.dataSourceStatus.fget(controller)
+    controller.checkoutBlockStatus = AppController.checkoutBlockStatus.fget(controller)
+    controller.checkoutBlockMessage = AppController.checkoutBlockMessage.fget(controller)
+    controller.dataSourceStatusLabel = AppController.dataSourceStatusLabel.fget(controller)
+
+    assert controller._governed_source_verified is False
+    assert controller.checkoutBlockStatus == "checkout-held"
+    assert "checked out by" in controller.checkoutBlockMessage
+    assert controller.dataSourceStatusLabel.startswith("READ-ONLY — ")
+    warning = AppController.getStartupReadOnlyWarning(controller)
+    assert warning["active"] is True
+    assert warning["blockStatus"] == "checkout-held"
+    assert warning["canForceClear"] is True
+    assert "checked out by" in warning["message"]
+
+    cleared = second.force_clear_shared_checkout("test_override")
+    assert cleared["ok"] is True
+    assert Path(cleared["recoveryAuditPath"]).is_file()
+    assert not (cloud / second.LEASE_FILE_NAME).exists()
+
+    AppController._checkout_shared_data(controller, "runtime retry")
+    assert controller._governed_source_verified is True
+    assert controller._checkout_block_status == ""
+    assert controller._checkout_block_message == ""
+    assert second.publish_and_release()["ok"]

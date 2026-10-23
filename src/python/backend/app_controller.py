@@ -396,6 +396,9 @@ class AppController(QObject):
         data_verification.configure(settings=_init_loaded)
         self._governed_source_verified = False
         self._governed_source_identity = ""
+        self._checkout_block_status = ""
+        self._checkout_block_message = ""
+        self._pending_startup_readonly_warning = ""
         _init_local = str(_init_loaded.get("localDataDir", "")).strip()
         _init_master = str(_init_loaded.get("masterDataDir", "")).strip()
         
@@ -1647,6 +1650,9 @@ class AppController(QObject):
         if previous_source != (self._master_data_dir, self._local_data_dir):
             self._governed_source_verified = False
             self._governed_source_identity = ""
+            self._checkout_block_status = ""
+            self._checkout_block_message = ""
+            self._pending_startup_readonly_warning = ""
             self.dataSourceStatusChanged.emit()
         if "autoBackupMinutes" in self._settings_data:
             self.autoBackupMinutes = int(self._settings_data.get("autoBackupMinutes", 0))
@@ -2938,6 +2944,9 @@ class AppController(QObject):
             self._master_data_dir = value
             self._governed_source_verified = False
             self._governed_source_identity = ""
+            self._checkout_block_status = ""
+            self._checkout_block_message = ""
+            self._pending_startup_readonly_warning = ""
             self._settings_data["masterDataDir"] = value
             if hasattr(self, "_paths") and self._paths is not None:
                 self._paths.override_master_dir = Path(value) if value else None
@@ -2962,6 +2971,9 @@ class AppController(QObject):
             self._local_data_dir = value
             self._governed_source_verified = False
             self._governed_source_identity = ""
+            self._checkout_block_status = ""
+            self._checkout_block_message = ""
+            self._pending_startup_readonly_warning = ""
             self._settings_data["localDataDir"] = value
             if hasattr(self, "_paths") and self._paths is not None:
                 self._paths.override_data_dir = Path(value) if value else None
@@ -3197,6 +3209,9 @@ class AppController(QObject):
         if previous_source != (self._master_data_dir, self._local_data_dir):
             self._governed_source_verified = False
             self._governed_source_identity = ""
+            self._checkout_block_status = ""
+            self._checkout_block_message = ""
+            self._pending_startup_readonly_warning = ""
             self.dataSourceStatusChanged.emit()
         if "autoBackupMinutes" in self._settings_data:
             self.autoBackupMinutes = int(self._settings_data.get("autoBackupMinutes", 0))
@@ -3893,10 +3908,16 @@ class AppController(QObject):
         """Acquire the cloud writer checkout before enabling workbook writes."""
         self._governed_source_verified = False
         self._governed_source_identity = ""
+        self._checkout_block_status = ""
+        self._checkout_block_message = ""
         try:
             result = self._sync_service.pull_from_master()
         except Exception as exc:
             logging.exception("Shared-data checkout crashed during %s", phase)
+            self._checkout_block_status = "checkout-exception"
+            self._checkout_block_message = "Cloud checkout failed due to an unexpected error."
+            if str(phase or "").startswith("startup") or str(phase or "").startswith("deferred"):
+                self._pending_startup_readonly_warning = self._checkout_block_message
             self.dataSourceStatusChanged.emit()
             self.toast.emit("Shared data opened read-only: cloud checkout failed.")
             if data_verification.enabled():
@@ -3912,15 +3933,49 @@ class AppController(QObject):
             hashes = [SyncService._sha256(self._paths.data_dir() / name) for name in SyncService._FILES]
             import hashlib
             self._governed_source_identity = hashlib.sha256("|".join(hashes).encode("ascii")).hexdigest()[:12].upper()
+        if not result.get("ok"):
+            self._checkout_block_status = str(result.get("status", "checkout-blocked") or "checkout-blocked")
+            self._checkout_block_message = str(result.get("message", "Cloud checkout was not acquired.") or "Cloud checkout was not acquired.")
+            if str(phase or "").startswith("startup") or str(phase or "").startswith("deferred"):
+                self._pending_startup_readonly_warning = self._checkout_block_message
+        else:
+            self._pending_startup_readonly_warning = ""
         self.dataSourceStatusChanged.emit()
         if data_verification.enabled() and self._paths.master_data_dir() and not self._governed_source_verified:
             raise PermissionError("Read-only verification could not match the local replica to the configured governed source; no checkout or copy was performed.")
         if result.get("ok"):
             logging.info("Shared-data checkout %s during %s: %s", result.get("status"), phase, result.get("message"))
             return
-        message = str(result.get("message", "Cloud checkout was not acquired."))
+        message = self._checkout_block_message
         logging.error("Shared-data checkout blocked during %s: %s", phase, message)
         self.toast.emit(f"Shared data opened read-only: {message}")
+
+    @Property(str, notify=dataSourceStatusChanged)
+    def checkoutBlockStatus(self) -> str:
+        return str(getattr(self, "_checkout_block_status", "") or "")
+
+    @Property(str, notify=dataSourceStatusChanged)
+    def checkoutBlockMessage(self) -> str:
+        return str(getattr(self, "_checkout_block_message", "") or "")
+
+    @Slot(result="QVariantMap")
+    def getStartupReadOnlyWarning(self) -> Dict[str, Any]:
+        """Return active shared-data checkout block details for startup/runtime warning UI."""
+        status = self.dataSourceStatus
+        block_msg = str(getattr(self, "_checkout_block_message", "") or "").strip()
+        block_status = str(getattr(self, "_checkout_block_status", "") or "").strip()
+        pending = str(getattr(self, "_pending_startup_readonly_warning", "") or "").strip()
+        has_master = bool(self._paths.master_data_dir())
+        active = bool(has_master and status != "governed-source" and (block_msg or pending))
+        message = block_msg or pending
+        self._pending_startup_readonly_warning = ""
+        return {
+            "active": active,
+            "status": status,
+            "blockStatus": block_status,
+            "message": message,
+            "canForceClear": bool(active and block_status == "checkout-held" and not data_verification.enabled()),
+        }
 
     @Slot(result="QVariantMap")
     def retrySharedDataCheckout(self) -> Dict[str, Any]:
@@ -3934,7 +3989,29 @@ class AppController(QObject):
             "status": self.dataSourceStatus,
             "statusLabel": self.dataSourceStatusLabel,
             "identity": self._governed_source_identity,
+            "blockStatus": self.checkoutBlockStatus,
+            "blockMessage": self.checkoutBlockMessage,
         }
+
+    @Slot(result="QVariantMap")
+    def forceClearSharedDataCheckout(self) -> Dict[str, Any]:
+        """Archive and clear a stale shared checkout marker, then re-attempt checkout."""
+        clear_result = self._sync_service.force_clear_shared_checkout("user_override")
+        if not clear_result.get("ok"):
+            msg = str(clear_result.get("message", "Could not clear the shared checkout marker."))
+            self.toast.emit(msg)
+            return {
+                "ok": False,
+                "status": self.dataSourceStatus,
+                "statusLabel": self.dataSourceStatusLabel,
+                "message": msg,
+                "blockStatus": self.checkoutBlockStatus,
+                "blockMessage": self.checkoutBlockMessage,
+            }
+        retry_result = self.retrySharedDataCheckout()
+        retry_result["clearedMessage"] = str(clear_result.get("message", ""))
+        retry_result["recoveryAuditPath"] = str(clear_result.get("recoveryAuditPath", ""))
+        return retry_result
 
     @Property(str, notify=dataSourceStatusChanged)
     def dataSourceStatus(self) -> str:
@@ -3966,8 +4043,12 @@ class AppController(QObject):
             "unverified-local": "Unverified local data",
             "governed-source": "Governed source (local replica verified; cloud freshness unverified)",
         }
-        label = labels[self.dataSourceStatus]
-        if self.dataSourceStatus == "governed-source" and self._governed_source_identity:
+        status = self.dataSourceStatus
+        label = labels[status]
+        block_msg = str(getattr(self, "_checkout_block_message", "") or "").strip()
+        if status == "unverified-local" and block_msg and self._paths.master_data_dir():
+            label = f"READ-ONLY — {block_msg}"
+        if status == "governed-source" and self._governed_source_identity:
             label += " #" + self._governed_source_identity
         if data_verification.enabled():
             label += " — read-only verification"

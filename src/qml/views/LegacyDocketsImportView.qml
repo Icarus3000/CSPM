@@ -1025,13 +1025,13 @@ Rectangle {
                 Layout.fillWidth: true
                 height: 1
                 color: root.borderColor
-                visible: root.analysisResult && root.analysisResult.summary && root.analysisResult.summary.newRows > 0
+                visible: Boolean(root.analysisResult && root.analysisResult.summary && root.analysisResult.summary.newRows > 0)
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                visible: root.analysisResult && root.analysisResult.summary && root.analysisResult.summary.newRows > 0
+                visible: Boolean(root.analysisResult && root.analysisResult.summary && root.analysisResult.summary.newRows > 0)
 
                 Text {
                     text: "Breakdown of New Additions"
@@ -1047,15 +1047,17 @@ Rectangle {
                                ? Object.keys(root.analysisResult.summary.breakdown)
                                : []
                         delegate: RowLayout {
+                            id: breakdownRow
+                            required property string modelData
                             spacing: 6
-                            visible: root.analysisResult.summary.breakdown[modelData] > 0
+                            visible: Boolean(root.analysisResult && root.analysisResult.summary && root.analysisResult.summary.breakdown && root.analysisResult.summary.breakdown[breakdownRow.modelData] > 0)
                             Text {
-                                text: modelData + ":"
+                                text: breakdownRow.modelData + ":"
                                 font.pixelSize: 12
                                 color: root.mutedInkColor
                             }
                             Text {
-                                text: String(root.analysisResult.summary.breakdown[modelData])
+                                text: String((root.analysisResult && root.analysisResult.summary && root.analysisResult.summary.breakdown && root.analysisResult.summary.breakdown[breakdownRow.modelData]) || 0)
                                 font.pixelSize: 13
                                 font.weight: Font.Medium
                                 color: root.inkColor

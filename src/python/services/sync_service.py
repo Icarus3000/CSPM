@@ -546,6 +546,53 @@ class SyncService:
         except OSError as exc:
             return self._result(False, "release-error", f"Could not release the shared checkout: {exc}")
 
+    def force_clear_shared_checkout(self, reason: str = "user_requested_override") -> Dict[str, Any]:
+        """Archive and remove a stale shared checkout marker upon explicit user action."""
+        if data_verification.enabled():
+            return self._result(
+                False,
+                "read-only-verification",
+                "Read-only verification mode cannot modify or remove a shared checkout marker.",
+            )
+        lease_path = self._lease_path()
+        if lease_path is None:
+            return self._result(True, "local-only", "No shared cloud folder is configured.")
+        if not lease_path.is_file():
+            return self._result(True, "already-clear", "No shared checkout marker was present.")
+        existing = self._read_lease()
+        try:
+            recovery_dir = self.paths.runtime_dir() / self.RECOVERY_DIR_NAME
+            recovery_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            audit_target = recovery_dir / f"{stamp}_manual_cleared_checkout_{uuid4().hex}.json"
+            payload = {
+                "schemaVersion": 1,
+                "clearedAtUtc": datetime.now(UTC).isoformat(),
+                "reason": str(reason or "user_requested_override"),
+                "clearedByComputer": socket.gethostname(),
+                "clearedByMachineId": self._machine_identity(),
+                "previousLease": existing,
+            }
+            with audit_target.open("x", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            lease_path.unlink(missing_ok=True)
+            logger.warning(
+                "SyncService manually cleared shared checkout marker (%s); audit=%s",
+                self._lease_description(existing),
+                audit_target,
+            )
+            return self._result(
+                True,
+                "cleared",
+                f"Cleared shared checkout marker held by {self._lease_description(existing)}.",
+                clearedLease=existing,
+                recoveryAuditPath=str(audit_target),
+            )
+        except OSError as exc:
+            return self._result(False, "clear-error", f"Could not clear the shared checkout marker: {exc}")
+
     def assert_write_lease(self) -> None:
         """Raise before any local workbook save if this session is read-only."""
         data_verification.assert_writes_allowed()

@@ -697,6 +697,11 @@ Window {
     property var recoveryPromptRows: []
     property var pendingRecoveryPayload: null
     property bool recoveryPromptHandled: false
+    property bool readOnlyCheckoutPromptVisible: false
+    property bool readOnlyCheckoutPromptHandled: false
+    property string readOnlyCheckoutPromptTitle: ""
+    property string readOnlyCheckoutPromptMessage: ""
+    property bool readOnlyCheckoutCanForceClear: false
     property bool closeCheckpointHadRisk: false
     property string closeCheckpointSignature: ""
     property bool redockPromptVisible: false
@@ -2865,6 +2870,60 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         }
         focusAnyWindow(mainWin);
         return true;
+    }
+
+    function closeReadOnlyCheckoutPrompt() {
+        readOnlyCheckoutPromptVisible = false;
+    }
+
+    function maybePresentStartupReadOnlyWarning() {
+        if (mainWin.detachedMode || readOnlyCheckoutPromptHandled) return false;
+        if (!appRef || typeof appRef.getStartupReadOnlyWarning !== "function") return false;
+        var info = null;
+        try {
+            info = appRef.getStartupReadOnlyWarning();
+        } catch (e1) {
+            info = null;
+        }
+        if (!info || !info.active) return false;
+        readOnlyCheckoutPromptHandled = true;
+        var detail = String(info.message || "Cloud checkout was not acquired.");
+        readOnlyCheckoutPromptTitle = "Read-Only Mode — Shared Data Checked Out";
+        readOnlyCheckoutPromptMessage = detail
+            + "\n\nWorkbook saves, docket entries, and legacy imports are disabled while this session is read-only. "
+            + "Close CSPM on the other workstation and click Retry Checkout, or if that session is already closed, clear the stale checkout lock below.";
+        readOnlyCheckoutCanForceClear = info.canForceClear === true;
+        readOnlyCheckoutPromptVisible = true;
+        mainWin.showAppNotification("Shared data opened read-only: " + detail, "error");
+        phaseLog("SYNC", "Startup read-only checkout warning shown: " + detail);
+        return true;
+    }
+
+    function retryReadOnlyCheckoutFromPrompt() {
+        if (!appRef || typeof appRef.retrySharedDataCheckout !== "function") return;
+        var res = appRef.retrySharedDataCheckout();
+        if (res && res.ok) {
+            closeReadOnlyCheckoutPrompt();
+            mainWin.showAppNotification("Cloud checkout verified — session is now writable.", "info");
+        } else {
+            var detail = (res && res.blockMessage) ? String(res.blockMessage) : "Cloud checkout is still unavailable.";
+            readOnlyCheckoutPromptMessage = detail
+                + "\n\nWorkbook saves, docket entries, and legacy imports remain disabled until checkout succeeds.";
+            readOnlyCheckoutCanForceClear = !!(res && String(res.blockStatus || "") === "checkout-held");
+            mainWin.showAppNotification("Shared data still read-only: " + detail, "error");
+        }
+    }
+
+    function forceClearReadOnlyCheckoutFromPrompt() {
+        if (!appRef || typeof appRef.forceClearSharedDataCheckout !== "function") return;
+        var res = appRef.forceClearSharedDataCheckout();
+        if (res && res.ok) {
+            closeReadOnlyCheckoutPrompt();
+            mainWin.showAppNotification("Stale checkout cleared — session is now writable.", "info");
+        } else {
+            var detail = (res && (res.blockMessage || res.message)) ? String(res.blockMessage || res.message) : "Could not acquire checkout.";
+            mainWin.showAppNotification("Checkout override failed: " + detail, "error");
+        }
     }
 
     function maybePresentPendingRecoveryPrompt() {
@@ -9635,6 +9694,13 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         function onStartupUserActivityChanged() {
             mainWin.requestStartupDeferredQueuePump("startup-user-activity");
         }
+        function onDataSourceStatusChanged() {
+            if (mainWin.appRef && mainWin.appRef.dataSourceStatus === "governed-source") {
+                mainWin.closeReadOnlyCheckoutPrompt();
+            } else if (!mainWin.detachedMode && mainWin.visible && mainWin.animationPhase === "settled" && !mainWin.readOnlyCheckoutPromptHandled) {
+                mainWin.maybePresentStartupReadOnlyWarning();
+            }
+        }
         function onToast(message) {
             if (!mainWin.visible) return;
             mainWin.showAppNotification(String(message || ""), "info");
@@ -9861,6 +9927,7 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
         repeat: false
         onTriggered: {
             if (mainWin.detachedMode) return
+            mainWin.maybePresentStartupReadOnlyWarning()
             mainWin.maybePresentPendingRecoveryPrompt()
         }
     }
@@ -13879,6 +13946,218 @@ function syncDetachedPanelTitleFromTileIndex(tileIndex) {
                         color: Qt.rgba(redockPromptCard.promptTextColor.r, redockPromptCard.promptTextColor.g, redockPromptCard.promptTextColor.b, 0.90)
                         font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
                         text: "Bring main forward without docking yet."
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+            }
+        }
+    }
+
+    Item {
+        id: readOnlyCheckoutPromptOverlay
+        objectName: "CSPMReadOnlyCheckoutPromptOverlay"
+        anchors.fill: parent
+        visible: mainWin.readOnlyCheckoutPromptVisible
+        enabled: visible
+        z: 2225
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onPressed: function(mouse) { mouse.accepted = true; }
+            onClicked: function(mouse) { mouse.accepted = true; }
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Qt.rgba(0, 0, 0, 0.54)
+        }
+
+        SemanticPanel {
+            id: readOnlyCheckoutCard
+            t: mainWin.t
+            role: "dialog"
+            tone: "warning"
+            padding: 0
+            property int panelPad: mainWin.ratioToPixels(0.016, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 14)
+            property int panelSpacing: mainWin.ratioToPixels(0.010, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 10)
+            property int actionHeight: mainWin.ratioToPixels(0.044, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 36)
+            property int actionHintGap: mainWin.ratioToPixels(0.0042, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 4)
+            readonly property color promptSurface: readOnlyCheckoutCard.surfaceColor
+            readonly property color promptTextColor: readOnlyCheckoutCard.inkColor
+            readonly property color promptAccentColor: readOnlyCheckoutCard.accentColor
+            readonly property var promptTheme: {
+                var patched = mainWin.cloneThemeObject(mainWin.t);
+                if (!patched) patched = {};
+                patched.text = promptTextColor;
+                patched.panel = promptSurface;
+                patched.panel2 = promptSurface;
+                return patched;
+            }
+            readonly property real contentCenterXLocal: mainWin.canvasLocalX + mainWin.contentLocalX + (Math.max(1, mainWin.finalW) * 0.5)
+            readonly property real contentCenterYLocal: mainWin.canvasLocalY + mainWin.contentLocalY + (Math.max(1, mainWin.finalH) * 0.5)
+            width: Math.min(
+                Math.max(mainWin.ratioToPixels(0.42, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 460), 420),
+                Math.max(340, mainWin.width - (panelPad * 6))
+            )
+            height: readOnlyCheckoutBody.implicitHeight + (panelPad * 2)
+            x: {
+                var centerX = contentCenterXLocal;
+                if (!isFinite(centerX)) centerX = readOnlyCheckoutPromptOverlay.width * 0.5;
+                var desired = centerX - (width * 0.5);
+                var inset = panelPad * 2;
+                var minX = inset;
+                var maxX = readOnlyCheckoutPromptOverlay.width - width - inset;
+                if (maxX < minX) return Math.round((readOnlyCheckoutPromptOverlay.width - width) * 0.5);
+                return Math.round(Math.max(minX, Math.min(maxX, desired)));
+            }
+            y: {
+                var centerY = contentCenterYLocal;
+                if (!isFinite(centerY)) centerY = readOnlyCheckoutPromptOverlay.height * 0.5;
+                var desired = centerY - (height * 0.5);
+                var inset = panelPad * 2;
+                var minY = inset;
+                var maxY = readOnlyCheckoutPromptOverlay.height - height - inset;
+                if (maxY < minY) return Math.round((readOnlyCheckoutPromptOverlay.height - height) * 0.5);
+                return Math.round(Math.max(minY, Math.min(maxY, desired)));
+            }
+            radius: mainWin.ratioToPixels(0.010, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 10)
+            borderWidth: mainWin.ratioToPixels(0.0018, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 1)
+
+            Rectangle {
+                anchors.fill: parent
+                radius: readOnlyCheckoutCard.radius
+                color: Qt.rgba(mainWin.t.panel2.r, mainWin.t.panel2.g, mainWin.t.panel2.b, 0.28)
+                border.width: 0
+            }
+
+            Column {
+                id: readOnlyCheckoutBody
+                anchors.fill: parent
+                anchors.margins: readOnlyCheckoutCard.panelPad
+                spacing: readOnlyCheckoutCard.panelSpacing
+
+                Text {
+                    text: mainWin.readOnlyCheckoutPromptTitle
+                    color: readOnlyCheckoutCard.promptAccentColor
+                    font.pixelSize: mainWin.ratioToPixels(0.020, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 16)
+                    font.weight: Font.DemiBold
+                    wrapMode: Text.WordWrap
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                Text {
+                    text: mainWin.readOnlyCheckoutPromptMessage
+                    color: Qt.rgba(readOnlyCheckoutCard.promptTextColor.r, readOnlyCheckoutCard.promptTextColor.g, readOnlyCheckoutCard.promptTextColor.b, 0.92)
+                    font.pixelSize: mainWin.ratioToPixels(0.014, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 12)
+                    wrapMode: Text.WordWrap
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: mainWin.ratioToPixels(0.0012, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 1)
+                    color: Qt.rgba(readOnlyCheckoutCard.promptTextColor.r, readOnlyCheckoutCard.promptTextColor.g, readOnlyCheckoutCard.promptTextColor.b, 0.22)
+                }
+
+                Item {
+                    width: parent.width
+                    height: retryCheckoutPromptButton.height + readOnlyCheckoutCard.actionHintGap + retryCheckoutPromptHint.implicitHeight
+
+                    PillButton {
+                        id: retryCheckoutPromptButton
+                        t: readOnlyCheckoutCard.promptTheme
+                        metrics: mainWin.uiMetrics
+                        text: "Retry Checkout Now"
+                        primary: true
+                        width: parent.width
+                        height: readOnlyCheckoutCard.actionHeight
+                        onClicked: {
+                            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
+                                mainWin.sfxBusRef.playUiClick("confirm", 0.72);
+                            }
+                            mainWin.retryReadOnlyCheckoutFromPrompt();
+                        }
+                    }
+
+                    Text {
+                        id: retryCheckoutPromptHint
+                        width: parent.width
+                        anchors.top: retryCheckoutPromptButton.bottom
+                        anchors.topMargin: readOnlyCheckoutCard.actionHintGap
+                        color: Qt.rgba(readOnlyCheckoutCard.promptTextColor.r, readOnlyCheckoutCard.promptTextColor.g, readOnlyCheckoutCard.promptTextColor.b, 0.90)
+                        font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
+                        text: "Re-check the shared data folder after closing CSPM on the other workstation."
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                Item {
+                    visible: mainWin.readOnlyCheckoutCanForceClear
+                    width: parent.width
+                    height: visible ? (forceClearCheckoutPromptButton.height + readOnlyCheckoutCard.actionHintGap + forceClearCheckoutPromptHint.implicitHeight) : 0
+
+                    PillButton {
+                        id: forceClearCheckoutPromptButton
+                        t: readOnlyCheckoutCard.promptTheme
+                        metrics: mainWin.uiMetrics
+                        text: "Clear Stale Checkout Lock & Enable Saving"
+                        primary: false
+                        width: parent.width
+                        height: readOnlyCheckoutCard.actionHeight
+                        onClicked: {
+                            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
+                                mainWin.sfxBusRef.playUiClick("danger", 0.72);
+                            }
+                            mainWin.forceClearReadOnlyCheckoutFromPrompt();
+                        }
+                    }
+
+                    Text {
+                        id: forceClearCheckoutPromptHint
+                        width: parent.width
+                        anchors.top: forceClearCheckoutPromptButton.bottom
+                        anchors.topMargin: readOnlyCheckoutCard.actionHintGap
+                        color: Qt.rgba(readOnlyCheckoutCard.promptTextColor.r, readOnlyCheckoutCard.promptTextColor.g, readOnlyCheckoutCard.promptTextColor.b, 0.90)
+                        font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
+                        text: "Archive the stale .cspm_checkout.json lock file and acquire the write checkout on this PC."
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    height: continueReadOnlyButton.height + readOnlyCheckoutCard.actionHintGap + continueReadOnlyHint.implicitHeight
+
+                    PillButton {
+                        id: continueReadOnlyButton
+                        t: readOnlyCheckoutCard.promptTheme
+                        metrics: mainWin.uiMetrics
+                        text: "Continue in Read-Only Mode"
+                        primary: false
+                        width: parent.width
+                        height: readOnlyCheckoutCard.actionHeight
+                        onClicked: {
+                            if (mainWin.sfxBusRef && mainWin.sfxBusRef.playUiClick) {
+                                mainWin.sfxBusRef.playUiClick("dismiss", 0.48);
+                            }
+                            mainWin.closeReadOnlyCheckoutPrompt();
+                        }
+                    }
+
+                    Text {
+                        id: continueReadOnlyHint
+                        width: parent.width
+                        anchors.top: continueReadOnlyButton.bottom
+                        anchors.topMargin: readOnlyCheckoutCard.actionHintGap
+                        color: Qt.rgba(readOnlyCheckoutCard.promptTextColor.r, readOnlyCheckoutCard.promptTextColor.g, readOnlyCheckoutCard.promptTextColor.b, 0.90)
+                        font.pixelSize: mainWin.ratioToPixels(0.0125, Math.max(1, mainWin.finalW), Math.max(1, mainWin.finalH), 11)
+                        text: "Dismiss this alert; the top banner will remain visible with Retry Checkout."
                         wrapMode: Text.WordWrap
                         horizontalAlignment: Text.AlignHCenter
                     }

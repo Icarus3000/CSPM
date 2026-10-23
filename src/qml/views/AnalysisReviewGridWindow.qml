@@ -641,7 +641,7 @@ Window {
                                         active: model.isCheckbox === true
                                         visible: active
                                         sourceComponent: CheckBox {
-                                            checked: gridWindow.selectedMap[dataRow.rowData.sheet] && gridWindow.selectedMap[dataRow.rowData.sheet][dataRow.rowData.row] === true
+                                            checked: Boolean(gridWindow.selectedMap && gridWindow.selectedMap[dataRow.rowData.sheet] && gridWindow.selectedMap[dataRow.rowData.sheet][dataRow.rowData.row] === true)
                                             onClicked: {
                                                 var sm = gridWindow.selectedMap || {}
                                                 if (!sm[dataRow.rowData.sheet]) sm[dataRow.rowData.sheet] = {}
