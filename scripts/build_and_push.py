@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -201,6 +203,54 @@ def stage_and_commit(message: str | None) -> bool:
     return True
 
 
+def _sha256_upper(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest().upper()
+
+
+def _sync_governed_writer_deployment_manifest() -> None:
+    """Keep %LOCALAPPDATA%/CSPM/writer-deployment.private.json aligned with deployed package."""
+    local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
+    if not local_appdata:
+        return
+    cfg_path = Path(local_appdata) / "CSPM" / "writer-deployment.private.json"
+    if not cfg_path.is_file():
+        return
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        if not isinstance(cfg, dict) or cfg.get("launchPolicy") != "normal-governed-writer":
+            return
+        package_dir = Path(cfg.get("package", "")).resolve()
+        prov_path = package_dir / "_internal" / "release-provenance.json"
+        exe_path = package_dir / "CSPM.exe"
+        dll_path = package_dir / "_internal" / "native" / "cspm_native_motion.dll"
+        if not (prov_path.is_file() and exe_path.is_file() and dll_path.is_file()):
+            return
+        prov = json.loads(prov_path.read_text(encoding="utf-8"))
+        if prov.get("sourceStatus") != "clean" or prov.get("sourceDirty") is not False:
+            print(
+                "[build] WARNING: Deployed release-provenance.json is not clean; "
+                "skipping writer-deployment.private.json update."
+            )
+            return
+        cfg["sourceSha"] = prov["sourceSha"]
+        cfg["releaseProvenance"] = prov
+        cfg["executableSha256"] = _sha256_upper(exe_path)
+        cfg["nativeDllSha256"] = _sha256_upper(dll_path)
+        if "runtime" in cfg:
+            sys.path.insert(0, str(ROOT_DIR / "scripts"))
+            from launch_governed_readonly import runtime_manifest
+
+            cfg["runtime"] = runtime_manifest(package_dir)
+        cfg_path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        print(
+            f"[build] Synced governed writer manifest: {cfg_path} "
+            f"(sourceSha={cfg['sourceSha'][:8]}, exeSha={cfg['executableSha256'][:12]}...)"
+        )
+    except Exception as exc:
+        print(f"[build] WARNING: Could not sync writer-deployment.private.json: {exc}")
+
+
 def build_standalone_exe(*, restart_running: bool = False, no_deploy: bool = False) -> Path:
     print("\n=== [3/4] Recompiling Standalone Executable (.exe) ===")
     if not BUILD_SCRIPT.is_file():
@@ -231,6 +281,9 @@ def build_standalone_exe(*, restart_running: bool = False, no_deploy: bool = Fal
 
     if not dist_exe.is_file():
         raise FileNotFoundError(f"Expected compiled executable missing at ./{DIST_EXE_REL.as_posix()}")
+
+    if not no_deploy:
+        _sync_governed_writer_deployment_manifest()
 
     mtime_iso = datetime.fromtimestamp(dist_exe.stat().st_mtime).astimezone().isoformat()
     print(f"[build] Standalone executable ready: ./{DIST_EXE_REL.as_posix()} ({dist_exe.stat().st_size} bytes, modified {mtime_iso})")
