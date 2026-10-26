@@ -1983,11 +1983,82 @@ class ExcelRepo:
         )
         return {"ok": True, "message": "", "matter": matter_payload}
 
-    def list_transaction_accounts(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        rows = [self._canonicalize_transaction_account_row(r) for r in self._read_table_rows(TBL_TRANSACTION_ACCOUNTS)]
+    def _merged_transaction_account_rows(self, existing_rows: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+        raw_rows = existing_rows if existing_rows is not None else self._read_table_rows(TBL_TRANSACTION_ACCOUNTS)
+        rows = [self._canonicalize_transaction_account_row(r) for r in raw_rows]
+        seed_rows = [
+            self._canonicalize_transaction_account_row(r)
+            for r in self._load_seed_csv_rows("transactions_master.accounts.seed.csv")
+        ]
         if not rows:
-            seed_rows = self._load_seed_csv_rows("transactions_master.accounts.seed.csv")
-            rows = [self._canonicalize_transaction_account_row(r) for r in seed_rows]
+            return seed_rows
+        by_code = {
+            _clean_text(r.get(sc.COL_TXN_ACCOUNT_CODE)).upper(): r
+            for r in rows
+            if _clean_text(r.get(sc.COL_TXN_ACCOUNT_CODE))
+        }
+        for srow in seed_rows:
+            code = _clean_text(srow.get(sc.COL_TXN_ACCOUNT_CODE)).upper()
+            if not code:
+                continue
+            if code not in by_code:
+                rows.append(srow)
+                by_code[code] = srow
+            elif code == "CIBC_CHEQUING":
+                cur = by_code[code]
+                if _clean_text(cur.get(sc.COL_TXN_ACCOUNT_NAME)) == "CIBC Chequing":
+                    cur[sc.COL_TXN_ACCOUNT_NAME] = "CIBC Personal Chequing"
+                cur_aliases = _clean_text(cur.get(sc.COL_TXN_ACCOUNT_ALIASES))
+                if "cibc chequing" not in cur_aliases.lower():
+                    cur[sc.COL_TXN_ACCOUNT_ALIASES] = (
+                        f"{cur_aliases},CIBC Chequing,CIBC Personal".strip(",")
+                    )
+        return rows
+
+    def _merged_transaction_category_rows(self, existing_rows: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+        raw_rows = existing_rows if existing_rows is not None else self._read_table_rows(TBL_TRANSACTION_CATEGORIES)
+        rows = [self._canonicalize_transaction_category_row(r) for r in raw_rows]
+        seed_rows = [
+            self._canonicalize_transaction_category_row(r)
+            for r in self._load_seed_csv_rows("transactions_master.categories.seed.csv")
+        ]
+        if not rows:
+            return seed_rows
+        seen = {
+            _clean_text(r.get(sc.COL_TXN_CATEGORY_LKP_CODE)).upper()
+            for r in rows
+            if _clean_text(r.get(sc.COL_TXN_CATEGORY_LKP_CODE))
+        }
+        for srow in seed_rows:
+            code = _clean_text(srow.get(sc.COL_TXN_CATEGORY_LKP_CODE)).upper()
+            if code and code not in seen:
+                rows.append(srow)
+                seen.add(code)
+        return rows
+
+    def _merged_transaction_business_unit_rows(self, existing_rows: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+        raw_rows = existing_rows if existing_rows is not None else self._read_table_rows(TBL_TRANSACTION_BUSINESS_UNITS)
+        rows = [self._canonicalize_transaction_business_unit_row(r) for r in raw_rows]
+        seed_rows = [
+            self._canonicalize_transaction_business_unit_row(r)
+            for r in self._load_seed_csv_rows("transactions_master.business_units.seed.csv")
+        ]
+        if not rows:
+            return seed_rows
+        seen = {
+            _clean_text(r.get(sc.COL_TXN_BUSINESS_UNIT_NAME)).casefold()
+            for r in rows
+            if _clean_text(r.get(sc.COL_TXN_BUSINESS_UNIT_NAME))
+        }
+        for srow in seed_rows:
+            name = _clean_text(srow.get(sc.COL_TXN_BUSINESS_UNIT_NAME)).casefold()
+            if name and name not in seen:
+                rows.append(srow)
+                seen.add(name)
+        return rows
+
+    def list_transaction_accounts(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+        rows = self._merged_transaction_account_rows()
         out: List[Dict[str, Any]] = []
         for row in rows:
             active = self._to_bool_int(row.get(sc.COL_TXN_ACCOUNT_ACTIVE), default=1)
@@ -2021,13 +2092,7 @@ class ExcelRepo:
     ) -> List[Dict[str, Any]]:
         type_filter = _normalize_search_text(txn_type)
         class_filter = _normalize_search_text(txn_class)
-        rows = [
-            self._canonicalize_transaction_category_row(r)
-            for r in self._read_table_rows(TBL_TRANSACTION_CATEGORIES)
-        ]
-        if not rows:
-            seed_rows = self._load_seed_csv_rows("transactions_master.categories.seed.csv")
-            rows = [self._canonicalize_transaction_category_row(r) for r in seed_rows]
+        rows = self._merged_transaction_category_rows()
         out: List[Dict[str, Any]] = []
         for row in rows:
             active = self._to_bool_int(row.get(sc.COL_TXN_CATEGORY_LKP_ACTIVE), default=1)
@@ -2081,13 +2146,7 @@ class ExcelRepo:
         return out
 
     def list_transaction_business_units(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        rows = [
-            self._canonicalize_transaction_business_unit_row(r)
-            for r in self._read_table_rows(TBL_TRANSACTION_BUSINESS_UNITS)
-        ]
-        if not rows:
-            seed_rows = self._load_seed_csv_rows("transactions_master.business_units.seed.csv")
-            rows = [self._canonicalize_transaction_business_unit_row(r) for r in seed_rows]
+        rows = self._merged_transaction_business_unit_rows()
         out: List[Dict[str, Any]] = []
         for row in rows:
             active = self._to_bool_int(row.get(sc.COL_TXN_BUSINESS_UNIT_ACTIVE), default=1)
@@ -2344,6 +2403,26 @@ class ExcelRepo:
             "warnings": warnings,
             "message": message,
         }
+
+    def delete_transaction(self, transaction_id: str) -> Dict[str, Any]:
+        self.ensure_schema()
+        txn_id = _clean_text(transaction_id)
+        if not txn_id:
+            return {"ok": False, "message": "TransactionID is required."}
+        existing = self._find_transaction_row(txn_id)
+        if not existing:
+            return {"ok": False, "message": f"Transaction {txn_id} not found."}
+        self._delete_row_by_key_hard(TBL_TRANSACTIONS_MASTER, sc.COL_TXN_ID, txn_id)
+        try:
+            shl_rows = self._read_table_rows(TBL_SHAREHOLDER_LOAN_LEDGER)
+            for srow in shl_rows:
+                if _clean_text(srow.get(sc.COL_SHL_SOURCE_TXN_ID)) == txn_id:
+                    shl_id = _clean_text(srow.get(sc.COL_SHL_ENTRY_ID))
+                    if shl_id:
+                        self._delete_row_by_key_hard(TBL_SHAREHOLDER_LOAN_LEDGER, sc.COL_SHL_ENTRY_ID, shl_id)
+        except Exception as exc:
+            logger.warning("Could not clean linked SHL entry for deleted transaction %s: %s", txn_id, exc)
+        return {"ok": True, "transactionId": txn_id, "message": f"Deleted transaction {txn_id}."}
 
     def save_ap_expense(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Save the expense linked to an unpaid A/P bill.
@@ -14006,8 +14085,13 @@ class ExcelRepo:
             raise ValueError("Reconciled status requires ClearedAt and ReconciledAt.")
 
         biller_entity = self._pick_text(payload, ["billerEntity", "billerCode", sc.COL_TXN_BILLER_ENTITY]).upper()
-        if biller_entity not in {"SOLE_PROP", "PC"}:
-            biller_entity = "PC" if (invoice_ref.upper().endswith("-PC") or txn_date >= "2026-11-01") else "SOLE_PROP"
+        if biller_entity not in {"SOLE_PROP", "PC", "DEBORAH_OT", "FAMILY"}:
+            if txn_class == "Family":
+                biller_entity = "FAMILY"
+            elif business_unit.lower().startswith("deborah"):
+                biller_entity = "DEBORAH_OT"
+            else:
+                biller_entity = "PC" if (invoice_ref.upper().endswith("-PC") or txn_date >= "2026-11-01") else "SOLE_PROP"
 
         return {
             "transactionId": txn_id,
@@ -14129,6 +14213,9 @@ class ExcelRepo:
                     .split("|")
                     if alias.strip()
                 }
+                acct_name = _clean_text(row.get(sc.COL_TXN_ACCOUNT_NAME)).casefold()
+                if acct_name:
+                    declared.add(acct_name)
                 if key in declared:
                     aliases.append(row)
 
@@ -14161,24 +14248,8 @@ class ExcelRepo:
         tables = self._read_table_rows_bulk(
             [TBL_TRANSACTION_ACCOUNTS, TBL_TRANSACTION_BUSINESS_UNITS]
         )
-        account_rows = [
-            self._canonicalize_transaction_account_row(row)
-            for row in tables.get(TBL_TRANSACTION_ACCOUNTS.table, [])
-        ]
-        unit_rows = [
-            self._canonicalize_transaction_business_unit_row(row)
-            for row in tables.get(TBL_TRANSACTION_BUSINESS_UNITS.table, [])
-        ]
-        if not account_rows:
-            account_rows = [
-                self._canonicalize_transaction_account_row(row)
-                for row in self._load_seed_csv_rows("transactions_master.accounts.seed.csv")
-            ]
-        if not unit_rows:
-            unit_rows = [
-                self._canonicalize_transaction_business_unit_row(row)
-                for row in self._load_seed_csv_rows("transactions_master.business_units.seed.csv")
-            ]
+        account_rows = self._merged_transaction_account_rows(tables.get(TBL_TRANSACTION_ACCOUNTS.table, []))
+        unit_rows = self._merged_transaction_business_unit_rows(tables.get(TBL_TRANSACTION_BUSINESS_UNITS.table, []))
 
         canonical_from = self._canonical_transaction_reference(
             value=from_account,
@@ -18204,8 +18275,15 @@ class ExcelRepo:
         if gross <= 0.0:
             return
 
-        personal_codes = {"CORY_PERSONAL", "PERSONAL", "SHAREHOLDER_LOAN", "SHL"}
-        corp_codes = {"PC_OPERATING", "OPERATING"}
+        if _clean_text(transaction_row.get(sc.COL_TXN_CLASS)).lower() != "business":
+            return
+        personal_codes = {
+            "CORY_PERSONAL", "PERSONAL", "SHAREHOLDER_LOAN", "SHL",
+            "SIMPLII_VISA", "TRIANGLE_MASTERCARD", "CIBC_CHEQUING", "CIBC_SAVINGS",
+            "SIMPLII_CHEQUING", "CASH_DEBORAH", "CASH_CORY", "KOHO",
+            "EQ_CARD", "EQ_ACCOUNT", "CIBC_LOC",
+        }
+        corp_codes = {"PC_OPERATING", "CIBC_PC_GENERAL", "OPERATING"}
 
         gifi_code = "8860"
         for cat in self._read_table_rows(TBL_TRANSACTION_CATEGORIES):

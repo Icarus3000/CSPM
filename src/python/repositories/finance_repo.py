@@ -371,10 +371,7 @@ class FinanceRepo:
         self.db = db
 
     def list_transaction_accounts(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        rows = [self.db._canonicalize_transaction_account_row(r) for r in self.db._read_table_rows(TBL_TRANSACTION_ACCOUNTS)]
-        if not rows:
-            seed_rows = self.db._load_seed_csv_rows("transactions_master.accounts.seed.csv")
-            rows = [self.db._canonicalize_transaction_account_row(r) for r in seed_rows]
+        rows = self.db._merged_transaction_account_rows()
         out: List[Dict[str, Any]] = []
         for row in rows:
             active = self.db._to_bool_int(row.get(sc.COL_TXN_ACCOUNT_ACTIVE), default=1)
@@ -408,13 +405,7 @@ class FinanceRepo:
     ) -> List[Dict[str, Any]]:
         type_filter = _normalize_search_text(txn_type)
         class_filter = _normalize_search_text(txn_class)
-        rows = [
-            self.db._canonicalize_transaction_category_row(r)
-            for r in self.db._read_table_rows(TBL_TRANSACTION_CATEGORIES)
-        ]
-        if not rows:
-            seed_rows = self.db._load_seed_csv_rows("transactions_master.categories.seed.csv")
-            rows = [self.db._canonicalize_transaction_category_row(r) for r in seed_rows]
+        rows = self.db._merged_transaction_category_rows()
         out: List[Dict[str, Any]] = []
         for row in rows:
             active = self.db._to_bool_int(row.get(sc.COL_TXN_CATEGORY_LKP_ACTIVE), default=1)
@@ -466,13 +457,7 @@ class FinanceRepo:
         return out
 
     def list_transaction_business_units(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        rows = [
-            self.db._canonicalize_transaction_business_unit_row(r)
-            for r in self.db._read_table_rows(TBL_TRANSACTION_BUSINESS_UNITS)
-        ]
-        if not rows:
-            seed_rows = self.db._load_seed_csv_rows("transactions_master.business_units.seed.csv")
-            rows = [self.db._canonicalize_transaction_business_unit_row(r) for r in seed_rows]
+        rows = self.db._merged_transaction_business_unit_rows()
         out: List[Dict[str, Any]] = []
         for row in rows:
             active = self.db._to_bool_int(row.get(sc.COL_TXN_BUSINESS_UNIT_ACTIVE), default=1)
@@ -513,6 +498,9 @@ class FinanceRepo:
 
     def save_transaction(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self.db.save_transaction(payload)
+
+    def delete_transaction(self, transaction_id: str) -> Dict[str, Any]:
+        return self.db.delete_transaction(transaction_id)
 
     def _canonicalize_transaction_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
         return self.db._canonicalize_transaction_row(row)
