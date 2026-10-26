@@ -213,7 +213,7 @@ Item {
         {
             "label": "Time today",
             "value": formatHours(productivity.today ? productivity.today.hours : 0),
-            "detail": formatMoney(productivity.today ? productivity.today.gross : 0) + " recorded",
+            "detail": formatMoney(productivity.today ? (productivity.today.net !== undefined ? productivity.today.net : productivity.today.gross) : 0) + " recorded",
             "icon": "\uE823",
             "tone": "accent",
             "moduleId": "finance", "nodeId": "D18",
@@ -542,9 +542,9 @@ Item {
                             Repeater {
                                 model: [
                                     { "label": "WTD billable", "value": root.formatHours(root.productivity.wtd ? root.productivity.wtd.hours : 0) },
-                                    { "label": "WTD fees", "value": root.formatMoney(root.productivity.wtd ? root.productivity.wtd.gross : 0) },
+                                    { "label": "WTD fees", "value": root.formatMoney(root.productivity.wtd ? (root.productivity.wtd.net !== undefined ? root.productivity.wtd.net : root.productivity.wtd.gross) : 0) },
                                     { "label": "YTD billable", "value": root.formatHours(root.productivity.ytd ? root.productivity.ytd.hours : 0) },
-                                    { "label": "YTD fees", "value": root.formatMoney(root.productivity.ytd ? root.productivity.ytd.gross : 0) }
+                                    { "label": "YTD fees", "value": root.formatMoney(root.productivity.ytd ? (root.productivity.ytd.net !== undefined ? root.productivity.ytd.net : root.productivity.ytd.gross) : 0) }
                                 ]
 
                                 delegate: ColumnLayout {

@@ -5721,20 +5721,34 @@ class ExcelRepo:
             logger.exception("Could not read productivity report data")
             return {"ok": False, "message": f"Could not read productivity data: {exc}"}
 
-        # The legacy report first calculated the docket value for every
-        # invoice, then scaled that invoice's docket value to its booked
-        # billings.  This preserves realization/write-downs while leaving
-        # unbilled time at its production value.
+        # Each invoice's base docket value uses NetToFirm (COL_TIME_NET), falling
+        # back to GrossToClient only when NetToFirm is absent in test doubles.
+        # Because WIP_... write-down entries are stored on the invoice date in
+        # Time_Entries, invoice_base already equals booked billings (Option B:
+        # write-downs are recognized on the invoice date rather than restating
+        # prior months), while keeping the ratio for any legacy invoice that was
+        # adjusted in Ledger without a WIP adjustment row.
+        def _row_net_production(row: Mapping[str, Any]) -> float:
+            net_val = self._parse_float(row.get(sc.COL_TIME_NET))
+            if net_val is not None:
+                return float(net_val)
+            return float(self._parse_float(row.get(sc.COL_TIME_GROSS)) or 0.0)
+
         invoice_base: Dict[str, float] = collections.defaultdict(float)
         for row in time_rows:
             invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
             if invoice_ref:
-                invoice_base[invoice_ref] += float(self._parse_float(row.get(sc.COL_TIME_GROSS)) or 0.0)
+                invoice_base[invoice_ref] += _row_net_production(row)
 
         invoice_billings: Dict[str, float] = collections.defaultdict(float)
+        non_fee_categories = {"disbursement", "government fees", "filing fees", "accounting & legal fees"}
         for row in ledger_rows:
             invoice_ref = _clean_text(row.get(sc.COL_LEDGER_REFERENCE)).casefold()
             if invoice_ref:
+                cat = _clean_text(row.get(sc.COL_LEDGER_CATEGORY)).casefold()
+                desc = _clean_text(row.get(sc.COL_LEDGER_DESCRIPTION)).casefold()
+                if cat in non_fee_categories or "disbursement" in desc:
+                    continue
                 billed_amount = float(self._parse_float(row.get(sc.COL_LEDGER_BILLINGS_EXCL_HST)) or 0.0)
                 # Payment rows use the same invoice reference but have no
                 # billing value.  The legacy macro ignored those zero rows.
@@ -5745,7 +5759,10 @@ class ExcelRepo:
         for invoice_ref, base_amount in invoice_base.items():
             booked_amount = invoice_billings.get(invoice_ref)
             if base_amount and booked_amount is not None:
-                realization_factor[invoice_ref] = booked_amount / base_amount
+                if abs(booked_amount - base_amount) <= 0.01:
+                    realization_factor[invoice_ref] = 1.0
+                else:
+                    realization_factor[invoice_ref] = booked_amount / base_amount
 
         client_names = {
             _clean_text(row.get(sc.COL_CLIENT_ID)).casefold(): _clean_text(row.get(sc.COL_CLIENT_NAME))
@@ -5786,7 +5803,7 @@ class ExcelRepo:
             if not entry_date or entry_date > end_date:
                 continue
             invoice_ref = _clean_text(row.get(sc.COL_TIME_INVOICE_REF)).casefold()
-            net = float(self._parse_float(row.get(sc.COL_TIME_NET)) or 0.0)
+            net = _row_net_production(row)
             realized_amount = net * realization_factor.get(invoice_ref, 1.0)
 
             # Trend windows are independently anchored to the chosen end date,
@@ -6010,9 +6027,9 @@ class ExcelRepo:
                 gross_value = 0.0
                 net_value = 0.0
 
-            # 1. Production metrics: represent all work performed in the period
-            # regardless of whether an invoice has since been issued.
-            if hours > 0 or gross_value > 0 or net_value > 0:
+            # 1. Production metrics: represent all work and WIP adjustments in the period
+            # regardless of whether an invoice has since been issued (Option B).
+            if hours != 0 or gross_value != 0 or net_value != 0:
                 if date_text == today_iso:
                     prod["today"]["hours"] += hours
                     prod["today"]["gross"] += gross_value

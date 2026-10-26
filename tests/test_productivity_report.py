@@ -129,6 +129,58 @@ def test_productivity_report_matches_legacy_realization_and_trend_windows():
     assert daily["2026-01-15"] == 50.0
 
 
+def test_productivity_report_preserves_70_pct_split_and_option_b_writedown_dates():
+    repo = _ProductivityRepo()
+    repo.tables[TBL_TIME.table] = [
+        # 70%-split LPN/LIHDC invoice: Gross $1,000, Net $700, Ledger Billings $700 -> Realized must be $700 (not $490)
+        {
+            sc.COL_TIME_DATE: "2026-09-10",
+            sc.COL_TIME_CLIENT_ID: "C-1",
+            sc.COL_TIME_HOURS: 2.0,
+            sc.COL_TIME_GROSS: 1000.0,
+            sc.COL_TIME_NET: 700.0,
+            sc.COL_TIME_INVOICE_REF: "26-0111",
+        },
+        # Multi-month invoice with Sept hourly work ($1,000) and Oct WIP adjustment (-$200) -> Option B keeps Sept at $1,000
+        {
+            sc.COL_TIME_DATE: "2026-09-20",
+            sc.COL_TIME_CLIENT_ID: "C-2",
+            sc.COL_TIME_HOURS: 2.0,
+            sc.COL_TIME_GROSS: 1000.0,
+            sc.COL_TIME_NET: 1000.0,
+            sc.COL_TIME_INVOICE_REF: "26-0122",
+        },
+        {
+            sc.COL_TIME_DATE: "2026-10-15",
+            sc.COL_TIME_CLIENT_ID: "C-2",
+            sc.COL_TIME_HOURS: 0.0,
+            sc.COL_TIME_GROSS: -200.0,
+            sc.COL_TIME_NET: -200.0,
+            sc.COL_TIME_INVOICE_REF: "26-0122",
+        },
+    ]
+    repo.tables[TBL_LEDGER.table] = [
+        {sc.COL_LEDGER_REFERENCE: "26-0111", sc.COL_LEDGER_BILLINGS_EXCL_HST: 700.0},
+        {sc.COL_LEDGER_REFERENCE: "26-0122", sc.COL_LEDGER_BILLINGS_EXCL_HST: 800.0},
+    ]
+
+    sep_res = ExcelRepo.productivity_report(
+        repo,
+        {"startDate": "2026-09-01", "endDate": "2026-09-30", "annualTarget": "350000"},
+    )
+    assert sep_res["ok"] is True
+    assert sep_res["summary"]["totalProduction"] == 1700.0
+    assert sep_res["summary"]["billableHours"] == 4.0
+
+    oct_res = ExcelRepo.productivity_report(
+        repo,
+        {"startDate": "2026-10-01", "endDate": "2026-10-31", "annualTarget": "350000"},
+    )
+    assert oct_res["ok"] is True
+    assert oct_res["summary"]["totalProduction"] == -200.0
+    assert oct_res["summary"]["billableHours"] == 0.0
+
+
 def test_productivity_report_rejects_an_invalid_date_range():
     result = ExcelRepo.productivity_report(
         _ProductivityRepo(),
