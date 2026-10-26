@@ -1,5 +1,18 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-26: "CSPM Quick Expense" Cross-Platform Mini-App (Mobile iPhone/Android PWA, Chromebook PWA, Standalone Rust Desktop App & Direct CSPM Header Launcher)
+
+- [x] Update transaction schema seeds (`schema/transactions_master.accounts.seed.csv`, `schema/transactions_master.categories.seed.csv`, `schema/transactions_master.enums.json`) and `ExcelRepo` / `FinanceRepo` (`src/python/repositories/excel_repo.py`, `src/python/repositories/finance_repo.py`) to distinguish `CIBC Personal Chequing` (`CIBC_CHEQUING`), `CIBC Personal Savings` (`CIBC_SAVINGS`), `CIBC PC General` (`CIBC_PC_GENERAL`), and `CIBC PC Trust` (`CIBC_PC_TRUST`), add `KOHO` (`Koho`), and add separate `CIBC Mortgage` (`EXP_MORTGAGE_CIBC`) and `Home Trust Mortgage` (`EXP_MORTGAGE_HOME_TRUST`) categories.
+- [x] Implement `QuickExpenseService` (`src/python/services/quick_expense_service.py`) and `QuickExpenseServerDaemon` (`src/python/quick_expense_server.py`) with:
+  - User login (`deborah` 1-click sign-in vs. `cory` PIN-protected full access),
+  - Hard Deborah account and entry visibility firewall (never exposing `KOHO`, `WEALTHSIMPLE`, `EQ_ACCOUNT`, `EQ_CARD`, or `CIBC_LOC` in dropdowns or reports, while showing Deborah's entries plus Cory's non-restricted entries),
+  - Strict `CIBC PC Trust` guardrail (visible to Deborah, blocked for expenses and credit card payments, allowed strictly for client money in under `CORY_PC` Income and money out to `CIBC PC General` under Transfer),
+  - Automatic Shareholder Loan (`GIFI 2781`) credit when `CORY_PC` business expenses are paid from personal cards/accounts, and
+  - Conflict-free OneDrive sync queue (`QuickExpense_Sync/inbox.json` + `flush_pending_inbox`).
+- [x] Build the mobile-first & Chromebook/Desktop responsive Progressive Web App (`src/templates/quick_expense/index.html`, `manifest.json`, `sw.js`, `icon.svg`) with 4 mode tabs (`Expense`, `Income`, `Pay Credit Card`, `Transfer`), 5 stream buttons (`Family & Home`, `Deborah OT - Private`, `Deborah OT - VHA`, `Cory - Sole Practice`, `Cory - PC`), `Previous` / `Save & Next` card navigation, offline mobile queue, and 1-click `"Check What I Added"` pop-up report modal with prominent `"Close Report & Back to Entering"` buttons.
+- [x] Build and compile the standalone native Rust desktop executable (`src/rust/cspm_quick_expense/` -> `cspm-quick-expense.exe`) and wire direct launch inside CSPM (`AppController.openQuickExpenseMiniApp` in `src/python/backend/app_controller.py` and `quickExpenseHeaderButton` in `src/qml/components/ProfessionalTopHeader.qml`).
+- [x] Run `py_compile`, `./scripts/qmllint.ps1`, and `pytest tests/test_quick_expense_service.py` (`4 passed`), recompile standalone `C:\Programs\CSPM\CSPM.exe`, and push to Git cloud via `./scripts/build_and_push.py`.
+
 ## 2026-10-23: Clear Stale Shared Checkout Lock, Startup Read-Only Checkout Warning Modal/Banner & Legacy Import QML Fixes
 
 - [x] Archive and clear the stale `.cspm_checkout.json` lock held by `iMacFedora` (`2026-10-23T11:36:14.432015+00:00`) in `OneDrive - LPN/CSPM_Shared_Data/.cspm_checkout.json`.

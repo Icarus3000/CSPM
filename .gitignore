@@ -338,3 +338,6 @@ data/backups_*/
 
 # Private usage-control observations, checkpoints and scheduler state
 .workspace-usage/
+
+# Rust build artifacts
+src/rust/*/target/

@@ -401,6 +401,48 @@ Rectangle {
             }
 
             Button {
+                id: quickExpenseHeaderButton
+                Layout.preferredWidth: 122
+                Layout.preferredHeight: topHeaderRoot.controlButtonSizePx + 2
+                padding: 0
+                text: "Quick Expense"
+                hoverEnabled: true
+                background: Rectangle {
+                    radius: 3
+                    color: quickExpenseHeaderButton.hovered ? topHeaderRoot.controlHoverFill : "transparent"
+                    border.width: quickExpenseHeaderButton.hovered ? 1 : 0
+                    border.color: topHeaderRoot.controlHoverBorder
+                }
+                contentItem: RowLayout {
+                    spacing: 5
+                    Text {
+                        text: "\uE8C7"
+                        font.family: AppTypography.iconFamily()
+                        font.pixelSize: 13
+                        color: quickExpenseHeaderButton.hovered ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: quickExpenseHeaderButton.text
+                        font.family: AppTypography.textFamily()
+                        font.pixelSize: 12
+                        font.weight: Font.Medium
+                        color: quickExpenseHeaderButton.hovered ? topHeaderRoot.headerInk : topHeaderRoot.headerMutedInk
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                }
+                onClicked: {
+                    if (topHeaderRoot.app && topHeaderRoot.app.openQuickExpenseMiniApp) {
+                        topHeaderRoot.app.openQuickExpenseMiniApp("")
+                    }
+                }
+                opacity: topHeaderRoot.controlsVisuallyEnabled ? 1.0 : 0.70
+            }
+
+            Button {
                 id: settingsButton
                 Layout.preferredWidth: topHeaderRoot.controlButtonSizePx
                 Layout.preferredHeight: topHeaderRoot.controlButtonSizePx

@@ -7031,4 +7031,53 @@ class AppController(QObject):
             self._report_failure("Failed to reset docket timer", context="app.docket.reset_timer", exc=exc)
             return {"ok": False, "message": str(exc)}
 
+    def _ensure_quick_expense_daemon(self):
+        daemon = getattr(self, "_quick_expense_daemon", None)
+        if daemon is None:
+            from quick_expense_server import QuickExpenseServerDaemon
+            from services.quick_expense_service import QuickExpenseService
 
+            service = QuickExpenseService(repo=self._excel_repo, paths=self._paths)
+            daemon = QuickExpenseServerDaemon(
+                service=service,
+                on_data_changed=lambda: self.transactionDataChanged.emit(),
+            )
+            self._quick_expense_daemon = daemon
+        info = daemon.ensure_running()
+        try:
+            flushed = daemon.service.flush_pending_inbox()
+            if int(flushed.get("flushedCount") or 0) > 0:
+                self.transactionDataChanged.emit()
+        except Exception:
+            pass
+        return daemon, info
+
+    @Slot(result="QVariantMap")
+    @Slot(str, result="QVariantMap")
+    def openQuickExpenseMiniApp(self, user_id: str = "") -> dict:
+        try:
+            from quick_expense_server import open_standalone_dialog_window
+
+            _daemon, info = self._ensure_quick_expense_daemon()
+            url = str(info.get("localUrl") or "http://127.0.0.1:24820")
+            clean_user = str(user_id or "").strip().lower()
+            if clean_user in ("deborah", "cory"):
+                url = f"{url}/?user={clean_user}"
+            launched = open_standalone_dialog_window(url)
+            return {
+                "ok": bool(launched),
+                "localUrl": info.get("localUrl", url),
+                "lanUrl": info.get("lanUrl", url),
+                "port": info.get("port", 24820),
+            }
+        except Exception as exc:
+            self._report_failure("Failed to open Quick Expense mini-app", context="app.quick_expense.open", exc=exc)
+            return {"ok": False, "message": str(exc)}
+
+    @Slot(result="QVariantMap")
+    def getQuickExpenseInfo(self) -> dict:
+        try:
+            _daemon, info = self._ensure_quick_expense_daemon()
+            return dict(info)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}

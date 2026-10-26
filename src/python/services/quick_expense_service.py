@@ -7,6 +7,7 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from repositories.excel_repo import ExcelRepo
 from repositories.finance_repo import FinanceRepo
@@ -389,22 +390,90 @@ CATEGORY_ICONS_AND_GROUPS: Dict[str, Tuple[str, str, bool]] = {
 
 class QuickExpenseService:
     """Storage-agnostic domain service for the CSPM Quick Expense Mini-App
-    (Chromebook PWA + Windows/Fedora/macOS Native Desktop Dialog).
-    Enforces:
-      1. User Login (`deborah` vs. `cory`)
-      2. Hard Server-Side Account & Transaction Firewall for Deborah
-         (NEVER exposes Koho, Wealthsimple, EQ, or CIBC LOC)
-      3. Strict CIBC PC Trust Account Guardrail
-         (Visible to Deborah, but blocked for Expenses/Card Payments; only
-          allowed for Money In from Clients or Transfer Out to CIBC PC General)
-      4. Separate CIBC Mortgage & Home Trust Mortgage categories
-      5. Next / Previous Card-Deck navigation and 1-Click Period Review Reports
+    (iPhone/Android Mobile PWA, Chromebook PWA, Rust Standalone Desktop App,
+    and Embedded CSPM Launcher).
     """
 
     def __init__(self, paths: Optional[AppPaths] = None, repo: Optional[ExcelRepo] = None):
-        self.paths = paths or AppPaths()
+        self.paths = paths or AppPaths(root=AppPaths.project_root())
         self.repo = repo or ExcelRepo(self.paths)
         self.finance_repo = FinanceRepo(self.repo)
+
+    # ------------------------------------------------------------------
+    # OneDrive Conflict-Free Sync Queue Helpers
+    # ------------------------------------------------------------------
+    def _sync_queue_paths(self) -> List[Path]:
+        """Return both the local data_dir sync queue and the OneDrive shared_data_dir
+        QuickExpense_Sync inbox so entries saved while CSPM.xlsm is busy or from
+        remote sessions are persisted safely in OneDrive without Excel file conflicts."""
+        candidates: List[Path] = []
+        try:
+            local_dir = self.paths.data_dir() / "QuickExpense_Sync"
+            local_dir.mkdir(parents=True, exist_ok=True)
+            candidates.append(local_dir / "inbox.json")
+        except Exception:
+            pass
+        try:
+            master_dir = self.paths.master_data_dir()
+            if master_dir and master_dir.exists():
+                shared_dir = master_dir / "QuickExpense_Sync"
+                shared_dir.mkdir(parents=True, exist_ok=True)
+                shared_inbox = shared_dir / "inbox.json"
+                if shared_inbox not in candidates:
+                    candidates.append(shared_inbox)
+        except Exception:
+            pass
+        return candidates
+
+    def _read_queued_entries(self) -> List[Dict[str, Any]]:
+        by_id: Dict[str, Dict[str, Any]] = {}
+        for qpath in self._sync_queue_paths():
+            if not qpath.exists():
+                continue
+            try:
+                raw = json.loads(qpath.read_text(encoding="utf-8"))
+                items = raw.get("items", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+                for item in items:
+                    if isinstance(item, dict) and item.get("transactionId"):
+                        by_id[str(item["transactionId"])] = item
+            except Exception as exc:
+                logger.warning("Could not read QuickExpense inbox %s: %s", qpath, exc)
+        return list(by_id.values())
+
+    def _write_queued_entries(self, items: List[Dict[str, Any]]) -> None:
+        payload = {
+            "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "count": len(items),
+            "items": items,
+        }
+        serialized = json.dumps(payload, indent=2)
+        for qpath in self._sync_queue_paths():
+            try:
+                qpath.parent.mkdir(parents=True, exist_ok=True)
+                qpath.write_text(serialized, encoding="utf-8")
+            except Exception as exc:
+                logger.warning("Could not write QuickExpense inbox %s: %s", qpath, exc)
+
+    def flush_pending_inbox(self) -> Dict[str, Any]:
+        """Attempt to merge any waiting OneDrive QuickExpense_Sync/inbox.json entries
+        into CSPM.xlsm whenever the workbook is unlocked."""
+        queued = self._read_queued_entries()
+        if not queued:
+            return {"ok": True, "flushedCount": 0, "remainingCount": 0}
+        remaining: List[Dict[str, Any]] = []
+        flushed = 0
+        for item in queued:
+            try:
+                res = self.finance_repo.save_transaction(item)
+                if res.get("ok"):
+                    flushed += 1
+                else:
+                    remaining.append(item)
+            except Exception:
+                remaining.append(item)
+        if flushed > 0:
+            self._write_queued_entries(remaining)
+        return {"ok": True, "flushedCount": flushed, "remainingCount": len(remaining)}
 
     # ------------------------------------------------------------------
     # 1. Authentication & User Profiles
@@ -459,7 +528,6 @@ class QuickExpenseService:
         if not code:
             return False
         if code in {"AP_PAYABLE", "PC_OPERATING"}:
-            # Internal AP / legacy alias replaced by CIBC_PC_GENERAL in quick UI
             return False
         if self._is_cory(user_id):
             return True
@@ -483,7 +551,6 @@ class QuickExpenseService:
         if to_acct in DEBORAH_RESTRICTED_ACCOUNT_CODES:
             return False
 
-        # Also check text fields so no mention of Koho, Wealthsimple, EQ, or CIBC LOC leaks
         combined_text = " ".join(
             str(txn.get(k) or "")
             for k in ("fromAccount", "toAccount", "payee", "expenseDetails", "notes", "categoryCode", "categoryName")
@@ -499,6 +566,7 @@ class QuickExpenseService:
     # ------------------------------------------------------------------
     def get_bootstrap_data(self, user_id: str = "deborah") -> Dict[str, Any]:
         uid = "cory" if self._is_cory(user_id) else "deborah"
+        self.flush_pending_inbox()
 
         # 1. Filtered Accounts
         raw_accounts = self.finance_repo.list_transaction_accounts(include_inactive=False)
@@ -538,8 +606,7 @@ class QuickExpenseService:
         categories: List[Dict[str, Any]] = []
         for cat in raw_categories:
             code = str(cat.get("categoryCode") or "").strip().upper()
-            if not uid == "cory" and code in {"DEBT_LOC_PRINCIPAL_CIBC"}:
-                # Hide CIBC LOC principal category from Deborah
+            if uid != "cory" and code in {"DEBT_LOC_PRINCIPAL_CIBC"}:
                 continue
             icon, group_label, default_hst = CATEGORY_ICONS_AND_GROUPS.get(
                 code,
@@ -637,7 +704,7 @@ class QuickExpenseService:
         return "Expense"
 
     # ------------------------------------------------------------------
-    # 5. Save / Update Entry (with CIBC PC Trust & Privacy Guardrails)
+    # 5. Save / Update Entry (with CIBC PC Trust, Firewall & OneDrive Queue)
     # ------------------------------------------------------------------
     def save_entry(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         uid = "cory" if self._is_cory(user_id) else "deborah"
@@ -667,7 +734,6 @@ class QuickExpenseService:
                     ),
                 }
             if mode == "Income":
-                # Money In from Clients -> Deposit into CIBC_PC_TRUST
                 deposit_target = to_account or from_account
                 if deposit_target != "CIBC_PC_TRUST" or stream_id != "CORY_PC":
                     return {
@@ -711,7 +777,6 @@ class QuickExpenseService:
         member = str(data.get("member") or stream["defaultMember"]).strip() or "Joint"
         category_code = str(data.get("categoryCode") or "").strip().upper()
 
-        # Tag who entered it inside Notes if not already tagged, while keeping Notes clean
         author_tag = f"[Entered by {uid.capitalize()}]"
         stored_notes = notes
         if author_tag.lower() not in stored_notes.lower():
@@ -816,7 +881,6 @@ class QuickExpenseService:
             else:
                 txn_type = "Expense"
 
-            # Determine TaxFlag from category metadata
             cats = {
                 c["categoryCode"]: c
                 for c in self.finance_repo.list_transaction_categories(include_inactive=True)
@@ -834,8 +898,15 @@ class QuickExpenseService:
                 else:
                     tax_flag = "None"
 
+        cats_lookup = {
+            c["categoryCode"]: c["categoryName"]
+            for c in self.finance_repo.list_transaction_categories(include_inactive=True)
+        }
+        now_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        txn_id = str(data.get("transactionId") or "").strip()
+
         repo_payload = {
-            "transactionId": str(data.get("transactionId") or "").strip(),
+            "transactionId": txn_id,
             "txnDate": txn_date,
             "class": txn_class,
             "businessUnit": business_unit,
@@ -844,6 +915,7 @@ class QuickExpenseService:
             "toAccount": to_account,
             "payee": payee,
             "categoryCode": category_code,
+            "categoryName": cats_lookup.get(category_code, category_code),
             "member": member,
             "amount": gross_amount,
             "taxAmount": tax_amount,
@@ -855,23 +927,52 @@ class QuickExpenseService:
             "status": str(data.get("status") or "Cleared").strip() or "Cleared",
             "currency": "CAD",
             "billerEntity": biller_entity,
+            "createdAt": now_stamp,
+            "updatedAt": now_stamp,
         }
 
         try:
+            self.flush_pending_inbox()
             result = self.finance_repo.save_transaction(repo_payload)
+            if result.get("ok"):
+                saved_id = str(result.get("transactionId") or "")
+                enriched = self.get_entry(user_id=uid, transaction_id=saved_id)
+                return {
+                    "ok": True,
+                    "transactionId": saved_id,
+                    "entry": enriched,
+                    "queuedToOneDriveInbox": False,
+                    "message": "Saved to CSPM!",
+                }
+        except PermissionError:
+            pass
         except Exception as exc:
-            return {"ok": False, "message": str(exc)}
+            err_msg = str(exc)
+            if "permission" not in err_msg.lower() and "locked" not in err_msg.lower() and "checkout" not in err_msg.lower():
+                return {"ok": False, "message": err_msg}
 
-        if not result.get("ok"):
-            return {"ok": False, "message": result.get("message") or "Could not save entry."}
-
-        saved_id = str(result.get("transactionId") or "")
-        enriched = self.get_entry(user_id=uid, transaction_id=saved_id)
+        # Fallback: If CSPM.xlsm is currently open/locked in Excel, queue safely into
+        # OneDrive/CSPM_Shared_Data/QuickExpense_Sync/inbox.json so there is ZERO conflict!
+        if not txn_id:
+            txn_id = f"TXN_{uuid4().hex[:10]}"
+        repo_payload["transactionId"] = txn_id
+        queued = self._read_queued_entries()
+        replaced = False
+        for i, qitem in enumerate(queued):
+            if str(qitem.get("transactionId")) == txn_id:
+                queued[i] = repo_payload
+                replaced = True
+                break
+        if not replaced:
+            queued.append(repo_payload)
+        self._write_queued_entries(queued)
+        enriched = self._enrich_row(repo_payload)
         return {
             "ok": True,
-            "transactionId": saved_id,
+            "transactionId": txn_id,
             "entry": enriched,
-            "message": "Saved to CSPM!",
+            "queuedToOneDriveInbox": True,
+            "message": "Saved to OneDrive Sync Queue (will merge into CSPM.xlsm automatically)!",
         }
 
     # ------------------------------------------------------------------
@@ -882,6 +983,18 @@ class QuickExpenseService:
         existing = self.get_entry(user_id=uid, transaction_id=transaction_id)
         if not existing:
             return {"ok": False, "message": "Entry not found or not accessible."}
+
+        # Also remove from OneDrive inbox queue if present there
+        queued = self._read_queued_entries()
+        new_queued = [q for q in queued if str(q.get("transactionId")) != str(transaction_id)]
+        if len(new_queued) != len(queued):
+            self._write_queued_entries(new_queued)
+            try:
+                self.finance_repo.delete_transaction(transaction_id)
+            except Exception:
+                pass
+            return {"ok": True, "transactionId": transaction_id, "message": f"Deleted transaction {transaction_id}."}
+
         try:
             res = self.finance_repo.delete_transaction(transaction_id)
             return res
@@ -951,7 +1064,7 @@ class QuickExpenseService:
 
     def get_entry(self, user_id: str, transaction_id: str) -> Optional[Dict[str, Any]]:
         uid = "cory" if self._is_cory(user_id) else "deborah"
-        all_rows = self.finance_repo.list_transactions({})
+        all_rows = self.finance_repo.list_transactions({}) + self._read_queued_entries()
         for r in all_rows:
             if str(r.get("transactionId") or "") == str(transaction_id or ""):
                 if not self._is_transaction_visible_to_user(r, uid):
@@ -1008,6 +1121,7 @@ class QuickExpenseService:
         search_query: str = "",
     ) -> List[Dict[str, Any]]:
         uid = "cory" if self._is_cory(user_id) else "deborah"
+        self.flush_pending_inbox()
         d_from, d_to, _ = self.resolve_period_dates(period, date_from, date_to)
 
         filters: Dict[str, Any] = {}
@@ -1016,7 +1130,19 @@ class QuickExpenseService:
         if d_to:
             filters["dateTo"] = d_to
 
-        raw_rows = self.finance_repo.list_transactions(filters)
+        raw_rows = list(self.finance_repo.list_transactions(filters))
+        seen_ids = {str(r.get("transactionId") or "") for r in raw_rows}
+        for qitem in self._read_queued_entries():
+            qid = str(qitem.get("transactionId") or "")
+            qdate = str(qitem.get("txnDate") or "")
+            if qid and qid not in seen_ids:
+                if d_from and qdate < d_from:
+                    continue
+                if d_to and qdate > d_to:
+                    continue
+                raw_rows.append(qitem)
+                seen_ids.add(qid)
+
         out: List[Dict[str, Any]] = []
         target_stream = str(stream_id or "").strip().upper()
         target_mode = str(mode_filter or "").strip().lower()

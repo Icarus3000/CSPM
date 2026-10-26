@@ -45,6 +45,7 @@ FORBIDDEN_EXTENSIONS = {".xlsm", ".xlsx", ".xls", ".db", ".sqlite", ".sqlite3", 
 FORBIDDEN_DIR_PARTS = {
     "build",
     "dist",
+    "target",
     "to_delete",
     "data",
     "backups",

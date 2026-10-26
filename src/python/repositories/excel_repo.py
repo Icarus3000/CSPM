@@ -11653,8 +11653,14 @@ class ExcelRepo:
         biller_entity = _clean_text(
             self._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_BILLER_ENTITY)
         ).upper()
-        if biller_entity not in {"SOLE_PROP", "PC"}:
-            biller_entity = "PC" if (invoice_ref.upper().endswith("-PC") or txn_date >= "2026-11-01") else "SOLE_PROP"
+        if biller_entity not in {"SOLE_PROP", "PC", "DEBORAH_OT", "FAMILY"}:
+            bu_raw = _clean_text(self._value_with_alias(TBL_TRANSACTIONS_MASTER.table, row, sc.COL_TXN_BUSINESS_UNIT))
+            if txn_class == "Family":
+                biller_entity = "FAMILY"
+            elif bu_raw.lower().startswith("deborah"):
+                biller_entity = "DEBORAH_OT"
+            else:
+                biller_entity = "PC" if (invoice_ref.upper().endswith("-PC") or txn_date >= "2026-11-01") else "SOLE_PROP"
 
         return {
             sc.COL_TXN_ID: txn_id,

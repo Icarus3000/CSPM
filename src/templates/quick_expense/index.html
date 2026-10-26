@@ -1,0 +1,2126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Quick Expense" />
+  <meta name="theme-color" content="#1E40AF" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <title>CSPM Quick Expense</title>
+  <style>
+    :root {
+      --bg: #F1F5F9;
+      --card: #FFFFFF;
+      --ink: #0F172A;
+      --muted: #475569;
+      --border: #CBD5E1;
+      --primary: #1D4ED8;
+      --primary-hover: #1E40AF;
+      --primary-soft: #DBEAFE;
+      --success: #15803D;
+      --success-soft: #DCFCE7;
+      --warning: #B45309;
+      --warning-soft: #FEF3C7;
+      --danger: #B91C1C;
+      --danger-soft: #FEE2E2;
+      --radius: 14px;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      margin: 0;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .app-shell {
+      width: 100%;
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 12px 12px 92px 12px;
+    }
+
+    @media (min-width: 680px) {
+      .app-shell {
+        padding: 20px 20px 36px 20px;
+      }
+    }
+
+    /* Login Screen */
+    .login-card {
+      background: var(--card);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 28px 22px;
+      margin-top: 24px;
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+
+    .login-title {
+      font-size: 1.55rem;
+      font-weight: 800;
+      margin: 0 0 8px 0;
+    }
+
+    .login-sub {
+      color: var(--muted);
+      font-size: 1rem;
+      margin: 0 0 24px 0;
+    }
+
+    .user-pick-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .user-pick-btn {
+      background: #F8FAFC;
+      border: 2.5px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .user-pick-btn:hover, .user-pick-btn.active {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      transform: translateY(-1px);
+    }
+
+    .user-pick-icon {
+      font-size: 2.6rem;
+      line-height: 1;
+    }
+
+    .user-pick-name {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--ink);
+    }
+
+    .user-pick-desc {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    /* Top Header Bar */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: var(--card);
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+      border: 1px solid var(--border);
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .user-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 0.98rem;
+      background: #F1F5F9;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+    }
+
+    .switch-user-btn {
+      background: transparent;
+      border: none;
+      color: var(--primary);
+      font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      padding: 2px 6px;
+      text-decoration: underline;
+    }
+
+    .check-report-btn {
+      background: #0F766E;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font-size: 0.96rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 3px 10px rgba(15, 118, 110, 0.25);
+    }
+
+    .check-report-btn:hover {
+      background: #115E59;
+    }
+
+    /* Card Navigation Strip */
+    .nav-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #E2E8F0;
+      border-radius: 12px;
+      padding: 8px 10px;
+      margin-bottom: 12px;
+      gap: 8px;
+    }
+
+    .nav-btn {
+      background: var(--card);
+      border: 1.5px solid #94A3B8;
+      border-radius: 10px;
+      padding: 9px 14px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: var(--ink);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 42px;
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .nav-status {
+      font-weight: 800;
+      font-size: 0.94rem;
+      text-align: center;
+      color: #1E293B;
+      flex: 1;
+    }
+
+    .nav-status.editing {
+      color: var(--warning);
+      background: var(--warning-soft);
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid #F59E0B;
+    }
+
+    /* Main Card */
+    .main-card {
+      background: var(--card);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 16px;
+    }
+
+    @media (min-width: 680px) {
+      .main-card {
+        padding: 22px;
+      }
+    }
+
+    /* 4 Mode Tabs */
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    @media (max-width: 480px) {
+      .mode-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .mode-tab {
+      background: #F8FAFC;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 8px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 48px;
+      transition: all 0.12s ease;
+    }
+
+    .mode-tab.active {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(29, 78, 216, 0.25);
+    }
+
+    /* Section Headers */
+    .step-section {
+      margin-bottom: 18px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #E2E8F0;
+    }
+
+    .step-section:last-of-type {
+      border-bottom: none;
+      margin-bottom: 8px;
+      padding-bottom: 0;
+    }
+
+    .step-label {
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: #334155;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Stream ("Who is this for?") Grid */
+    .stream-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 9px;
+    }
+
+    @media (min-width: 620px) {
+      .stream-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .stream-btn {
+      background: #F8FAFC;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 10px;
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 54px;
+      transition: all 0.12s ease;
+    }
+
+    .stream-btn.active {
+      background: #EFF6FF;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.15);
+    }
+
+    .stream-icon {
+      font-size: 1.55rem;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .stream-text {
+      font-weight: 800;
+      font-size: 0.94rem;
+      color: var(--ink);
+      line-height: 1.2;
+    }
+
+    /* Member Sub-Pills */
+    .sub-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+      align-items: center;
+    }
+
+    .sub-pill-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-right: 4px;
+    }
+
+    .pill-btn {
+      background: #F1F5F9;
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 13px;
+      font-size: 0.86rem;
+      font-weight: 700;
+      color: var(--ink);
+      cursor: pointer;
+      min-height: 36px;
+    }
+
+    .pill-btn.active {
+      background: #1E293B;
+      color: #FFFFFF;
+      border-color: #1E293B;
+    }
+
+    /* Inputs & Form Rows */
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    @media (min-width: 560px) {
+      .form-row.two-col {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .field-label {
+      display: block;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+
+    .big-input, .big-select {
+      width: 100%;
+      min-height: 50px;
+      padding: 10px 14px;
+      font-size: 1.05rem;
+      font-weight: 600;
+      border-radius: 12px;
+      border: 2px solid var(--border);
+      background: #FFFFFF;
+      color: var(--ink);
+    }
+
+    .big-input:focus, .big-select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
+    }
+
+    .amount-input {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #0F172A;
+    }
+
+    /* Date Stepper */
+    .date-stepper {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .step-day-btn {
+      background: #F1F5F9;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      min-width: 46px;
+      min-height: 50px;
+      font-size: 1rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .today-quick-btn {
+      background: var(--primary-soft);
+      color: var(--primary);
+      border: 1.5px solid #93C5FD;
+      border-radius: 10px;
+      padding: 0 12px;
+      min-height: 50px;
+      font-weight: 800;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+
+    /* Quick Category Chips */
+    .quick-chips {
+      display: flex;
+      gap: 7px;
+      overflow-x: auto;
+      padding: 6px 2px 10px 2px;
+      margin-bottom: 6px;
+    }
+
+    .quick-chip {
+      background: #F8FAFC;
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      padding: 7px 13px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .quick-chip.active {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* HST Helper Box */
+    .hst-box {
+      background: #F8FAFC;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+
+    .hst-mode-btns {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .hst-mode-btn {
+      flex: 1;
+      padding: 7px 8px;
+      border-radius: 8px;
+      border: 1.5px solid var(--border);
+      background: #FFFFFF;
+      font-size: 0.82rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .hst-mode-btn.active {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+    }
+
+    /* Toast / Banner */
+    .banner {
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .banner.success {
+      display: flex;
+      background: var(--success-soft);
+      color: var(--success);
+      border: 1.5px solid #86EFAC;
+    }
+
+    .banner.error {
+      display: flex;
+      background: var(--danger-soft);
+      color: var(--danger);
+      border: 1.5px solid #FCA5A5;
+    }
+
+    .banner.warning {
+      display: flex;
+      background: var(--warning-soft);
+      color: var(--warning);
+      border: 1.5px solid #FCD34D;
+    }
+
+    /* Bottom Action Bar (Sticky on Mobile) */
+    .bottom-bar {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+      align-items: center;
+    }
+
+    @media (max-width: 679px) {
+      .bottom-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(255, 255, 255, 0.97);
+        backdrop-filter: blur(8px);
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)) 12px;
+        border-top: 1.5px solid var(--border);
+        box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.08);
+        margin-top: 0;
+        z-index: 40;
+      }
+    }
+
+    .save-next-btn {
+      flex: 1;
+      background: #16A34A;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 12px;
+      min-height: 54px;
+      font-size: 1.12rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(22, 163, 74, 0.3);
+    }
+
+    .save-next-btn:hover {
+      background: #15803D;
+    }
+
+    .secondary-btn {
+      background: #F1F5F9;
+      color: var(--ink);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      min-height: 54px;
+      padding: 0 14px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .delete-card-btn {
+      background: var(--danger-soft);
+      color: var(--danger);
+      border: 1.5px solid #FCA5A5;
+      border-radius: 12px;
+      min-height: 54px;
+      padding: 0 14px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* Pop-Up Report Modal ("Check What I Added") */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.65);
+      z-index: 100;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 10px;
+      overflow-y: auto;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .report-modal {
+      background: var(--card);
+      width: 100%;
+      max-width: 860px;
+      border-radius: 18px;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
+      padding: 18px;
+      margin: auto 0;
+      border: 1px solid var(--border);
+    }
+
+    .report-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding-bottom: 14px;
+      border-bottom: 2px solid #E2E8F0;
+      margin-bottom: 14px;
+    }
+
+    .close-report-big-btn {
+      background: #16A34A;
+      color: #FFFFFF;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-size: 1rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(22, 163, 74, 0.28);
+    }
+
+    .period-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 12px;
+    }
+
+    .period-pill {
+      background: #F1F5F9;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 13px;
+      font-size: 0.9rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .period-pill.active {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+    }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    @media (min-width: 600px) {
+      .summary-strip {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    .sum-box {
+      background: #F8FAFC;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+
+    .sum-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .sum-val {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--ink);
+      margin-top: 2px;
+    }
+
+    .entry-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 55vh;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .entry-row-card {
+      background: #F8FAFC;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .entry-row-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 200px;
+      flex: 1;
+    }
+
+    .entry-row-title {
+      font-weight: 800;
+      font-size: 1.02rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .entry-badge {
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #E2E8F0;
+      color: #1E293B;
+    }
+
+    .entry-row-sub {
+      font-size: 0.88rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .entry-row-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .entry-amount-col {
+      text-align: right;
+    }
+
+    .entry-amount-main {
+      font-size: 1.15rem;
+      font-weight: 800;
+    }
+
+    .entry-amount-hst {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .row-action-btn {
+      background: #FFFFFF;
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      padding: 8px 12px;
+      font-weight: 800;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .row-action-btn.edit {
+      color: var(--primary);
+      border-color: #93C5FD;
+      background: #EFF6FF;
+    }
+
+    .row-action-btn.del {
+      color: var(--danger);
+      border-color: #FCA5A5;
+      background: #FEF2F2;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-shell">
+
+    <!-- ================= 1. LOGIN VIEW ================= -->
+    <div id="loginView" class="login-card" style="display: none;">
+      <div class="login-title">👋 Welcome to Quick Expense</div>
+      <p class="login-sub">Tap your name below to start entering or checking expenses</p>
+
+      <div class="user-pick-grid">
+        <button type="button" class="user-pick-btn" id="pickDeborahBtn" onclick="selectLoginUser('deborah')">
+          <span class="user-pick-icon">👩‍⚕️</span>
+          <span class="user-pick-name">Deborah</span>
+          <span class="user-pick-desc">Family, OT &amp; Legal</span>
+        </button>
+
+        <button type="button" class="user-pick-btn" id="pickCoryBtn" onclick="selectLoginUser('cory')">
+          <span class="user-pick-icon">⚖️</span>
+          <span class="user-pick-name">Cory</span>
+          <span class="user-pick-desc">All Accounts</span>
+        </button>
+      </div>
+
+      <div id="coryPinBox" style="display: none; max-width: 280px; margin: 0 auto 18px auto; text-align: left;">
+        <label class="field-label" for="loginPinInput">🔒 Cory PIN:</label>
+        <input type="password" id="loginPinInput" class="big-input" inputmode="numeric" placeholder="Enter PIN" onkeydown="if(event.key==='Enter') submitLogin()" />
+      </div>
+
+      <div style="margin-bottom: 18px;">
+        <label style="font-weight: 700; font-size: 0.92rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="rememberUserChk" checked style="width: 18px; height: 18px;" />
+          Remember me on this phone / Chromebook
+        </label>
+      </div>
+
+      <div id="loginErrorBox" class="banner error" style="margin-bottom: 14px;"></div>
+
+      <button type="button" class="save-next-btn" style="width: 100%; max-width: 320px; margin: 0 auto;" onclick="submitLogin()">
+        Sign In ▶
+      </button>
+    </div>
+
+    <!-- ================= 2. MAIN APP VIEW ================= -->
+    <div id="appView" style="display: none;">
+
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div>
+          <span class="user-pill" id="activeUserPill">👩‍⚕️ Deborah</span>
+          <button type="button" class="switch-user-btn" onclick="logoutUser()">Switch User</button>
+          <span id="offlineQueueBadge" style="display:none; font-size:0.8rem; font-weight:800; color:#B45309; background:#FEF3C7; padding:4px 8px; border-radius:999px;"></span>
+        </div>
+
+        <button type="button" class="check-report-btn" onclick="openReportModal()">
+          📋 Check What I Added <span id="todaySummaryBadge">(Today: 0)</span>
+        </button>
+      </div>
+
+      <!-- Status / Toast Banner -->
+      <div id="statusBanner" class="banner"></div>
+
+      <!-- Previous / Next Card Deck Bar -->
+      <div class="nav-strip">
+        <button type="button" class="nav-btn" id="prevCardBtn" onclick="stepCard(-1)">
+          ◀ Previous
+        </button>
+        <div class="nav-status" id="cardStatusText">
+          ✨ New Entry Card
+        </div>
+        <button type="button" class="nav-btn" id="nextCardBtn" onclick="stepCard(1)">
+          Next ▶
+        </button>
+        <button type="button" class="nav-btn" id="newCardBtn" style="display: none; background:#DBEAFE; border-color:#3B82F6; color:#1D4ED8;" onclick="startNewBlankCard()">
+          + New
+        </button>
+      </div>
+
+      <!-- Main Form Card -->
+      <div class="main-card">
+
+        <!-- 4 Friendly Mode Tabs -->
+        <div class="mode-grid">
+          <button type="button" class="mode-tab active" data-mode="Expense" onclick="setMode('Expense')">
+            🛒 Expense
+          </button>
+          <button type="button" class="mode-tab" data-mode="Income" onclick="setMode('Income')">
+            💰 Income
+          </button>
+          <button type="button" class="mode-tab" data-mode="Pay Credit Card" onclick="setMode('Pay Credit Card')">
+            💳 Pay Card
+          </button>
+          <button type="button" class="mode-tab" data-mode="Transfer" onclick="setMode('Transfer')">
+            🔄 Transfer
+          </button>
+        </div>
+
+        <!-- STEP 1: WHO IS THIS FOR? (Shown for Expense & Income) -->
+        <div class="step-section" id="whoSection">
+          <div class="step-label">
+            <span>1. Who Is This For?</span>
+            <label id="refundToggleWrap" style="font-size: 0.85rem; text-transform: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: #B45309;">
+              <input type="checkbox" id="isRefundChk" onchange="onRefundToggle()" style="width:17px; height:17px;" />
+              ↩️ Store Refund / Return
+            </label>
+          </div>
+
+          <div class="stream-grid" id="streamGrid"></div>
+
+          <!-- Family Member Sub-Pills (Shown when Family is selected) -->
+          <div class="sub-pills" id="familyMemberPills">
+            <span class="sub-pill-label">👨‍👩‍👧‍👧 Family Member:</span>
+            <div id="memberButtonsWrap" style="display:flex; flex-wrap:wrap; gap:6px;"></div>
+          </div>
+        </div>
+
+        <!-- STEP 2: DATE & ACCOUNT(S) -->
+        <div class="step-section">
+          <div class="step-label" id="step2Title">2. When &amp; How Was It Paid?</div>
+
+          <div class="form-row two-col">
+            <!-- Date -->
+            <div>
+              <label class="field-label" for="txnDateInput">📅 Date</label>
+              <div class="date-stepper">
+                <button type="button" class="step-day-btn" title="Previous Day" onclick="shiftDate(-1)">◀</button>
+                <input type="date" id="txnDateInput" class="big-input" />
+                <button type="button" class="step-day-btn" title="Next Day" onclick="shiftDate(1)">▶</button>
+                <button type="button" class="today-quick-btn" onclick="setTodayDate()">Today</button>
+              </div>
+            </div>
+
+            <!-- Primary Account (Paid From / Deposited Into) -->
+            <div>
+              <label class="field-label" id="fromAccountLabel" for="fromAccountSelect">💳 Paid Using Account / Card</label>
+              <select id="fromAccountSelect" class="big-select" onchange="onFromAccountChange()"></select>
+            </div>
+          </div>
+
+          <!-- Second Account (Shown for Pay Credit Card & Transfer) -->
+          <div id="toAccountRow" style="display: none; margin-top: 12px;">
+            <label class="field-label" id="toAccountLabel" for="toAccountSelect">💳 Which Credit Card Was Paid?</label>
+            <select id="toAccountSelect" class="big-select"></select>
+            <div id="trustGuardrailHint" style="display:none; margin-top:6px; font-size:0.84rem; font-weight:700; color:#B45309; background:#FEF3C7; padding:8px 10px; border-radius:8px;">
+              ⚖️ CIBC PC Trust Rule: Money out of Trust can only go to CIBC PC General.
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 3: STORE / PAYEE & CATEGORY (Hidden in simple Pay Credit Card / Transfer modes) -->
+        <div class="step-section" id="payeeCategorySection">
+          <div class="step-label" id="step3Title">3. Where &amp; What Category?</div>
+
+          <div class="form-row two-col" style="margin-bottom: 12px;">
+            <div>
+              <label class="field-label" id="payeeLabel" for="payeeInput">🏪 Store / Payee / Vendor</label>
+              <input type="text" id="payeeInput" list="payeeDatalist" class="big-input" placeholder="e.g. Costco, Shell, Loblaws, Bell..." oninput="onPayeeInput()" />
+              <datalist id="payeeDatalist"></datalist>
+            </div>
+
+            <div>
+              <label class="field-label" for="categorySearchInput">🔍 Quick Search Category (Optional)</label>
+              <input type="text" id="categorySearchInput" class="big-input" placeholder="Type e.g. mortgage, groceries, dental..." oninput="renderCategoriesDropdown()" />
+            </div>
+          </div>
+
+          <!-- 1-Click Favorite Category Chips -->
+          <div style="font-size: 0.8rem; font-weight: 700; color: var(--muted); margin-bottom: 4px;">
+            ⚡ One-Tap Favorites:
+          </div>
+          <div class="quick-chips" id="favoriteCategoryChips"></div>
+
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <label class="field-label" for="categorySelect" style="margin-bottom:0;">🏷️ Category</label>
+              <label style="font-size:0.82rem; font-weight:700; color:var(--primary); cursor:pointer;">
+                <input type="checkbox" id="showAllCategoriesChk" onchange="renderCategoriesDropdown()" />
+                Show all categories
+              </label>
+            </div>
+            <select id="categorySelect" class="big-select" onchange="onCategorySelectChange()"></select>
+          </div>
+        </div>
+
+        <!-- STEP 4: AMOUNT & HST -->
+        <div class="step-section">
+          <div class="step-label" id="step4Title">4. How Much?</div>
+
+          <div class="form-row two-col">
+            <div>
+              <label class="field-label" id="amountFieldLabel" for="amountInput">💰 Total Paid (Including Tax) ($)</label>
+              <input type="number" id="amountInput" class="big-input amount-input" inputmode="decimal" step="0.01" min="0" placeholder="0.00" oninput="onAmountInput()" />
+              <div id="preTaxPreview" style="margin-top: 6px; font-size: 0.86rem; font-weight: 700; color: var(--muted);">
+                Pre-Tax Subtotal: $0.00
+              </div>
+            </div>
+
+            <div class="hst-box" id="hstBoxWrap">
+              <label class="field-label" style="margin-bottom: 6px;">🧾 HST Included ($)</label>
+              <div class="hst-mode-btns">
+                <button type="button" class="hst-mode-btn active" id="hstModeAutoBtn" onclick="setHstMode('auto')">13% Auto</button>
+                <button type="button" class="hst-mode-btn" id="hstModeZeroBtn" onclick="setHstMode('zero')">No HST ($0)</button>
+                <button type="button" class="hst-mode-btn" id="hstModeCustomBtn" onclick="setHstMode('custom')">Type HST $</button>
+              </div>
+              <input type="number" id="taxAmountInput" class="big-input" inputmode="decimal" step="0.01" min="0" placeholder="0.00" oninput="onManualTaxInput()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 5: NOTES / DESCRIPTION -->
+        <div class="step-section">
+          <label class="field-label" for="notesInput">📝 Short Note / What Was It For? (Optional)</label>
+          <input type="text" id="notesInput" class="big-input" placeholder="e.g. Weekly groceries, OT supplies, client lunch..." onkeydown="if(event.key==='Enter') saveAndNext()" />
+        </div>
+
+        <!-- Bottom Action Bar (Sticky on iPhone / Android) -->
+        <div class="bottom-bar">
+          <button type="button" class="secondary-btn" onclick="stepCard(-1)" id="bottomPrevBtn">
+            ◀ Prev
+          </button>
+          <button type="button" class="delete-card-btn" id="deleteCurrentCardBtn" style="display:none;" onclick="deleteCurrentCard()">
+            🗑️ Delete
+          </button>
+          <button type="button" class="save-next-btn" id="saveNextBtn" onclick="saveAndNext()">
+            ✓ Save &amp; Next ▶
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 3. "CHECK WHAT I ADDED" POP-UP REPORT MODAL ================= -->
+  <div class="modal-backdrop" id="reportModalBackdrop" onclick="if(event.target===this) closeReportModal()">
+    <div class="report-modal">
+      <div class="report-header">
+        <div>
+          <h2 style="margin:0; font-size:1.35rem; font-weight:800;">📋 Check My Entries</h2>
+          <div id="reportSubtitle" style="font-size:0.9rem; color:var(--muted); font-weight:600; margin-top:2px;">
+            Showing entries for Today
+          </div>
+        </div>
+
+        <button type="button" class="close-report-big-btn" onclick="closeReportModal()">
+          ✕ Close Report &amp; Back to Entering
+        </button>
+      </div>
+
+      <!-- 1-Click Time Period Buttons -->
+      <div style="font-size:0.8rem; font-weight:800; color:var(--muted); text-transform:uppercase; margin-bottom:6px;">
+        1. Choose Time Period (One Click):
+      </div>
+      <div class="period-bar" id="reportPeriodBar">
+        <button type="button" class="period-pill active" data-period="today" onclick="setReportPeriod('today')">📅 Today</button>
+        <button type="button" class="period-pill" data-period="yesterday" onclick="setReportPeriod('yesterday')">⏮️ Yesterday</button>
+        <button type="button" class="period-pill" data-period="this_week" onclick="setReportPeriod('this_week')">🗓️ This Week</button>
+        <button type="button" class="period-pill" data-period="this_month" onclick="setReportPeriod('this_month')">📆 This Month</button>
+        <button type="button" class="period-pill" data-period="last_month" onclick="setReportPeriod('last_month')">⏪ Last Month</button>
+        <button type="button" class="period-pill" data-period="this_year" onclick="setReportPeriod('this_year')">📊 This Year</button>
+        <button type="button" class="period-pill" data-period="all" onclick="setReportPeriod('all')">🗂️ All</button>
+        <button type="button" class="period-pill" data-period="custom" onclick="toggleCustomDates()">🔍 Custom Dates...</button>
+      </div>
+
+      <!-- Optional Custom Date Range Drawer -->
+      <div id="customDateDrawer" style="display:none; background:#F8FAFC; border:1.5px solid var(--border); border-radius:12px; padding:10px 12px; margin-bottom:12px; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+        <div>
+          <label class="field-label" style="font-size:0.8rem;">From Date</label>
+          <input type="date" id="reportFromDate" class="big-input" style="min-height:40px; padding:6px 10px;" />
+        </div>
+        <div>
+          <label class="field-label" style="font-size:0.8rem;">To Date</label>
+          <input type="date" id="reportToDate" class="big-input" style="min-height:40px; padding:6px 10px;" />
+        </div>
+        <button type="button" class="period-pill active" onclick="loadReportData()">Show Range</button>
+      </div>
+
+      <!-- 1-Click "Who" Filter Bar -->
+      <div style="font-size:0.8rem; font-weight:800; color:var(--muted); text-transform:uppercase; margin-bottom:6px;">
+        2. Filter By Who (One Click):
+      </div>
+      <div class="period-bar" id="reportStreamBar">
+        <button type="button" class="period-pill active" data-stream="ALL" onclick="setReportStream('ALL')">✨ Everything</button>
+        <button type="button" class="period-pill" data-stream="FAMILY" onclick="setReportStream('FAMILY')">🏠 Family</button>
+        <button type="button" class="period-pill" data-stream="DEBORAH_OT_PRIVATE" onclick="setReportStream('DEBORAH_OT_PRIVATE')">🩺 OT - Private</button>
+        <button type="button" class="period-pill" data-stream="DEBORAH_OT_VHA" onclick="setReportStream('DEBORAH_OT_VHA')">🏥 OT - VHA</button>
+        <button type="button" class="period-pill" data-stream="CORY_SOLE_PROP" onclick="setReportStream('CORY_SOLE_PROP')">⚖️ Cory Sole Prop</button>
+        <button type="button" class="period-pill" data-stream="CORY_PC" onclick="setReportStream('CORY_PC')">🏛️ Cory PC</button>
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="summary-strip">
+        <div class="sum-box">
+          <div class="sum-label">Entries</div>
+          <div class="sum-val" id="repSumCount">0</div>
+        </div>
+        <div class="sum-box">
+          <div class="sum-label">Expenses (Incl. HST)</div>
+          <div class="sum-val" id="repSumExpense">$0.00</div>
+        </div>
+        <div class="sum-box">
+          <div class="sum-label">HST Included</div>
+          <div class="sum-val" id="repSumHst">$0.00</div>
+        </div>
+        <div class="sum-box">
+          <div class="sum-label">Income Logged</div>
+          <div class="sum-val" id="repSumIncome">$0.00</div>
+        </div>
+      </div>
+
+      <!-- Entries List -->
+      <div class="entry-list" id="reportEntryList"></div>
+
+      <!-- Bottom Close Button -->
+      <div style="margin-top: 16px; text-align: center;">
+        <button type="button" class="close-report-big-btn" style="width: 100%; justify-content: center; padding: 14px;" onclick="closeReportModal()">
+          ✕ Close Report &amp; Go Back to Entering Expenses
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // Application State
+    // =========================================================================
+    let currentUser = null; // { userId: "deborah" | "cory", displayName, icon }
+    let selectedLoginUser = "deborah";
+    let bootstrapData = {
+      streams: [],
+      members: ["Joint", "Deborah", "Cory", "Alexa", "Emma", "Maya"],
+      accounts: [],
+      categories: [],
+      payeeMemory: [],
+      todayIso: new Date().toISOString().slice(0, 10)
+    };
+
+    let currentMode = "Expense"; // "Expense" | "Income" | "Pay Credit Card" | "Transfer"
+    let currentStreamId = "FAMILY";
+    let currentMember = "Joint";
+    let hstMode = "auto"; // "auto" | "zero" | "custom"
+
+    // Card-deck navigation history (chronological oldest -> newest, plus index = deck.length for New Blank Card)
+    let sessionDeck = [];
+    let deckIndex = 0; // When deckIndex === sessionDeck.length, we are on a New Blank Card
+
+    // Report filters
+    let reportPeriod = "today";
+    let reportStream = "ALL";
+
+    // Favorite quick-chips per stream
+    const FAVORITE_CHIPS_BY_STREAM = {
+      "FAMILY": [
+        "EXP_GROCERIES",
+        "EXP_DINING",
+        "EXP_FUEL",
+        "EXP_MORTGAGE_CIBC",
+        "EXP_MORTGAGE_HOME_TRUST",
+        "EXP_KIDS_ACTIVITIES",
+        "EXP_PHARMACY",
+        "EXP_HOUSEHOLD_SUPPLIES",
+        "EXP_DENTAL"
+      ],
+      "BUSINESS": [
+        "EXP_OFFICE_SUPPLIES",
+        "EXP_CLINICAL_SUPPLIES",
+        "EXP_FUEL",
+        "EXP_PARKING",
+        "EXP_DINING",
+        "EXP_SOFTWARE_SUBSCRIPTIONS",
+        "EXP_MOBILE_PHONE",
+        "EXP_PROFESSIONAL_DUES",
+        "EXP_CPD_TRAINING"
+      ],
+      "INCOME_FAMILY": [
+        "INC_SALARY",
+        "INC_CHILD_BENEFIT",
+        "INC_REIMBURSEMENT_NON_TAXABLE",
+        "INC_CASHBACK_REBATE",
+        "INC_GIFT_RECEIVED"
+      ],
+      "INCOME_BUSINESS": [
+        "INC_OT_PRIVATE_BILLINGS",
+        "INC_OT_VHA_BILLINGS",
+        "INC_LEGAL_FEES",
+        "INC_RETAINER_RECEIPTS",
+        "INC_CONTRACT_REVENUE"
+      ]
+    };
+
+    // =========================================================================
+    // Initialization & Offline Queue Support
+    // =========================================================================
+    window.addEventListener("DOMContentLoaded", async () => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      }
+      const params = new URLSearchParams(window.location.search);
+      const forcedUser = params.get("user");
+      const savedUserJson = localStorage.getItem("cspm_quick_expense_user");
+      if (forcedUser === "deborah") {
+        await loginDirect("deborah", "");
+      } else if (savedUserJson) {
+        try {
+          const parsed = JSON.parse(savedUserJson);
+          if (parsed && parsed.userId) {
+            currentUser = parsed;
+            await enterApp();
+            return;
+          }
+        } catch (e) {}
+      }
+      showLoginScreen();
+    });
+
+    function showLoginScreen() {
+      document.getElementById("loginView").style.display = "block";
+      document.getElementById("appView").style.display = "none";
+      selectLoginUser("deborah");
+    }
+
+    function selectLoginUser(uid) {
+      selectedLoginUser = uid;
+      document.getElementById("pickDeborahBtn").classList.toggle("active", uid === "deborah");
+      document.getElementById("pickCoryBtn").classList.toggle("active", uid === "cory");
+      const pinBox = document.getElementById("coryPinBox");
+      pinBox.style.display = uid === "cory" ? "block" : "none";
+      document.getElementById("loginErrorBox").style.display = "none";
+      if (uid === "cory") {
+        setTimeout(() => document.getElementById("loginPinInput").focus(), 50);
+      }
+    }
+
+    async function submitLogin() {
+      const pin = document.getElementById("loginPinInput").value.trim();
+      await loginDirect(selectedLoginUser, pin);
+    }
+
+    async function loginDirect(uid, pin) {
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: uid, pin: pin })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          const errBox = document.getElementById("loginErrorBox");
+          errBox.textContent = data.message || "Could not sign in.";
+          errBox.style.display = "flex";
+          return;
+        }
+        currentUser = data.user;
+        if (document.getElementById("rememberUserChk").checked) {
+          localStorage.setItem("cspm_quick_expense_user", JSON.stringify(currentUser));
+        } else {
+          localStorage.removeItem("cspm_quick_expense_user");
+        }
+        await enterApp();
+      } catch (err) {
+        // Offline fallback login for Deborah on mobile
+        if (uid === "deborah") {
+          currentUser = { userId: "deborah", displayName: "Deborah", icon: "👩‍⚕️", isCory: false };
+          await enterApp();
+        } else {
+          const errBox = document.getElementById("loginErrorBox");
+          errBox.textContent = "Cannot reach server right now.";
+          errBox.style.display = "flex";
+        }
+      }
+    }
+
+    function logoutUser() {
+      localStorage.removeItem("cspm_quick_expense_user");
+      currentUser = null;
+      document.getElementById("loginPinInput").value = "";
+      showLoginScreen();
+    }
+
+    async function enterApp() {
+      document.getElementById("loginView").style.display = "none";
+      document.getElementById("appView").style.display = "block";
+      document.getElementById("activeUserPill").textContent = `${currentUser.icon} ${currentUser.displayName}`;
+
+      await syncOfflineQueueIfAny();
+      await loadBootstrap();
+      await refreshDeckFromServer();
+      startNewBlankCard();
+    }
+
+    async function loadBootstrap() {
+      const cacheKey = `cspm_qe_bootstrap_${currentUser.userId}`;
+      try {
+        const res = await fetch(`/api/bootstrap?userId=${encodeURIComponent(currentUser.userId)}`);
+        const data = await res.json();
+        if (data && data.ok) {
+          bootstrapData = data;
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+        }
+      } catch (e) {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try { bootstrapData = JSON.parse(cached); } catch (err) {}
+        }
+      }
+
+      document.getElementById("txnDateInput").value = bootstrapData.todayIso || new Date().toISOString().slice(0, 10);
+      renderStreams();
+      renderMembers();
+      renderPayeeDatalist();
+      updateTodayBadge();
+      applyModeUI();
+    }
+
+    function updateTodayBadge() {
+      const s = bootstrapData.todaySummary || { count: 0, totalFormatted: "$0.00" };
+      document.getElementById("todaySummaryBadge").textContent = `(Today: ${s.count} · ${s.totalFormatted})`;
+    }
+
+    async function refreshDeckFromServer() {
+      try {
+        const res = await fetch(`/api/entries?userId=${encodeURIComponent(currentUser.userId)}&period=this_month`);
+        const data = await res.json();
+        if (data && data.ok && Array.isArray(data.entries)) {
+          // Reverse so oldest is first and latest saved is right before the New Card slot
+          sessionDeck = data.entries.slice().reverse();
+          deckIndex = sessionDeck.length;
+          updateNavStrip();
+        }
+      } catch (e) {}
+    }
+
+    // =========================================================================
+    // Rendering Streams, Members, Accounts & Categories
+    // =========================================================================
+    function renderStreams() {
+      const grid = document.getElementById("streamGrid");
+      grid.innerHTML = "";
+      (bootstrapData.streams || []).forEach((s) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "stream-btn" + (s.streamId === currentStreamId ? " active" : "");
+        btn.innerHTML = `
+          <span class="stream-icon">${s.icon}</span>
+          <span class="stream-text">${s.label}</span>
+        `;
+        btn.onclick = () => {
+          currentStreamId = s.streamId;
+          currentMember = s.defaultMember || "Joint";
+          renderStreams();
+          renderMembers();
+          renderAccountsDropdowns();
+          renderCategoriesDropdown();
+        };
+        grid.appendChild(btn);
+      });
+      document.getElementById("familyMemberPills").style.display = currentStreamId === "FAMILY" ? "flex" : "none";
+    }
+
+    function renderMembers() {
+      const wrap = document.getElementById("memberButtonsWrap");
+      wrap.innerHTML = "";
+      (bootstrapData.members || []).forEach((m) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "pill-btn" + (m === currentMember ? " active" : "");
+        b.textContent = m;
+        b.onclick = () => {
+          currentMember = m;
+          renderMembers();
+        };
+        wrap.appendChild(b);
+      });
+    }
+
+    function renderPayeeDatalist() {
+      const dl = document.getElementById("payeeDatalist");
+      dl.innerHTML = "";
+      (bootstrapData.payeeMemory || []).forEach((item) => {
+        const opt = document.createElement("option");
+        opt.value = item.payee;
+        dl.appendChild(opt);
+      });
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll(".mode-tab").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-mode") === mode);
+      });
+      applyModeUI();
+    }
+
+    function applyModeUI() {
+      const whoSec = document.getElementById("whoSection");
+      const payeeCatSec = document.getElementById("payeeCategorySection");
+      const toAcctRow = document.getElementById("toAccountRow");
+      const hstWrap = document.getElementById("hstBoxWrap");
+      const refundWrap = document.getElementById("refundToggleWrap");
+      const fromLbl = document.getElementById("fromAccountLabel");
+      const toLbl = document.getElementById("toAccountLabel");
+      const amtLbl = document.getElementById("amountFieldLabel");
+
+      if (currentMode === "Expense") {
+        whoSec.style.display = "block";
+        payeeCatSec.style.display = "block";
+        toAcctRow.style.display = "none";
+        hstWrap.style.display = "block";
+        refundWrap.style.display = "inline-flex";
+        fromLbl.textContent = "💳 Paid Using Account / Card";
+        document.getElementById("payeeLabel").textContent = "🏪 Store / Payee / Vendor";
+        amtLbl.textContent = document.getElementById("isRefundChk").checked
+          ? "↩️ Refund Amount Received ($)"
+          : "💰 Total Paid (Including Tax) ($)";
+      } else if (currentMode === "Income") {
+        whoSec.style.display = "block";
+        payeeCatSec.style.display = "block";
+        toAcctRow.style.display = "none";
+        hstWrap.style.display = currentStreamId === "FAMILY" ? "none" : "block";
+        refundWrap.style.display = "none";
+        fromLbl.textContent = "🏦 Deposited Into Account";
+        document.getElementById("payeeLabel").textContent = "👤 Received From (Client / Employer / Source)";
+        amtLbl.textContent = "💰 Total Amount Received ($)";
+      } else if (currentMode === "Pay Credit Card") {
+        whoSec.style.display = "none";
+        payeeCatSec.style.display = "none";
+        toAcctRow.style.display = "block";
+        hstWrap.style.display = "none";
+        fromLbl.textContent = "🏦 Paid FROM Bank Account";
+        toLbl.textContent = "💳 Which Credit Card Was Paid?";
+        amtLbl.textContent = "💳 Amount Paid to Credit Card ($)";
+      } else if (currentMode === "Transfer") {
+        whoSec.style.display = "none";
+        payeeCatSec.style.display = "none";
+        toAcctRow.style.display = "block";
+        hstWrap.style.display = "none";
+        fromLbl.textContent = "🏦 Moved Money FROM Account";
+        toLbl.textContent = "🏦 Moved Money TO Account";
+        amtLbl.textContent = "🔄 Amount Transferred ($)";
+      }
+
+      renderAccountsDropdowns();
+      renderCategoriesDropdown();
+      recalcTaxAndPreTax();
+    }
+
+    function renderAccountsDropdowns() {
+      const fromSel = document.getElementById("fromAccountSelect");
+      const toSel = document.getElementById("toAccountSelect");
+      const prevFrom = fromSel.value;
+      const prevTo = toSel.value;
+
+      const allAccounts = bootstrapData.accounts || [];
+
+      // Filter "From" accounts based on mode & CIBC PC Trust Guardrail
+      const fromAccounts = allAccounts.filter((a) => {
+        if (currentMode === "Expense") {
+          // Never allow CIBC PC Trust or Mortgage accounts as Expense payment method
+          if (a.accountCode === "CIBC_PC_TRUST" || a.isDebt) return false;
+          return true;
+        }
+        if (currentMode === "Income") {
+          // CIBC PC Trust is only allowed for Cory PC (Money in from clients)
+          if (a.accountCode === "CIBC_PC_TRUST" && currentStreamId !== "CORY_PC") return false;
+          if (a.isDebt) return false;
+          return true;
+        }
+        if (currentMode === "Pay Credit Card") {
+          // Paid FROM a bank account (never from CIBC PC Trust or another credit card)
+          if (a.accountCode === "CIBC_PC_TRUST") return false;
+          return a.isBank || a.isCash;
+        }
+        if (currentMode === "Transfer") {
+          return true;
+        }
+        return true;
+      });
+
+      fromSel.innerHTML = "";
+      fromAccounts.forEach((a) => {
+        const opt = document.createElement("option");
+        opt.value = a.accountCode;
+        opt.textContent = `${a.icon} ${a.accountName}`;
+        fromSel.appendChild(opt);
+      });
+
+      if (prevFrom && fromAccounts.some((a) => a.accountCode === prevFrom)) {
+        fromSel.value = prevFrom;
+      } else if (currentStreamId === "CORY_PC" && fromAccounts.some((a) => a.accountCode === "CIBC_PC_GENERAL")) {
+        fromSel.value = "CIBC_PC_GENERAL";
+      } else if (currentMode === "Pay Credit Card" && fromAccounts.some((a) => a.accountCode === "CIBC_CHEQUING")) {
+        fromSel.value = "CIBC_CHEQUING";
+      }
+
+      onFromAccountChange(prevTo);
+    }
+
+    function onFromAccountChange(preferredToValue) {
+      const fromCode = document.getElementById("fromAccountSelect").value;
+      const toSel = document.getElementById("toAccountSelect");
+      const trustHint = document.getElementById("trustGuardrailHint");
+      const allAccounts = bootstrapData.accounts || [];
+
+      let toAccounts = [];
+      if (currentMode === "Pay Credit Card") {
+        trustHint.style.display = "none";
+        toAccounts = allAccounts.filter((a) => a.isCreditCard);
+      } else if (currentMode === "Transfer") {
+        if (fromCode === "CIBC_PC_TRUST") {
+          // CIBC PC Trust Guardrail: Money out of Trust can ONLY go to CIBC PC General
+          trustHint.style.display = "block";
+          toAccounts = allAccounts.filter((a) => a.accountCode === "CIBC_PC_GENERAL");
+        } else {
+          trustHint.style.display = "none";
+          // Never allow transferring personal/other funds into CIBC PC Trust via Transfer
+          toAccounts = allAccounts.filter((a) => a.accountCode !== fromCode && a.accountCode !== "CIBC_PC_TRUST");
+        }
+      }
+
+      toSel.innerHTML = "";
+      toAccounts.forEach((a) => {
+        const opt = document.createElement("option");
+        opt.value = a.accountCode;
+        opt.textContent = `${a.icon} ${a.accountName}`;
+        toSel.appendChild(opt);
+      });
+
+      if (preferredToValue && toAccounts.some((a) => a.accountCode === preferredToValue)) {
+        toSel.value = preferredToValue;
+      }
+    }
+
+    function renderCategoriesDropdown() {
+      const sel = document.getElementById("categorySelect");
+      const prevVal = sel.value;
+      const q = (document.getElementById("categorySearchInput").value || "").trim().toLowerCase();
+      const showAll = document.getElementById("showAllCategoriesChk").checked;
+      const isFamily = currentStreamId === "FAMILY";
+
+      const allCats = bootstrapData.categories || [];
+      const filtered = allCats.filter((c) => {
+        if (currentMode === "Income") {
+          if (c.type !== "Income") return false;
+        } else {
+          if (c.type !== "Expense") return false;
+        }
+        if (!showAll && !q) {
+          if (isFamily && c.classScope === "Business") return false;
+          if (!isFamily && c.classScope === "Family") return false;
+        }
+        if (q) {
+          const hay = `${c.categoryName} ${c.groupLabel} ${c.categoryCode}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      // Group by groupLabel
+      const groups = {};
+      filtered.forEach((c) => {
+        const g = c.groupLabel || "Other";
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(c);
+      });
+
+      sel.innerHTML = "";
+      Object.keys(groups).forEach((gName) => {
+        const optgroup = document.createElement("optgroup");
+        optgroup.label = gName;
+        groups[gName].forEach((c) => {
+          const opt = document.createElement("option");
+          opt.value = c.categoryCode;
+          opt.textContent = `${c.icon} ${c.categoryName}`;
+          optgroup.appendChild(opt);
+        });
+        sel.appendChild(optgroup);
+      });
+
+      if (prevVal && filtered.some((c) => c.categoryCode === prevVal)) {
+        sel.value = prevVal;
+      }
+
+      renderFavoriteCategoryChips();
+      onCategorySelectChange();
+    }
+
+    function renderFavoriteCategoryChips() {
+      const wrap = document.getElementById("favoriteCategoryChips");
+      wrap.innerHTML = "";
+      const isFamily = currentStreamId === "FAMILY";
+      const chipCodes = currentMode === "Income"
+        ? (isFamily ? FAVORITE_CHIPS_BY_STREAM.INCOME_FAMILY : FAVORITE_CHIPS_BY_STREAM.INCOME_BUSINESS)
+        : (isFamily ? FAVORITE_CHIPS_BY_STREAM.FAMILY : FAVORITE_CHIPS_BY_STREAM.BUSINESS);
+
+      const allCatsByCode = {};
+      (bootstrapData.categories || []).forEach((c) => { allCatsByCode[c.categoryCode] = c; });
+      const activeCode = document.getElementById("categorySelect").value;
+
+      chipCodes.forEach((code) => {
+        const c = allCatsByCode[code];
+        if (!c) return;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "quick-chip" + (code === activeCode ? " active" : "");
+        btn.textContent = `${c.icon} ${c.categoryName}`;
+        btn.onclick = () => {
+          const sel = document.getElementById("categorySelect");
+          if (!Array.from(sel.options).some((o) => o.value === code)) {
+            document.getElementById("showAllCategoriesChk").checked = true;
+            renderCategoriesDropdown();
+          }
+          sel.value = code;
+          onCategorySelectChange();
+          renderFavoriteCategoryChips();
+        };
+        wrap.appendChild(btn);
+      });
+    }
+
+    function onCategorySelectChange() {
+      const code = document.getElementById("categorySelect").value;
+      const cat = (bootstrapData.categories || []).find((c) => c.categoryCode === code);
+      if (cat && deckIndex === sessionDeck.length) {
+        // Auto-set HST mode based on category default when creating a new entry
+        setHstMode(cat.defaultHasHst ? "auto" : "zero");
+      }
+      renderFavoriteCategoryChips();
+    }
+
+    function onPayeeInput() {
+      const val = (document.getElementById("payeeInput").value || "").trim().toLowerCase();
+      if (!val || deckIndex !== sessionDeck.length) return;
+      const match = (bootstrapData.payeeMemory || []).find((m) => (m.payee || "").toLowerCase() === val);
+      if (match && match.categoryCode) {
+        const sel = document.getElementById("categorySelect");
+        if (Array.from(sel.options).some((o) => o.value === match.categoryCode)) {
+          sel.value = match.categoryCode;
+          onCategorySelectChange();
+        }
+      }
+    }
+
+    function onRefundToggle() {
+      applyModeUI();
+    }
+
+    // =========================================================================
+    // Date & HST Math Helpers
+    // =========================================================================
+    function shiftDate(deltaDays) {
+      const inp = document.getElementById("txnDateInput");
+      const cur = inp.value ? new Date(inp.value + "T12:00:00") : new Date();
+      cur.setDate(cur.getDate() + deltaDays);
+      inp.value = cur.toISOString().slice(0, 10);
+    }
+
+    function setTodayDate() {
+      document.getElementById("txnDateInput").value = bootstrapData.todayIso || new Date().toISOString().slice(0, 10);
+    }
+
+    function setHstMode(mode) {
+      hstMode = mode;
+      document.getElementById("hstModeAutoBtn").classList.toggle("active", mode === "auto");
+      document.getElementById("hstModeZeroBtn").classList.toggle("active", mode === "zero");
+      document.getElementById("hstModeCustomBtn").classList.toggle("active", mode === "custom");
+      recalcTaxAndPreTax();
+      if (mode === "custom") {
+        document.getElementById("taxAmountInput").focus();
+      }
+    }
+
+    function onAmountInput() {
+      recalcTaxAndPreTax();
+    }
+
+    function onManualTaxInput() {
+      hstMode = "custom";
+      document.getElementById("hstModeAutoBtn").classList.remove("active");
+      document.getElementById("hstModeZeroBtn").classList.remove("active");
+      document.getElementById("hstModeCustomBtn").classList.add("active");
+      updatePreTaxLabel();
+    }
+
+    function recalcTaxAndPreTax() {
+      const gross = parseFloat(document.getElementById("amountInput").value) || 0;
+      const taxInp = document.getElementById("taxAmountInput");
+      if (currentMode === "Pay Credit Card" || currentMode === "Transfer") {
+        taxInp.value = "0.00";
+      } else if (hstMode === "zero") {
+        taxInp.value = "0.00";
+      } else if (hstMode === "auto") {
+        const hst = Math.round((gross - gross / 1.13) * 100) / 100;
+        taxInp.value = gross > 0 ? hst.toFixed(2) : "0.00";
+      }
+      updatePreTaxLabel();
+    }
+
+    function updatePreTaxLabel() {
+      const gross = parseFloat(document.getElementById("amountInput").value) || 0;
+      const tax = parseFloat(document.getElementById("taxAmountInput").value) || 0;
+      const preTax = Math.max(0, gross - tax);
+      document.getElementById("preTaxPreview").textContent =
+        `Pre-Tax Subtotal: $${preTax.toFixed(2)}  ·  HST: $${tax.toFixed(2)}`;
+    }
+
+    // =========================================================================
+    // Card-Deck Navigation (Previous / Next / New Blank Card)
+    // =========================================================================
+    function updateNavStrip() {
+      const totalSaved = sessionDeck.length;
+      const isNewCard = deckIndex >= totalSaved;
+      const statusEl = document.getElementById("cardStatusText");
+      const prevBtn = document.getElementById("prevCardBtn");
+      const bottomPrevBtn = document.getElementById("bottomPrevBtn");
+      const nextBtn = document.getElementById("nextCardBtn");
+      const newBtn = document.getElementById("newCardBtn");
+      const delBtn = document.getElementById("deleteCurrentCardBtn");
+      const saveBtn = document.getElementById("saveNextBtn");
+
+      prevBtn.disabled = deckIndex <= 0;
+      bottomPrevBtn.disabled = deckIndex <= 0;
+      nextBtn.disabled = isNewCard;
+      newBtn.style.display = isNewCard ? "none" : "inline-flex";
+      delBtn.style.display = isNewCard ? "none" : "inline-flex";
+
+      if (isNewCard) {
+        statusEl.className = "nav-status";
+        statusEl.textContent = `✨ New Entry (Card #${totalSaved + 1})`;
+        saveBtn.textContent = "✓ Save & Next ▶";
+      } else {
+        const item = sessionDeck[deckIndex];
+        statusEl.className = "nav-status editing";
+        statusEl.textContent = `✏️ Reviewing Card #${deckIndex + 1} of ${totalSaved} (${item.payee || item.mode})`;
+        saveBtn.textContent = "✓ Save Changes & Next ▶";
+      }
+    }
+
+    function stepCard(delta) {
+      const target = deckIndex + delta;
+      if (target < 0 || target > sessionDeck.length) return;
+      deckIndex = target;
+      if (deckIndex === sessionDeck.length) {
+        startNewBlankCard(false);
+      } else {
+        loadCardIntoForm(sessionDeck[deckIndex]);
+      }
+      updateNavStrip();
+    }
+
+    function startNewBlankCard(keepSticky = true) {
+      deckIndex = sessionDeck.length;
+      document.getElementById("isRefundChk").checked = false;
+      document.getElementById("payeeInput").value = "";
+      document.getElementById("amountInput").value = "";
+      document.getElementById("taxAmountInput").value = "0.00";
+      document.getElementById("notesInput").value = "";
+      document.getElementById("categorySearchInput").value = "";
+      if (!keepSticky) {
+        setTodayDate();
+      }
+      applyModeUI();
+      updateNavStrip();
+      if (window.innerWidth >= 680 && (currentMode === "Expense" || currentMode === "Income")) {
+        document.getElementById("payeeInput").focus();
+      }
+    }
+
+    function loadCardIntoForm(entry) {
+      if (!entry) return;
+      currentMode = entry.mode || "Expense";
+      currentStreamId = entry.streamId || "FAMILY";
+      currentMember = entry.member || "Joint";
+      document.querySelectorAll(".mode-tab").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-mode") === currentMode);
+      });
+      renderStreams();
+      renderMembers();
+      applyModeUI();
+
+      document.getElementById("txnDateInput").value = entry.txnDate || bootstrapData.todayIso;
+      document.getElementById("fromAccountSelect").value = entry.fromAccount || "";
+      onFromAccountChange(entry.toAccount || "");
+      document.getElementById("payeeInput").value = entry.payee || "";
+
+      const catSel = document.getElementById("categorySelect");
+      if (entry.categoryCode && !Array.from(catSel.options).some((o) => o.value === entry.categoryCode)) {
+        document.getElementById("showAllCategoriesChk").checked = true;
+        renderCategoriesDropdown();
+      }
+      catSel.value = entry.categoryCode || "";
+      renderFavoriteCategoryChips();
+
+      document.getElementById("amountInput").value = Number(entry.amount || 0).toFixed(2);
+      const taxVal = Number(entry.taxAmount || 0);
+      if (taxVal === 0) {
+        setHstMode("zero");
+      } else {
+        hstMode = "custom";
+        document.getElementById("hstModeAutoBtn").classList.remove("active");
+        document.getElementById("hstModeZeroBtn").classList.remove("active");
+        document.getElementById("hstModeCustomBtn").classList.add("active");
+        document.getElementById("taxAmountInput").value = taxVal.toFixed(2);
+        updatePreTaxLabel();
+      }
+      document.getElementById("notesInput").value = entry.notes || entry.expenseDetails || "";
+      updateNavStrip();
+    }
+
+    // =========================================================================
+    // Save & Delete Actions (With Offline Phone Queue Fallback)
+    // =========================================================================
+    function showBanner(type, msg, autoHideMs = 4000) {
+      const b = document.getElementById("statusBanner");
+      b.className = `banner ${type}`;
+      b.textContent = msg;
+      if (autoHideMs > 0) {
+        setTimeout(() => {
+          if (b.textContent === msg) b.className = "banner";
+        }, autoHideMs);
+      }
+    }
+
+    async function saveAndNext() {
+      const isEditingExisting = deckIndex < sessionDeck.length;
+      const existingId = isEditingExisting ? sessionDeck[deckIndex].transactionId : "";
+
+      const payload = {
+        transactionId: existingId,
+        mode: currentMode,
+        streamId: currentStreamId,
+        member: currentMember,
+        txnDate: document.getElementById("txnDateInput").value,
+        fromAccount: document.getElementById("fromAccountSelect").value,
+        toAccount: document.getElementById("toAccountSelect").value,
+        payee: document.getElementById("payeeInput").value.trim(),
+        categoryCode: document.getElementById("categorySelect").value,
+        amount: parseFloat(document.getElementById("amountInput").value) || 0,
+        taxAmount: parseFloat(document.getElementById("taxAmountInput").value) || 0,
+        isRefund: document.getElementById("isRefundChk").checked,
+        notes: document.getElementById("notesInput").value.trim()
+      };
+
+      try {
+        const res = await fetch("/api/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: currentUser.userId, payload: payload })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", `⚠️ ${data.message || "Please check all fields."}`, 6000);
+          return;
+        }
+
+        const savedEntry = data.entry;
+        if (isEditingExisting) {
+          sessionDeck[deckIndex] = savedEntry;
+          showBanner("success", `✓ Updated ${savedEntry.payee || savedEntry.mode} (${savedEntry.amountFormatted})!`);
+          stepCard(1);
+        } else {
+          sessionDeck.push(savedEntry);
+          showBanner("success", `✓ Saved ${savedEntry.payee || savedEntry.mode} (${savedEntry.amountFormatted})!`);
+          await loadBootstrap();
+          startNewBlankCard(true);
+        }
+      } catch (err) {
+        // Offline Phone Fallback Queue
+        queueEntryOffline(payload);
+        showBanner("warning", "☁️ Saved on your phone/Chromebook! Will sync to OneDrive automatically when connected.", 6000);
+        startNewBlankCard(true);
+      }
+    }
+
+    async function deleteCurrentCard() {
+      if (deckIndex >= sessionDeck.length) return;
+      const item = sessionDeck[deckIndex];
+      if (!confirm(`Delete this entry (${item.payee || item.mode} - ${item.amountFormatted})?`)) return;
+
+      try {
+        const res = await fetch("/api/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: currentUser.userId, transactionId: item.transactionId })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", data.message || "Could not delete entry.");
+          return;
+        }
+        sessionDeck.splice(deckIndex, 1);
+        showBanner("success", "🗑️ Entry deleted.");
+        await loadBootstrap();
+        if (deckIndex >= sessionDeck.length) {
+          startNewBlankCard(true);
+        } else {
+          loadCardIntoForm(sessionDeck[deckIndex]);
+          updateNavStrip();
+        }
+      } catch (e) {
+        showBanner("error", "Could not reach server to delete entry.");
+      }
+    }
+
+    function queueEntryOffline(payload) {
+      const qKey = "cspm_qe_offline_outbox";
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem(qKey) || "[]"); } catch (e) {}
+      list.push({ userId: currentUser.userId, payload: payload, savedAt: new Date().toISOString() });
+      localStorage.setItem(qKey, JSON.stringify(list));
+      updateOfflineBadge();
+    }
+
+    function updateOfflineBadge() {
+      const qKey = "cspm_qe_offline_outbox";
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem(qKey) || "[]"); } catch (e) {}
+      const badge = document.getElementById("offlineQueueBadge");
+      if (list.length > 0) {
+        badge.style.display = "inline-block";
+        badge.textContent = `☁️ ${list.length} waiting to sync`;
+      } else {
+        badge.style.display = "none";
+      }
+    }
+
+    async function syncOfflineQueueIfAny() {
+      const qKey = "cspm_qe_offline_outbox";
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem(qKey) || "[]"); } catch (e) {}
+      if (!list.length) {
+        updateOfflineBadge();
+        return;
+      }
+      const remaining = [];
+      for (const item of list) {
+        try {
+          const res = await fetch("/api/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: item.userId, payload: item.payload })
+          });
+          const data = await res.json();
+          if (!data.ok) remaining.push(item);
+        } catch (e) {
+          remaining.push(item);
+        }
+      }
+      localStorage.setItem(qKey, JSON.stringify(remaining));
+      updateOfflineBadge();
+    }
+
+    // =========================================================================
+    // "Check What I Added" Pop-Up Report
+    // =========================================================================
+    async function openReportModal() {
+      document.getElementById("reportModalBackdrop").classList.add("open");
+      await loadReportData();
+    }
+
+    function closeReportModal() {
+      document.getElementById("reportModalBackdrop").classList.remove("open");
+    }
+
+    function setReportPeriod(period) {
+      reportPeriod = period;
+      document.querySelectorAll("#reportPeriodBar .period-pill").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-period") === period);
+      });
+      document.getElementById("customDateDrawer").style.display = period === "custom" ? "flex" : "none";
+      if (period !== "custom") {
+        loadReportData();
+      }
+    }
+
+    function toggleCustomDates() {
+      setReportPeriod("custom");
+    }
+
+    function setReportStream(streamId) {
+      reportStream = streamId;
+      document.querySelectorAll("#reportStreamBar .period-pill").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-stream") === streamId);
+      });
+      loadReportData();
+    }
+
+    async function loadReportData() {
+      const dFrom = document.getElementById("reportFromDate").value || "";
+      const dTo = document.getElementById("reportToDate").value || "";
+      const url = `/api/report?userId=${encodeURIComponent(currentUser.userId)}&period=${encodeURIComponent(reportPeriod)}&dateFrom=${encodeURIComponent(dFrom)}&dateTo=${encodeURIComponent(dTo)}&streamId=${encodeURIComponent(reportStream)}`;
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!data.ok) return;
+
+        document.getElementById("reportSubtitle").textContent = `Showing: ${data.periodLabel}`;
+        document.getElementById("repSumCount").textContent = String(data.entryCount || 0);
+        document.getElementById("repSumExpense").textContent = data.expenseGrandFormatted || "$0.00";
+        document.getElementById("repSumHst").textContent = data.expenseHstFormatted || "$0.00";
+        document.getElementById("repSumIncome").textContent = data.incomeFormatted || "$0.00";
+
+        const listEl = document.getElementById("reportEntryList");
+        listEl.innerHTML = "";
+        const entries = data.entries || [];
+        if (entries.length === 0) {
+          listEl.innerHTML = `
+            <div style="text-align:center; padding:32px 16px; color:var(--muted); font-weight:700;">
+              No entries found for this time period.
+            </div>
+          `;
+          return;
+        }
+
+        entries.forEach((e) => {
+          const card = document.createElement("div");
+          card.className = "entry-row-card";
+          const acctText = e.toAccount
+            ? `${e.fromAccountIcon} ${e.fromAccountLabel} ➔ ${e.toAccountIcon} ${e.toAccountLabel}`
+            : `${e.fromAccountIcon} ${e.fromAccountLabel}`;
+
+          card.innerHTML = `
+            <div class="entry-row-left">
+              <div class="entry-row-title">
+                <span>${e.categoryIcon} ${e.payee || e.categoryName}</span>
+                <span class="entry-badge">${e.streamIcon} ${e.streamShortLabel}</span>
+                <span class="entry-badge">${e.mode}</span>
+              </div>
+              <div class="entry-row-sub">
+                📅 ${e.txnDate} &nbsp;·&nbsp; 🏷️ ${e.categoryName} &nbsp;·&nbsp; ${acctText}
+                ${e.notes ? `<br/>📝 ${e.notes}` : ""}
+              </div>
+            </div>
+            <div class="entry-row-right">
+              <div class="entry-amount-col">
+                <div class="entry-amount-main">${e.amountFormatted}</div>
+                <div class="entry-amount-hst">HST: ${e.taxFormatted}</div>
+              </div>
+              <button type="button" class="row-action-btn edit" onclick='editEntryFromReport(${JSON.stringify(e).replace(/'/g, "&#39;")})'>
+                ✏️ Edit
+              </button>
+              <button type="button" class="row-action-btn del" onclick="deleteEntryFromReport('${e.transactionId}')">
+                🗑️
+              </button>
+            </div>
+          `;
+          listEl.appendChild(card);
+        });
+      } catch (e) {}
+    }
+
+    function editEntryFromReport(entry) {
+      closeReportModal();
+      const idx = sessionDeck.findIndex((x) => x.transactionId === entry.transactionId);
+      if (idx >= 0) {
+        deckIndex = idx;
+      } else {
+        sessionDeck.push(entry);
+        deckIndex = sessionDeck.length - 1;
+      }
+      loadCardIntoForm(entry);
+    }
+
+    async function deleteEntryFromReport(txnId) {
+      if (!confirm("Delete this entry?")) return;
+      try {
+        const res = await fetch("/api/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: currentUser.userId, transactionId: txnId })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          sessionDeck = sessionDeck.filter((x) => x.transactionId !== txnId);
+          deckIndex = sessionDeck.length;
+          await loadBootstrap();
+          await loadReportData();
+          updateNavStrip();
+        }
+      } catch (e) {}
+    }
+
+    // Keyboard shortcuts for desktop/Chromebook
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeReportModal();
+      }
+    });
+  </script>
+</body>
+</html>
