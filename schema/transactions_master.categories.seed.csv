@@ -36,8 +36,11 @@ EXP_SCHOOL_SUPPLIES,School Supplies,Expense,Family,None,0,0,1,0,1,208,Education 
 EXP_KIDS_ACTIVITIES,Kids Activities,Expense,Family,None,0,0,0,0,1,209,Sports and extracurricular,,,,,0,0
 EXP_ALLOWANCE,Allowance,Expense,Family,None,0,0,0,0,1,210,Family allowance,,,,,0,0
 EXP_GIFTS_GIVEN,Gifts Given,Expense,Family,None,0,0,0,0,1,211,Gifts and occasions,,,,,0,0
+EXP_PETS,Pets & Veterinary,Expense,Family,None,0,0,0,0,1,211,Pet food and veterinary care,,,,,0,0
 EXP_DONATIONS,Donations,Expense,Family,Deductible,0,0,1,0,1,212,Charitable donations,,,,,0,0
 EXP_RENT,Rent,Expense,Family,None,0,0,0,0,1,213,Rent payments,8910,Rent,8910,Rental,100,100
+EXP_MORTGAGE_CIBC,CIBC Mortgage,Expense,Family,None,0,0,0,0,1,214,CIBC mortgage payment,,,,,0,0
+EXP_MORTGAGE_HOME_TRUST,Home Trust Mortgage,Expense,Family,None,0,0,0,0,1,214,Home Trust mortgage payment,,,,,0,0
 EXP_MORTGAGE_INTEREST,Mortgage Interest,Expense,Family,None,0,0,0,0,1,214,Mortgage interest portion,,,,,0,0
 EXP_PROPERTY_TAX,Property Tax,Expense,Family,None,0,0,0,0,1,215,Property taxes,,,,,0,0
 EXP_CONDO_FEES,Condo Fees,Expense,Family,None,0,0,0,0,1,216,Condo strata fees,,,,,0,0
@@ -87,6 +90,7 @@ EXP_WEBSITE_HOSTING,Website Hosting,Expense,Business,Business Deductible,0,0,0,1
 EXP_PROFESSIONAL_DUES,Professional Dues,Expense,Business,Business Deductible,0,0,0,1,1,260,Membership and dues,8760,"Business taxes, licences, and memberships",8760,"Business taxes, licences, and memberships",100,100
 EXP_LICENSES_PERMITS,Licenses Permits,Expense,Business,Business Deductible,0,0,0,1,1,261,Regulatory licenses,8760,"Business taxes, licences, and memberships",8760,"Business taxes, licences, and memberships",100,100
 EXP_CPD_TRAINING,CPD Training,Expense,Business,Business Deductible,0,0,0,1,1,262,Continuing professional development,8860,Professional fees,8860,Professional fees,100,100
+EXP_CLINICAL_SUPPLIES,Therapy & Clinical Supplies,Expense,Business,Business Deductible,0,0,0,1,1,262,OT clinical and assessment supplies,8810,Office expenses,8810,Office expenses,100,100
 EXP_BUSINESS_INSURANCE,Business Insurance,Expense,Business,Business Deductible,0,0,0,1,1,263,Business insurance premiums,8690,Insurance,8690,Insurance,100,0
 EXP_PAYROLL,Payroll,Expense,Business,Business Deductible,0,0,0,1,1,264,Employee payroll,9060,"Salaries, wages, and benefits",9060,Salaries and wages,100,0
 EXP_CONTRACTOR_PAYMENTS,Contractor Payments,Expense,Business,Business Deductible,0,0,0,1,1,265,Independent contractor payments,9270,Other expenses / Subcontracts,9270,Other expenses,100,100
