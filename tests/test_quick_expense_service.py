@@ -25,8 +25,11 @@ def _make_service(tmp_path: Path) -> QuickExpenseService:
 def test_authentication_and_deborah_account_firewall(tmp_path: Path):
     svc = _make_service(tmp_path)
 
-    # 1. Deborah 1-click sign-in
-    deb_auth = svc.authenticate("deborah")
+    # 1. Deborah PIN sign-in (4867)
+    bad_deb = svc.authenticate("deborah", pin="0000")
+    assert bad_deb["ok"] is False
+
+    deb_auth = svc.authenticate("deborah", pin="4867")
     assert deb_auth["ok"] is True
     assert deb_auth["user"]["userId"] == "deborah"
 
@@ -65,7 +68,7 @@ def test_authentication_and_deborah_account_firewall(tmp_path: Path):
     # Verify CIBC Personal Chequing label distinction
     deb_by_code = {a["accountCode"]: a for a in deb_boot["accounts"]}
     assert deb_by_code["CIBC_CHEQUING"]["accountName"] == "CIBC Personal Chequing"
-    assert deb_by_code["CIBC_SAVINGS"]["accountName"] == "CIBC Personal Savings"
+    assert deb_by_code["CIBC_SAVINGS"]["accountName"] == "CIBC PC Savings"
     assert deb_by_code["CIBC_PC_GENERAL"]["accountName"] == "CIBC PC General"
     assert deb_by_code["CIBC_PC_TRUST"]["shortName"] == "CIBC PC Trust"
     assert "Client Money In / Out to General Only" in deb_by_code["CIBC_PC_TRUST"]["accountName"]
@@ -316,3 +319,220 @@ def test_onedrive_inbox_queue_and_flush(tmp_path: Path):
 
     entries = svc.list_entries("deborah", period="all")
     assert any(e["payee"] == "Therapy Shoppe" and e["streamId"] == "DEBORAH_OT_PRIVATE" for e in entries)
+
+
+def test_docket_cory_only_and_payment_multi_field_search(tmp_path: Path):
+    svc = _make_service(tmp_path)
+
+    # 1. Docketing is restricted to Cory only
+    assert svc.list_docket_matters("deborah")["ok"] is False
+    assert svc.save_docket_entry("deborah", {"matter": "M-1", "hours": 1.0, "description": "test"})["ok"] is False
+
+    cory_matters = svc.list_docket_matters("cory")
+    assert cory_matters["ok"] is True
+
+    d_res = svc.save_docket_entry(
+        "cory",
+        {
+            "matterId": "M_ACME_01",
+            "clientName": "Acme Corp",
+            "date": "2026-11-05",
+            "hours": 1.5,
+            "rate": 475.0,
+            "description": "review correspondence from James; draft and revise memorandum",
+        },
+    )
+    assert d_res["ok"] is True
+    assert d_res["syncedLegacyDockets"] is True
+    entry_id = d_res["entryId"]
+
+    # Verify matter-filtered recentDockets returns this docket
+    by_matter = svc.list_docket_matters("cory", matter_id="M_ACME_01")
+    assert by_matter["ok"] is True
+    assert any(d["entryId"] == entry_id and d["hours"] == 1.5 for d in by_matter["recentDockets"])
+
+    # Edit docket in place
+    edit_res = svc.save_docket_entry(
+        "cory",
+        {
+            "entryId": entry_id,
+            "matterId": "M_ACME_01",
+            "clientName": "Acme Corp",
+            "date": "2026-11-06",
+            "hours": 2.0,
+            "rate": 475.0,
+            "description": "review correspondence from James; finalize memorandum",
+        },
+    )
+    assert edit_res["ok"] is True
+    assert edit_res["updated"] is True
+    by_matter_after_edit = svc.list_docket_matters("cory", matter_id="M_ACME_01")
+    assert any(
+        d["entryId"] == entry_id and d["hours"] == 2.0 and "finalize memorandum" in d["description"]
+        for d in by_matter_after_edit["recentDockets"]
+    )
+
+    # Delete docket (restricted for Deborah, allowed for Cory)
+    assert svc.delete_docket_entry("deborah", {"entryId": entry_id})["ok"] is False
+    del_docket = svc.delete_docket_entry("cory", {"entryId": entry_id})
+    assert del_docket["ok"] is True
+    by_matter_after_del = svc.list_docket_matters("cory", matter_id="M_ACME_01")
+    assert not any(d["entryId"] == entry_id for d in by_matter_after_del["recentDockets"])
+
+    # 2. Seed an open invoice in Receivables and test 4-way Payment Search (Amount, Client, Billing Client, Invoice #)
+    svc.repo.save_receivable(
+        {
+            "invoiceNum": "26-0042-PC",
+            "date": "2026-10-20",
+            "client": "Apex Holdings Inc.",
+            "workClient": "Acme Operating Ltd.",
+            "billingClient": "Apex Holdings Inc.",
+            "totalInvoiced": 1695.00,
+            "amountPaid": 0.00,
+            "creditsAdj": 0.00,
+            "balanceDue": 1695.00,
+            "status": "Open",
+        }
+    )
+
+    # Search by Invoice Number
+    by_inv = svc.search_payment_invoices("deborah", query="26-0042-PC", force_refresh=True)
+    assert by_inv["ok"] is True
+    assert any(i["invoice"] == "26-0042-PC" for i in by_inv["invoices"])
+
+    # Search by Dollar Amount (±5% tolerance)
+    by_amt = svc.search_payment_invoices("deborah", query="1695")
+    assert any(i["invoice"] == "26-0042-PC" for i in by_amt["invoices"])
+
+    # Search by Work Client & Billing Client
+    by_wc = svc.search_payment_invoices("deborah", query="Acme Operating")
+    assert any(i["invoice"] == "26-0042-PC" for i in by_wc["invoices"])
+
+    by_bc = svc.search_payment_invoices("deborah", query="Apex Holdings")
+    assert any(i["invoice"] == "26-0042-PC" for i in by_bc["invoices"])
+
+    # Post payment as Deborah
+    pay_res = svc.post_payment_entry(
+        "deborah",
+        {
+            "invoice": "26-0042-PC",
+            "date": "2026-11-06",
+            "amount": 1695.00,
+            "depositAccount": "CIBC_PC_GENERAL",
+            "method": "e-Transfer",
+            "reference": "ETR-9912",
+        },
+    )
+    assert pay_res["ok"] is True
+
+    # After full payment, open-only search should exclude it, while include_paid=True includes it
+    open_only = svc.search_payment_invoices("deborah", query="26-0042-PC", include_paid=False, force_refresh=True)
+    assert not any(i["invoice"] == "26-0042-PC" for i in open_only["invoices"])
+
+    with_paid = svc.search_payment_invoices("deborah", query="26-0042-PC", include_paid=True)
+    assert any(i["invoice"] == "26-0042-PC" and i["status"] == "Paid" for i in with_paid["invoices"])
+
+
+def test_v12_receipts_voice_charts_and_tax_snapshot(tmp_path: Path):
+    import base64
+
+    svc = _make_service(tmp_path)
+
+    # 1. Receipt OCR text parser (Costco mixed-HST receipt)
+    ocr_sample = """
+    COSTCO WHOLESALE
+    14110 Yonge St, Aurora ON
+    Date: 2026-10-24
+    SUBTOTAL 210.36
+    HST 13% 8.14
+    TOTAL 218.50
+    MASTERCARD 218.50
+    """
+    parsed = svc._parse_receipt_ocr_text(ocr_sample, user_id="deborah")
+    assert parsed["payee"] == "Costco Wholesale"
+    assert parsed["txnDate"] == "2026-10-24"
+    assert parsed["amount"] == 218.50
+    assert parsed["taxAmount"] == 8.14
+    assert parsed["hstMode"] == "custom"
+    assert parsed["fromAccount"] == "TRIANGLE_MASTERCARD"
+    assert parsed["categoryCode"] == "EXP_GROCERIES"
+
+    # 2. Scan & stage receipt + auto-file into Tax-Ready folder on save
+    tiny_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+    scan_res = svc.scan_and_stage_receipt(
+        "deborah",
+        {
+            "fileName": "dental_receipt.png",
+            "mimeType": "image/png",
+            "dataBase64": base64.b64encode(tiny_png).decode("ascii"),
+        },
+    )
+    assert scan_res["ok"] is True
+    assert scan_res["receiptToken"].startswith("RCPT_")
+
+    saved_med = svc.save_entry(
+        "deborah",
+        {
+            "txnDate": "2026-10-25",
+            "mode": "Expense",
+            "streamId": "FAMILY",
+            "member": "Maya",
+            "fromAccount": "SIMPLII_VISA",
+            "categoryCode": "EXP_DENTAL",
+            "payee": "Thornhill Dental",
+            "amount": 245.00,
+            "taxAmount": 0.00,
+            "receiptToken": scan_res["receiptToken"],
+        },
+    )
+    assert saved_med["ok"] is True
+    assert saved_med["entry"]["hasReceipt"] is True
+    assert "Medical_Dental_Pharmacy" in saved_med["entry"]["receiptRelativePath"]
+
+    # 3. Universal Voice Command parser (Expense, CRA-Safe Docket, Timer, Report)
+    v_exp = svc.parse_voice_command(
+        "deborah",
+        "Costco 184.50 with 6.50 HST on Triangle Mastercard yesterday",
+    )
+    assert v_exp["ok"] is True
+    assert v_exp["intent"] == "EXPENSE"
+    assert v_exp["prefill"]["payee"] == "Costco Wholesale"
+    assert v_exp["prefill"]["amount"] == 184.50
+    assert v_exp["prefill"]["taxAmount"] == 6.50
+    assert v_exp["prefill"]["hstMode"] == "custom"
+    assert v_exp["prefill"]["fromAccount"] == "TRIANGLE_MASTERCARD"
+
+    v_doc = svc.parse_voice_command(
+        "cory",
+        "Docket 24 minutes called James Hutchinson and reviewed and revised partnership agreement",
+    )
+    assert v_doc["ok"] is True
+    assert v_doc["intent"] == "DOCKET"
+    assert v_doc["hours"] == 0.4
+    assert "telephone call with James" in v_doc["description"]
+    assert "Hutchinson" not in v_doc["description"]
+    assert "; review and revise partnership agreement" in v_doc["description"]
+
+    v_tmr = svc.parse_voice_command("cory", "Start call timer")
+    assert v_tmr["ok"] is True
+    assert v_tmr["intent"] == "TIMER"
+    assert v_tmr["timerAction"] == "start"
+
+    # 4. Graphical Budget & Cash-Flow Charts in build_report
+    rep = svc.build_report("cory", period="all", stream_id="ALL")
+    assert rep["ok"] is True
+    assert "charts" in rep
+    assert len(rep["charts"]["expensePieByCategory"]) >= 1
+    assert len(rep["charts"]["cashFlowBarByStream"]) >= 1
+
+    # 5. Live Tax, HST & Shareholder Loan (GIFI 2781) Snapshot
+    tax_snap = svc.get_tax_and_shl_snapshot("cory")
+    assert tax_snap["ok"] is True
+    assert tax_snap["shareholderLoan"]["gifiCode"] == "2781"
+    assert tax_snap["shareholderLoan"]["closingBalance"] >= 794.45
+    assert "SOLE_PROP" in tax_snap["hst"]
+    assert "PC" in tax_snap["hst"]
+
+

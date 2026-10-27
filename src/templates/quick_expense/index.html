@@ -898,6 +898,24 @@
       <!-- Status / Toast Banner -->
       <div id="statusBanner" class="banner"></div>
 
+      <!-- Universal Voice Command Bar (Works Across Expense, Income, Docket, Payment, Invoice & Timers) -->
+      <div id="voiceCommandBar" style="margin-bottom: 10px; padding: 10px 12px; border-radius: 12px; background: linear-gradient(135deg, #EEF2FF 0%, #F0FDF4 100%); border: 1.5px solid #A5B4FC; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+          <button type="button" id="universalMicBtn" onclick="toggleUniversalVoiceRecognition()" style="flex: 1; min-width: 190px; padding: 10px 14px; border-radius: 10px; border: 2px solid #4F46E5; background: #4F46E5; color: #FFFFFF; font-size: 0.92rem; font-weight: 900; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 3px 10px rgba(79, 70, 229, 0.25);">
+            <span id="universalMicIcon">🎙️</span>
+            <span id="universalMicLabel">Speak Any Command (Expense, Docket, Payment, Invoice)</span>
+          </button>
+          <button type="button" onclick="toggleVoiceTextDrawer()" style="padding: 9px 12px; border-radius: 10px; border: 1.5px solid #CBD5E1; background: #FFFFFF; color: var(--ink); font-size: 0.82rem; font-weight: 800; cursor: pointer;">
+            ⌨️ Type / Keyboard Mic
+          </button>
+        </div>
+        <div id="voiceLiveStatus" style="display: none; font-size: 0.84rem; font-weight: 800; color: #1E3A8A; padding: 6px 10px; border-radius: 8px; background: #FFFFFF; border: 1px dashed #6366F1;"></div>
+        <div id="voiceTextDrawer" style="display: none; gap: 6px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="voiceTextInput" class="big-input" style="flex: 1; min-height: 42px; font-size: 0.92rem;" placeholder="e.g. 'Costco 241.18 with 8.14 HST groceries on Triangle MC' or 'Scott Braun 0.4h call with Scott and James'" onkeydown="if(event.key==='Enter') submitTypedVoiceCommand()" />
+          <button type="button" class="today-quick-btn" style="min-height: 42px;" onclick="submitTypedVoiceCommand()">✨ Run Command</button>
+        </div>
+      </div>
+
       <!-- Previous / Next Card Deck Bar -->
       <div class="nav-strip" id="topNavStrip">
         <button type="button" class="nav-btn" id="prevCardBtn" onclick="stepCard(-1)">
@@ -943,6 +961,52 @@
         </div>
 
         <div id="standardEntryBody">
+        <!-- STEP 0: SNAP RECEIPT PHOTO OR UPLOAD PDF (Auto-Reads Store, Date, Total & Exact HST + Files in Tax Folder) -->
+        <div class="step-section" id="receiptCaptureSection" style="background: #F8FAFC; border: 2px dashed #93C5FD; border-radius: 12px; padding: 11px 12px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+            <div>
+              <div style="font-size: 0.88rem; font-weight: 900; color: #1E3A8A;">
+                📸 Snap Receipt Photo (Auto-Reads Store, Date, Total &amp; HST)
+              </div>
+              <div style="font-size: 0.76rem; font-weight: 700; color: var(--muted);">
+                Works for Family, Medical/Dental, Childcare, Donations, Deborah OT &amp; Cory Legal
+              </div>
+            </div>
+          </div>
+
+          <input type="file" id="receiptCameraInput" accept="image/*" capture="environment" style="display: none;" onchange="onReceiptFileSelected(this)" />
+          <input type="file" id="receiptUploadInput" accept="image/*,application/pdf" style="display: none;" onchange="onReceiptFileSelected(this)" />
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" onclick="document.getElementById('receiptCameraInput').click()" style="flex: 1; min-width: 155px; padding: 10px 12px; border-radius: 10px; border: 2px solid #2563EB; background: #2563EB; color: #FFFFFF; font-size: 0.88rem; font-weight: 900; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+              📸 Take Receipt Photo
+            </button>
+            <button type="button" onclick="document.getElementById('receiptUploadInput').click()" style="flex: 1; min-width: 155px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid #2563EB; background: #FFFFFF; color: #1D4ED8; font-size: 0.88rem; font-weight: 900; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+              🖼️ Upload Photo / PDF
+            </button>
+          </div>
+
+          <div id="receiptScanStatusBox" style="display: none; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #EFF6FF; border: 1px solid #93C5FD; font-size: 0.82rem; font-weight: 800; color: #1E3A8A;"></div>
+
+          <div id="stagedReceiptPreviewCard" style="display: none; margin-top: 10px; padding: 10px; border-radius: 10px; background: #ECFDF5; border: 1.5px solid #10B981; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <img id="stagedReceiptThumb" src="" alt="Receipt" style="width: 52px; height: 52px; object-fit: cover; border-radius: 8px; border: 1px solid #059669; display: none; cursor: pointer;" onclick="openCurrentCardReceiptModal()" />
+              <div>
+                <div id="stagedReceiptTitle" style="font-size: 0.85rem; font-weight: 900; color: #064E3B;">🧾 Receipt Attached</div>
+                <div id="stagedReceiptSub" style="font-size: 0.75rem; font-weight: 700; color: #047857;">Will be filed automatically in Tax-Ready Receipts folder on Save</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" onclick="openCurrentCardReceiptModal()" style="padding: 6px 10px; border-radius: 8px; border: 1.5px solid #059669; background: #FFFFFF; color: #065F46; font-size: 0.78rem; font-weight: 800; cursor: pointer;">
+                🔍 View Receipt
+              </button>
+              <button type="button" onclick="clearStagedReceipt()" style="padding: 6px 10px; border-radius: 8px; border: 1.5px solid #FCA5A5; background: #FEF2F2; color: #B91C1C; font-size: 0.78rem; font-weight: 800; cursor: pointer;">
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- STEP 1: WHO IS THIS FOR? (Shown for Expense & Income) -->
         <div class="step-section" id="whoSection">
           <div class="step-label">
@@ -1059,6 +1123,17 @@
         <div class="step-section">
           <label class="field-label" for="notesInput">📝 Short Note / What Was It For? (Optional)</label>
           <input type="text" id="notesInput" class="big-input" placeholder="e.g. Weekly groceries, OT supplies, client lunch..." onkeydown="if(event.key==='Enter') saveAndNext()" />
+        </div>
+
+        <!-- STEP 6 (CORY ONLY): ALSO BILL TO CLIENT MATTER AS DISBURSEMENT -->
+        <div class="step-section" id="clientDisbursementBox" style="display: none; background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 12px; padding: 10px 12px;">
+          <label style="font-size: 0.88rem; font-weight: 800; color: #92400E; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="alsoBillMatterChk" onchange="onAlsoBillMatterToggle()" style="width: 18px; height: 18px;" />
+            ⚖️ Also Bill This Expense &amp; Receipt to a Client Matter (Disbursement)
+          </label>
+          <div id="alsoBillMatterSelectWrap" style="display: none; margin-top: 8px;">
+            <select id="alsoBillMatterSelect" class="big-select"></select>
+          </div>
         </div>
 
         <!-- Bottom Action Bar (Sticky on iPhone / Android) -->
@@ -1247,6 +1322,30 @@
             </div>
           </div>
 
+          <!-- Live Call / Task Timer Strip -->
+          <div id="docketTimerStrip" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 12px; background: #0F172A; color: #FFFFFF; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div>
+              <div style="font-size: 0.72rem; font-weight: 800; color: #93C5FD; text-transform: uppercase; letter-spacing: 0.4px;">
+                ⏱️ Live Call / Task Timer (Persists While Screen Is Locked)
+              </div>
+              <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 2px;">
+                <span id="docketTimerClock" style="font-size: 1.35rem; font-weight: 900; font-variant-numeric: tabular-nums;">00:00:00</span>
+                <span id="docketTimerTenthBadge" style="font-size: 0.84rem; font-weight: 800; color: #34D399;">(0.0h billable)</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button type="button" id="timerStartPauseBtn" onclick="toggleCallTimer()" style="padding: 8px 12px; border-radius: 8px; border: none; background: #10B981; color: #FFFFFF; font-size: 0.82rem; font-weight: 900; cursor: pointer;">
+                ▶️ Start
+              </button>
+              <button type="button" onclick="stopAndApplyCallTimer()" style="padding: 8px 12px; border-radius: 8px; border: none; background: #3B82F6; color: #FFFFFF; font-size: 0.82rem; font-weight: 900; cursor: pointer;">
+                ⏹️ Stop &amp; Fill Hours
+              </button>
+              <button type="button" onclick="resetCallTimer()" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #475569; background: #1E293B; color: #CBD5E1; font-size: 0.8rem; font-weight: 800; cursor: pointer;">
+                ↺ Reset
+              </button>
+            </div>
+          </div>
+
           <div id="docketEditingBanner" style="display: none; margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; background: #FEF3C7; border: 2px solid #F59E0B; color: #92400E; font-size: 0.86rem; font-weight: 800; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
             <span id="docketEditingBannerText">✏️ Editing Existing Docket</span>
             <div style="display: flex; gap: 6px; align-items: center;">
@@ -1260,7 +1359,12 @@
           </div>
 
           <div class="step-section">
-            <div class="step-label">1. Select Client &amp; Matter</div>
+            <div class="step-label" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span>1. Select Client &amp; Matter</span>
+              <button type="button" onclick="openNewMatterModal()" style="padding: 5px 10px; border-radius: 8px; border: 1.5px solid #2563EB; background: #EFF6FF; color: #1D4ED8; font-size: 0.78rem; font-weight: 900; cursor: pointer;">
+                ➕ New Client / Matter
+              </button>
+            </div>
 
             <div style="font-size: 0.8rem; font-weight: 700; color: var(--muted); margin-bottom: 4px;">
               ⚡ Recent Matters (One Tap):
@@ -1313,7 +1417,12 @@
           </div>
 
           <div class="step-section">
-            <label class="field-label" for="docketDescInput">📝 Docket Narrative (Present tense; first names only; semicolon separators)</label>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
+              <label class="field-label" for="docketDescInput" style="margin-bottom: 0;">📝 Docket Narrative (Present tense; first names only; semicolon separators)</label>
+              <button type="button" onclick="dictateDocketNarrativeOnly()" style="padding: 5px 10px; border-radius: 8px; border: 1.5px solid #4F46E5; background: #EEF2FF; color: #4338CA; font-size: 0.78rem; font-weight: 900; cursor: pointer;">
+                🎙️ Dictate CRA-Safe Narrative
+              </button>
+            </div>
             <textarea id="docketDescInput" class="big-input" rows="3" style="min-height: 84px; resize: vertical; font-family: inherit;" placeholder="e.g. review correspondence from James; draft and revise memorandum"></textarea>
           </div>
 
@@ -1408,13 +1517,16 @@
             </div>
           </div>
 
-          <!-- Sub-Tab Switcher: Unbilled WIP vs Open A/R -->
+          <!-- Sub-Tab Switcher: Unbilled WIP vs Open A/R vs Live Tax & SHL -->
           <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-            <button type="button" id="wipSubTabBtn" onclick="setWipArSubTab('WIP')" style="flex: 1; min-width: 165px; padding: 11px 12px; border-radius: 10px; border: 2px solid #D97706; background: #FEF3C7; color: #78350F; font-size: 0.88rem; font-weight: 900; cursor: pointer;">
+            <button type="button" id="wipSubTabBtn" onclick="setWipArSubTab('WIP')" style="flex: 1; min-width: 145px; padding: 11px 10px; border-radius: 10px; border: 2px solid #D97706; background: #FEF3C7; color: #78350F; font-size: 0.84rem; font-weight: 900; cursor: pointer;">
               💼 Unbilled WIP ($0.00)
             </button>
-            <button type="button" id="arSubTabBtn" onclick="setWipArSubTab('AR')" style="flex: 1; min-width: 165px; padding: 11px 12px; border-radius: 10px; border: 2px solid #CBD5E1; background: #F8FAFC; color: var(--ink); font-size: 0.88rem; font-weight: 900; cursor: pointer;">
+            <button type="button" id="arSubTabBtn" onclick="setWipArSubTab('AR')" style="flex: 1; min-width: 145px; padding: 11px 10px; border-radius: 10px; border: 2px solid #CBD5E1; background: #F8FAFC; color: var(--ink); font-size: 0.84rem; font-weight: 900; cursor: pointer;">
               🧾 Open A/R ($0.00)
+            </button>
+            <button type="button" id="taxSubTabBtn" onclick="setWipArSubTab('TAX')" style="flex: 1; min-width: 145px; padding: 11px 10px; border-radius: 10px; border: 2px solid #CBD5E1; background: #F8FAFC; color: var(--ink); font-size: 0.84rem; font-weight: 900; cursor: pointer;">
+              🏛️ Tax, HST &amp; SHL
             </button>
           </div>
 
@@ -1443,7 +1555,7 @@
             </div>
 
             <div style="font-size: 0.78rem; font-weight: 700; color: var(--muted); margin-bottom: 8px;">
-              👆 Tap any matter below to expand its unbilled dockets (or tap <strong>+ Docket</strong> to log time to it).
+              👆 Tap any matter below to expand its unbilled dockets, tap <strong>🧾 Bill Matter</strong> to preview &amp; finalize an invoice, or tap <strong>+ Docket</strong>.
             </div>
             <div id="wipMattersList" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
@@ -1498,6 +1610,13 @@
 
             <div id="arOverviewList" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
+
+          <!-- SUB-VIEW 3: LIVE TAX, DUAL HST (RT0001) & SHAREHOLDER LOAN (GIFI 2781) SNAPSHOT -->
+          <div id="taxSubView" style="display: none;">
+            <div id="taxSnapshotContent" style="display: flex; flex-direction: column; gap: 12px;">
+              <div style="padding: 16px; text-align: center; color: var(--muted); font-weight: 700;">Loading Live Tax, HST &amp; Shareholder Loan Snapshot...</div>
+            </div>
+          </div>
         </div>
 
       </div>
@@ -1509,7 +1628,7 @@
     <div class="report-modal">
       <div class="report-header">
         <div>
-          <h2 style="margin:0; font-size:1.35rem; font-weight:800;">📋 Check My Entries</h2>
+          <h2 style="margin:0; font-size:1.35rem; font-weight:800;">📋 Check My Entries &amp; Budget Charts</h2>
           <div id="reportSubtitle" style="font-size:0.9rem; color:var(--muted); font-weight:600; margin-top:2px;">
             Showing entries for Today
           </div>
@@ -1527,10 +1646,10 @@
       <div class="period-bar" id="reportPeriodBar">
         <button type="button" class="period-pill active" data-period="today" onclick="setReportPeriod('today')">📅 Today</button>
         <button type="button" class="period-pill" data-period="yesterday" onclick="setReportPeriod('yesterday')">⏮️ Yesterday</button>
-        <button type="button" class="period-pill" data-period="this_week" onclick="setReportPeriod('this_week')">🗓️ This Week</button>
+        <button type="button" class="period-pill" data-period="this_week" onclick="setReportPeriod('this_week')">🗓️ This Week (Sun–Sat)</button>
         <button type="button" class="period-pill" data-period="this_month" onclick="setReportPeriod('this_month')">📆 This Month</button>
         <button type="button" class="period-pill" data-period="last_month" onclick="setReportPeriod('last_month')">⏪ Last Month</button>
-        <button type="button" class="period-pill" data-period="this_year" onclick="setReportPeriod('this_year')">📊 This Year</button>
+        <button type="button" class="period-pill" data-period="this_year" onclick="setReportPeriod('this_year')">🏆 YTD</button>
         <button type="button" class="period-pill" data-period="all" onclick="setReportPeriod('all')">🗂️ All</button>
         <button type="button" class="period-pill" data-period="custom" onclick="toggleCustomDates()">🔍 Custom Dates...</button>
       </div>
@@ -1564,7 +1683,7 @@
       <!-- Summary Cards -->
       <div class="summary-strip">
         <div class="sum-box">
-          <div class="sum-label">Entries</div>
+          <div class="sum-label">Entries &amp; Receipts</div>
           <div class="sum-val" id="repSumCount">0</div>
         </div>
         <div class="sum-box">
@@ -1576,10 +1695,22 @@
           <div class="sum-val" id="repSumHst">$0.00</div>
         </div>
         <div class="sum-box">
-          <div class="sum-label">Income Logged</div>
+          <div class="sum-label">Income / Net Cash</div>
           <div class="sum-val" id="repSumIncome">$0.00</div>
         </div>
       </div>
+
+      <!-- Graphical Budget & Cash-Flow Charts Toggle & Container -->
+      <div style="margin-bottom: 12px;">
+        <button type="button" id="toggleBudgetChartsBtn" onclick="toggleBudgetChartsPanel()" style="width: 100%; padding: 10px 14px; border-radius: 10px; border: 1.5px solid #6366F1; background: #EEF2FF; color: #312E81; font-size: 0.88rem; font-weight: 900; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+          <span>📊 Graphical Budget &amp; Cash-Flow Charts (Expense Pie, Income Pie &amp; Net Profit Bar Graph)</span>
+          <span id="toggleBudgetChartsArrow">▼ Show Charts</span>
+        </button>
+        <div id="budgetChartsPanel" style="display: none; margin-top: 10px; padding: 12px; border-radius: 12px; background: #F8FAFC; border: 1.5px solid #CBD5E1;"></div>
+      </div>
+
+      <!-- Hidden input for attaching receipt to an existing entry in the report list -->
+      <input type="file" id="attachExistingReceiptInput" accept="image/*,application/pdf" style="display: none;" onchange="onAttachReceiptToExistingSelected(this)" />
 
       <!-- Entries List -->
       <div class="entry-list" id="reportEntryList"></div>
@@ -1606,6 +1737,122 @@
       <button type="button" class="close-report-big-btn" style="width: 100%; justify-content: center; padding: 13px 16px; font-size: 1.02rem;" onclick="closeDocketConfirmModal()">
         ✓ OK — Done
       </button>
+    </div>
+  </div>
+
+  <!-- ================= 5. FULL-SCREEN RECEIPT VIEWER MODAL ================= -->
+  <div class="modal-backdrop" id="receiptViewerModalBackdrop" onclick="if(event.target===this) closeReceiptViewerModal()">
+    <div class="report-modal" style="max-width: 720px; padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; border-bottom: 1.5px solid #E2E8F0; padding-bottom: 10px;">
+        <div>
+          <h3 id="receiptModalTitle" style="margin: 0; font-size: 1.1rem; font-weight: 900;">🧾 Receipt Image</h3>
+          <div id="receiptModalFolder" style="font-size: 0.78rem; font-weight: 700; color: #047857; margin-top: 2px;"></div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <a id="receiptModalDownloadLink" href="#" target="_blank" style="padding: 8px 12px; border-radius: 8px; background: #EFF6FF; border: 1.5px solid #2563EB; color: #1D4ED8; font-size: 0.82rem; font-weight: 800; text-decoration: none;">
+            ↗ Open / Share
+          </a>
+          <button type="button" class="close-report-big-btn" style="padding: 8px 14px; font-size: 0.88rem;" onclick="closeReceiptViewerModal()">
+            ✕ Close
+          </button>
+        </div>
+      </div>
+      <div id="receiptModalBody" style="text-align: center; background: #0F172A; border-radius: 12px; padding: 10px; max-height: 75vh; overflow: auto;"></div>
+    </div>
+  </div>
+
+  <!-- ================= 6. MOBILE INVOICE STUDIO MODAL (PREVIEW & FINALIZE) ================= -->
+  <div class="modal-backdrop" id="mobileInvoiceModalBackdrop" onclick="if(event.target===this) closeMobileInvoiceModal()">
+    <div class="report-modal" style="max-width: 860px; padding: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 2px solid #E2E8F0; padding-bottom: 12px; margin-bottom: 12px;">
+        <div>
+          <h3 id="mobInvTitle" style="margin: 0; font-size: 1.2rem; font-weight: 900;">🧾 Mobile Invoice Studio</h3>
+          <div id="mobInvSubtitle" style="font-size: 0.84rem; font-weight: 700; color: var(--muted); margin-top: 2px;"></div>
+        </div>
+        <button type="button" class="close-report-big-btn" style="padding: 9px 14px; font-size: 0.9rem; background: #64748B;" onclick="closeMobileInvoiceModal()">
+          ✕ Cancel
+        </button>
+      </div>
+
+      <div class="form-row two-col" style="margin-bottom: 10px;">
+        <div>
+          <label class="field-label" style="font-size: 0.8rem;">🔢 Invoice Number</label>
+          <input type="text" id="mobInvNumberInput" class="big-input" style="min-height: 42px;" />
+        </div>
+        <div>
+          <label class="field-label" style="font-size: 0.8rem;">📅 Invoice Date</label>
+          <input type="date" id="mobInvDateInput" class="big-input" style="min-height: 42px;" onchange="refreshMobileInvoicePreview()" />
+        </div>
+      </div>
+
+      <div class="form-row two-col" style="margin-bottom: 12px;">
+        <div>
+          <label class="field-label" style="font-size: 0.8rem;">🏛️ Billing Entity</label>
+          <select id="mobInvBillerSelect" class="big-select" style="min-height: 42px;" onchange="refreshMobileInvoicePreview()">
+            <option value="SOLE_PROP">SOLE_PROP — Cory Schneider (HST # 78621 8222 RT0001)</option>
+            <option value="PC">PC — Cory Schneider Law PC (Nov 1, 2026+)</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" style="font-size: 0.8rem;">📍 Invoice Header Address</label>
+          <select id="mobInvAddressSelect" class="big-select" style="min-height: 42px;" onchange="refreshMobileInvoicePreview()">
+            <option value="">Default Address for Entity</option>
+            <option value="14 Parsons Court, Thornhill, ON L4K 6Z4">14 Parsons Court, Thornhill, ON L4K 6Z4</option>
+            <option value="7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7">7 Saint Thomas Street, Suite 307, Toronto, ON M5S 2B7</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="mobInvTotalsBar" style="padding: 10px 12px; border-radius: 10px; background: #EFF6FF; border: 1.5px solid #93C5FD; font-size: 0.9rem; font-weight: 900; color: #1E3A8A; margin-bottom: 12px;"></div>
+
+      <div style="border: 1.5px solid #CBD5E1; border-radius: 12px; overflow: hidden; background: #FFFFFF; margin-bottom: 14px;">
+        <iframe id="mobInvPreviewFrame" style="width: 100%; height: 420px; border: none;"></iframe>
+      </div>
+
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button type="button" id="finalizeMobInvBtn" class="save-next-btn" onclick="finalizeMobileInvoiceNow()">
+          ✅ Finalize Invoice &amp; Generate PDF ▶
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 7. QUICK NEW CLIENT & MATTER MODAL ================= -->
+  <div class="modal-backdrop" id="newMatterModalBackdrop" onclick="if(event.target===this) closeNewMatterModal()">
+    <div class="report-modal" style="max-width: 500px; padding: 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1.5px solid #E2E8F0; padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.15rem; font-weight: 900;">➕ New Client / Matter</h3>
+        <button type="button" class="pill-btn" onclick="closeNewMatterModal()">✕</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div>
+          <label class="field-label">👤 Client Name (e.g. Braun, Scott or Acme Corp.)</label>
+          <input type="text" id="newMatterClientInput" class="big-input" placeholder="Last, First or Company Name" />
+        </div>
+        <div>
+          <label class="field-label">⚖️ Matter Description</label>
+          <input type="text" id="newMatterDescInput" class="big-input" placeholder="e.g. Corporate Reorganization / Share Purchase" />
+        </div>
+        <div class="form-row two-col">
+          <div>
+            <label class="field-label">📂 Matter Type</label>
+            <select id="newMatterTypeSelect" class="big-select">
+              <option value="Corporate">Corporate (CRP)</option>
+              <option value="Tax">Tax (TAX)</option>
+              <option value="Commercial">Commercial (COM)</option>
+              <option value="Estate">Estate (EST)</option>
+              <option value="General">General (GEN)</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">💲 Hourly Rate ($)</label>
+            <input type="number" id="newMatterRateInput" class="big-input" value="475" step="25" />
+          </div>
+        </div>
+        <button type="button" class="save-next-btn" style="margin-top: 6px;" onclick="submitQuickNewMatter()">
+          ✓ Create Matter &amp; Select for Docketing ▶
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1689,7 +1936,18 @@
       return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
     }
 
-    const APP_BUILD_VERSION = "v11";
+    const APP_BUILD_VERSION = "v12";
+
+    // v12 State: Staged Receipt, Budget Charts, Call Timer & Mobile Invoicing
+    let currentStagedReceipt = null; // { receiptToken, receiptId, receiptUrl, mimeType, fileName, folderLabel }
+    let attachingReceiptToTxnId = "";
+    let budgetChartsOpen = false;
+    let budgetExpensePieMode = "category"; // "category" | "group"
+    let budgetBarMode = "stream"; // "stream" | "month"
+    let lastReportChartsData = null;
+    let callTimerState = { running: false, startedAtMs: 0, accumulatedSec: 0 };
+    let callTimerIntervalId = null;
+    let currentMobileInvoiceMatter = "";
 
     window.addEventListener("DOMContentLoaded", async () => {
       if ("serviceWorker" in navigator) {
@@ -1700,7 +1958,7 @@
             window.location.reload();
           }
         });
-        navigator.serviceWorker.register("/sw.js?v=11").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=12").then((reg) => {
           reg.update().catch(() => {});
         }).catch(() => {});
       }
@@ -1873,12 +2131,16 @@
 
       // 1. Populate UI IMMEDIATELY from preloaded/cached data (0ms delay!)
       applyPreloadedBootstrap(currentUser.userId);
+      restoreCallTimerFromStorage();
       startNewBlankCard();
 
       // 2. Refresh live server data asynchronously in background
       syncOfflineQueueIfAny().catch(() => {});
       loadBootstrap().catch(() => {});
       refreshDeckFromServer().catch(() => {});
+      if (isCoryUser) {
+        ensureCoryMattersLoadedForDisbursement().catch(() => {});
+      }
     }
 
     async function loadBootstrap() {
@@ -2053,6 +2315,16 @@
       dockSec.style.display = "none";
       if (wipArSec) wipArSec.style.display = "none";
       updateTodayBadge();
+
+      const recCapSec = document.getElementById("receiptCaptureSection");
+      const disbBox = document.getElementById("clientDisbursementBox");
+      const isCoryUser = Boolean(currentUser && (currentUser.isCory || currentUser.userId === "cory"));
+      if (recCapSec) {
+        recCapSec.style.display = (currentMode === "Expense" || currentMode === "Income") ? "block" : "none";
+      }
+      if (disbBox) {
+        disbBox.style.display = (currentMode === "Expense" && isCoryUser) ? "block" : "none";
+      }
 
       if (currentMode === "Expense") {
         whoSec.style.display = "block";
@@ -2428,6 +2700,11 @@
       document.getElementById("taxAmountInput").value = "0.00";
       document.getElementById("notesInput").value = "";
       document.getElementById("categorySearchInput").value = "";
+      clearStagedReceipt();
+      const alsoBillChk = document.getElementById("alsoBillMatterChk");
+      const alsoBillWrap = document.getElementById("alsoBillMatterSelectWrap");
+      if (alsoBillChk) alsoBillChk.checked = false;
+      if (alsoBillWrap) alsoBillWrap.style.display = "none";
       if (!keepSticky) {
         setTodayDate();
       }
@@ -2476,6 +2753,24 @@
         updatePreTaxLabel();
       }
       document.getElementById("notesInput").value = entry.notes || entry.expenseDetails || "";
+
+      // Show existing receipt if attached
+      if (entry.hasReceipt && entry.receiptUrl) {
+        currentStagedReceipt = {
+          receiptToken: "",
+          receiptId: entry.receiptId || "",
+          receiptUrl: entry.receiptUrl,
+          mimeType: entry.receiptMimeType || "image/jpeg",
+          fileName: entry.receiptFileName || "Receipt",
+          folderLabel: entry.receiptFolder || "Receipts"
+        };
+        renderStagedReceiptCard(
+          `✅ Receipt on file (${entry.receiptFileName || "Tap to view"})`,
+          `📁 Saved in: ${entry.receiptFolder || "CSPM_Shared_Data/Receipts"}`
+        );
+      } else {
+        clearStagedReceipt();
+      }
       updateNavStrip();
     }
 
@@ -2523,7 +2818,10 @@
         amount: parseFloat(document.getElementById("amountInput").value) || 0,
         taxAmount: parseFloat(document.getElementById("taxAmountInput").value) || 0,
         isRefund: document.getElementById("isRefundChk").checked,
-        notes: document.getElementById("notesInput").value.trim()
+        notes: document.getElementById("notesInput").value.trim(),
+        receiptToken: currentStagedReceipt ? (currentStagedReceipt.receiptToken || "") : "",
+        alsoBillToMatter: Boolean(document.getElementById("alsoBillMatterChk")?.checked),
+        matterNumber: document.getElementById("alsoBillMatterSelect")?.value || ""
       };
 
       try {
@@ -2681,10 +2979,16 @@
         if (!data.ok) return;
 
         document.getElementById("reportSubtitle").textContent = `Showing: ${data.periodLabel}`;
-        document.getElementById("repSumCount").textContent = String(data.entryCount || 0);
+        const recCnt = (data.charts && data.charts.receiptsCount) || 0;
+        document.getElementById("repSumCount").textContent = recCnt > 0 ? `${data.entryCount || 0} (${recCnt} 🧾)` : String(data.entryCount || 0);
         document.getElementById("repSumExpense").textContent = data.expenseGrandFormatted || "$0.00";
         document.getElementById("repSumHst").textContent = data.expenseHstFormatted || "$0.00";
         document.getElementById("repSumIncome").textContent = data.incomeFormatted || "$0.00";
+
+        lastReportChartsData = data;
+        if (budgetChartsOpen) {
+          renderBudgetChartsPanel(data);
+        }
 
         const listEl = document.getElementById("reportEntryList");
         listEl.innerHTML = "";
@@ -2704,6 +3008,9 @@
           const acctText = e.toAccount
             ? `${e.fromAccountIcon} ${e.fromAccountLabel} ➔ ${e.toAccountIcon} ${e.toAccountLabel}`
             : `${e.fromAccountIcon} ${e.fromAccountLabel}`;
+          const recBadgeHtml = e.hasReceipt
+            ? `<button type="button" class="row-action-btn" style="background:#ECFDF5; border:1px solid #10B981; color:#047857;" onclick='openReceiptViewerModal(${JSON.stringify(e.receiptUrl || "")}, ${JSON.stringify(e.payee || e.categoryName || "Receipt")}, ${JSON.stringify(e.receiptFolder || e.receiptFileName || "")}, ${JSON.stringify(e.receiptMimeType || "")})'>🧾 Receipt</button>`
+            : `<button type="button" class="row-action-btn" style="background:#F8FAFC; border:1px dashed #94A3B8; color:#475569;" onclick="triggerAttachReceiptToExisting('${e.transactionId}')">📸 + Receipt</button>`;
 
           card.innerHTML = `
             <div class="entry-row-left">
@@ -2711,10 +3018,12 @@
                 <span>${e.categoryIcon} ${e.payee || e.categoryName}</span>
                 <span class="entry-badge">${e.streamIcon} ${e.streamShortLabel}</span>
                 <span class="entry-badge">${e.mode}</span>
+                ${e.hasReceipt ? `<span class="entry-badge" style="background:#DCFCE7; color:#047857;">🧾 Receipt Saved</span>` : ""}
               </div>
               <div class="entry-row-sub">
                 📅 ${e.txnDate} &nbsp;·&nbsp; 🏷️ ${e.categoryName} &nbsp;·&nbsp; ${acctText}
                 ${e.notes ? `<br/>📝 ${e.notes}` : ""}
+                ${e.hasReceipt && e.receiptFolder ? `<br/>📁 <span style="color:#047857;">${e.receiptFolder}</span>` : ""}
               </div>
             </div>
             <div class="entry-row-right">
@@ -2722,6 +3031,7 @@
                 <div class="entry-amount-main">${e.amountFormatted}</div>
                 <div class="entry-amount-hst">HST: ${e.taxFormatted}</div>
               </div>
+              ${recBadgeHtml}
               <button type="button" class="row-action-btn edit" onclick='editEntryFromReport(${JSON.stringify(e).replace(/'/g, "&#39;")})'>
                 ✏️ Edit
               </button>
@@ -3811,7 +4121,7 @@
     let expandedArClients = {}; // clientName -> bool
 
     async function openWipArView(subTab) {
-      wipArActiveSubTab = subTab === "AR" ? "AR" : "WIP";
+      wipArActiveSubTab = (subTab === "AR" || subTab === "TAX") ? subTab : "WIP";
       setMode("WIP_AR");
       setWipArSubTab(wipArActiveSubTab);
       const sec = document.getElementById("wipArSection");
@@ -3819,13 +4129,16 @@
     }
 
     function setWipArSubTab(subTab) {
-      wipArActiveSubTab = subTab === "AR" ? "AR" : "WIP";
+      wipArActiveSubTab = (subTab === "AR" || subTab === "TAX") ? subTab : "WIP";
       const wipBtn = document.getElementById("wipSubTabBtn");
       const arBtn = document.getElementById("arSubTabBtn");
+      const taxBtn = document.getElementById("taxSubTabBtn");
       const wipView = document.getElementById("wipSubView");
       const arView = document.getElementById("arSubView");
+      const taxView = document.getElementById("taxSubView");
       if (wipView) wipView.style.display = wipArActiveSubTab === "WIP" ? "block" : "none";
       if (arView) arView.style.display = wipArActiveSubTab === "AR" ? "block" : "none";
+      if (taxView) taxView.style.display = wipArActiveSubTab === "TAX" ? "block" : "none";
       if (wipBtn) {
         wipBtn.style.background = wipArActiveSubTab === "WIP" ? "#FEF3C7" : "#F8FAFC";
         wipBtn.style.borderColor = wipArActiveSubTab === "WIP" ? "#D97706" : "#CBD5E1";
@@ -3835,6 +4148,14 @@
         arBtn.style.background = wipArActiveSubTab === "AR" ? "#ECFDF5" : "#F8FAFC";
         arBtn.style.borderColor = wipArActiveSubTab === "AR" ? "#059669" : "#CBD5E1";
         arBtn.style.color = wipArActiveSubTab === "AR" ? "#064E3B" : "var(--ink)";
+      }
+      if (taxBtn) {
+        taxBtn.style.background = wipArActiveSubTab === "TAX" ? "#EFF6FF" : "#F8FAFC";
+        taxBtn.style.borderColor = wipArActiveSubTab === "TAX" ? "#2563EB" : "#CBD5E1";
+        taxBtn.style.color = wipArActiveSubTab === "TAX" ? "#1E3A8A" : "var(--ink)";
+      }
+      if (wipArActiveSubTab === "TAX") {
+        loadTaxSnapshot();
       }
     }
 
@@ -3978,7 +4299,7 @@
         card.appendChild(hdr);
 
         const btnRow = document.createElement("div");
-        btnRow.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px;";
+        btnRow.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;";
         const expHint = document.createElement("span");
         expHint.style.cssText = "font-size:0.74rem; font-weight:700; color:var(--primary); cursor:pointer;";
         expHint.textContent = isExp ? `▲ Hide ${m.docketCount} unbilled dockets` : `▼ Tap to view ${m.docketCount} unbilled dockets`;
@@ -3987,16 +4308,31 @@
           renderWipMattersList();
         };
 
+        const actionBtns = document.createElement("div");
+        actionBtns.style.cssText = "display:flex; gap:6px; flex-wrap:wrap;";
+
+        const billBtn = document.createElement("button");
+        billBtn.type = "button";
+        billBtn.textContent = "🧾 Bill Matter";
+        billBtn.style.cssText = "padding:5px 10px; border-radius:7px; border:1.5px solid #059669; background:#ECFDF5; color:#065F46; font-size:0.76rem; font-weight:900; cursor:pointer;";
+        billBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          openMobileInvoiceModal(m.matterNumber || m.matterId);
+        };
+
         const addDockBtn = document.createElement("button");
         addDockBtn.type = "button";
-        addDockBtn.textContent = "⏱️ + Docket This Matter";
+        addDockBtn.textContent = "⏱️ + Docket";
         addDockBtn.style.cssText = "padding:5px 10px; border-radius:7px; border:1px solid #2563EB; background:#EFF6FF; color:#1D4ED8; font-size:0.76rem; font-weight:800; cursor:pointer;";
         addDockBtn.onclick = (ev) => {
           ev.stopPropagation();
           jumpToDocketMatter(m.matterNumber || m.matterId);
         };
+
+        actionBtns.appendChild(billBtn);
+        actionBtns.appendChild(addDockBtn);
         btnRow.appendChild(expHint);
-        btnRow.appendChild(addDockBtn);
+        btnRow.appendChild(actionBtns);
         card.appendChild(btnRow);
 
         if (isExp && Array.isArray(m.dockets) && m.dockets.length > 0) {
@@ -4091,9 +4427,9 @@
         left.appendChild(info);
 
         const right = document.createElement("div");
-        right.style.cssText = "display:flex; align-items:center; gap:8px; margin-left:auto;";
+        right.style.cssText = "display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap;";
         const balBox = document.createElement("div");
-        balBox.style.cssText = "text-align:right;";
+        balBox.style.cssText = "text-align:right; margin-right:4px;";
         const balTxt = document.createElement("div");
         balTxt.style.cssText = "font-size:0.98rem; font-weight:900; color:#047857;";
         balTxt.textContent = fmtMoney(inv.balanceDue);
@@ -4103,14 +4439,28 @@
         balBox.appendChild(balTxt);
         balBox.appendChild(balSub);
 
+        const pdfBtn = document.createElement("button");
+        pdfBtn.type = "button";
+        pdfBtn.textContent = "📄 PDF";
+        pdfBtn.style.cssText = "padding:6px 9px; border-radius:8px; border:1.5px solid #2563EB; background:#EFF6FF; color:#1D4ED8; font-size:0.76rem; font-weight:900; cursor:pointer;";
+        pdfBtn.onclick = () => viewOrShareInvoicePdf(inv.invoiceNumber);
+
         const payBtn = document.createElement("button");
         payBtn.type = "button";
         payBtn.textContent = "💵 Pay";
-        payBtn.style.cssText = "padding:7px 11px; border-radius:8px; border:1.5px solid #059669; background:#ECFDF5; color:#065F46; font-size:0.8rem; font-weight:900; cursor:pointer;";
+        payBtn.style.cssText = "padding:6px 10px; border-radius:8px; border:1.5px solid #059669; background:#ECFDF5; color:#065F46; font-size:0.78rem; font-weight:900; cursor:pointer;";
         payBtn.onclick = () => jumpToPayInvoice(inv.invoiceNumber);
 
+        const voidBtn = document.createElement("button");
+        voidBtn.type = "button";
+        voidBtn.textContent = "↩️ Void";
+        voidBtn.style.cssText = "padding:6px 9px; border-radius:8px; border:1.5px solid #FCA5A5; background:#FEF2F2; color:#B91C1C; font-size:0.74rem; font-weight:800; cursor:pointer;";
+        voidBtn.onclick = () => reverseOpenInvoice(inv.invoiceNumber, inv.clientDisplay);
+
         right.appendChild(balBox);
+        right.appendChild(pdfBtn);
         right.appendChild(payBtn);
+        right.appendChild(voidBtn);
         row.appendChild(left);
         row.appendChild(right);
         return row;
@@ -4182,10 +4532,1059 @@
       }, 100);
     }
 
+    // =========================================================================
+    // 8. Receipt Snapshots, Client-Side Image Compression & Smart OCR Pre-Fill
+    // =========================================================================
+    async function compressImageIfPhoto(file) {
+      if (!file || !file.type || !file.type.startsWith("image/")) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ dataUrl: reader.result, mimeType: file.type || "application/pdf", fileName: file.name || "receipt.pdf" });
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            const maxDim = 1650;
+            let w = img.width;
+            let h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w >= h) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
+              } else {
+                w = Math.round((w * maxDim) / h);
+                h = maxDim;
+              }
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.84);
+            resolve({
+              dataUrl: dataUrl,
+              mimeType: "image/jpeg",
+              fileName: (file.name || "receipt.jpg").replace(/\.[a-z0-9]+$/i, ".jpg")
+            });
+          };
+          img.onerror = () => resolve({ dataUrl: ev.target.result, mimeType: file.type, fileName: file.name });
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function onReceiptFileSelected(inputEl) {
+      const file = inputEl && inputEl.files && inputEl.files[0];
+      if (!file) return;
+      const statusBox = document.getElementById("receiptOcrStatusBox");
+      if (statusBox) {
+        statusBox.style.display = "block";
+        statusBox.textContent = "🔍 Scanning receipt & reading Store, Date, Total & Printed HST...";
+      }
+      try {
+        const compressed = await compressImageIfPhoto(file);
+        const res = await fetch("/api/receipt/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUser ? currentUser.userId : "deborah",
+            fileName: compressed.fileName,
+            mimeType: compressed.mimeType,
+            dataBase64: compressed.dataUrl
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", data.message || "Could not scan receipt.");
+          if (statusBox) statusBox.style.display = "none";
+          return;
+        }
+        currentStagedReceipt = {
+          receiptToken: data.receiptToken,
+          receiptId: "",
+          receiptUrl: compressed.dataUrl,
+          mimeType: compressed.mimeType,
+          fileName: compressed.fileName,
+          folderLabel: "Staged — Will file into Tax-Ready Receipts folder on Save"
+        };
+
+        // Pre-fill extracted fields if detected
+        const pre = data.prefill || {};
+        const applied = [];
+        if (pre.payee) {
+          document.getElementById("payeeInput").value = pre.payee;
+          applied.push(`Store: ${pre.payee}`);
+        }
+        if (pre.txnDate) {
+          document.getElementById("txnDateInput").value = pre.txnDate;
+          applied.push(`Date: ${pre.txnDate}`);
+        }
+        if (pre.streamId && pre.streamId !== currentStreamId) {
+          currentStreamId = pre.streamId;
+          const stObj = (bootstrapData.streams || []).find((s) => s.streamId === currentStreamId);
+          if (stObj) currentMember = stObj.defaultMember || "Joint";
+          renderStreams();
+          renderMembers();
+          renderAccountsDropdowns();
+          renderCategoriesDropdown();
+        }
+        if (pre.fromAccount) {
+          const fromSel = document.getElementById("fromAccountSelect");
+          if ([...fromSel.options].some((o) => o.value === pre.fromAccount)) {
+            fromSel.value = pre.fromAccount;
+            applied.push(`Card: ${pre.fromAccount}`);
+          }
+        }
+        if (pre.categoryCode) {
+          const catSel = document.getElementById("categorySelect");
+          if (![...catSel.options].some((o) => o.value === pre.categoryCode)) {
+            document.getElementById("showAllCategoriesChk").checked = true;
+            renderCategoriesDropdown();
+          }
+          if ([...catSel.options].some((o) => o.value === pre.categoryCode)) {
+            catSel.value = pre.categoryCode;
+            renderFavoriteCategoryChips();
+          }
+        }
+        if (pre.amount && Number(pre.amount) > 0) {
+          document.getElementById("amountInput").value = Number(pre.amount).toFixed(2);
+          applied.push(`Total: $${Number(pre.amount).toFixed(2)}`);
+        }
+        if (pre.taxAmount !== null && pre.taxAmount !== undefined && pre.hstMode === "custom") {
+          hstMode = "custom";
+          document.getElementById("hstModeAutoBtn").classList.remove("active");
+          document.getElementById("hstModeZeroBtn").classList.remove("active");
+          document.getElementById("hstModeCustomBtn").classList.add("active");
+          document.getElementById("taxAmountInput").value = Number(pre.taxAmount).toFixed(2);
+          updatePreTaxLabel();
+          applied.push(`Exact Printed HST: $${Number(pre.taxAmount).toFixed(2)}`);
+        } else {
+          recalcTaxAndPreTax();
+        }
+
+        const headline = applied.length > 0
+          ? `✅ Auto-Read: ${applied.join(" · ")}`
+          : "✅ Receipt photo attached! Review fields below & tap Save.";
+        renderStagedReceiptCard(headline, "📁 Will auto-file into OneDrive Tax-Ready Receipts folder on Save");
+        showBanner("success", headline);
+      } catch (e) {
+        showBanner("error", "Could not scan receipt photo.");
+      } finally {
+        if (statusBox) statusBox.style.display = "none";
+        inputEl.value = "";
+      }
+    }
+
+    function renderStagedReceiptCard(titleText, subText) {
+      const card = document.getElementById("receiptStagedCard");
+      const thumbWrap = document.getElementById("receiptThumbWrap");
+      const titleEl = document.getElementById("receiptStagedTitle");
+      const subEl = document.getElementById("receiptStagedSub");
+      if (!card || !currentStagedReceipt) return;
+      card.style.display = "flex";
+      titleEl.textContent = titleText || "✅ Receipt Attached";
+      subEl.textContent = subText || "";
+      thumbWrap.innerHTML = "";
+      if ((currentStagedReceipt.mimeType || "").includes("pdf")) {
+        thumbWrap.innerHTML = `<span style="font-size:1.4rem;">📄</span>`;
+      } else if (currentStagedReceipt.receiptUrl) {
+        const img = document.createElement("img");
+        img.src = currentStagedReceipt.receiptUrl;
+        img.style.cssText = "width:100%; height:100%; object-fit:cover;";
+        thumbWrap.appendChild(img);
+      } else {
+        thumbWrap.innerHTML = `<span style="font-size:1.4rem;">🧾</span>`;
+      }
+    }
+
+    function clearStagedReceipt() {
+      currentStagedReceipt = null;
+      const card = document.getElementById("receiptStagedCard");
+      if (card) card.style.display = "none";
+    }
+
+    function openCurrentCardReceiptModal() {
+      if (!currentStagedReceipt || !currentStagedReceipt.receiptUrl) return;
+      openReceiptViewerModal(
+        currentStagedReceipt.receiptUrl,
+        document.getElementById("payeeInput").value || currentStagedReceipt.fileName || "Receipt",
+        currentStagedReceipt.folderLabel || "",
+        currentStagedReceipt.mimeType || "image/jpeg"
+      );
+    }
+
+    function openReceiptViewerModal(url, title, folderLabel, mimeType) {
+      if (!url) return;
+      const backdrop = document.getElementById("receiptViewerModalBackdrop");
+      document.getElementById("receiptModalTitle").textContent = `🧾 ${title || "Receipt"}`;
+      document.getElementById("receiptModalFolder").textContent = folderLabel ? `📁 ${folderLabel}` : "";
+      const dl = document.getElementById("receiptModalDownloadLink");
+      dl.href = url;
+      const body = document.getElementById("receiptModalBody");
+      body.innerHTML = "";
+      if ((mimeType || "").toLowerCase().includes("pdf") || String(url).toLowerCase().endsWith(".pdf")) {
+        body.innerHTML = `<iframe src="${url}" style="width:100%; height:68vh; border:none; border-radius:8px; background:#FFFFFF;"></iframe>`;
+      } else {
+        const img = document.createElement("img");
+        img.src = url;
+        img.style.cssText = "max-width:100%; max-height:70vh; border-radius:8px; object-fit:contain;";
+        body.appendChild(img);
+      }
+      backdrop.classList.add("open");
+    }
+
+    function closeReceiptViewerModal() {
+      document.getElementById("receiptViewerModalBackdrop").classList.remove("open");
+    }
+
+    function triggerAttachReceiptToExisting(txnId) {
+      attachingReceiptToTxnId = txnId;
+      const inp = document.getElementById("attachExistingReceiptInput");
+      if (inp) inp.click();
+    }
+
+    async function onAttachReceiptToExistingSelected(inputEl) {
+      const file = inputEl && inputEl.files && inputEl.files[0];
+      if (!file || !attachingReceiptToTxnId) return;
+      showBanner("warning", "📸 Uploading & filing receipt to OneDrive Tax-Ready folder...");
+      try {
+        const compressed = await compressImageIfPhoto(file);
+        const res = await fetch("/api/receipt/attach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUser ? currentUser.userId : "deborah",
+            transactionId: attachingReceiptToTxnId,
+            fileName: compressed.fileName,
+            mimeType: compressed.mimeType,
+            dataBase64: compressed.dataUrl
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", data.message || "Could not attach receipt.");
+          return;
+        }
+        showBanner("success", `✅ ${data.message}`);
+        await loadReportData();
+        await refreshDeckFromServer();
+      } catch (e) {
+        showBanner("error", "Could not attach receipt.");
+      } finally {
+        attachingReceiptToTxnId = "";
+        inputEl.value = "";
+      }
+    }
+
+    async function ensureCoryMattersLoadedForDisbursement() {
+      if (docketMattersAll && docketMattersAll.length > 0) {
+        populateDisbursementMattersSelect();
+        return;
+      }
+      try {
+        const res = await fetch("/api/docket/matters?userId=cory&matterId=ALL&period=recent");
+        const data = await res.json();
+        if (data && data.ok && Array.isArray(data.matters)) {
+          docketMattersAll = data.matters;
+          populateDisbursementMattersSelect();
+        }
+      } catch (e) {}
+    }
+
+    function populateDisbursementMattersSelect() {
+      const sel = document.getElementById("alsoBillMatterSelect");
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = "";
+      (docketMattersAll || []).forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m.matterNumber || m.matterId;
+        opt.textContent = m.label || `${m.clientName} (${m.matterNumber})`;
+        sel.appendChild(opt);
+      });
+      if (prev && [...sel.options].some((o) => o.value === prev)) {
+        sel.value = prev;
+      }
+    }
+
+    function onAlsoBillMatterToggle() {
+      const chk = document.getElementById("alsoBillMatterChk");
+      const wrap = document.getElementById("alsoBillMatterSelectWrap");
+      if (!chk || !wrap) return;
+      wrap.style.display = chk.checked ? "block" : "none";
+      if (chk.checked) {
+        ensureCoryMattersLoadedForDisbursement();
+      }
+    }
+
+    // =========================================================================
+    // 9. Universal Voice Command Bar & CRA-Safe Narrative Dictation
+    // =========================================================================
+    let activeSpeechRec = null;
+
+    function toggleVoiceTextDrawer() {
+      const dr = document.getElementById("voiceTextDrawer");
+      if (!dr) return;
+      const isHidden = dr.style.display === "none";
+      dr.style.display = isHidden ? "flex" : "none";
+      if (isHidden) {
+        const inp = document.getElementById("voiceTextInput");
+        if (inp) setTimeout(() => inp.focus(), 50);
+      }
+    }
+
+    function toggleUniversalVoiceRecognition() {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const btn = document.getElementById("universalMicBtn");
+      const banner = document.getElementById("voiceStatusBanner");
+      if (!SpeechRec) {
+        // Open the keyboard mic / text drawer automatically if browser speech API is unavailable
+        const dr = document.getElementById("voiceTextDrawer");
+        if (dr) dr.style.display = "flex";
+        const inp = document.getElementById("voiceTextInput");
+        if (inp) inp.focus();
+        showBanner("warning", "Tap the microphone key on your phone keyboard in the box below to speak your command.");
+        return;
+      }
+      if (activeSpeechRec) {
+        try { activeSpeechRec.stop(); } catch (e) {}
+        activeSpeechRec = null;
+        if (btn) btn.textContent = "🎙️ Speak Any Command";
+        return;
+      }
+      const rec = new SpeechRec();
+      rec.lang = "en-CA";
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      activeSpeechRec = rec;
+      if (btn) {
+        btn.textContent = "🔴 Listening... Tap to Stop";
+        btn.style.background = "#DC2626";
+      }
+      if (banner) {
+        banner.style.display = "block";
+        banner.textContent = "🎙️ Speak now (e.g. \"Expense Costco $184.50 on Simplii Visa\", \"Docket 0.4 hours on 88 Queen email to James\", \"Bill 88 Queen\")...";
+      }
+      rec.onresult = async (ev) => {
+        const transcript = (ev.results && ev.results[0] && ev.results[0][0] && ev.results[0][0].transcript) || "";
+        if (banner) {
+          banner.style.display = "block";
+          banner.textContent = `🗣️ Heard: "${transcript}" — Parsing...`;
+        }
+        await parseAndExecuteVoiceTranscript(transcript);
+      };
+      rec.onerror = () => {
+        if (banner) {
+          banner.style.display = "block";
+          banner.textContent = "⚠️ Could not hear audio. You can also tap '⌨️ Type / Keyboard Mic' and use your phone keyboard's mic.";
+        }
+      };
+      rec.onend = () => {
+        activeSpeechRec = null;
+        if (btn) {
+          btn.textContent = "🎙️ Speak Any Command";
+          btn.style.background = "#4F46E5";
+        }
+      };
+      rec.start();
+    }
+
+    async function submitTypedVoiceCommand() {
+      const inp = document.getElementById("voiceTextInput");
+      if (!inp || !inp.value.trim()) return;
+      const text = inp.value.trim();
+      inp.value = "";
+      await parseAndExecuteVoiceTranscript(text);
+    }
+
+    async function parseAndExecuteVoiceTranscript(transcript) {
+      if (!transcript || !transcript.trim()) return;
+      const banner = document.getElementById("voiceStatusBanner");
+      try {
+        const res = await fetch("/api/voice/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUser ? currentUser.userId : "deborah",
+            transcript: transcript
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          if (banner) banner.textContent = data.message || "Could not parse voice command.";
+          return;
+        }
+        if (banner) {
+          banner.style.display = "block";
+          banner.textContent = `✨ ${data.summary}`;
+        }
+        await executeParsedVoiceCommand(data);
+      } catch (e) {
+        if (banner) banner.textContent = "Network error while parsing voice command.";
+      }
+    }
+
+    async function executeParsedVoiceCommand(data) {
+      const intent = data.intent;
+      if (intent === "TIMER") {
+        setMode("Docket");
+        if (data.timerAction === "start") {
+          if (!callTimerState.running) toggleCallTimer();
+        } else if (data.timerAction === "stop") {
+          stopAndApplyCallTimer();
+        } else if (data.timerAction === "reset") {
+          resetCallTimer();
+        }
+        showBanner("success", data.summary);
+        return;
+      }
+      if (intent === "REPORT") {
+        setReportPeriod(data.reportPeriod || "this_month");
+        openReportModal();
+        return;
+      }
+      if (intent === "WIP_AR") {
+        openWipArView(data.subTab || "WIP");
+        return;
+      }
+      if (intent === "INVOICE") {
+        openWipArView("WIP");
+        if (data.matter && data.matter.matterNumber) {
+          setTimeout(() => openMobileInvoiceModal(data.matter.matterNumber), 220);
+        }
+        return;
+      }
+      if (intent === "PAYMENT") {
+        setMode("Record Payment");
+        setTimeout(async () => {
+          const q = data.searchQuery || (data.amount ? String(data.amount) : "");
+          if (q) document.getElementById("paySearchInput").value = q;
+          await searchPaymentInvoices(false);
+        }, 120);
+        showBanner("success", data.summary);
+        return;
+      }
+      if (intent === "DOCKET") {
+        setMode("Docket");
+        setTimeout(() => {
+          if (data.matter && data.matter.matterNumber) {
+            document.getElementById("docketMatterSearchInput").value = "";
+            filterDocketMattersDropdown(data.matter.matterNumber);
+          }
+          if (data.docketDate) {
+            document.getElementById("docketDateInput").value = data.docketDate;
+          }
+          if (data.hours && Number(data.hours) > 0) {
+            document.getElementById("docketHoursInput").value = Number(data.hours).toFixed(1);
+          }
+          if (data.description) {
+            document.getElementById("docketDescInput").value = data.description;
+          }
+          recalcDocketPreview();
+        }, 150);
+        showBanner("success", data.summary);
+        return;
+      }
+
+      // Default: EXPENSE / INCOME / PAY CREDIT CARD / TRANSFER
+      const pf = data.prefill || {};
+      if (pf.mode) setMode(pf.mode);
+      if (pf.streamId) {
+        currentStreamId = pf.streamId;
+        const stObj = (bootstrapData.streams || []).find((s) => s.streamId === currentStreamId);
+        if (stObj) currentMember = stObj.defaultMember || "Joint";
+        renderStreams();
+        renderMembers();
+        renderAccountsDropdowns();
+        renderCategoriesDropdown();
+      }
+      if (pf.txnDate) document.getElementById("txnDateInput").value = pf.txnDate;
+      if (pf.fromAccount) {
+        const fs = document.getElementById("fromAccountSelect");
+        if ([...fs.options].some((o) => o.value === pf.fromAccount)) {
+          fs.value = pf.fromAccount;
+          onFromAccountChange(pf.toAccount || "");
+        }
+      }
+      if (pf.toAccount) {
+        const ts = document.getElementById("toAccountSelect");
+        if ([...ts.options].some((o) => o.value === pf.toAccount)) {
+          ts.value = pf.toAccount;
+        }
+      }
+      if (pf.payee) document.getElementById("payeeInput").value = pf.payee;
+      if (pf.categoryCode) {
+        const cs = document.getElementById("categorySelect");
+        if (![...cs.options].some((o) => o.value === pf.categoryCode)) {
+          document.getElementById("showAllCategoriesChk").checked = true;
+          renderCategoriesDropdown();
+        }
+        if ([...cs.options].some((o) => o.value === pf.categoryCode)) {
+          cs.value = pf.categoryCode;
+          onCategorySelectChange();
+        }
+      }
+      if (pf.amount && Number(pf.amount) > 0) {
+        document.getElementById("amountInput").value = Number(pf.amount).toFixed(2);
+      }
+      if (pf.hstMode === "custom" && pf.taxAmount !== null && pf.taxAmount !== undefined) {
+        hstMode = "custom";
+        document.getElementById("taxAmountInput").value = Number(pf.taxAmount).toFixed(2);
+        updatePreTaxLabel();
+      } else if (pf.hstMode === "zero") {
+        setHstMode("zero");
+      } else {
+        recalcTaxAndPreTax();
+      }
+      if (pf.notes) document.getElementById("notesInput").value = pf.notes;
+      showBanner("success", data.summary);
+    }
+
+    function dictateDocketNarrativeOnly() {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        document.getElementById("docketDescInput").focus();
+        showBanner("warning", "Tap your phone keyboard's microphone button to dictate directly into the Narrative box.");
+        return;
+      }
+      const rec = new SpeechRec();
+      rec.lang = "en-CA";
+      rec.interimResults = false;
+      showBanner("warning", "🎙️ Speak your docket narrative now (will auto-format to LPN present tense & semicolon style)...");
+      rec.onresult = async (ev) => {
+        const raw = (ev.results && ev.results[0] && ev.results[0][0] && ev.results[0][0].transcript) || "";
+        if (!raw) return;
+        const res = await fetch("/api/voice/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: "cory", transcript: "docket " + raw })
+        });
+        const data = await res.json();
+        const formatted = (data && data.description) ? data.description : raw;
+        const cur = document.getElementById("docketDescInput").value.trim();
+        document.getElementById("docketDescInput").value = cur ? `${cur}; ${formatted}` : formatted;
+        showBanner("success", `✅ Added narrative: "${formatted}"`);
+      };
+      rec.start();
+    }
+
+    // =========================================================================
+    // 10. Graphical Budget & Cash-Flow Charts (SVG Pie/Donut + Bar Graphs)
+    // =========================================================================
+    const CHART_PALETTE = [
+      "#2563EB", "#0D9488", "#D97706", "#7C3AED", "#DB2777",
+      "#059669", "#DC2626", "#4F46E5", "#0891B2", "#64748B"
+    ];
+
+    function toggleBudgetChartsPanel() {
+      budgetChartsOpen = !budgetChartsOpen;
+      const panel = document.getElementById("budgetChartsPanel");
+      const arrow = document.getElementById("toggleBudgetChartsArrow");
+      if (panel) panel.style.display = budgetChartsOpen ? "block" : "none";
+      if (arrow) arrow.textContent = budgetChartsOpen ? "▲ Hide Charts" : "▼ Show Charts";
+      if (budgetChartsOpen && lastReportChartsData) {
+        renderBudgetChartsPanel(lastReportChartsData);
+      }
+    }
+
+    function createSvgDonutChart(slices, centerTopText, centerBottomText) {
+      if (!slices || slices.length === 0) {
+        return `<div style="padding:18px; text-align:center; color:var(--muted); font-weight:700; font-size:0.84rem;">No data in this period.</div>`;
+      }
+      const radius = 58;
+      const circum = 2 * Math.PI * radius;
+      let offset = 0;
+      const circlesHtml = slices.map((s, idx) => {
+        const pct = Math.max(0, Number(s.pct || 0)) / 100;
+        const dash = pct * circum;
+        const color = CHART_PALETTE[idx % CHART_PALETTE.length];
+        const seg = `<circle r="${radius}" cx="80" cy="80" fill="transparent" stroke="${color}" stroke-width="24" stroke-dasharray="${dash.toFixed(2)} ${circum.toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 80 80)" />`;
+        offset += dash;
+        return seg;
+      }).join("");
+
+      const legendHtml = slices.map((s, idx) => {
+        const color = CHART_PALETTE[idx % CHART_PALETTE.length];
+        return `
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:0.78rem; padding:3px 0; border-bottom:1px dashed #E2E8F0;">
+            <span style="display:inline-flex; align-items:center; gap:6px; font-weight:700; color:var(--ink);">
+              <span style="width:10px; height:10px; border-radius:3px; background:${color}; display:inline-block;"></span>
+              <span>${s.icon || ""} ${s.label}</span>
+            </span>
+            <span style="font-weight:800; color:var(--ink);">${s.amountFormatted} <span style="color:var(--muted);">(${Number(s.pct || 0).toFixed(1)}%)</span></span>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+          <div style="position:relative; width:160px; height:160px; flex-shrink:0; margin:0 auto;">
+            <svg width="160" height="160" viewBox="0 0 160 160">
+              <circle r="${radius}" cx="80" cy="80" fill="transparent" stroke="#E2E8F0" stroke-width="24" />
+              ${circlesHtml}
+            </svg>
+            <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; padding:18px;">
+              <div style="font-size:0.66rem; font-weight:800; color:var(--muted); text-transform:uppercase;">${centerTopText}</div>
+              <div style="font-size:0.9rem; font-weight:900; color:var(--ink); margin-top:2px;">${centerBottomText}</div>
+            </div>
+          </div>
+          <div style="flex:1; min-width:210px;">
+            ${legendHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    function createCashFlowBarGraph(rows) {
+      if (!rows || rows.length === 0) {
+        return `<div style="padding:14px; text-align:center; color:var(--muted); font-weight:700; font-size:0.84rem;">No cash-flow activity in this period.</div>`;
+      }
+      let maxVal = 1;
+      rows.forEach((r) => {
+        maxVal = Math.max(maxVal, Number(r.income || 0), Number(r.expense || 0), Math.abs(Number(r.netProfit || 0)));
+      });
+      return rows.map((r) => {
+        const incPct = Math.min(100, Math.round((Number(r.income || 0) / maxVal) * 100));
+        const expPct = Math.min(100, Math.round((Number(r.expense || 0) / maxVal) * 100));
+        const net = Number(r.netProfit || 0);
+        const netColor = net >= 0 ? "#047857" : "#B91C1C";
+        return `
+          <div style="padding:8px 10px; border-radius:10px; background:#FFFFFF; border:1px solid #E2E8F0; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.82rem; font-weight:800; margin-bottom:5px;">
+              <span>${r.icon || "📊"} ${r.label}</span>
+              <span style="color:${netColor};">Net: ${r.netFormatted}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; font-size:0.74rem; margin-bottom:3px;">
+              <span style="width:62px; font-weight:700; color:#047857;">Income</span>
+              <div style="flex:1; background:#F1F5F9; height:10px; border-radius:999px; overflow:hidden;">
+                <div style="width:${incPct}%; height:100%; background:#10B981; border-radius:999px;"></div>
+              </div>
+              <span style="width:78px; text-align:right; font-weight:800;">${r.incomeFormatted}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; font-size:0.74rem;">
+              <span style="width:62px; font-weight:700; color:#B91C1C;">Expenses</span>
+              <div style="flex:1; background:#F1F5F9; height:10px; border-radius:999px; overflow:hidden;">
+                <div style="width:${expPct}%; height:100%; background:#EF4444; border-radius:999px;"></div>
+              </div>
+              <span style="width:78px; text-align:right; font-weight:800;">${r.expenseFormatted}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderBudgetChartsPanel(data) {
+      const panel = document.getElementById("budgetChartsPanel");
+      if (!panel || !data || !data.charts) return;
+      const ch = data.charts;
+      const expSlices = budgetExpensePieMode === "group" ? ch.expensePieByGroup : ch.expensePieByCategory;
+      const barRows = budgetBarMode === "month" ? ch.cashFlowBarByMonth : ch.cashFlowBarByStream;
+
+      panel.innerHTML = `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(290px, 1fr)); gap:12px;">
+          <!-- 1. Expense Pie Chart -->
+          <div style="background:#FFFFFF; border:1.5px solid #E2E8F0; border-radius:12px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:10px;">
+              <div style="font-size:0.86rem; font-weight:900; color:var(--ink);">🍕 Expenses Pie Chart</div>
+              <div style="display:flex; gap:4px;">
+                <button type="button" class="pill-btn ${budgetExpensePieMode === "category" ? "active" : ""}" style="padding:3px 8px; font-size:0.72rem;" onclick="budgetExpensePieMode='category'; renderBudgetChartsPanel(lastReportChartsData);">By Category</button>
+                <button type="button" class="pill-btn ${budgetExpensePieMode === "group" ? "active" : ""}" style="padding:3px 8px; font-size:0.72rem;" onclick="budgetExpensePieMode='group'; renderBudgetChartsPanel(lastReportChartsData);">By Group</button>
+              </div>
+            </div>
+            ${createSvgDonutChart(expSlices, "Expenses", data.expenseGrandFormatted || "$0.00")}
+          </div>
+
+          <!-- 2. Income Pie Chart -->
+          <div style="background:#FFFFFF; border:1.5px solid #E2E8F0; border-radius:12px; padding:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:10px;">
+              <div style="font-size:0.86rem; font-weight:900; color:var(--ink);">💰 Income Received Pie Chart</div>
+              <span style="font-size:0.74rem; font-weight:800; color:#047857;">Net Cash: ${ch.netProfitFormatted || "$0.00"}</span>
+            </div>
+            ${createSvgDonutChart(ch.incomePieByCategory || [], "Income", data.incomeFormatted || "$0.00")}
+          </div>
+        </div>
+
+        <!-- 3. Income vs Expenses vs Net Profit Bar Graph -->
+        <div style="background:#FFFFFF; border:1.5px solid #E2E8F0; border-radius:12px; padding:12px; margin-top:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+            <div style="font-size:0.86rem; font-weight:900; color:var(--ink);">📊 Income vs. Expenses &amp; Net Profit Bar Graph</div>
+            <div style="display:flex; gap:4px;">
+              <button type="button" class="pill-btn ${budgetBarMode === "stream" ? "active" : ""}" style="padding:3px 8px; font-size:0.72rem;" onclick="budgetBarMode='stream'; renderBudgetChartsPanel(lastReportChartsData);">By Who / Stream</button>
+              <button type="button" class="pill-btn ${budgetBarMode === "month" ? "active" : ""}" style="padding:3px 8px; font-size:0.72rem;" onclick="budgetBarMode='month'; renderBudgetChartsPanel(lastReportChartsData);">By Month</button>
+            </div>
+          </div>
+          ${createCashFlowBarGraph(barRows)}
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // 11. Live Call / Task Timer & Quick New Client / Matter Modal
+    // =========================================================================
+    function restoreCallTimerFromStorage() {
+      const raw = safeGetStorage("cspm_qe_call_timer");
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            callTimerState = {
+              running: Boolean(parsed.running),
+              startedAtMs: Number(parsed.startedAtMs || 0),
+              accumulatedSec: Number(parsed.accumulatedSec || 0)
+            };
+          }
+        } catch (e) {}
+      }
+      updateCallTimerDisplay();
+      if (callTimerState.running && !callTimerIntervalId) {
+        callTimerIntervalId = setInterval(updateCallTimerDisplay, 1000);
+      }
+    }
+
+    function persistCallTimerState() {
+      safeSetStorage("cspm_qe_call_timer", JSON.stringify(callTimerState));
+    }
+
+    function getCallTimerTotalSeconds() {
+      let total = Number(callTimerState.accumulatedSec || 0);
+      if (callTimerState.running && callTimerState.startedAtMs > 0) {
+        total += Math.max(0, Math.floor((Date.now() - callTimerState.startedAtMs) / 1000));
+      }
+      return total;
+    }
+
+    function updateCallTimerDisplay() {
+      const totalSec = getCallTimerTotalSeconds();
+      const hrs = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      const pad = (n) => String(n).padStart(2, "0");
+      const clockEl = document.getElementById("docketTimerClock");
+      const badgeEl = document.getElementById("docketTimerTenthBadge");
+      const btnEl = document.getElementById("timerStartPauseBtn");
+      if (clockEl) clockEl.textContent = `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+      // Billable 0.1h = 6 minutes (360 seconds), rounded up once > 30 seconds elapsed
+      const tenths = totalSec > 30 ? Math.max(0.1, Math.ceil(totalSec / 360) / 10) : 0.0;
+      if (badgeEl) badgeEl.textContent = `(${tenths.toFixed(1)}h billable)`;
+      if (btnEl) {
+        btnEl.textContent = callTimerState.running ? "⏸️ Pause" : "▶️ Start";
+        btnEl.style.background = callTimerState.running ? "#F59E0B" : "#10B981";
+      }
+    }
+
+    function toggleCallTimer() {
+      if (callTimerState.running) {
+        callTimerState.accumulatedSec = getCallTimerTotalSeconds();
+        callTimerState.running = false;
+        callTimerState.startedAtMs = 0;
+        if (callTimerIntervalId) {
+          clearInterval(callTimerIntervalId);
+          callTimerIntervalId = null;
+        }
+      } else {
+        callTimerState.running = true;
+        callTimerState.startedAtMs = Date.now();
+        if (!callTimerIntervalId) {
+          callTimerIntervalId = setInterval(updateCallTimerDisplay, 1000);
+        }
+      }
+      persistCallTimerState();
+      updateCallTimerDisplay();
+    }
+
+    function stopAndApplyCallTimer() {
+      const totalSec = getCallTimerTotalSeconds();
+      const tenths = totalSec > 0 ? Math.max(0.1, Math.ceil(totalSec / 360) / 10) : 0.1;
+      callTimerState = { running: false, startedAtMs: 0, accumulatedSec: 0 };
+      if (callTimerIntervalId) {
+        clearInterval(callTimerIntervalId);
+        callTimerIntervalId = null;
+      }
+      persistCallTimerState();
+      updateCallTimerDisplay();
+      setDocketHours(tenths);
+      showBanner("success", `⏱️ Filled ${tenths.toFixed(1)}h from call timer!`);
+      document.getElementById("docketDescInput").focus();
+    }
+
+    function resetCallTimer() {
+      callTimerState = { running: false, startedAtMs: 0, accumulatedSec: 0 };
+      if (callTimerIntervalId) {
+        clearInterval(callTimerIntervalId);
+        callTimerIntervalId = null;
+      }
+      persistCallTimerState();
+      updateCallTimerDisplay();
+    }
+
+    function openNewMatterModal() {
+      document.getElementById("newMatterModalBackdrop").classList.add("open");
+      setTimeout(() => document.getElementById("newMatterClientInput").focus(), 50);
+    }
+
+    function closeNewMatterModal() {
+      document.getElementById("newMatterModalBackdrop").classList.remove("open");
+    }
+
+    async function submitQuickNewMatter() {
+      const clientName = document.getElementById("newMatterClientInput").value.trim();
+      const matterName = document.getElementById("newMatterDescInput").value.trim();
+      const matterType = document.getElementById("newMatterTypeSelect").value;
+      const rate = parseFloat(document.getElementById("newMatterRateInput").value || "475") || 475;
+      if (!clientName) {
+        showBanner("error", "Please enter a Client Name.");
+        return;
+      }
+      try {
+        const res = await fetch("/api/matter/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: "cory",
+            payload: { clientName, matterName, matterType, rate }
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", data.message || "Could not create matter.");
+          return;
+        }
+        closeNewMatterModal();
+        document.getElementById("newMatterClientInput").value = "";
+        document.getElementById("newMatterDescInput").value = "";
+        showBanner("success", `✅ ${data.message}`);
+        await initDocketSection(false);
+        if (data.matter && data.matter.matterNumber) {
+          filterDocketMattersDropdown(data.matter.matterNumber);
+        }
+      } catch (e) {
+        showBanner("error", "Network error while creating matter.");
+      }
+    }
+
+    // =========================================================================
+    // 12. Mobile Invoice Studio (Preview / Finalize / PDF / Void) & Tax Snapshot
+    // =========================================================================
+    async function openMobileInvoiceModal(matterNumber) {
+      if (!matterNumber) return;
+      currentMobileInvoiceMatter = matterNumber;
+      const backdrop = document.getElementById("mobileInvoiceModalBackdrop");
+      document.getElementById("mobInvTitle").textContent = `🧾 Bill Matter — ${matterNumber}`;
+      document.getElementById("mobInvSubtitle").textContent = "Loading unbilled WIP & live invoice preview...";
+      document.getElementById("mobInvNumberInput").value = "";
+      document.getElementById("mobInvDateInput").value = new Date().toISOString().slice(0, 10);
+      backdrop.classList.add("open");
+      await refreshMobileInvoicePreview(true);
+    }
+
+    function closeMobileInvoiceModal() {
+      document.getElementById("mobileInvoiceModalBackdrop").classList.remove("open");
+    }
+
+    async function refreshMobileInvoicePreview(useSuggestedDefaults) {
+      if (!currentMobileInvoiceMatter) return;
+      const invDate = document.getElementById("mobInvDateInput").value || new Date().toISOString().slice(0, 10);
+      const billerEntity = useSuggestedDefaults ? "" : document.getElementById("mobInvBillerSelect").value;
+      const addressOverride = document.getElementById("mobInvAddressSelect").value;
+      const invNum = useSuggestedDefaults ? "" : document.getElementById("mobInvNumberInput").value.trim();
+
+      try {
+        const res = await fetch("/api/invoice/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: "cory",
+            payload: {
+              matterNumber: currentMobileInvoiceMatter,
+              invoiceDate: invDate,
+              billerEntity: billerEntity,
+              billerAddressOverride: addressOverride,
+              invoiceNumber: invNum
+            }
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", data.message || "Could not preview invoice.");
+          return;
+        }
+        document.getElementById("mobInvTitle").textContent = `🧾 ${data.clientName} (${data.matterNumber})`;
+        document.getElementById("mobInvSubtitle").textContent = `${data.matterName} · ${data.docketCount} unbilled dockets (${Number(data.totalHours || 0).toFixed(1)}h)`;
+        if (useSuggestedDefaults || !document.getElementById("mobInvNumberInput").value) {
+          document.getElementById("mobInvNumberInput").value = data.invoiceNumber || "";
+          document.getElementById("mobInvBillerSelect").value = data.billerEntity || "SOLE_PROP";
+        }
+        const fmt = (v) => "$" + Number(v || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        document.getElementById("mobInvTotalsBar").textContent =
+          `Fees: ${fmt(data.feesPreTax)}  ·  Disb: ${fmt(data.disbPreTax)}  ·  HST: ${fmt(data.totalTax)}  ·  Grand Total: ${fmt(data.grandTotal)}`;
+        const iframe = document.getElementById("mobInvPreviewFrame");
+        if (iframe) {
+          iframe.srcdoc = data.htmlPreview || "";
+        }
+      } catch (e) {
+        showBanner("error", "Network error loading invoice preview.");
+      }
+    }
+
+    async function finalizeMobileInvoiceNow() {
+      if (!currentMobileInvoiceMatter) return;
+      const invNum = document.getElementById("mobInvNumberInput").value.trim();
+      const invDate = document.getElementById("mobInvDateInput").value;
+      const billerEntity = document.getElementById("mobInvBillerSelect").value;
+      const addressOverride = document.getElementById("mobInvAddressSelect").value;
+      if (!confirm(`Finalize Invoice #${invNum} for ${currentMobileInvoiceMatter} across CSPM + Legacy Dockets.xlsm and generate the PDF?`)) {
+        return;
+      }
+      const btn = document.getElementById("finalizeMobInvBtn");
+      btn.disabled = true;
+      btn.textContent = "Finalizing Invoice & Generating PDF...";
+      try {
+        const res = await fetch("/api/invoice/finalize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: "cory",
+            payload: {
+              matterNumber: currentMobileInvoiceMatter,
+              invoiceNumber: invNum,
+              invoiceDate: invDate,
+              billerEntity: billerEntity,
+              billerAddressOverride: addressOverride
+            }
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", data.message || "Could not finalize invoice.");
+          return;
+        }
+        closeMobileInvoiceModal();
+        showBanner("success", `✅ ${data.message}`);
+        await loadWipArOverview(true);
+        if (data.pdfUrl) {
+          window.open(data.pdfUrl, "_blank");
+        }
+      } catch (e) {
+        showBanner("error", "Network error while finalizing invoice.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "✅ Finalize Invoice & Generate PDF ▶";
+      }
+    }
+
+    function viewOrShareInvoicePdf(invoiceNumber) {
+      if (!invoiceNumber) return;
+      const url = `/api/invoice/pdf?invoiceNumber=${encodeURIComponent(invoiceNumber)}`;
+      window.open(url, "_blank");
+    }
+
+    async function reverseOpenInvoice(invoiceNumber, clientLabel) {
+      if (!invoiceNumber) return;
+      if (!confirm(`Void / Reverse Invoice #${invoiceNumber} (${clientLabel || ""}) and return its dockets to Unbilled WIP?`)) {
+        return;
+      }
+      showBanner("warning", `↩️ Reversing Invoice #${invoiceNumber} across CSPM & Legacy Dockets.xlsm...`);
+      try {
+        const res = await fetch("/api/invoice/reverse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: "cory",
+            payload: { invoiceNumber: invoiceNumber }
+          })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showBanner("error", data.message || "Could not reverse invoice.");
+          return;
+        }
+        showBanner("success", `✅ ${data.message}`);
+        await loadWipArOverview(true);
+      } catch (e) {
+        showBanner("error", "Network error while reversing invoice.");
+      }
+    }
+
+    async function loadTaxSnapshot() {
+      const wrap = document.getElementById("taxSnapshotContent");
+      if (!wrap) return;
+      try {
+        const res = await fetch("/api/tax-snapshot?userId=cory");
+        const data = await res.json();
+        if (!data.ok) return;
+        const fmt = (v) => "$" + Number(v || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const shl = data.shareholderLoan || {};
+        const hstSp = (data.hst && data.hst.SOLE_PROP) || {};
+        const hstPc = (data.hst && data.hst.PC) || {};
+        const streamCards = (data.streamsYtd || []).map((s) => `
+          <div style="background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:10px; padding:10px 12px;">
+            <div style="font-size:0.84rem; font-weight:900; color:var(--ink);">${s.icon} ${s.label} (${data.year} YTD)</div>
+            <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:6px; margin-top:6px; font-size:0.78rem;">
+              <div><span style="color:var(--muted);">Pre-Tax Income:</span> <strong>${fmt(s.incomePreTax)}</strong></div>
+              <div><span style="color:var(--muted);">Pre-Tax Expense:</span> <strong>${fmt(s.expensePreTax)}</strong></div>
+              <div><span style="color:var(--muted);">HST Collected:</span> <strong>${fmt(s.hstCollected)}</strong></div>
+              <div><span style="color:var(--muted);">HST ITCs Paid:</span> <strong style="color:#047857;">${fmt(s.hstItc)}</strong></div>
+            </div>
+          </div>
+        `).join("");
+
+        wrap.innerHTML = `
+          <!-- 1. Shareholder Loan (GIFI 2781) Card -->
+          <div style="background:#FFFBEB; border:2px solid #F59E0B; border-radius:12px; padding:12px;">
+            <div style="font-size:0.76rem; font-weight:800; color:#B45309; text-transform:uppercase;">
+              🏛️ Cory Schneider Law PC — Shareholder Loan Payable (GIFI 2781)
+            </div>
+            <div style="font-size:1.3rem; font-weight:900; color:#78350F; margin-top:2px;">
+              ${shl.runningBalanceFormatted || "$794.45"} Tax-Free Payable to Cory
+            </div>
+            <div style="font-size:0.78rem; font-weight:700; color:#92400E; margin-top:3px;">
+              ${shl.note || ""} (${shl.entryCount || 5} ledger entries)
+            </div>
+          </div>
+
+          <!-- 2. Dual CRA HST Return (RT0001) Live Tracker -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px;">
+            <div style="background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:11px; padding:11px 12px;">
+              <div style="font-size:0.75rem; font-weight:800; color:#7C3AED; text-transform:uppercase;">⚖️ SOLE_PROP HST (${hstSp.hstNumber || "78621 8222 RT0001"})</div>
+              <div style="font-size:1.08rem; font-weight:900; color:var(--ink); margin-top:3px;">Net HST Remittance: ${fmt(hstSp.line109NetTax)}</div>
+              <div style="font-size:0.76rem; color:var(--muted); font-weight:700; margin-top:4px;">
+                Line 101 Sales: ${fmt(hstSp.line101Sales)} · Line 103 HST: ${fmt(hstSp.line103HstCollected)} · Line 106 ITCs: ${fmt(hstSp.line106Itcs)}
+              </div>
+            </div>
+            <div style="background:#FFFFFF; border:1.5px solid #CBD5E1; border-radius:11px; padding:11px 12px;">
+              <div style="font-size:0.75rem; font-weight:800; color:#B45309; text-transform:uppercase;">🏛️ CORY LAW PC HST (${hstPc.hstNumber || "PENDING RT0001"})</div>
+              <div style="font-size:1.08rem; font-weight:900; color:var(--ink); margin-top:3px;">Net HST / (Refund): ${fmt(hstPc.line109NetTax)}</div>
+              <div style="font-size:0.76rem; color:var(--muted); font-weight:700; margin-top:4px;">
+                Line 101 Sales: ${fmt(hstPc.line101Sales)} · Line 103 HST: ${fmt(hstPc.line103HstCollected)} · Line 106 ITCs: ${fmt(hstPc.line106Itcs)}
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. YTD Stream Breakdown -->
+          <div style="font-size:0.8rem; font-weight:800; color:var(--muted); text-transform:uppercase;">
+            📊 ${data.year} YTD Tax &amp; ITC Stream Summary (With ${data.receiptsCount || 0} Tax-Filed Receipts)
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:8px;">
+            ${streamCards}
+          </div>
+        `;
+      } catch (e) {}
+    }
+
     // Keyboard shortcuts for desktop/Chromebook
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeReportModal();
+        closeReceiptViewerModal();
+        closeMobileInvoiceModal();
+        closeNewMatterModal();
       }
     });
   </script>

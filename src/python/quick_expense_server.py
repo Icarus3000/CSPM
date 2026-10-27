@@ -137,7 +137,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "cspm-quick-expense",
-                    "appVersion": "v11",
+                    "appVersion": "v12",
                     "lanIp": get_lan_ip(),
                     "port": self.server.server_port,
                 }
@@ -197,6 +197,32 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/wip-ar":
             res = self.service.get_wip_and_ar_overview(user_id=user_id)
             self._send_json(res)
+            return
+
+        if path == "/api/tax-snapshot":
+            res = self.service.get_tax_and_shl_snapshot(user_id=user_id)
+            self._send_json(res)
+            return
+
+        if path == "/api/receipt/file":
+            receipt_id = (qs.get("receiptId") or [""])[0]
+            txn_id = (qs.get("transactionId") or [""])[0]
+            info = self.service.get_receipt_file_info(user_id=user_id, receipt_id=receipt_id, transaction_id=txn_id)
+            if not info:
+                self.send_error(404, "Receipt file not found")
+                return
+            f_path, mime_type, _ = info
+            self._send_file(f_path, mime_type)
+            return
+
+        if path == "/api/invoice/pdf":
+            invoice_num = (qs.get("invoice") or qs.get("invoiceNumber") or [""])[0]
+            info = self.service.resolve_invoice_pdf(user_id=user_id, invoice_number=invoice_num)
+            if not info:
+                self.send_error(404, f"PDF for invoice {invoice_num} not found")
+                return
+            pdf_path, _ = info
+            self._send_file(pdf_path, "application/pdf")
             return
 
         if path == "/api/payment/invoices":
@@ -294,6 +320,77 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                     self.on_data_changed()
                 except Exception:
                     pass
+            self._send_json(res)
+            return
+
+        if path == "/api/receipt/scan":
+            user_id = str(body.get("userId") or "deborah")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.scan_and_stage_receipt(user_id=user_id, payload=payload)
+            self._send_json(res)
+            return
+
+        if path == "/api/receipt/attach":
+            user_id = str(body.get("userId") or "deborah")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.attach_receipt_to_entry(user_id=user_id, payload=payload)
+            self._send_json(res)
+            return
+
+        if path == "/api/voice/parse":
+            user_id = str(body.get("userId") or "deborah")
+            transcript = str(body.get("transcript") or "")
+            current_mode = str(body.get("currentMode") or "Expense")
+            res = self.service.parse_voice_command(
+                user_id=user_id,
+                transcript=transcript,
+                current_mode=current_mode,
+            )
+            self._send_json(res)
+            return
+
+        if path == "/api/invoice/preview":
+            user_id = str(body.get("userId") or "cory")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.preview_mobile_invoice(user_id=user_id, payload=payload)
+            self._send_json(res)
+            return
+
+        if path == "/api/invoice/finalize":
+            user_id = str(body.get("userId") or "cory")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.finalize_mobile_invoice(user_id=user_id, payload=payload)
+            if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
+                try:
+                    self.on_data_changed()
+                except Exception:
+                    pass
+            self._send_json(res)
+            return
+
+        if path == "/api/invoice/reverse":
+            user_id = str(body.get("userId") or "cory")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            inv_num = str(
+                payload.get("invoiceNumber")
+                or payload.get("invoice")
+                or body.get("invoiceNumber")
+                or body.get("invoice")
+                or ""
+            )
+            res = self.service.reverse_mobile_invoice(user_id=user_id, invoice_number=inv_num)
+            if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
+                try:
+                    self.on_data_changed()
+                except Exception:
+                    pass
+            self._send_json(res)
+            return
+
+        if path in ("/api/matter/create", "/api/docket/create-matter"):
+            user_id = str(body.get("userId") or "cory")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.create_quick_matter(user_id=user_id, payload=payload)
             self._send_json(res)
             return
 

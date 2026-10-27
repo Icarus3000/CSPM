@@ -1,5 +1,31 @@
 # CSPM Task And Validation Ledger
 
+## 2026-10-26 (`v12` Expansion): Receipt Snapshots & Native OCR, Universal Voice Commands, Graphical Budget Charts, Mobile Invoicing, Live Call Timer, Tax/SHL Snapshot & Workstation Failover
+
+- [x] **Receipt Snapshots + Smart Auto-Read (`Scan & Pre-Fill`) + Tax-Ready Folder Filing (`v12`):**
+  - Snap photo (`capture="environment"`) or upload photo/PDF on any expense (new or existing across Family, Deborah OT Private, Deborah OT VHA, Cory Sole Prop, Cory PC, and Client Disbursements).
+  - Headless Windows 11 native OCR (`Windows.Media.Ocr.OcrEngine` via `powershell.exe` with `creationflags=0x08000000`) + `PyMuPDF` (`fitz`) extracts Store/Payee, Date, Total Paid (`$`), Exact Printed HST (`$` — auto-switching to `custom` HST mode for mixed-tax receipts like Costco/grocery), Card (`Simplii Visa` / `Triangle Mastercard` / `CIBC Chequing`), Category, and Stream.
+  - Automatic filing into `CSPM_Shared_Data/Receipts/<Year>/` (`01_Family_Tax_Credits/{Medical_Dental_Pharmacy, Childcare_and_Education, Charitable_Donations}`, `02_Family_Home_and_Property`, `03_Family_Everyday/<YYYY-MM>`, `04_Deborah_OT_Private/<YYYY-MM>`, `05_Deborah_OT_VHA/<YYYY-MM>`, `06_Cory_Sole_Prop/<YYYY-MM>`, `07_Cory_PC/<YYYY-MM>`, `08_Client_Disbursements/<MatterNumber>`), full-screen zoomable `🧾 View Receipt` modal, `📸 + Receipt` attach-to-existing button in `📋 Check My Entries`, and Cory's `"⚖️ Also Bill to Client Matter (Disbursement)"` toggle.
+- [x] **Universal Voice Command Bar & CRA-Safe Narrative Dictation (`v12`):**
+  - Top-level `🎙️ Speak Any Command` button + `⌨️ Type / Keyboard Mic` fallback + inline `🎙️ Dictate CRA-Safe Narrative` button on `⏱️ Docket`.
+  - Natural-language parser (`parse_voice_command` / `POST /api/voice/parse`) supporting Expense, Income, Pay Credit Card, Transfer, Docket (auto-formatted to LPN CRA-safe style: present tense, first names only, semicolon separators), Record Payment, Mobile Invoicing (`"Bill 88 Queen"`), WIP/A/R/Tax navigation, and Live Call Timer (`"Start timer"`, `"Stop timer"`).
+- [x] **Graphical Budget & Cash-Flow Charts (`v12`):**
+  - Interactive SVG **Expense Breakdown Donut/Pie Chart** (by Category and by Group), **Income Received Donut/Pie Chart** (by Category), and **Income vs. Expenses vs. Net Profit Bar Graph** (by Stream and by Month) inside `📋 Check My Entries & Budget Charts`.
+- [x] **Mobile Invoicing (`Preview / Finalize / View & Share PDF / Void`), Live Call Timer, Quick New Matter & Live Tax/HST/SHL Snapshot (`v12`):**
+  - `🧾 Bill Matter` button on every WIP matter card in `📈 WIP & A/R` opening `#mobileInvoiceModalBackdrop` (`POST /api/invoice/preview` & `POST /api/invoice/finalize`).
+  - `📄 PDF` (`GET /api/invoice/pdf`) and `↩️ Void` (`POST /api/invoice/reverse`) buttons on every Open A/R invoice row.
+  - `🏛️ Tax, HST & SHL` sub-tab (`GET /api/tax-snapshot`) showing live Shareholder Loan (`GIFI 2781`), Dual HST (`RT0001` for `SOLE_PROP` & `PC`), and YTD stream income/expenses/ITCs.
+  - Persistent `⏱️ Live Call / Task Timer` strip and `➕ New Client / Matter` modal (`POST /api/matter/create`) on `⏱️ Docket`.
+- [x] **1-Command Workstation Failover & Disaster Recovery (`scripts/setup_workstation_failover.py` & `docs/WORKSTATION_FAILOVER_AND_RECOVERY_GUIDE.md`):**
+  - Created `scripts/setup_workstation_failover.py` and `docs/WORKSTATION_FAILOVER_AND_RECOVERY_GUIDE.md` so `OMNIBOOK` (or any replacement PC) can take over in under 2 minutes with zero data loss if `OFFICENEW` ever breaks.
+- [ ] **Future Desktop Expansion Roadmap — Zero-Accountant Self-Contained Family & Corporate Tax Return Filing Engine (`D21`):**
+  - Expand `TaxComplianceService` (`src/python/services/tax_compliance_service.py`) and `IncomeTaxHelperView.qml` (`D21`) to generate complete, self-contained, line-by-line tax return filing workpapers and tax-owing estimates for all 6 tax filers without needing an external accountant:
+    - **Cory (`T1` + `T2125` Pre-Nov 1 Sole Prop + `Schedule 3` s. 85 Goodwill `$1.00`)**
+    - **Deborah (`T1` + `T2125` Private OT + `T2125` VHA OT + Home Office & Auto Allocation)**
+    - **Cory Schneider Law Professional Corporation (`T2` + `Schedules 100, 125, 50, 8, 1, ON Sch 5` + `Form T2057` + Dual `RT0001` HST)**
+    - **Alexa, Emma & Maya (`T1` Returns + Whole-Family Credit Optimizer: Medical Expense pooling, `T2202` Tuition transfers, `T778` Childcare, Charitable Donations)**
+  - Expand Desktop Graphical Budget & Cash-Flow Reports in the main CSPM desktop app.
+
 ## 2026-10-26: "CSPM Quick Expense" Cross-Platform Mini-App (Mobile iPhone/Android PWA, Chromebook PWA, Standalone Rust Desktop App & Direct CSPM Header Launcher)
 
 - [x] Update transaction schema seeds (`schema/transactions_master.accounts.seed.csv`, `schema/transactions_master.categories.seed.csv`, `schema/transactions_master.enums.json`) and `ExcelRepo` / `FinanceRepo` (`src/python/repositories/excel_repo.py`, `src/python/repositories/finance_repo.py`) to distinguish `CIBC Personal Chequing` (`CIBC_CHEQUING`), `CIBC Personal Savings` (`CIBC_SAVINGS`), `CIBC PC General` (`CIBC_PC_GENERAL`), and `CIBC PC Trust` (`CIBC_PC_TRUST`), add `KOHO` (`Koho`), and add separate `CIBC Mortgage` (`EXP_MORTGAGE_CIBC`) and `Home Trust Mortgage` (`EXP_MORTGAGE_HOME_TRUST`) categories.

@@ -634,3 +634,23 @@ Future trust-to-general collection must originate from an authorized,
 source-linked trust transfer and preserve the relationship among the trust
 event, client/matter trust liability, rendered invoice allocations, bank
 evidence, reconciliation period, and required authorization/Form 9A evidence.
+
+
+## 14. Zero-Accountant Self-Contained Family & Corporate Tax Filing Engine + Graphical Budget Reports + Workstation Failover
+
+### 14.1 Zero-Accountant Self-Contained Tax Return Filing Engine (Desktop + Mobile Companion)
+CSPM is designed to eliminate the need for an external accountant by maintaining all underlying ledgers, receipts (`CSPM_Shared_Data/Receipts/<Year>/`), ITCs, Shareholder Loan (`GIFI 2781`), CCA schedules, and family tax credits inside the application and generating line-by-line filing packages for all 6 tax filers:
+1. **Cory (`T1 General` + `Form T2125` Pre-Nov 1 Sole Prop + `Schedule 3`):**
+   - `Form T2125` for `SOLE_PROP` legal practice (`Jan 1 – Oct 31, 2026` + excluded pre-Nov 1 WIP/AR collections), `Schedule 3` reporting the `$1.00` elected proceeds on the ITA s. 85(1) transfer of goodwill (`Form T2057`), `T4`/`T5` slips from `Cory Schneider Law PC`, RRSP deductions, and Ontario `ON428` tax/CPP/instalment calculation.
+2. **Deborah (`T1 General` + Dual `Form T2125` for Private OT & VHA OT):**
+   - Separate `Form T2125` schedules for `DEBORAH_OT_PRIVATE` and `DEBORAH_OT_VHA`, automatic Home Office Use-of-Home (`14 Parsons Court` utilities, property tax, home insurance, mortgage interest pro-rata) and Motor Vehicle allocations, plus Federal/Ontario tax & CPP payable on self-employed earnings.
+3. **Cory Schneider Law Professional Corporation (`T2 Corporation Income Tax Return` + `RT0001` HST):**
+   - Full `T2` package (`OCN 1001781977`, Dec 31 fiscal year-end): `Schedule 100` Balance Sheet (`GIFI 2781` Shareholder Loan Payable, `GIFI 3500` `$1.00` Class 1 Common Shares, `GIFI 3520` `$1.00` Class A1 Special Shares), `Schedule 125` Income Statement (with 50% Meals & Entertainment add-back on `Schedule 1`), `Schedule 50` Shareholder Information (`100% Cory Adam Schneider`), `Schedule 8` CCA & Nov 1 Equipment UCC Rollover, `Ontario Schedule 5` (`12.2%` Combined CCPC Small Business Rate), `Form T2057` Joint Election Checklist, and Dual `RT0001` HST Return (`Lines 101, 103, 105, 106, 108, 109`).
+4. **Alexa, Emma & Maya (`T1 General` Returns + Whole-Family Tax Optimizer):**
+   - Quick-entry for `T4` (part-time/summer employment), `T4A` (scholarships/bursaries/RESP EAPs), `T2202` (Tuition & Education months + up to `$5,000` transfer to Cory or Deborah via `Schedule 11`), plus automatic **Whole-Family Credit Optimization** across Medical Expenses (`Line 33099`), Childcare (`Form T778`), and Charitable Donations (`Schedule 9`).
+
+### 14.2 Graphical Budget & Cash-Flow Reports (Mobile Mini-App `v12` + Main Desktop App)
+- Interactive **Expense Breakdown Pie/Donut Charts** (by Category and by Category Group), **Income Received Pie/Donut Charts** (by Income Type), and **Income vs. Expenses vs. Net Profit Bar Graphs** (by Stream and by Month) — delivered live in the Mobile/Chromebook Mini-App (`v12`) and scheduled for full desktop expansion in `D21` / Finance & Reports.
+
+### 14.3 1-Command Workstation Failover & Disaster Recovery (`scripts/setup_workstation_failover.py`)
+- Because all live data (`cspm.db`, `CSPM.xlsm`, `Dockets.xlsm`, `Receipts/`, `QuickExpense_Sync/inbox.json`) resides in `OneDrive - LPN` and all code resides in GitHub, running `python scripts/setup_workstation_failover.py --activate` on `OMNIBOOK` (or any replacement PC) activates the headless server, watchdog, and Tailscale HTTPS endpoint in under 2 minutes with zero data loss (`docs/WORKSTATION_FAILOVER_AND_RECOVERY_GUIDE.md`).
