@@ -1936,9 +1936,9 @@
       return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
     }
 
-    const APP_BUILD_VERSION = "v12";
+    const APP_BUILD_VERSION = "v14";
 
-    // v12 State: Staged Receipt, Budget Charts, Call Timer & Mobile Invoicing
+    // v14 State: Staged Receipt, Budget Charts, Call Timer & Mobile Invoicing
     let currentStagedReceipt = null; // { receiptToken, receiptId, receiptUrl, mimeType, fileName, folderLabel }
     let attachingReceiptToTxnId = "";
     let budgetChartsOpen = false;
@@ -1951,25 +1951,25 @@
 
     window.addEventListener("DOMContentLoaded", async () => {
       if ("serviceWorker" in navigator) {
-        let refreshingSw = false;
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
-          if (!refreshingSw) {
-            refreshingSw = true;
-            window.location.reload();
-          }
-        });
-        navigator.serviceWorker.register("/sw.js?v=12").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=14").then((reg) => {
           reg.update().catch(() => {});
         }).catch(() => {});
       }
-      // Verify server version so stale cached PWAs auto-refresh once on version bump
+      // Verify server version once per session (guarded by sessionStorage so it can never loop)
       fetch("/api/health").then((r) => r.json()).then(async (h) => {
         if (h && h.appVersion && h.appVersion !== APP_BUILD_VERSION) {
-          if ("caches" in window) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map((k) => caches.delete(k)));
+          const alreadyReloadedFor = sessionStorage.getItem("cspm_reloaded_ver");
+          if (alreadyReloadedFor !== h.appVersion) {
+            sessionStorage.setItem("cspm_reloaded_ver", h.appVersion);
+            try {
+              const freshRes = await fetch("/?t=" + Date.now(), { cache: "no-store" });
+              if (freshRes && freshRes.ok && "caches" in window) {
+                const c = await caches.open("cspm-quick-expense-" + h.appVersion);
+                await c.put("/", freshRes.clone());
+              }
+            } catch (e) {}
+            window.location.reload();
           }
-          window.location.reload();
         }
       }).catch(() => {});
       // Pre-render Deborah defaults immediately so dropdowns are never blank
