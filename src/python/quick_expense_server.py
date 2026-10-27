@@ -137,7 +137,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "cspm-quick-expense",
-                    "appVersion": "v12",
+                    "appVersion": "v13",
                     "lanIp": get_lan_ip(),
                     "port": self.server.server_port,
                 }

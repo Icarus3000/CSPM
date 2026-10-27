@@ -2139,6 +2139,8 @@
       loadBootstrap().catch(() => {});
       refreshDeckFromServer().catch(() => {});
       if (isCoryUser) {
+        initDocketSection(false).catch(() => {});
+        loadWipArOverview(false).catch(() => {});
         ensureCoryMattersLoadedForDisbursement().catch(() => {});
       }
     }
@@ -3345,48 +3347,66 @@
         dtEl.value = new Date().toISOString().slice(0, 10);
       }
       const prevSelected = preserveSelection ? document.getElementById("docketMatterSelect").value : "";
+
+      const applyDocketPayload = (data) => {
+        if (!data || !data.ok) return;
+        docketMattersAll = data.matters || [];
+        docketRecentMatters = data.recentMatters || [];
+        if (data.productivity) {
+          docketProductivity = data.productivity;
+          renderDocketProductivity(data.productivity);
+        }
+        renderRecentMatterChips();
+        const defaultRef =
+          prevSelected ||
+          (docketRecentMatters.length > 0
+            ? docketRecentMatters[0].matterNumber || docketRecentMatters[0].matterId
+            : "");
+        filterDocketMattersDropdown(defaultRef);
+        if (recentDocketsPanelOpen && recentDocketsScope === "ALL" && Array.isArray(data.recentDockets)) {
+          const fStat = (data.productivity && data.productivity.filtered) || {};
+          const sumBar = document.getElementById("recentDocketsSummaryBar");
+          if (sumBar) {
+            const cnt = Number(fStat.count || 0);
+            const hrs = Number(fStat.hours || 0).toFixed(1);
+            const fee = Number(fStat.feePreTax || 0).toLocaleString("en-CA", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+            const tot = Number(fStat.totalInclHst || 0).toLocaleString("en-CA", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            });
+            sumBar.textContent = `Showing ${cnt} docket${cnt === 1 ? "" : "s"} · ${hrs}h · $${fee} fee · $${tot} w/ HST`;
+          }
+          renderRecentDocketsList(data.recentDockets);
+        }
+      };
+
+      // Immediately hydrate from localStorage cache if not yet loaded
+      if (!docketProductivity) {
+        const cachedRaw = safeGetStorage("cspm_qe_cached_docket_meta");
+        if (cachedRaw) {
+          try {
+            applyDocketPayload(JSON.parse(cachedRaw));
+          } catch (e) {}
+        }
+      }
+
       try {
         const res = await fetch(`/api/docket/matters?userId=cory&matterId=ALL&period=${encodeURIComponent(recentDocketsPeriod)}`);
         const data = await res.json();
         if (data && data.ok) {
-          docketMattersAll = data.matters || [];
-          docketRecentMatters = data.recentMatters || [];
-          if (data.productivity) {
-            docketProductivity = data.productivity;
-            renderDocketProductivity(data.productivity);
-          }
-          renderRecentMatterChips();
-          const defaultRef =
-            prevSelected ||
-            (docketRecentMatters.length > 0
-              ? docketRecentMatters[0].matterNumber || docketRecentMatters[0].matterId
-              : "");
-          filterDocketMattersDropdown(defaultRef);
-          if (recentDocketsPanelOpen) {
-            if (recentDocketsScope === "ALL" && Array.isArray(data.recentDockets)) {
-              const fStat = (data.productivity && data.productivity.filtered) || {};
-              const sumBar = document.getElementById("recentDocketsSummaryBar");
-              if (sumBar) {
-                const cnt = Number(fStat.count || 0);
-                const hrs = Number(fStat.hours || 0).toFixed(1);
-                const fee = Number(fStat.feePreTax || 0).toLocaleString("en-CA", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                });
-                const tot = Number(fStat.totalInclHst || 0).toLocaleString("en-CA", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                });
-                sumBar.textContent = `Showing ${cnt} docket${cnt === 1 ? "" : "s"} · ${hrs}h · $${fee} fee · $${tot} w/ HST`;
-              }
-              renderRecentDocketsList(data.recentDockets);
-            } else {
-              await loadRecentDockets();
-            }
+          safeSetStorage("cspm_qe_cached_docket_meta", JSON.stringify(data));
+          applyDocketPayload(data);
+          if (recentDocketsPanelOpen && recentDocketsScope !== "ALL") {
+            await loadRecentDockets();
           }
           checkPendingDocketConfirmationAfterReload();
         }
-      } catch (e) {}
+      } catch (e) {
+        showBanner("warning", "⚠️ Reconnecting to CSPM database server... Showing last synced snapshot.");
+      }
     }
 
     function createCalendarDateBadge(dateIso, compact) {
@@ -4160,7 +4180,15 @@
     }
 
     async function loadWipArOverview(forceRefresh) {
-      if (wipArData && !forceRefresh) {
+      if (!wipArData) {
+        const cachedWip = safeGetStorage("cspm_qe_cached_wip_ar");
+        if (cachedWip) {
+          try {
+            wipArData = JSON.parse(cachedWip);
+            renderWipArOverview(wipArData);
+          } catch (e) {}
+        }
+      } else if (!forceRefresh) {
         renderWipArOverview(wipArData);
       }
       try {
@@ -4168,9 +4196,12 @@
         const data = await res.json();
         if (data && data.ok) {
           wipArData = data;
+          safeSetStorage("cspm_qe_cached_wip_ar", JSON.stringify(data));
           renderWipArOverview(data);
         }
-      } catch (e) {}
+      } catch (e) {
+        showBanner("warning", "⚠️ Reconnecting to CSPM database server... Showing last synced WIP & A/R.");
+      }
     }
 
     function renderWipArOverview(data) {

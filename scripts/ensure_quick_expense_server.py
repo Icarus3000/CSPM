@@ -46,11 +46,32 @@ def main() -> int:
         return 0
     import time
 
+    # 1. Prefer starting via Windows Scheduled Task so the process lives outside any terminal job object
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["schtasks", "/Run", "/TN", "CSPM_Quick_Expense_Server"],
+                creationflags=CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            for _ in range(24):
+                if is_port_listening(PORT):
+                    return 0
+                time.sleep(0.25)
+        except Exception:
+            pass
+
+    # 2. Fallback: spawn pythonw.exe running run_quick_expense_background.py detached
     pythonw = find_pythonw()
+    bg_script = REPO_ROOT / "scripts" / "run_quick_expense_background.py"
+    target_script = bg_script if bg_script.exists() else SERVER_SCRIPT
+    args = [pythonw, str(target_script)] if target_script == bg_script else [pythonw, str(target_script), "--port", str(PORT)]
     subprocess.Popen(
-        [pythonw, str(SERVER_SCRIPT), "--port", str(PORT)],
+        args,
         cwd=str(REPO_ROOT),
-        creationflags=CREATE_NO_WINDOW,
+        creationflags=CREATE_NO_WINDOW | 0x00000008 | 0x01000000,
         close_fds=True,
     )
     for _ in range(30):
