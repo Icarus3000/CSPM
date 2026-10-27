@@ -1936,9 +1936,9 @@
       return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
     }
 
-    const APP_BUILD_VERSION = "v14";
+    const APP_BUILD_VERSION = "v15";
 
-    // v14 State: Staged Receipt, Budget Charts, Call Timer & Mobile Invoicing
+    // v15 State: Staged Receipt, Budget Charts, Call Timer & Mobile Invoicing
     let currentStagedReceipt = null; // { receiptToken, receiptId, receiptUrl, mimeType, fileName, folderLabel }
     let attachingReceiptToTxnId = "";
     let budgetChartsOpen = false;
@@ -1951,7 +1951,7 @@
 
     window.addEventListener("DOMContentLoaded", async () => {
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/sw.js?v=14").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=15").then((reg) => {
           reg.update().catch(() => {});
         }).catch(() => {});
       }
@@ -5275,9 +5275,15 @@
       }
       updateCallTimerDisplay();
       if (callTimerState.running && !callTimerIntervalId) {
-        callTimerIntervalId = setInterval(updateCallTimerDisplay, 1000);
+        callTimerIntervalId = setInterval(updateCallTimerDisplay, 250);
       }
     }
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        updateCallTimerDisplay();
+      }
+    });
 
     function persistCallTimerState() {
       safeSetStorage("cspm_qe_call_timer", JSON.stringify(callTimerState));
@@ -5291,6 +5297,12 @@
       return total;
     }
 
+    function computeBillableTenthsFromSeconds(totalSec) {
+      if (totalSec <= 0) return 0.0;
+      // 1..360s (0:01..6:00) -> 0.1h; 361..720s (6:01..12:00) -> 0.2h; 721..1080s (12:01..18:00) -> 0.3h, etc.
+      return Math.ceil(totalSec / 360) / 10;
+    }
+
     function updateCallTimerDisplay() {
       const totalSec = getCallTimerTotalSeconds();
       const hrs = Math.floor(totalSec / 3600);
@@ -5301,8 +5313,7 @@
       const badgeEl = document.getElementById("docketTimerTenthBadge");
       const btnEl = document.getElementById("timerStartPauseBtn");
       if (clockEl) clockEl.textContent = `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
-      // Billable 0.1h = 6 minutes (360 seconds), rounded up once > 30 seconds elapsed
-      const tenths = totalSec > 30 ? Math.max(0.1, Math.ceil(totalSec / 360) / 10) : 0.0;
+      const tenths = computeBillableTenthsFromSeconds(totalSec);
       if (badgeEl) badgeEl.textContent = `(${tenths.toFixed(1)}h billable)`;
       if (btnEl) {
         btnEl.textContent = callTimerState.running ? "⏸️ Pause" : "▶️ Start";
@@ -5323,7 +5334,7 @@
         callTimerState.running = true;
         callTimerState.startedAtMs = Date.now();
         if (!callTimerIntervalId) {
-          callTimerIntervalId = setInterval(updateCallTimerDisplay, 1000);
+          callTimerIntervalId = setInterval(updateCallTimerDisplay, 250);
         }
       }
       persistCallTimerState();
@@ -5332,7 +5343,7 @@
 
     function stopAndApplyCallTimer() {
       const totalSec = getCallTimerTotalSeconds();
-      const tenths = totalSec > 0 ? Math.max(0.1, Math.ceil(totalSec / 360) / 10) : 0.1;
+      const tenths = totalSec > 0 ? computeBillableTenthsFromSeconds(totalSec) : 0.1;
       callTimerState = { running: false, startedAtMs: 0, accumulatedSec: 0 };
       if (callTimerIntervalId) {
         clearInterval(callTimerIntervalId);
