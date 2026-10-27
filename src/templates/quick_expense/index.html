@@ -937,6 +937,9 @@
           <button type="button" class="mode-tab" id="docketModeTab" data-mode="Docket" style="display: none;" onclick="setMode('Docket')">
             ⏱️ Docket
           </button>
+          <button type="button" class="mode-tab" id="wipArModeTab" data-mode="WIP_AR" style="display: none;" onclick="setMode('WIP_AR')">
+            📈 WIP &amp; A/R
+          </button>
         </div>
 
         <div id="standardEntryBody">
@@ -1214,7 +1217,24 @@
                   🏆 Year to Date (YTD)
                 </div>
                 <div id="prodYtdMain" style="font-size: 1.04rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
-                <div id="prodYtdSub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">0 dockets · WIP: $0.00</div>
+                <div id="prodYtdSub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">0 dockets · Avg $0/mo</div>
+              </div>
+            </div>
+            <!-- Live Unbilled WIP & Open A/R Cards (Tap to drill down by Matter or Client/Invoice) -->
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
+              <div onclick="openWipArView('WIP')" style="background: #FFFBEB; border: 2px solid #F59E0B; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #B45309; text-transform: uppercase;">
+                  💼 Unbilled WIP (Tap for Matters)
+                </div>
+                <div id="prodWipMain" style="font-size: 1.04rem; font-weight: 800; color: #78350F; margin-top: 2px;">0.0h · $0.00</div>
+                <div id="prodWipSub" style="font-size: 0.72rem; font-weight: 700; color: #92400E;">0 dockets · $0.00 w/ HST</div>
+              </div>
+              <div onclick="openWipArView('AR')" style="background: #ECFDF5; border: 2px solid #10B981; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #047857; text-transform: uppercase;">
+                  🧾 Open A/R (Tap for Aging)
+                </div>
+                <div id="prodArMain" style="font-size: 1.04rem; font-weight: 800; color: #064E3B; margin-top: 2px;">$0.00 due</div>
+                <div id="prodArSub" style="font-size: 0.72rem; font-weight: 700; color: #065F46;">0 open invoices</div>
               </div>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1363,6 +1383,120 @@
               </div>
               <div id="recentDocketsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
             </div>
+          </div>
+        </div>
+
+        <!-- ================= WIP & A/R PIPELINE SECTION (Cory-Only) ================= -->
+        <div id="wipArSection" style="display: none;">
+          <!-- Combined Realizable Pipeline Banner -->
+          <div style="margin-bottom: 12px; padding: 12px; border-radius: 12px; background: linear-gradient(135deg, #1E3A8A 0%, #0F766E 100%); color: #FFFFFF;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div>
+                <div style="font-size: 0.74rem; font-weight: 800; text-transform: uppercase; opacity: 0.9; letter-spacing: 0.4px;">
+                  📈 Total Realizable Pipeline (Unbilled WIP + Open A/R)
+                </div>
+                <div id="wipArCombinedHeadline" style="font-size: 1.32rem; font-weight: 900; margin-top: 2px;">
+                  $0.00 Pre-Tax ($0.00 incl. WIP HST)
+                </div>
+                <div id="wipArCombinedSubline" style="font-size: 0.8rem; font-weight: 700; opacity: 0.92; margin-top: 2px;">
+                  Unbilled WIP: $0.00 (0.0h) · Open A/R: $0.00 (0 invoices)
+                </div>
+              </div>
+              <button type="button" onclick="loadWipArOverview(true)" style="padding: 7px 12px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.16); color: #FFFFFF; font-size: 0.8rem; font-weight: 800; cursor: pointer;">
+                🔄 Refresh
+              </button>
+            </div>
+          </div>
+
+          <!-- Sub-Tab Switcher: Unbilled WIP vs Open A/R -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+            <button type="button" id="wipSubTabBtn" onclick="setWipArSubTab('WIP')" style="flex: 1; min-width: 165px; padding: 11px 12px; border-radius: 10px; border: 2px solid #D97706; background: #FEF3C7; color: #78350F; font-size: 0.88rem; font-weight: 900; cursor: pointer;">
+              💼 Unbilled WIP ($0.00)
+            </button>
+            <button type="button" id="arSubTabBtn" onclick="setWipArSubTab('AR')" style="flex: 1; min-width: 165px; padding: 11px 12px; border-radius: 10px; border: 2px solid #CBD5E1; background: #F8FAFC; color: var(--ink); font-size: 0.88rem; font-weight: 900; cursor: pointer;">
+              🧾 Open A/R ($0.00)
+            </button>
+          </div>
+
+          <!-- SUB-VIEW 1: UNBILLED WIP BY CLIENT & MATTER -->
+          <div id="wipSubView" style="display: block;">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px;">
+              <div style="background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 10px; padding: 8px 10px;">
+                <div style="font-size: 0.7rem; font-weight: 800; color: #92400E; text-transform: uppercase;">Unbilled Hours</div>
+                <div id="wipStatHours" style="font-size: 1.05rem; font-weight: 900; color: #78350F; margin-top: 2px;">0.0h</div>
+                <div id="wipStatMatters" style="font-size: 0.72rem; font-weight: 700; color: #92400E;">0 matters · 0 dockets</div>
+              </div>
+              <div style="background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 10px; padding: 8px 10px;">
+                <div style="font-size: 0.7rem; font-weight: 800; color: #92400E; text-transform: uppercase;">Pre-Tax WIP</div>
+                <div id="wipStatPreTax" style="font-size: 1.05rem; font-weight: 900; color: #78350F; margin-top: 2px;">$0.00</div>
+                <div id="wipStatDisb" style="font-size: 0.72rem; font-weight: 700; color: #92400E;">Disb: $0.00</div>
+              </div>
+              <div style="background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 10px; padding: 8px 10px;">
+                <div style="font-size: 0.7rem; font-weight: 800; color: #92400E; text-transform: uppercase;">Total w/ HST</div>
+                <div id="wipStatInclHst" style="font-size: 1.05rem; font-weight: 900; color: #78350F; margin-top: 2px;">$0.00</div>
+                <div style="font-size: 0.72rem; font-weight: 700; color: #92400E;">Tap matter to inspect</div>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+              <input type="text" id="wipSearchInput" class="big-input" placeholder="🔍 Filter WIP by client, matter name, or matter #..." oninput="renderWipMattersList()" />
+            </div>
+
+            <div style="font-size: 0.78rem; font-weight: 700; color: var(--muted); margin-bottom: 8px;">
+              👆 Tap any matter below to expand its unbilled dockets (or tap <strong>+ Docket</strong> to log time to it).
+            </div>
+            <div id="wipMattersList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          </div>
+
+          <!-- SUB-VIEW 2: OPEN A/R & AGING -->
+          <div id="arSubView" style="display: none;">
+            <!-- 4 Tappable Aging Bucket Cards -->
+            <div style="font-size: 0.76rem; font-weight: 800; color: var(--muted); text-transform: uppercase; margin-bottom: 6px;">
+              Tap any aging bucket to filter open invoices:
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
+              <div id="arBucketCard_b0_30" onclick="toggleArAgingBucket('b0_30')" style="background: #ECFDF5; border: 1.5px solid #6EE7B7; border-radius: 10px; padding: 8px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #047857; text-transform: uppercase;">🟢 0–30 Days (Current)</div>
+                <div id="arBucketVal_b0_30" style="font-size: 1.02rem; font-weight: 900; color: #064E3B; margin-top: 2px;">$0.00</div>
+                <div id="arBucketCnt_b0_30" style="font-size: 0.72rem; font-weight: 700; color: #065F46;">0 invoices</div>
+              </div>
+              <div id="arBucketCard_b31_60" onclick="toggleArAgingBucket('b31_60')" style="background: #EFF6FF; border: 1.5px solid #93C5FD; border-radius: 10px; padding: 8px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #1D4ED8; text-transform: uppercase;">🔵 31–60 Days</div>
+                <div id="arBucketVal_b31_60" style="font-size: 1.02rem; font-weight: 900; color: #1E3A8A; margin-top: 2px;">$0.00</div>
+                <div id="arBucketCnt_b31_60" style="font-size: 0.72rem; font-weight: 700; color: #1E40AF;">0 invoices</div>
+              </div>
+              <div id="arBucketCard_b61_90" onclick="toggleArAgingBucket('b61_90')" style="background: #FFFBEB; border: 1.5px solid #FCD34D; border-radius: 10px; padding: 8px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #B45309; text-transform: uppercase;">🟡 61–90 Days</div>
+                <div id="arBucketVal_b61_90" style="font-size: 1.02rem; font-weight: 900; color: #78350F; margin-top: 2px;">$0.00</div>
+                <div id="arBucketCnt_b61_90" style="font-size: 0.72rem; font-weight: 700; color: #92400E;">0 invoices</div>
+              </div>
+              <div id="arBucketCard_b90_plus" onclick="toggleArAgingBucket('b90_plus')" style="background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 10px; padding: 8px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #B91C1C; text-transform: uppercase;">🔴 90+ Days Overdue</div>
+                <div id="arBucketVal_b90_plus" style="font-size: 1.02rem; font-weight: 900; color: #7F1D1D; margin-top: 2px;">$0.00</div>
+                <div id="arBucketCnt_b90_plus" style="font-size: 0.72rem; font-weight: 700; color: #991B1B;">0 invoices</div>
+              </div>
+            </div>
+
+            <!-- View Mode Toggle: By Client vs All Invoices -->
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+              <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button type="button" id="arGroupClientBtn" class="pill-btn active" onclick="setArDisplayMode('CLIENT')" style="padding: 5px 10px; font-size: 0.78rem;">
+                  👥 Grouped by Billing / Work Client
+                </button>
+                <button type="button" id="arGroupInvoicesBtn" class="pill-btn" onclick="setArDisplayMode('INVOICES')" style="padding: 5px 10px; font-size: 0.78rem;">
+                  🧾 All Open Invoices
+                </button>
+                <button type="button" id="arClearBucketBtn" class="pill-btn" onclick="toggleArAgingBucket('')" style="display: none; padding: 5px 10px; font-size: 0.78rem; border-color: #DC2626; color: #B91C1C;">
+                  ✕ Show All Aging
+                </button>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+              <input type="text" id="arOverviewSearchInput" class="big-input" placeholder="🔍 Filter A/R by client, billing client, invoice #, or amount..." oninput="renderArOverviewList()" />
+            </div>
+
+            <div id="arOverviewList" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
         </div>
 
@@ -1555,7 +1689,7 @@
       return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
     }
 
-    const APP_BUILD_VERSION = "v10";
+    const APP_BUILD_VERSION = "v11";
 
     window.addEventListener("DOMContentLoaded", async () => {
       if ("serviceWorker" in navigator) {
@@ -1566,7 +1700,7 @@
             window.location.reload();
           }
         });
-        navigator.serviceWorker.register("/sw.js?v=10").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=11").then((reg) => {
           reg.update().catch(() => {});
         }).catch(() => {});
       }
@@ -1731,7 +1865,9 @@
       document.getElementById("activeUserPill").textContent = `${currentUser.icon} ${currentUser.displayName}`;
       const isCoryUser = Boolean(currentUser && (currentUser.isCory || currentUser.userId === "cory"));
       document.getElementById("docketModeTab").style.display = isCoryUser ? "flex" : "none";
-      if (!isCoryUser && currentMode === "Docket") {
+      const wipArTab = document.getElementById("wipArModeTab");
+      if (wipArTab) wipArTab.style.display = isCoryUser ? "flex" : "none";
+      if (!isCoryUser && (currentMode === "Docket" || currentMode === "WIP_AR")) {
         currentMode = "Expense";
       }
 
@@ -1869,6 +2005,7 @@
       const stdBody = document.getElementById("standardEntryBody");
       const paySec = document.getElementById("paymentSection");
       const dockSec = document.getElementById("docketSection");
+      const wipArSec = document.getElementById("wipArSection");
       const topNav = document.getElementById("topNavStrip");
       const whoSec = document.getElementById("whoSection");
       const payeeCatSec = document.getElementById("payeeCategorySection");
@@ -1884,6 +2021,7 @@
         stdBody.style.display = "none";
         paySec.style.display = "block";
         dockSec.style.display = "none";
+        if (wipArSec) wipArSec.style.display = "none";
         updateTodayBadge();
         initPaymentSection();
         return;
@@ -1893,8 +2031,19 @@
         stdBody.style.display = "none";
         paySec.style.display = "none";
         dockSec.style.display = "block";
+        if (wipArSec) wipArSec.style.display = "none";
         updateTodayBadge();
         initDocketSection();
+        return;
+      }
+      if (currentMode === "WIP_AR") {
+        if (topNav) topNav.style.display = "none";
+        stdBody.style.display = "none";
+        paySec.style.display = "none";
+        dockSec.style.display = "none";
+        if (wipArSec) wipArSec.style.display = "block";
+        updateTodayBadge();
+        loadWipArOverview(false);
         return;
       }
 
@@ -1902,6 +2051,7 @@
       stdBody.style.display = "block";
       paySec.style.display = "none";
       dockSec.style.display = "none";
+      if (wipArSec) wipArSec.style.display = "none";
       updateTodayBadge();
 
       if (currentMode === "Expense") {
@@ -3024,14 +3174,31 @@
         if (sEl) sEl.textContent = `30d Avg: ${Number(l30.avgHoursPerDay || 0).toFixed(1)}h/d (${fmtShort(l30.avgFeePerDay)}/d) · Last Mo: ${fmtShort(lm.feePreTax)}`;
       }
 
-      // 6. Year to Date (YTD from Jan 1 + Unbilled WIP)
+      // 6. Year to Date (YTD from Jan 1)
       if (prod.ytd) {
         const ytd = prod.ytd;
-        const wip = prod.unbilledWip || {};
         const mEl = document.getElementById("prodYtdMain");
         const sEl = document.getElementById("prodYtdSub");
         if (mEl) mEl.textContent = `${Number(ytd.hours || 0).toFixed(1)}h · ${fmtMoney(ytd.feePreTax)}`;
-        if (sEl) sEl.textContent = `${ytd.count || 0} dockets · Avg ${fmtShort(ytd.avgFeePerMonth)}/mo · Unbilled WIP: ${fmtShort(wip.feePreTax)}`;
+        if (sEl) sEl.textContent = `${ytd.count || 0} dockets · Avg ${fmtShort(ytd.avgFeePerMonth)}/mo (${fmtMoney(ytd.totalInclHst)} w/ HST)`;
+      }
+
+      // 7. Unbilled WIP card in Productivity Report
+      if (prod.unbilledWip) {
+        const wip = prod.unbilledWip;
+        const mEl = document.getElementById("prodWipMain");
+        const sEl = document.getElementById("prodWipSub");
+        if (mEl) mEl.textContent = `${Number(wip.hours || 0).toFixed(1)}h · ${fmtMoney(wip.feePreTax)}`;
+        if (sEl) sEl.textContent = `${wip.count || 0} unbilled dockets · ${fmtMoney(wip.totalInclHst)} w/ HST`;
+      }
+
+      // 8. Open A/R card in Productivity Report
+      if (prod.openAr) {
+        const ar = prod.openAr;
+        const mEl = document.getElementById("prodArMain");
+        const sEl = document.getElementById("prodArSub");
+        if (mEl) mEl.textContent = `${fmtMoney(ar.balanceDue)} due`;
+        if (sEl) sEl.textContent = `${ar.count || 0} open invoices · Cur: ${fmtShort(ar.b0_30)} · 90+d: ${fmtShort(ar.b90_plus)}`;
       }
 
       updateTodayBadge();
@@ -3631,6 +3798,388 @@
           ? "💾 Save Changes ▶"
           : "✓ Save Docket (CSPM + Legacy Dockets) ▶";
       }
+    }
+
+    // =========================================================================
+    // 7. WIP & A/R Pipeline Overview (Cory-Only)
+    // =========================================================================
+    let wipArData = null;
+    let wipArActiveSubTab = "WIP"; // "WIP" | "AR"
+    let arDisplayMode = "CLIENT"; // "CLIENT" | "INVOICES"
+    let arSelectedBucket = ""; // "" | "b0_30" | "b31_60" | "b61_90" | "b90_plus"
+    let expandedWipMatters = {}; // matterNumber -> bool
+    let expandedArClients = {}; // clientName -> bool
+
+    async function openWipArView(subTab) {
+      wipArActiveSubTab = subTab === "AR" ? "AR" : "WIP";
+      setMode("WIP_AR");
+      setWipArSubTab(wipArActiveSubTab);
+      const sec = document.getElementById("wipArSection");
+      if (sec) sec.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function setWipArSubTab(subTab) {
+      wipArActiveSubTab = subTab === "AR" ? "AR" : "WIP";
+      const wipBtn = document.getElementById("wipSubTabBtn");
+      const arBtn = document.getElementById("arSubTabBtn");
+      const wipView = document.getElementById("wipSubView");
+      const arView = document.getElementById("arSubView");
+      if (wipView) wipView.style.display = wipArActiveSubTab === "WIP" ? "block" : "none";
+      if (arView) arView.style.display = wipArActiveSubTab === "AR" ? "block" : "none";
+      if (wipBtn) {
+        wipBtn.style.background = wipArActiveSubTab === "WIP" ? "#FEF3C7" : "#F8FAFC";
+        wipBtn.style.borderColor = wipArActiveSubTab === "WIP" ? "#D97706" : "#CBD5E1";
+        wipBtn.style.color = wipArActiveSubTab === "WIP" ? "#78350F" : "var(--ink)";
+      }
+      if (arBtn) {
+        arBtn.style.background = wipArActiveSubTab === "AR" ? "#ECFDF5" : "#F8FAFC";
+        arBtn.style.borderColor = wipArActiveSubTab === "AR" ? "#059669" : "#CBD5E1";
+        arBtn.style.color = wipArActiveSubTab === "AR" ? "#064E3B" : "var(--ink)";
+      }
+    }
+
+    async function loadWipArOverview(forceRefresh) {
+      if (wipArData && !forceRefresh) {
+        renderWipArOverview(wipArData);
+      }
+      try {
+        const res = await fetch("/api/wip-ar?userId=cory");
+        const data = await res.json();
+        if (data && data.ok) {
+          wipArData = data;
+          renderWipArOverview(data);
+        }
+      } catch (e) {}
+    }
+
+    function renderWipArOverview(data) {
+      if (!data) return;
+      const fmtMoney = (v) =>
+        "$" +
+        Number(v || 0).toLocaleString("en-CA", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+      const wip = data.wipSummary || {};
+      const ar = data.arSummary || {};
+      const comb = data.combinedPipeline || {};
+
+      const hdEl = document.getElementById("wipArCombinedHeadline");
+      const sbEl = document.getElementById("wipArCombinedSubline");
+      if (hdEl) {
+        hdEl.textContent = `${fmtMoney(comb.preTaxWipPlusAr)} Pre-Tax (${fmtMoney(comb.inclHstWipPlusAr)} w/ WIP HST)`;
+      }
+      if (sbEl) {
+        sbEl.textContent = `Unbilled WIP: ${fmtMoney(wip.totalPreTax)} (${Number(wip.hours || 0).toFixed(1)}h across ${wip.matterCount || 0} matters) · Open A/R: ${fmtMoney(ar.balanceDue)} (${ar.invoiceCount || 0} invoices)`;
+      }
+
+      const wipBtn = document.getElementById("wipSubTabBtn");
+      const arBtn = document.getElementById("arSubTabBtn");
+      if (wipBtn) wipBtn.textContent = `💼 Unbilled WIP (${fmtMoney(wip.totalPreTax)} · ${Number(wip.hours || 0).toFixed(1)}h)`;
+      if (arBtn) arBtn.textContent = `🧾 Open A/R (${fmtMoney(ar.balanceDue)} · ${ar.invoiceCount || 0} inv)`;
+
+      // Fill WIP summary cards
+      const wHrs = document.getElementById("wipStatHours");
+      const wMat = document.getElementById("wipStatMatters");
+      const wPre = document.getElementById("wipStatPreTax");
+      const wDisb = document.getElementById("wipStatDisb");
+      const wHst = document.getElementById("wipStatInclHst");
+      if (wHrs) wHrs.textContent = `${Number(wip.hours || 0).toFixed(1)}h`;
+      if (wMat) wMat.textContent = `${wip.matterCount || 0} matters · ${wip.docketCount || 0} dockets`;
+      if (wPre) wPre.textContent = fmtMoney(wip.totalPreTax);
+      if (wDisb) wDisb.textContent = `Fees: ${fmtMoney(wip.feePreTax)} · Disb: ${fmtMoney(wip.disbPreTax)}`;
+      if (wHst) wHst.textContent = fmtMoney(wip.totalInclHst);
+
+      // Fill A/R aging bucket cards
+      ["b0_30", "b31_60", "b61_90", "b90_plus"].forEach((bk) => {
+        const bObj = ar[bk] || { count: 0, balanceDue: 0 };
+        const vEl = document.getElementById("arBucketVal_" + bk);
+        const cEl = document.getElementById("arBucketCnt_" + bk);
+        const cardEl = document.getElementById("arBucketCard_" + bk);
+        if (vEl) vEl.textContent = fmtMoney(bObj.balanceDue);
+        if (cEl) cEl.textContent = `${bObj.count || 0} invoice${Number(bObj.count) === 1 ? "" : "s"}`;
+        if (cardEl) {
+          cardEl.style.outline = arSelectedBucket === bk ? "3px solid #1E293B" : "none";
+        }
+      });
+      const clrBtn = document.getElementById("arClearBucketBtn");
+      if (clrBtn) clrBtn.style.display = arSelectedBucket ? "inline-flex" : "none";
+
+      renderWipMattersList();
+      renderArOverviewList();
+    }
+
+    function renderWipMattersList() {
+      const wrap = document.getElementById("wipMattersList");
+      if (!wrap || !wipArData) return;
+      wrap.innerHTML = "";
+      const q = (document.getElementById("wipSearchInput")?.value || "").trim().toLowerCase();
+      const fmtMoney = (v) =>
+        "$" +
+        Number(v || 0).toLocaleString("en-CA", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+      const list = (wipArData.wipByMatter || []).filter((m) => {
+        if (!q) return true;
+        const hay = `${m.clientName || ""} ${m.matterName || ""} ${m.matterNumber || ""}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+      if (list.length === 0) {
+        wrap.innerHTML = `<div style="padding:12px; color:var(--muted); font-weight:700;">No unbilled WIP matters match this filter.</div>`;
+        return;
+      }
+
+      list.forEach((m) => {
+        const mKey = m.matterNumber || m.matterId;
+        const isExp = Boolean(expandedWipMatters[mKey]);
+        const card = document.createElement("div");
+        card.style.cssText = "border-radius:11px; background:#FFFFFF; border:1.5px solid #CBD5E1; padding:11px 12px;";
+
+        const hdr = document.createElement("div");
+        hdr.style.cssText = "display:flex; justify-content:space-between; align-items:flex-start; gap:8px; cursor:pointer; flex-wrap:wrap;";
+        hdr.onclick = () => {
+          expandedWipMatters[mKey] = !expandedWipMatters[mKey];
+          renderWipMattersList();
+        };
+
+        const left = document.createElement("div");
+        left.style.cssText = "display:flex; align-items:center; gap:8px;";
+        if (m.lastDate) {
+          left.appendChild(createCalendarDateBadge(m.lastDate, false));
+        }
+        const titleWrap = document.createElement("div");
+        const titleLine = document.createElement("div");
+        titleLine.style.cssText = "font-size:0.92rem; font-weight:900; color:var(--ink);";
+        titleLine.textContent = `${m.clientName || m.matterNumber}${m.matterName && m.matterName !== m.matterNumber ? " — " + m.matterName : ""}`;
+        const subLine = document.createElement("div");
+        subLine.style.cssText = "font-size:0.76rem; font-weight:700; color:var(--muted); margin-top:2px;";
+        subLine.textContent = `${m.matterNumber} · ${m.docketCount || 0} docket${Number(m.docketCount) === 1 ? "" : "s"} · Last: ${m.lastDate || "—"}${m.disbPreTax > 0 ? " · Disb: " + fmtMoney(m.disbPreTax) : ""}`;
+        titleWrap.appendChild(titleLine);
+        titleWrap.appendChild(subLine);
+        left.appendChild(titleWrap);
+
+        const right = document.createElement("div");
+        right.style.cssText = "text-align:right;";
+        const amtMain = document.createElement("div");
+        amtMain.style.cssText = "font-size:0.96rem; font-weight:900; color:#B45309;";
+        amtMain.textContent = `${Number(m.hours || 0).toFixed(1)}h · ${fmtMoney(m.totalPreTax)}`;
+        const amtSub = document.createElement("div");
+        amtSub.style.cssText = "font-size:0.74rem; font-weight:700; color:var(--muted);";
+        amtSub.textContent = `${fmtMoney(m.totalInclHst)} w/ HST ${isExp ? "▲" : "▼"}`;
+        right.appendChild(amtMain);
+        right.appendChild(amtSub);
+
+        hdr.appendChild(left);
+        hdr.appendChild(right);
+        card.appendChild(hdr);
+
+        const btnRow = document.createElement("div");
+        btnRow.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px;";
+        const expHint = document.createElement("span");
+        expHint.style.cssText = "font-size:0.74rem; font-weight:700; color:var(--primary); cursor:pointer;";
+        expHint.textContent = isExp ? `▲ Hide ${m.docketCount} unbilled dockets` : `▼ Tap to view ${m.docketCount} unbilled dockets`;
+        expHint.onclick = () => {
+          expandedWipMatters[mKey] = !expandedWipMatters[mKey];
+          renderWipMattersList();
+        };
+
+        const addDockBtn = document.createElement("button");
+        addDockBtn.type = "button";
+        addDockBtn.textContent = "⏱️ + Docket This Matter";
+        addDockBtn.style.cssText = "padding:5px 10px; border-radius:7px; border:1px solid #2563EB; background:#EFF6FF; color:#1D4ED8; font-size:0.76rem; font-weight:800; cursor:pointer;";
+        addDockBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          jumpToDocketMatter(m.matterNumber || m.matterId);
+        };
+        btnRow.appendChild(expHint);
+        btnRow.appendChild(addDockBtn);
+        card.appendChild(btnRow);
+
+        if (isExp && Array.isArray(m.dockets) && m.dockets.length > 0) {
+          const dWrap = document.createElement("div");
+          dWrap.style.cssText = "margin-top:10px; padding-top:8px; border-top:1px dashed #CBD5E1; display:flex; flex-direction:column; gap:6px;";
+          m.dockets.forEach((d) => {
+            const dRow = document.createElement("div");
+            dRow.style.cssText = "padding:8px 10px; border-radius:8px; background:#F8FAFC; border:1px solid #E2E8F0; font-size:0.8rem; cursor:pointer;";
+            dRow.onclick = () => {
+              setMode("Docket");
+              setTimeout(() => startEditDocketEntry(d), 80);
+            };
+            const dTop = document.createElement("div");
+            dTop.style.cssText = "display:flex; justify-content:space-between; align-items:center; font-weight:800; gap:6px;";
+            const dLeft = document.createElement("span");
+            dLeft.style.cssText = "display:inline-flex; align-items:center; gap:6px;";
+            dLeft.appendChild(createCalendarDateBadge(d.date, true));
+            const dtTxt = document.createElement("span");
+            dtTxt.textContent = d.date;
+            dLeft.appendChild(dtTxt);
+            const dRight = document.createElement("span");
+            dRight.style.color = "var(--primary)";
+            dRight.textContent = `${Number(d.hours || 0).toFixed(1)}h · ${fmtMoney(d.feePreTax)} (✏️ Tap to Edit)`;
+            dTop.appendChild(dLeft);
+            dTop.appendChild(dRight);
+            const dDesc = document.createElement("div");
+            dDesc.style.cssText = "margin-top:4px; color:var(--text); line-height:1.35;";
+            dDesc.textContent = d.description || "";
+            dRow.appendChild(dTop);
+            dRow.appendChild(dDesc);
+            dWrap.appendChild(dRow);
+          });
+          card.appendChild(dWrap);
+        }
+
+        wrap.appendChild(card);
+      });
+    }
+
+    function toggleArAgingBucket(bucketKey) {
+      if (arSelectedBucket === bucketKey) {
+        arSelectedBucket = "";
+      } else {
+        arSelectedBucket = bucketKey || "";
+      }
+      if (wipArData) renderWipArOverview(wipArData);
+    }
+
+    function setArDisplayMode(mode) {
+      arDisplayMode = mode === "INVOICES" ? "INVOICES" : "CLIENT";
+      const cBtn = document.getElementById("arGroupClientBtn");
+      const iBtn = document.getElementById("arGroupInvoicesBtn");
+      if (cBtn) cBtn.classList.toggle("active", arDisplayMode === "CLIENT");
+      if (iBtn) iBtn.classList.toggle("active", arDisplayMode === "INVOICES");
+      renderArOverviewList();
+    }
+
+    function renderArOverviewList() {
+      const wrap = document.getElementById("arOverviewList");
+      if (!wrap || !wipArData) return;
+      wrap.innerHTML = "";
+      const q = (document.getElementById("arOverviewSearchInput")?.value || "").trim().toLowerCase();
+      const fmtMoney = (v) =>
+        "$" +
+        Number(v || 0).toLocaleString("en-CA", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+
+      const filterInv = (inv) => {
+        if (arSelectedBucket && inv.bucketKey !== arSelectedBucket) return false;
+        if (!q) return true;
+        const hay = `${inv.invoiceNumber} ${inv.billingClient} ${inv.workClient} ${inv.clientDisplay} ${inv.balanceDue} ${inv.totalInvoiced}`.toLowerCase();
+        return hay.includes(q);
+      };
+
+      const renderInvoiceRow = (inv) => {
+        const row = document.createElement("div");
+        row.style.cssText = "padding:10px 12px; border-radius:10px; background:#FFFFFF; border:1.5px solid #CBD5E1; display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;";
+        const left = document.createElement("div");
+        left.style.cssText = "display:flex; align-items:center; gap:8px;";
+        left.appendChild(createCalendarDateBadge(inv.date, false));
+        const info = document.createElement("div");
+        const l1 = document.createElement("div");
+        l1.style.cssText = "font-size:0.9rem; font-weight:900; color:var(--ink);";
+        l1.textContent = `🧾 #${inv.invoiceNumber} — ${inv.clientDisplay}`;
+        const l2 = document.createElement("div");
+        l2.style.cssText = "font-size:0.76rem; font-weight:700; color:var(--muted); margin-top:2px;";
+        l2.textContent = `Issued: ${inv.date} · Age: ${inv.ageDays}d (${inv.bucketLabel}) · Total: ${fmtMoney(inv.totalInvoiced)}${inv.amountPaid > 0 ? " · Paid: " + fmtMoney(inv.amountPaid) : ""}`;
+        info.appendChild(l1);
+        info.appendChild(l2);
+        left.appendChild(info);
+
+        const right = document.createElement("div");
+        right.style.cssText = "display:flex; align-items:center; gap:8px; margin-left:auto;";
+        const balBox = document.createElement("div");
+        balBox.style.cssText = "text-align:right;";
+        const balTxt = document.createElement("div");
+        balTxt.style.cssText = "font-size:0.98rem; font-weight:900; color:#047857;";
+        balTxt.textContent = fmtMoney(inv.balanceDue);
+        const balSub = document.createElement("div");
+        balSub.style.cssText = "font-size:0.7rem; font-weight:700; color:var(--muted);";
+        balSub.textContent = "Balance Due";
+        balBox.appendChild(balTxt);
+        balBox.appendChild(balSub);
+
+        const payBtn = document.createElement("button");
+        payBtn.type = "button";
+        payBtn.textContent = "💵 Pay";
+        payBtn.style.cssText = "padding:7px 11px; border-radius:8px; border:1.5px solid #059669; background:#ECFDF5; color:#065F46; font-size:0.8rem; font-weight:900; cursor:pointer;";
+        payBtn.onclick = () => jumpToPayInvoice(inv.invoiceNumber);
+
+        right.appendChild(balBox);
+        right.appendChild(payBtn);
+        row.appendChild(left);
+        row.appendChild(right);
+        return row;
+      };
+
+      if (arDisplayMode === "INVOICES" || arSelectedBucket || q) {
+        const invList = (wipArData.arInvoices || []).filter(filterInv);
+        if (invList.length === 0) {
+          wrap.innerHTML = `<div style="padding:12px; color:var(--muted); font-weight:700;">No open invoices match this filter.</div>`;
+          return;
+        }
+        invList.forEach((inv) => wrap.appendChild(renderInvoiceRow(inv)));
+        return;
+      }
+
+      // Grouped by Billing / Work Client
+      const groups = wipArData.arByClient || [];
+      groups.forEach((grp) => {
+        const isExp = expandedArClients[grp.clientName] !== undefined ? expandedArClients[grp.clientName] : true;
+        const card = document.createElement("div");
+        card.style.cssText = "border-radius:11px; background:#F8FAFC; border:1.5px solid #CBD5E1; padding:10px 12px;";
+        const hdr = document.createElement("div");
+        hdr.style.cssText = "display:flex; justify-content:space-between; align-items:center; gap:8px; cursor:pointer; flex-wrap:wrap;";
+        hdr.onclick = () => {
+          expandedArClients[grp.clientName] = !isExp;
+          renderArOverviewList();
+        };
+        const left = document.createElement("div");
+        left.innerHTML = `<div style="font-size:0.94rem; font-weight:900; color:var(--ink);">👤 ${grp.clientName}</div><div style="font-size:0.76rem; font-weight:700; color:var(--muted);">${grp.invoiceCount} open invoice${grp.invoiceCount === 1 ? "" : "s"} · Oldest: ${grp.oldestAgeDays}d</div>`;
+        const right = document.createElement("div");
+        right.style.cssText = "text-align:right; font-size:1.0rem; font-weight:900; color:#047857;";
+        right.textContent = `${fmtMoney(grp.balanceDue)} ${isExp ? "▲" : "▼"}`;
+        hdr.appendChild(left);
+        hdr.appendChild(right);
+        card.appendChild(hdr);
+
+        if (isExp && Array.isArray(grp.invoices)) {
+          const subWrap = document.createElement("div");
+          subWrap.style.cssText = "margin-top:8px; display:flex; flex-direction:column; gap:6px;";
+          grp.invoices.forEach((inv) => subWrap.appendChild(renderInvoiceRow(inv)));
+          card.appendChild(subWrap);
+        }
+        wrap.appendChild(card);
+      });
+    }
+
+    function jumpToDocketMatter(matterRef) {
+      setMode("Docket");
+      setTimeout(() => {
+        const searchEl = document.getElementById("docketMatterSearchInput");
+        if (searchEl) searchEl.value = "";
+        filterDocketMattersDropdown(matterRef);
+        const hrsEl = document.getElementById("docketHoursInput");
+        if (hrsEl) hrsEl.focus();
+      }, 80);
+    }
+
+    function jumpToPayInvoice(invoiceNumber) {
+      setMode("Record Payment");
+      setTimeout(async () => {
+        const searchInp = document.getElementById("paySearchInput");
+        if (searchInp) searchInp.value = invoiceNumber;
+        selectedPaymentInvoices = {};
+        await searchPaymentInvoices(false);
+        const match = (paymentInvoicesCache || []).find((x) => String(x.invoice || x.invoiceNumber) === String(invoiceNumber));
+        if (match) {
+          toggleSelectPaymentInvoice(match);
+        }
+      }, 100);
     }
 
     // Keyboard shortcuts for desktop/Chromebook

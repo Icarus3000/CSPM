@@ -1439,6 +1439,16 @@ class QuickExpenseService:
             "lastMonth": _empty_stat("Last Month", last_month_start_iso, last_month_end_iso, float(last_month_end_dt.day)),
             "ytd": _empty_stat("Year to Date (YTD)", ytd_start_iso, today_iso, float(ytd_days_elapsed)),
             "unbilledWip": _empty_stat("Unbilled WIP", "", today_iso, 1.0),
+            "openAr": {
+                "label": "Open A/R",
+                "count": 0,
+                "balanceDue": 0.0,
+                "totalInvoiced": 0.0,
+                "b0_30": 0.0,
+                "b31_60": 0.0,
+                "b61_90": 0.0,
+                "b90_plus": 0.0,
+            },
             "filtered": _empty_stat("Displayed Dockets", period_from, period_to, 1.0),
         }
 
@@ -1578,6 +1588,38 @@ class QuickExpenseService:
                         _accum_stat(productivity["lastMonth"], h_val, fee_val, tot_val)
                     if ytd_start_iso <= d_iso <= today_iso:
                         _accum_stat(productivity["ytd"], h_val, fee_val, tot_val)
+
+                # Compute Open A/R summary from Receivable table
+                try:
+                    cur.execute(
+                        """
+                        SELECT date, COALESCE(total_invoiced, 0.0), COALESCE(amount_due, 0.0)
+                        FROM Receivable
+                        WHERE COALESCE(amount_due, 0.0) > 0.009
+                          AND LOWER(COALESCE(status, '')) NOT IN ('paid', 'void', 'reversed', 'cancelled')
+                        """
+                    )
+                    for ar_r in cur.fetchall():
+                        ar_dt_str = str(ar_r[0] or "")[:10]
+                        inv_tot = round(float(ar_r[1] or 0.0), 2)
+                        bal_due = round(float(ar_r[2] or 0.0), 2)
+                        productivity["openAr"]["count"] = int(productivity["openAr"]["count"]) + 1
+                        productivity["openAr"]["totalInvoiced"] = round(float(productivity["openAr"]["totalInvoiced"]) + inv_tot, 2)
+                        productivity["openAr"]["balanceDue"] = round(float(productivity["openAr"]["balanceDue"]) + bal_due, 2)
+                        try:
+                            age_d = max(0, (today_dt - date.fromisoformat(ar_dt_str)).days)
+                        except Exception:
+                            age_d = 0
+                        if age_d <= 30:
+                            productivity["openAr"]["b0_30"] = round(float(productivity["openAr"]["b0_30"]) + bal_due, 2)
+                        elif age_d <= 60:
+                            productivity["openAr"]["b31_60"] = round(float(productivity["openAr"]["b31_60"]) + bal_due, 2)
+                        elif age_d <= 90:
+                            productivity["openAr"]["b61_90"] = round(float(productivity["openAr"]["b61_90"]) + bal_due, 2)
+                        else:
+                            productivity["openAr"]["b90_plus"] = round(float(productivity["openAr"]["b90_plus"]) + bal_due, 2)
+                except Exception:
+                    pass
 
                 # Recent matters from TimeEntry (corrected primary key column: time_id)
                 cur.execute(
@@ -1771,6 +1813,8 @@ class QuickExpenseService:
             )
 
         for key_b, b_stat in productivity.items():
+            if "daysSpan" not in b_stat:
+                continue
             d_span = max(1.0, float(b_stat.get("daysSpan") or 1.0))
             b_stat["avgHoursPerDay"] = round(float(b_stat.get("hours") or 0.0) / d_span, 1)
             b_stat["avgFeePerDay"] = round(float(b_stat.get("feePreTax") or 0.0) / d_span, 2)
@@ -1793,6 +1837,325 @@ class QuickExpenseService:
             "recentMatters": recent_matters[:8],
             "recentDockets": recent_dockets[:max_ret_rows],
             "productivity": productivity,
+        }
+
+    def get_wip_and_ar_overview(self, user_id: str = "cory") -> Dict[str, Any]:
+        """Return comprehensive Unbilled WIP (by Matter/Client) and Open A/R (by Aging & Client/Invoice) in <15ms."""
+        if not self._is_cory(user_id):
+            return {"ok": False, "message": "WIP & A/R overview is restricted to Cory."}
+
+        today_dt = date.today()
+        db_path = self._resolve_sqlite_db_path()
+
+        wip_summary = {
+            "matterCount": 0,
+            "docketCount": 0,
+            "hours": 0.0,
+            "feePreTax": 0.0,
+            "disbPreTax": 0.0,
+            "totalPreTax": 0.0,
+            "totalInclHst": 0.0,
+        }
+        ar_summary = {
+            "invoiceCount": 0,
+            "clientCount": 0,
+            "totalInvoiced": 0.0,
+            "totalPaid": 0.0,
+            "balanceDue": 0.0,
+            "b0_30": {"label": "0–30 Days (Current)", "count": 0, "balanceDue": 0.0},
+            "b31_60": {"label": "31–60 Days", "count": 0, "balanceDue": 0.0},
+            "b61_90": {"label": "61–90 Days", "count": 0, "balanceDue": 0.0},
+            "b90_plus": {"label": "90+ Days Overdue", "count": 0, "balanceDue": 0.0},
+        }
+        wip_by_matter_map: Dict[str, Dict[str, Any]] = {}
+        ar_invoices: List[Dict[str, Any]] = []
+        ar_by_client_map: Dict[str, Dict[str, Any]] = {}
+
+        if db_path is not None:
+            import sqlite3
+            try:
+                conn = sqlite3.connect(str(db_path))
+                cur = conn.cursor()
+                # 1. Load Matter directory lookup
+                by_ref: Dict[str, Dict[str, Any]] = {}
+                cur.execute(
+                    """
+                    SELECT matter_id, matter_number, matter_name, display_name, client_name, parent_id,
+                           COALESCE(default_rate, hourly_rate, 475.0), COALESCE(default_share_pct, 100.0),
+                           COALESCE(NULLIF(default_biller_entity, ''), NULLIF(default_biller, ''), 'SOLE_PROP')
+                    FROM Matter
+                    """
+                )
+                for mr in cur.fetchall():
+                    m_id = str(mr[0] or "").strip()
+                    m_num = str(mr[1] or m_id).strip()
+                    m_name = str(mr[2] or mr[3] or "").strip()
+                    c_name = str(mr[4] or "").strip()
+                    p_name = str(mr[5] or "").strip()
+                    info = {
+                        "matterId": m_id or m_num,
+                        "matterNumber": m_num,
+                        "matterName": m_name,
+                        "clientName": c_name,
+                        "parentName": p_name,
+                        "rate": float(mr[6] or 475.0),
+                        "sharePct": float(mr[7] or 100.0),
+                        "billerEntity": str(mr[8] or "SOLE_PROP"),
+                    }
+                    if m_id:
+                        by_ref[m_id.upper()] = info
+                    if m_num:
+                        by_ref[m_num.upper()] = info
+                    if m_name:
+                        by_ref[m_name.upper()] = info
+
+                # 2. Load all Unbilled TimeEntry rows
+                cur.execute(
+                    """
+                    SELECT time_id, date, matter_id, matter_name, client_name, hours,
+                           COALESCE(rate, 475.0), COALESCE(share_pct, 100.0), COALESCE(total_incl_hst, 0.0),
+                           description, COALESCE(biller_entity, 'SOLE_PROP')
+                    FROM TimeEntry
+                    WHERE COALESCE(is_billed, 0) = 0 AND LOWER(COALESCE(status, 'Draft')) != 'billed'
+                    ORDER BY date DESC, created_at DESC
+                    """
+                )
+                for tr in cur.fetchall():
+                    t_id = str(tr[0] or "").strip()
+                    d_iso = str(tr[1] or "")[:10]
+                    m_id_raw = str(tr[2] or "").strip()
+                    m_name_raw = str(tr[3] or "").strip()
+                    c_name_raw = str(tr[4] or "").strip()
+                    hrs = round(float(tr[5] or 0.0), 2)
+                    rate = float(tr[6] or 475.0)
+                    share = float(tr[7] or 100.0)
+                    fee = round(hrs * rate * (share / 100.0), 2)
+                    tot_hst = round(float(tr[8] or 0.0), 2) or round(fee * 1.13, 2)
+                    desc = str(tr[9] or "").strip()
+                    biller = str(tr[10] or "SOLE_PROP").strip().upper()
+
+                    matched = by_ref.get(m_id_raw.upper()) or by_ref.get(m_name_raw.upper())
+                    m_num = (matched or {}).get("matterNumber") or m_name_raw or m_id_raw or "UNASSIGNED"
+                    m_id_canon = (matched or {}).get("matterId") or m_id_raw or m_num
+                    c_name = c_name_raw or (matched or {}).get("clientName") or m_num
+                    m_title = (matched or {}).get("matterName") or m_name_raw or ""
+                    key = m_num.upper()
+
+                    if key not in wip_by_matter_map:
+                        wip_by_matter_map[key] = {
+                            "matterId": m_id_canon,
+                            "matterNumber": m_num,
+                            "matterName": m_title,
+                            "clientName": c_name,
+                            "billerEntity": (matched or {}).get("billerEntity") or biller,
+                            "docketCount": 0,
+                            "hours": 0.0,
+                            "feePreTax": 0.0,
+                            "disbPreTax": 0.0,
+                            "totalPreTax": 0.0,
+                            "totalInclHst": 0.0,
+                            "lastDate": d_iso,
+                            "dockets": [],
+                        }
+                    bucket = wip_by_matter_map[key]
+                    bucket["docketCount"] = int(bucket["docketCount"]) + 1
+                    bucket["hours"] = round(float(bucket["hours"]) + hrs, 2)
+                    bucket["feePreTax"] = round(float(bucket["feePreTax"]) + fee, 2)
+                    bucket["totalPreTax"] = round(float(bucket["totalPreTax"]) + fee, 2)
+                    bucket["totalInclHst"] = round(float(bucket["totalInclHst"]) + tot_hst, 2)
+                    if d_iso > str(bucket.get("lastDate") or ""):
+                        bucket["lastDate"] = d_iso
+                    bucket["dockets"].append(
+                        {
+                            "entryId": t_id,
+                            "date": d_iso,
+                            "clientName": c_name,
+                            "matterId": m_id_canon,
+                            "matterNumber": m_num,
+                            "matterName": m_title,
+                            "hours": hrs,
+                            "rate": rate,
+                            "sharePct": share,
+                            "feePreTax": fee,
+                            "totalInclHst": tot_hst,
+                            "description": desc,
+                            "isBilled": False,
+                        }
+                    )
+
+                    wip_summary["docketCount"] = int(wip_summary["docketCount"]) + 1
+                    wip_summary["hours"] = round(float(wip_summary["hours"]) + hrs, 2)
+                    wip_summary["feePreTax"] = round(float(wip_summary["feePreTax"]) + fee, 2)
+                    wip_summary["totalPreTax"] = round(float(wip_summary["totalPreTax"]) + fee, 2)
+                    wip_summary["totalInclHst"] = round(float(wip_summary["totalInclHst"]) + tot_hst, 2)
+
+                # 3. Check unbilled disbursements (no invoice_ref)
+                try:
+                    cur.execute(
+                        """
+                        SELECT client_name, matter_id, description, COALESCE(amount, 0.0), date
+                        FROM disbursements
+                        WHERE TRIM(COALESCE(invoice_ref, '')) = ''
+                          AND LOWER(TRIM(COALESCE(payment_status, ''))) NOT IN ('billed', 'paid')
+                        """
+                    )
+                    for dr in cur.fetchall():
+                        d_client = str(dr[0] or "").strip()
+                        d_m_id = str(dr[1] or "").strip()
+                        d_amt = round(float(dr[3] or 0.0), 2)
+                        if d_amt <= 0:
+                            continue
+                        matched = by_ref.get(d_m_id.upper())
+                        m_num = (matched or {}).get("matterNumber") or d_m_id or d_client or "UNASSIGNED"
+                        key = m_num.upper()
+                        if key not in wip_by_matter_map:
+                            wip_by_matter_map[key] = {
+                                "matterId": (matched or {}).get("matterId") or d_m_id or m_num,
+                                "matterNumber": m_num,
+                                "matterName": (matched or {}).get("matterName") or "",
+                                "clientName": d_client or (matched or {}).get("clientName") or m_num,
+                                "billerEntity": (matched or {}).get("billerEntity") or "SOLE_PROP",
+                                "docketCount": 0,
+                                "hours": 0.0,
+                                "feePreTax": 0.0,
+                                "disbPreTax": 0.0,
+                                "totalPreTax": 0.0,
+                                "totalInclHst": 0.0,
+                                "lastDate": str(dr[4] or "")[:10],
+                                "dockets": [],
+                            }
+                        bucket = wip_by_matter_map[key]
+                        bucket["disbPreTax"] = round(float(bucket["disbPreTax"]) + d_amt, 2)
+                        bucket["totalPreTax"] = round(float(bucket["totalPreTax"]) + d_amt, 2)
+                        bucket["totalInclHst"] = round(float(bucket["totalInclHst"]) + d_amt, 2)
+                        wip_summary["disbPreTax"] = round(float(wip_summary["disbPreTax"]) + d_amt, 2)
+                        wip_summary["totalPreTax"] = round(float(wip_summary["totalPreTax"]) + d_amt, 2)
+                        wip_summary["totalInclHst"] = round(float(wip_summary["totalInclHst"]) + d_amt, 2)
+                except Exception:
+                    pass
+
+                # 4. Load Open A/R from Receivable + Invoice
+                cur.execute(
+                    """
+                    SELECT r.invoice_id, r.client_name, r.work_client, r.date,
+                           COALESCE(r.total_invoiced, 0.0), COALESCE(r.amount_due, 0.0),
+                           COALESCE(r.amount_paid, 0.0), COALESCE(r.status, 'Open'),
+                           COALESCE(r.biller_entity, i.biller_entity, 'SOLE_PROP'),
+                           COALESCE(i.matter_id, ''), COALESCE(i.sub_client, '')
+                    FROM Receivable r
+                    LEFT JOIN Invoice i ON r.invoice_id = i.invoice_num
+                    WHERE COALESCE(r.amount_due, 0.0) > 0.009
+                      AND LOWER(COALESCE(r.status, '')) NOT IN ('paid', 'void', 'reversed', 'cancelled')
+                    ORDER BY r.date DESC, r.invoice_id DESC
+                    """
+                )
+                for ar_r in cur.fetchall():
+                    inv_num = str(ar_r[0] or "").strip()
+                    billing_client = str(ar_r[1] or "").strip()
+                    work_client = str(ar_r[2] or ar_r[10] or billing_client).strip()
+                    inv_date = str(ar_r[3] or "")[:10]
+                    tot_inv = round(float(ar_r[4] or 0.0), 2)
+                    bal_due = round(float(ar_r[5] or 0.0), 2)
+                    amt_paid = round(float(ar_r[6] or 0.0), 2)
+                    st_str = str(ar_r[7] or "Open").strip()
+                    biller = str(ar_r[8] or "SOLE_PROP").strip().upper()
+                    matter_ref = str(ar_r[9] or "").strip()
+
+                    try:
+                        age_days = max(0, (today_dt - date.fromisoformat(inv_date)).days)
+                    except Exception:
+                        age_days = 0
+
+                    if age_days <= 30:
+                        bucket_key = "b0_30"
+                        bucket_label = "0–30d"
+                    elif age_days <= 60:
+                        bucket_key = "b31_60"
+                        bucket_label = "31–60d"
+                    elif age_days <= 90:
+                        bucket_key = "b61_90"
+                        bucket_label = "61–90d"
+                    else:
+                        bucket_key = "b90_plus"
+                        bucket_label = "90+d"
+
+                    ar_summary["invoiceCount"] = int(ar_summary["invoiceCount"]) + 1
+                    ar_summary["totalInvoiced"] = round(float(ar_summary["totalInvoiced"]) + tot_inv, 2)
+                    ar_summary["totalPaid"] = round(float(ar_summary["totalPaid"]) + amt_paid, 2)
+                    ar_summary["balanceDue"] = round(float(ar_summary["balanceDue"]) + bal_due, 2)
+                    ar_summary[bucket_key]["count"] = int(ar_summary[bucket_key]["count"]) + 1
+                    ar_summary[bucket_key]["balanceDue"] = round(float(ar_summary[bucket_key]["balanceDue"]) + bal_due, 2)
+
+                    client_disp = (
+                        f"{work_client} (via {billing_client})"
+                        if work_client and billing_client and work_client.lower() != billing_client.lower()
+                        else (billing_client or work_client)
+                    )
+                    inv_obj = {
+                        "invoiceNumber": inv_num,
+                        "date": inv_date,
+                        "billingClient": billing_client,
+                        "workClient": work_client,
+                        "clientDisplay": client_disp,
+                        "matterRef": matter_ref,
+                        "ageDays": age_days,
+                        "bucketKey": bucket_key,
+                        "bucketLabel": bucket_label,
+                        "totalInvoiced": tot_inv,
+                        "amountPaid": amt_paid,
+                        "balanceDue": bal_due,
+                        "status": st_str,
+                        "billerEntity": biller,
+                    }
+                    ar_invoices.append(inv_obj)
+
+                    grp_key = (billing_client or work_client or "Other").strip()
+                    if grp_key not in ar_by_client_map:
+                        ar_by_client_map[grp_key] = {
+                            "clientName": grp_key,
+                            "invoiceCount": 0,
+                            "totalInvoiced": 0.0,
+                            "balanceDue": 0.0,
+                            "oldestAgeDays": 0,
+                            "invoices": [],
+                        }
+                    c_grp = ar_by_client_map[grp_key]
+                    c_grp["invoiceCount"] = int(c_grp["invoiceCount"]) + 1
+                    c_grp["totalInvoiced"] = round(float(c_grp["totalInvoiced"]) + tot_inv, 2)
+                    c_grp["balanceDue"] = round(float(c_grp["balanceDue"]) + bal_due, 2)
+                    if age_days > int(c_grp["oldestAgeDays"]):
+                        c_grp["oldestAgeDays"] = age_days
+                    c_grp["invoices"].append(inv_obj)
+
+                conn.close()
+            except Exception as exc:
+                logger.warning("get_wip_and_ar_overview warning: %s", exc)
+
+        wip_by_matter = sorted(
+            wip_by_matter_map.values(),
+            key=lambda x: (float(x.get("totalPreTax") or 0.0), float(x.get("hours") or 0.0)),
+            reverse=True,
+        )
+        wip_summary["matterCount"] = len(wip_by_matter)
+
+        ar_by_client = sorted(
+            ar_by_client_map.values(),
+            key=lambda x: float(x.get("balanceDue") or 0.0),
+            reverse=True,
+        )
+        ar_summary["clientCount"] = len(ar_by_client)
+
+        return {
+            "ok": True,
+            "wipSummary": wip_summary,
+            "wipByMatter": wip_by_matter,
+            "arSummary": ar_summary,
+            "arByClient": ar_by_client,
+            "arInvoices": ar_invoices,
+            "combinedPipeline": {
+                "preTaxWipPlusAr": round(float(wip_summary["totalPreTax"]) + float(ar_summary["balanceDue"]), 2),
+                "inclHstWipPlusAr": round(float(wip_summary["totalInclHst"]) + float(ar_summary["balanceDue"]), 2),
+            },
         }
 
     def save_docket_entry(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:

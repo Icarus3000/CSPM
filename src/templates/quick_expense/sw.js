@@ -1,4 +1,4 @@
-const CACHE_NAME = "cspm-quick-expense-v10";
+const CACHE_NAME = "cspm-quick-expense-v11";
 const ASSETS = ["/", "/index.html", "/manifest.json", "/icon.svg"];
 
 self.addEventListener("install", (event) => {

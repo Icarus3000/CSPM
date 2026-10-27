@@ -137,7 +137,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "cspm-quick-expense",
-                    "appVersion": "v10",
+                    "appVersion": "v11",
                     "lanIp": get_lan_ip(),
                     "port": self.server.server_port,
                 }
@@ -191,6 +191,11 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                 matter_id=matter_id,
                 period=period,
             )
+            self._send_json(res)
+            return
+
+        if path == "/api/wip-ar":
+            res = self.service.get_wip_and_ar_overview(user_id=user_id)
             self._send_json(res)
             return
 
