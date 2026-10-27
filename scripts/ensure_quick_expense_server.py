@@ -50,6 +50,13 @@ def main() -> int:
     if os.name == "nt":
         try:
             subprocess.run(
+                ["schtasks", "/End", "/TN", "CSPM_Quick_Expense_Server"],
+                creationflags=CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+            subprocess.run(
                 ["schtasks", "/Run", "/TN", "CSPM_Quick_Expense_Server"],
                 creationflags=CREATE_NO_WINDOW,
                 stdout=subprocess.DEVNULL,
