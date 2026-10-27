@@ -71,11 +71,13 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         logger.debug("QuickExpenseHTTP: " + format, *args)
 
     def _send_json(self, payload: Dict[str, Any], status: int = 200) -> None:
+        self.close_connection = True
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -83,6 +85,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_file(self, file_path: Path, content_type: str) -> None:
+        self.close_connection = True
         if not file_path.exists():
             self.send_error(404, "File not found")
             return
@@ -91,14 +94,24 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(data)
 
     def do_OPTIONS(self) -> None:
+        self.close_connection = True
         self.send_response(204)
+        self.send_header("Connection", "close")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.end_headers()
+
+    def do_HEAD(self) -> None:
+        self.close_connection = True
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Connection", "close")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -112,7 +125,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         if path == "/manifest.json":
             self._send_file(self.template_dir / "manifest.json", "application/manifest+json; charset=utf-8")
             return
-        if path == "/sw.js":
+        if path in ("/sw.js",):
             self._send_file(self.template_dir / "sw.js", "application/javascript; charset=utf-8")
             return
         if path == "/icon.svg":
@@ -124,6 +137,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "cspm-quick-expense",
+                    "appVersion": "v9",
                     "lanIp": get_lan_ip(),
                     "port": self.server.server_port,
                 }
@@ -167,6 +181,36 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             self._send_json(rep)
             return
 
+        if path == "/api/docket/matters":
+            query = (qs.get("query") or [""])[0]
+            matter_id = (qs.get("matterId") or [""])[0]
+            period = (qs.get("period") or [""])[0]
+            res = self.service.list_docket_matters(
+                user_id=user_id,
+                query=query,
+                matter_id=matter_id,
+                period=period,
+            )
+            self._send_json(res)
+            return
+
+        if path == "/api/payment/invoices":
+            query = (qs.get("query") or [""])[0]
+            party_type = (qs.get("partyType") or [""])[0]
+            party_value = (qs.get("partyValue") or [""])[0]
+            include_paid = (qs.get("includePaid") or ["0"])[0] in ("1", "true", "True")
+            force_refresh = (qs.get("refresh") or ["0"])[0] in ("1", "true", "True")
+            res = self.service.search_payment_invoices(
+                user_id=user_id,
+                query=query,
+                party_type=party_type,
+                party_value=party_value,
+                include_paid=include_paid,
+                force_refresh=force_refresh,
+            )
+            self._send_json(res)
+            return
+
         self.send_error(404, "Endpoint not found")
 
     def do_POST(self) -> None:
@@ -204,6 +248,42 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             user_id = str(body.get("userId") or "deborah")
             txn_id = str(body.get("transactionId") or "")
             res = self.service.delete_entry(user_id=user_id, transaction_id=txn_id)
+            if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
+                try:
+                    self.on_data_changed()
+                except Exception:
+                    pass
+            self._send_json(res)
+            return
+
+        if path == "/api/docket/save":
+            user_id = str(body.get("userId") or "cory")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.save_docket_entry(user_id=user_id, payload=payload)
+            if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
+                try:
+                    self.on_data_changed()
+                except Exception:
+                    pass
+            self._send_json(res)
+            return
+
+        if path == "/api/docket/delete":
+            user_id = str(body.get("userId") or "cory")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.delete_docket_entry(user_id=user_id, payload=payload)
+            if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
+                try:
+                    self.on_data_changed()
+                except Exception:
+                    pass
+            self._send_json(res)
+            return
+
+        if path == "/api/payment/post":
+            user_id = str(body.get("userId") or "deborah")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.post_payment_entry(user_id=user_id, payload=payload)
             if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
                 try:
                     self.on_data_changed()
@@ -409,6 +489,10 @@ def main() -> int:
         print(json.dumps(out, ensure_ascii=False))
         return 0
 
+    try:
+        service.get_bootstrap_data("deborah")
+    except Exception:
+        pass
     daemon = QuickExpenseServerDaemon(service=service, port=args.port)
     info = daemon.ensure_running()
     url = info["localUrl"]
