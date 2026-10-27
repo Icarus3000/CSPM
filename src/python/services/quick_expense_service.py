@@ -1370,37 +1370,76 @@ class QuickExpenseService:
         today_dt = date.today()
         today_iso = today_dt.isoformat()
         yest_iso = (today_dt - timedelta(days=1)).isoformat()
-        week_start_iso = (today_dt - timedelta(days=today_dt.weekday())).isoformat()
-        month_start_iso = today_dt.replace(day=1).isoformat()
+        # Calendar week starting Sunday (Sunday=0 days ago, Monday=1 day ago, ..., Saturday=6 days ago)
+        days_since_sunday = (today_dt.weekday() + 1) % 7
+        week_start_iso = (today_dt - timedelta(days=days_since_sunday)).isoformat()
+        week_days_elapsed = max(1, days_since_sunday + 1)
+        # Rolling 7 days (inclusive of today: today - 6 days .. today)
+        last7_start_iso = (today_dt - timedelta(days=6)).isoformat()
+        # Calendar month from the 1st of the month (MTD)
+        month_start_dt = today_dt.replace(day=1)
+        month_start_iso = month_start_dt.isoformat()
+        month_days_elapsed = max(1, today_dt.day)
+        # Rolling 30 days (inclusive of today: today - 29 days .. today)
+        last30_start_iso = (today_dt - timedelta(days=29)).isoformat()
+        # Full prior calendar month
+        last_month_end_dt = month_start_dt - timedelta(days=1)
+        last_month_start_dt = last_month_end_dt.replace(day=1)
+        last_month_start_iso = last_month_start_dt.isoformat()
+        last_month_end_iso = last_month_end_dt.isoformat()
+        # Year-to-Date (from Jan 1 of current year)
+        ytd_start_dt = today_dt.replace(month=1, day=1)
+        ytd_start_iso = ytd_start_dt.isoformat()
+        ytd_days_elapsed = max(1, (today_dt - ytd_start_dt).days + 1)
+        ytd_months_elapsed = max(1.0, round(ytd_days_elapsed / 30.4375, 2))
 
         period_from = ""
         period_to = ""
+        only_unbilled = False
         if period_clean == "today":
             period_from, period_to = today_iso, today_iso
         elif period_clean == "yesterday":
             period_from, period_to = yest_iso, yest_iso
         elif period_clean in ("this_week", "week"):
             period_from, period_to = week_start_iso, today_iso
-        elif period_clean in ("this_month", "month"):
+        elif period_clean in ("last_7_days", "7d", "rolling_7d"):
+            period_from, period_to = last7_start_iso, today_iso
+        elif period_clean in ("this_month", "month", "mtd"):
             period_from, period_to = month_start_iso, today_iso
+        elif period_clean in ("last_30_days", "30d", "rolling_30d"):
+            period_from, period_to = last30_start_iso, today_iso
+        elif period_clean in ("last_month",):
+            period_from, period_to = last_month_start_iso, last_month_end_iso
+        elif period_clean in ("ytd", "this_year", "year"):
+            period_from, period_to = ytd_start_iso, today_iso
+        elif period_clean in ("unbilled", "wip", "unbilled_wip"):
+            only_unbilled = True
 
-        def _empty_stat(label: str, d_from: str = "", d_to: str = "") -> Dict[str, Any]:
+        def _empty_stat(label: str, d_from: str = "", d_to: str = "", days_divisor: float = 1.0) -> Dict[str, Any]:
             return {
                 "label": label,
                 "dateFrom": d_from,
                 "dateTo": d_to,
+                "daysSpan": days_divisor,
                 "count": 0,
                 "hours": 0.0,
                 "feePreTax": 0.0,
                 "totalInclHst": 0.0,
+                "avgHoursPerDay": 0.0,
+                "avgFeePerDay": 0.0,
             }
 
         productivity: Dict[str, Dict[str, Any]] = {
-            "today": _empty_stat("Today", today_iso, today_iso),
-            "yesterday": _empty_stat("Yesterday", yest_iso, yest_iso),
-            "thisWeek": _empty_stat("This Week", week_start_iso, today_iso),
-            "thisMonth": _empty_stat("This Month", month_start_iso, today_iso),
-            "filtered": _empty_stat("Displayed Dockets", period_from, period_to),
+            "today": _empty_stat("Today", today_iso, today_iso, 1.0),
+            "yesterday": _empty_stat("Yesterday", yest_iso, yest_iso, 1.0),
+            "thisWeek": _empty_stat("This Week (from Sun)", week_start_iso, today_iso, float(week_days_elapsed)),
+            "last7Days": _empty_stat("Last 7 Days (7d Avg)", last7_start_iso, today_iso, 7.0),
+            "thisMonth": _empty_stat("This Month (from 1st)", month_start_iso, today_iso, float(month_days_elapsed)),
+            "last30Days": _empty_stat("Last 30 Days (30d Avg)", last30_start_iso, today_iso, 30.0),
+            "lastMonth": _empty_stat("Last Month", last_month_start_iso, last_month_end_iso, float(last_month_end_dt.day)),
+            "ytd": _empty_stat("Year to Date (YTD)", ytd_start_iso, today_iso, float(ytd_days_elapsed)),
+            "unbilledWip": _empty_stat("Unbilled WIP", "", today_iso, 1.0),
+            "filtered": _empty_stat("Displayed Dockets", period_from, period_to, 1.0),
         }
 
         db_path = self._resolve_sqlite_db_path()
@@ -1502,14 +1541,16 @@ class QuickExpenseService:
                     if not q_clean or q_clean in hay:
                         matters.append(item)
 
-                # Compute productivity metrics for Today, Yesterday, This Week, This Month across all matters
+                # Compute productivity metrics across all 6 core horizons + Yesterday, Last Month & Unbilled WIP
+                earliest_stat_iso = min(ytd_start_iso, last_month_start_iso, last30_start_iso, week_start_iso, yest_iso)
                 cur.execute(
                     """
-                    SELECT date, hours, COALESCE(rate, 475.0), COALESCE(share_pct, 100.0), COALESCE(total_incl_hst, 0.0)
+                    SELECT date, hours, COALESCE(rate, 475.0), COALESCE(share_pct, 100.0),
+                           COALESCE(total_incl_hst, 0.0), COALESCE(is_billed, 0), COALESCE(status, 'Draft')
                     FROM TimeEntry
-                    WHERE date >= ?
+                    WHERE date >= ? OR COALESCE(is_billed, 0) = 0
                     """,
-                    (min(month_start_iso, week_start_iso, yest_iso),),
+                    (earliest_stat_iso,),
                 )
                 for p_row in cur.fetchall():
                     d_iso = str(p_row[0] or "")[:10]
@@ -1518,14 +1559,25 @@ class QuickExpenseService:
                     s_val = float(p_row[3] or 100.0)
                     fee_val = round(h_val * r_val * (s_val / 100.0), 2)
                     tot_val = round(float(p_row[4] or 0.0), 2) or round(fee_val * 1.13, 2)
+                    is_billed_row = bool(p_row[5]) or str(p_row[6] or "").strip().lower() == "billed"
+                    if not is_billed_row:
+                        _accum_stat(productivity["unbilledWip"], h_val, fee_val, tot_val)
                     if d_iso == today_iso:
                         _accum_stat(productivity["today"], h_val, fee_val, tot_val)
                     if d_iso == yest_iso:
                         _accum_stat(productivity["yesterday"], h_val, fee_val, tot_val)
                     if week_start_iso <= d_iso <= today_iso:
                         _accum_stat(productivity["thisWeek"], h_val, fee_val, tot_val)
+                    if last7_start_iso <= d_iso <= today_iso:
+                        _accum_stat(productivity["last7Days"], h_val, fee_val, tot_val)
                     if month_start_iso <= d_iso <= today_iso:
                         _accum_stat(productivity["thisMonth"], h_val, fee_val, tot_val)
+                    if last30_start_iso <= d_iso <= today_iso:
+                        _accum_stat(productivity["last30Days"], h_val, fee_val, tot_val)
+                    if last_month_start_iso <= d_iso <= last_month_end_iso:
+                        _accum_stat(productivity["lastMonth"], h_val, fee_val, tot_val)
+                    if ytd_start_iso <= d_iso <= today_iso:
+                        _accum_stat(productivity["ytd"], h_val, fee_val, tot_val)
 
                 # Recent matters from TimeEntry (corrected primary key column: time_id)
                 cur.execute(
@@ -1566,9 +1618,11 @@ class QuickExpenseService:
                 if period_to:
                     where_clauses.append("date <= ?")
                     sql_params.append(period_to)
+                if only_unbilled:
+                    where_clauses.append("(COALESCE(is_billed, 0) = 0 AND LOWER(COALESCE(status, 'Draft')) != 'billed')")
 
                 where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-                limit_rows = 100 if (period_from or target_matter_ref) else 40
+                limit_rows = 800 if (period_from or only_unbilled or target_matter_ref) else 50
                 cur.execute(
                     f"""
                     SELECT matter_id, matter_name, time_id, date, client_name, hours, rate,
@@ -1675,15 +1729,27 @@ class QuickExpenseService:
                             matched_matter,
                         )
                         if compute_excel_prod:
+                            if not is_billed_flag:
+                                _accum_stat(productivity["unbilledWip"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
                             if d_iso == today_iso:
                                 _accum_stat(productivity["today"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
                             if d_iso == yest_iso:
                                 _accum_stat(productivity["yesterday"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
                             if week_start_iso <= d_iso <= today_iso:
                                 _accum_stat(productivity["thisWeek"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
+                            if last7_start_iso <= d_iso <= today_iso:
+                                _accum_stat(productivity["last7Days"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
                             if month_start_iso <= d_iso <= today_iso:
                                 _accum_stat(productivity["thisMonth"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
+                            if last30_start_iso <= d_iso <= today_iso:
+                                _accum_stat(productivity["last30Days"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
+                            if last_month_start_iso <= d_iso <= last_month_end_iso:
+                                _accum_stat(productivity["lastMonth"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
+                            if ytd_start_iso <= d_iso <= today_iso:
+                                _accum_stat(productivity["ytd"], d_item["hours"], d_item["feePreTax"], d_item["totalInclHst"])
                         if target_keys and m_id_val.upper() not in target_keys:
+                            continue
+                        if only_unbilled and is_billed_flag:
                             continue
                         if period_from and d_iso < period_from:
                             continue
@@ -1691,7 +1757,8 @@ class QuickExpenseService:
                             continue
                         matched_rows.append(d_item)
                     matched_rows.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
-                    recent_dockets = matched_rows[:60]
+                    max_excel_rows = 800 if (period_from or only_unbilled or target_matter_ref) else 50
+                    recent_dockets = matched_rows[:max_excel_rows]
                 except Exception:
                     pass
 
@@ -1703,6 +1770,14 @@ class QuickExpenseService:
                 float(d_item.get("totalInclHst") or 0.0),
             )
 
+        for key_b, b_stat in productivity.items():
+            d_span = max(1.0, float(b_stat.get("daysSpan") or 1.0))
+            b_stat["avgHoursPerDay"] = round(float(b_stat.get("hours") or 0.0) / d_span, 1)
+            b_stat["avgFeePerDay"] = round(float(b_stat.get("feePreTax") or 0.0) / d_span, 2)
+            if key_b == "ytd":
+                b_stat["avgHoursPerMonth"] = round(float(b_stat.get("hours") or 0.0) / ytd_months_elapsed, 1)
+                b_stat["avgFeePerMonth"] = round(float(b_stat.get("feePreTax") or 0.0) / ytd_months_elapsed, 2)
+
         matters.sort(
             key=lambda m: (
                 str(m.get("clientName") or "").lower(),
@@ -1711,11 +1786,12 @@ class QuickExpenseService:
             )
         )
 
+        max_ret_rows = 800 if (period_from or only_unbilled or target_matter_ref) else 50
         return {
             "ok": True,
             "matters": matters,
             "recentMatters": recent_matters[:8],
-            "recentDockets": recent_dockets[:60],
+            "recentDockets": recent_dockets[:max_ret_rows],
             "productivity": productivity,
         }
 

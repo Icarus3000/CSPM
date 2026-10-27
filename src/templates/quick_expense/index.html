@@ -1160,33 +1160,61 @@
 
         <!-- ================= DOCKET TIME SECTION (Cory-Only) ================= -->
         <div id="docketSection" style="display: none;">
-          <!-- Live Productivity Summary Strip (Today / Yesterday / This Week / This Month) -->
+          <!-- Live Productivity Report (6 Core Horizons — Tap any card to filter dockets) -->
           <div id="docketProductivityBox" style="margin-bottom: 12px; padding: 12px; border-radius: 12px; background: #EFF6FF; border: 2px solid #93C5FD;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;">
-              <span style="font-size: 0.84rem; font-weight: 800; color: #1E3A8A; text-transform: uppercase;">
-                📊 Mini Productivity Report (Tap any box to filter dockets)
+              <span style="font-size: 0.86rem; font-weight: 800; color: #1E3A8A; text-transform: uppercase;">
+                📊 Productivity Report (Tap any box to view dockets)
               </span>
             </div>
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px;">
+              <!-- 1. Today -->
               <div onclick="openRecentDocketsWithFilter('ALL', 'today')" style="background: #FFFFFF; border: 2px solid #2563EB; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
-                <div style="font-size: 0.74rem; font-weight: 800; color: #1D4ED8; text-transform: uppercase;">📅 Billed Today</div>
-                <div id="prodTodayMain" style="font-size: 1.06rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
-                <div id="prodTodaySub" style="font-size: 0.74rem; font-weight: 700; color: var(--muted);">0 dockets · $0.00 w/ HST</div>
+                <div id="prodTodayTitle" style="font-size: 0.72rem; font-weight: 800; color: #1D4ED8; text-transform: uppercase; display: flex; align-items: center; gap: 5px;">
+                  Billed Today
+                </div>
+                <div id="prodTodayMain" style="font-size: 1.04rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
+                <div id="prodTodaySub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">0 dockets · $0.00 w/ HST</div>
               </div>
-              <div onclick="openRecentDocketsWithFilter('ALL', 'yesterday')" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
-                <div style="font-size: 0.74rem; font-weight: 800; color: var(--muted); text-transform: uppercase;">⏮️ Yesterday</div>
-                <div id="prodYesterdayMain" style="font-size: 1.06rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
-                <div id="prodYesterdaySub" style="font-size: 0.74rem; font-weight: 700; color: var(--muted);">0 dockets · $0.00 w/ HST</div>
-              </div>
+              <!-- 2. This Week (Sun-Sat) -->
               <div onclick="openRecentDocketsWithFilter('ALL', 'this_week')" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
-                <div style="font-size: 0.74rem; font-weight: 800; color: var(--muted); text-transform: uppercase;">🗓️ This Week</div>
-                <div id="prodWeekMain" style="font-size: 1.06rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
-                <div id="prodWeekSub" style="font-size: 0.74rem; font-weight: 700; color: var(--muted);">0 dockets · $0.00 w/ HST</div>
+                <div id="prodWeekTitle" style="font-size: 0.72rem; font-weight: 800; color: var(--muted); text-transform: uppercase;">
+                  🗓️ This Week (Sun–Sat)
+                </div>
+                <div id="prodWeekMain" style="font-size: 1.04rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
+                <div id="prodWeekSub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">0 dockets · Yesterday: $0.00</div>
               </div>
+              <!-- 3. Last 7 Days (Rolling 7d + Moving Avg) -->
+              <div onclick="openRecentDocketsWithFilter('ALL', 'last_7_days')" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: var(--muted); text-transform: uppercase;">
+                  📈 Last 7 Days (Rolling)
+                </div>
+                <div id="prodLast7Main" style="font-size: 1.04rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
+                <div id="prodLast7Sub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">7d Avg: 0.0h/d · $0/d</div>
+              </div>
+              <!-- 4. This Month (From 1st of Month) -->
               <div onclick="openRecentDocketsWithFilter('ALL', 'this_month')" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
-                <div style="font-size: 0.74rem; font-weight: 800; color: var(--muted); text-transform: uppercase;">📆 This Month</div>
-                <div id="prodMonthMain" style="font-size: 1.06rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
-                <div id="prodMonthSub" style="font-size: 0.74rem; font-weight: 700; color: var(--muted);">0 dockets · $0.00 w/ HST</div>
+                <div style="font-size: 0.72rem; font-weight: 800; color: var(--muted); text-transform: uppercase;">
+                  📆 This Month (From 1st)
+                </div>
+                <div id="prodMonthMain" style="font-size: 1.04rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
+                <div id="prodMonthSub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">0 dockets · MTD Avg: $0/d</div>
+              </div>
+              <!-- 5. Last 30 Days (Rolling 30d + Moving Avg) -->
+              <div onclick="openRecentDocketsWithFilter('ALL', 'last_30_days')" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: var(--muted); text-transform: uppercase;">
+                  📊 Last 30 Days (Rolling)
+                </div>
+                <div id="prodLast30Main" style="font-size: 1.04rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
+                <div id="prodLast30Sub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">30d Avg: 0.0h/d · $0/d</div>
+              </div>
+              <!-- 6. Year to Date (YTD from Jan 1) -->
+              <div onclick="openRecentDocketsWithFilter('ALL', 'ytd')" style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 9px 10px; cursor: pointer;">
+                <div style="font-size: 0.72rem; font-weight: 800; color: #0F766E; text-transform: uppercase;">
+                  🏆 Year to Date (YTD)
+                </div>
+                <div id="prodYtdMain" style="font-size: 1.04rem; font-weight: 800; color: var(--ink); margin-top: 2px;">0.0h · $0.00</div>
+                <div id="prodYtdSub" style="font-size: 0.72rem; font-weight: 700; color: var(--muted);">0 dockets · WIP: $0.00</div>
               </div>
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -1314,10 +1342,15 @@
               <!-- Period Filter Pills -->
               <div id="docketPeriodBar" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
                 <button type="button" class="pill-btn active" data-dperiod="recent" onclick="setRecentDocketsPeriod('recent')" style="padding: 5px 10px; font-size: 0.76rem;">🕒 Latest</button>
-                <button type="button" class="pill-btn" data-dperiod="today" onclick="setRecentDocketsPeriod('today')" style="padding: 5px 10px; font-size: 0.76rem;">📅 Today</button>
+                <button type="button" class="pill-btn" data-dperiod="today" onclick="setRecentDocketsPeriod('today')" style="padding: 5px 10px; font-size: 0.76rem;">⚡ Today</button>
                 <button type="button" class="pill-btn" data-dperiod="yesterday" onclick="setRecentDocketsPeriod('yesterday')" style="padding: 5px 10px; font-size: 0.76rem;">⏮️ Yesterday</button>
-                <button type="button" class="pill-btn" data-dperiod="this_week" onclick="setRecentDocketsPeriod('this_week')" style="padding: 5px 10px; font-size: 0.76rem;">🗓️ This Week</button>
-                <button type="button" class="pill-btn" data-dperiod="this_month" onclick="setRecentDocketsPeriod('this_month')" style="padding: 5px 10px; font-size: 0.76rem;">📆 This Month</button>
+                <button type="button" class="pill-btn" data-dperiod="this_week" onclick="setRecentDocketsPeriod('this_week')" style="padding: 5px 10px; font-size: 0.76rem;">🗓️ This Week (Sun–Sat)</button>
+                <button type="button" class="pill-btn" data-dperiod="last_7_days" onclick="setRecentDocketsPeriod('last_7_days')" style="padding: 5px 10px; font-size: 0.76rem;">📈 Last 7d</button>
+                <button type="button" class="pill-btn" data-dperiod="this_month" onclick="setRecentDocketsPeriod('this_month')" style="padding: 5px 10px; font-size: 0.76rem;">📆 This Month (1st+)</button>
+                <button type="button" class="pill-btn" data-dperiod="last_30_days" onclick="setRecentDocketsPeriod('last_30_days')" style="padding: 5px 10px; font-size: 0.76rem;">📊 Last 30d</button>
+                <button type="button" class="pill-btn" data-dperiod="last_month" onclick="setRecentDocketsPeriod('last_month')" style="padding: 5px 10px; font-size: 0.76rem;">⏪ Last Month</button>
+                <button type="button" class="pill-btn" data-dperiod="ytd" onclick="setRecentDocketsPeriod('ytd')" style="padding: 5px 10px; font-size: 0.76rem;">🏆 YTD</button>
+                <button type="button" class="pill-btn" data-dperiod="unbilled" onclick="setRecentDocketsPeriod('unbilled')" style="padding: 5px 10px; font-size: 0.76rem;">💼 Unbilled WIP</button>
               </div>
 
               <!-- Subtotal Bar for Displayed Dockets -->
@@ -1522,7 +1555,7 @@
       return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
     }
 
-    const APP_BUILD_VERSION = "v9";
+    const APP_BUILD_VERSION = "v10";
 
     window.addEventListener("DOMContentLoaded", async () => {
       if ("serviceWorker" in navigator) {
@@ -1533,7 +1566,7 @@
             window.location.reload();
           }
         });
-        navigator.serviceWorker.register("/sw.js?v=9").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=10").then((reg) => {
           reg.update().catch(() => {});
         }).catch(() => {});
       }
@@ -2896,6 +2929,32 @@
       } catch (e) {}
     }
 
+    function createCalendarDateBadge(dateIso, compact) {
+      const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+      const raw = String(dateIso || "").slice(0, 10);
+      const parts = raw.split("-");
+      let monthStr = "DATE";
+      let dayStr = "--";
+      if (parts.length === 3) {
+        const mIdx = parseInt(parts[1], 10) - 1;
+        const dNum = parseInt(parts[2], 10);
+        if (mIdx >= 0 && mIdx < 12) monthStr = MONTHS[mIdx];
+        if (!isNaN(dNum)) dayStr = String(dNum);
+      }
+      const badge = document.createElement("span");
+      const w = compact ? "24px" : "29px";
+      badge.style.cssText = `display:inline-flex; flex-direction:column; align-items:center; justify-content:center; width:${w}; border-radius:5px; overflow:hidden; border:1.5px solid #2563EB; background:#FFFFFF; line-height:1; flex-shrink:0; vertical-align:middle; box-shadow:0 1px 2px rgba(0,0,0,0.06);`;
+      const topBar = document.createElement("span");
+      topBar.style.cssText = `width:100%; background:#2563EB; color:#FFFFFF; font-size:${compact ? "0.46rem" : "0.52rem"}; font-weight:900; text-align:center; padding:1.5px 0; letter-spacing:0.3px;`;
+      topBar.textContent = monthStr;
+      const dayBox = document.createElement("span");
+      dayBox.style.cssText = `color:#0F172A; font-size:${compact ? "0.68rem" : "0.78rem"}; font-weight:900; text-align:center; padding:1.5px 0;`;
+      dayBox.textContent = dayStr;
+      badge.appendChild(topBar);
+      badge.appendChild(dayBox);
+      return badge;
+    }
+
     function renderDocketProductivity(prod) {
       if (!prod) return;
       const fmtMoney = (v) =>
@@ -2904,21 +2963,77 @@
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         });
-      const fillBox = (mainId, subId, stat) => {
-        if (!stat) return;
-        const mEl = document.getElementById(mainId);
-        const sEl = document.getElementById(subId);
-        const hrs = Number(stat.hours || 0).toFixed(1);
-        const fee = fmtMoney(stat.feePreTax || 0);
-        const tot = fmtMoney(stat.totalInclHst || 0);
-        const cnt = Number(stat.count || 0);
-        if (mEl) mEl.textContent = `${hrs}h · ${fee}`;
-        if (sEl) sEl.textContent = `${cnt} docket${cnt === 1 ? "" : "s"} · ${tot} w/ HST`;
-      };
-      fillBox("prodTodayMain", "prodTodaySub", prod.today);
-      fillBox("prodYesterdayMain", "prodYesterdaySub", prod.yesterday);
-      fillBox("prodWeekMain", "prodWeekSub", prod.thisWeek);
-      fillBox("prodMonthMain", "prodMonthSub", prod.thisMonth);
+      const fmtShort = (v) =>
+        "$" +
+        Math.round(Number(v || 0)).toLocaleString("en-CA");
+
+      // 1. Today (with live dynamic calendar icon showing today's day number instead of '17')
+      if (prod.today) {
+        const t = prod.today;
+        const tTitle = document.getElementById("prodTodayTitle");
+        if (tTitle) {
+          tTitle.innerHTML = "";
+          tTitle.appendChild(createCalendarDateBadge(t.dateTo || new Date().toISOString().slice(0, 10), true));
+          const txt = document.createElement("span");
+          txt.textContent = "Billed Today";
+          tTitle.appendChild(txt);
+        }
+        const mEl = document.getElementById("prodTodayMain");
+        const sEl = document.getElementById("prodTodaySub");
+        const cnt = Number(t.count || 0);
+        if (mEl) mEl.textContent = `${Number(t.hours || 0).toFixed(1)}h · ${fmtMoney(t.feePreTax)}`;
+        if (sEl) sEl.textContent = `${cnt} docket${cnt === 1 ? "" : "s"} · ${fmtMoney(t.totalInclHst)} w/ HST`;
+      }
+
+      // 2. This Week (Sun–Sat) + Yesterday reference
+      if (prod.thisWeek) {
+        const w = prod.thisWeek;
+        const y = prod.yesterday || {};
+        const mEl = document.getElementById("prodWeekMain");
+        const sEl = document.getElementById("prodWeekSub");
+        const cnt = Number(w.count || 0);
+        if (mEl) mEl.textContent = `${Number(w.hours || 0).toFixed(1)}h · ${fmtMoney(w.feePreTax)}`;
+        if (sEl) sEl.textContent = `${cnt} docket${cnt === 1 ? "" : "s"} · Yesterday: ${Number(y.hours || 0).toFixed(1)}h (${fmtShort(y.feePreTax)})`;
+      }
+
+      // 3. Last 7 Days (Rolling 7d + Moving Average)
+      if (prod.last7Days) {
+        const l7 = prod.last7Days;
+        const mEl = document.getElementById("prodLast7Main");
+        const sEl = document.getElementById("prodLast7Sub");
+        if (mEl) mEl.textContent = `${Number(l7.hours || 0).toFixed(1)}h · ${fmtMoney(l7.feePreTax)}`;
+        if (sEl) sEl.textContent = `7d Avg: ${Number(l7.avgHoursPerDay || 0).toFixed(1)}h/d · ${fmtShort(l7.avgFeePerDay)}/d (${l7.count || 0} dockets)`;
+      }
+
+      // 4. This Month (From 1st of Month + MTD Daily Average)
+      if (prod.thisMonth) {
+        const m = prod.thisMonth;
+        const mEl = document.getElementById("prodMonthMain");
+        const sEl = document.getElementById("prodMonthSub");
+        if (mEl) mEl.textContent = `${Number(m.hours || 0).toFixed(1)}h · ${fmtMoney(m.feePreTax)}`;
+        if (sEl) sEl.textContent = `${m.count || 0} dockets · MTD Avg: ${Number(m.avgHoursPerDay || 0).toFixed(1)}h/d (${fmtShort(m.avgFeePerDay)}/d)`;
+      }
+
+      // 5. Last 30 Days (Rolling 30d + Moving Average + Last Month comparison)
+      if (prod.last30Days) {
+        const l30 = prod.last30Days;
+        const lm = prod.lastMonth || {};
+        const mEl = document.getElementById("prodLast30Main");
+        const sEl = document.getElementById("prodLast30Sub");
+        if (mEl) mEl.textContent = `${Number(l30.hours || 0).toFixed(1)}h · ${fmtMoney(l30.feePreTax)}`;
+        if (sEl) sEl.textContent = `30d Avg: ${Number(l30.avgHoursPerDay || 0).toFixed(1)}h/d (${fmtShort(l30.avgFeePerDay)}/d) · Last Mo: ${fmtShort(lm.feePreTax)}`;
+      }
+
+      // 6. Year to Date (YTD from Jan 1 + Unbilled WIP)
+      if (prod.ytd) {
+        const ytd = prod.ytd;
+        const wip = prod.unbilledWip || {};
+        const mEl = document.getElementById("prodYtdMain");
+        const sEl = document.getElementById("prodYtdSub");
+        if (mEl) mEl.textContent = `${Number(ytd.hours || 0).toFixed(1)}h · ${fmtMoney(ytd.feePreTax)}`;
+        if (sEl) sEl.textContent = `${ytd.count || 0} dockets · Avg ${fmtShort(ytd.avgFeePerMonth)}/mo · Unbilled WIP: ${fmtShort(wip.feePreTax)}`;
+      }
+
       updateTodayBadge();
     }
 
@@ -3247,8 +3362,12 @@
         topRow.style.cssText = "display:flex; justify-content:space-between; align-items:center; font-weight:800; gap:8px; flex-wrap:wrap;";
 
         const leftSpan = document.createElement("span");
+        leftSpan.style.cssText = "display:inline-flex; align-items:center; gap:7px;";
+        leftSpan.appendChild(createCalendarDateBadge(d.date, false));
+        const leftText = document.createElement("span");
         const matterBadge = d.matterNumber ? ` (${d.matterNumber})` : "";
-        leftSpan.textContent = `📅 ${d.date} · ${d.clientName || d.matterNumber || ""}${matterBadge}`;
+        leftText.textContent = `${d.date} · ${d.clientName || d.matterNumber || ""}${matterBadge}`;
+        leftSpan.appendChild(leftText);
 
         const feeVal = d.feePreTax !== undefined
           ? Number(d.feePreTax)
