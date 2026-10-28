@@ -13,6 +13,11 @@ from uuid import uuid4
 from repositories.excel_repo import ExcelRepo
 from repositories.finance_repo import FinanceRepo
 from services.paths import AppPaths
+from services.quick_expense_session import (
+    SessionTracker,
+    format_old_school_session_report,
+    parse_client_device,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -433,6 +438,7 @@ class QuickExpenseService:
             self.paths = paths
         self.repo = repo or ExcelRepo(self.paths)
         self.finance_repo = FinanceRepo(self.repo)
+        self.session_tracker = SessionTracker(self.paths)
         self._lock = threading.RLock()
         self._cached_raw_accounts: Optional[List[Dict[str, Any]]] = None
         self._cached_raw_categories: Optional[List[Dict[str, Any]]] = None
@@ -535,6 +541,10 @@ class QuickExpenseService:
                 return {"ok": False, "message": "Incorrect PIN for Deborah."}
             if not entered_pin and expected_deb_pin:
                 return {"ok": False, "requiresPin": True, "message": "Please enter Deborah's PIN."}
+            try:
+                self.session_tracker.record_event("deborah", "AUTH_LOGIN", "Operator authenticated via PIN (Deborah)")
+            except Exception:
+                pass
             return {
                 "ok": True,
                 "user": {
@@ -543,6 +553,7 @@ class QuickExpenseService:
                     "icon": "👩‍⚕️",
                     "role": "Family, Deborah OT & Legal Practice Entry",
                     "isCory": False,
+                    "hasDocketAccess": False,
                 },
             }
 
@@ -552,6 +563,10 @@ class QuickExpenseService:
                 return {"ok": False, "message": "Incorrect PIN for Cory."}
             if not entered_pin and expected_cory_pin:
                 return {"ok": False, "requiresPin": True, "message": "Please enter Cory's PIN."}
+            try:
+                self.session_tracker.record_event("cory", "AUTH_LOGIN", "Operator authenticated via PIN (Cory)")
+            except Exception:
+                pass
             return {
                 "ok": True,
                 "user": {
@@ -560,6 +575,7 @@ class QuickExpenseService:
                     "icon": "⚖️",
                     "role": "Full Access (All Accounts & Entities)",
                     "isCory": True,
+                    "hasDocketAccess": True,
                 },
             }
 
@@ -571,6 +587,10 @@ class QuickExpenseService:
     @staticmethod
     def _is_cory(user_id: str) -> bool:
         return str(user_id or "").strip().lower() == "cory"
+
+    @classmethod
+    def _has_docket_access(cls, user_id: str) -> bool:
+        return cls._is_cory(user_id)
 
     def _is_account_visible_to_user(self, account_code: str, user_id: str) -> bool:
         code = str(account_code or "").strip().upper()
@@ -1086,6 +1106,38 @@ class QuickExpenseService:
         msg_suffix = ""
         if receipt_meta and receipt_meta.get("folderCategory"):
             msg_suffix = f" · 🧾 Receipt filed in {receipt_meta['folderCategory']}"
+
+        try:
+            is_amend = bool(data.get("isEditingExisting") or (txn_id and not str(txn_id).startswith("TXN-NEW")))
+            item_record = {
+                "transactionId": txn_id,
+                "txnDate": txn_date,
+                "mode": mode,
+                "type": txn_type,
+                "streamId": stream_id,
+                "streamLabel": str(stream.get("label") or stream_id).replace("—", "-"),
+                "fromAccount": from_account,
+                "fromAccountLabel": str(ACCOUNT_UI_META.get(from_account, {}).get("name", from_account)).replace("—", "-"),
+                "toAccount": to_account,
+                "toAccountLabel": str(ACCOUNT_UI_META.get(to_account, {}).get("name", to_account)).replace("—", "-") if to_account else "",
+                "payee": payee,
+                "categoryCode": category_code,
+                "categoryLabel": str(cats_lookup.get(category_code, category_code)).replace("—", "-"),
+                "amount": gross_amount,
+                "taxAmount": tax_amount,
+                "netAmount": round(gross_amount - tax_amount, 2),
+                "notes": str(stored_notes or details).replace("—", "-"),
+                "receiptPath": str(receipt_meta.get("savedPath") or "").replace("—", "-") if receipt_meta else "",
+                "receiptFileName": str(receipt_meta.get("fileName") or "").replace("—", "-") if receipt_meta else "",
+                "clientMatter": also_bill_matter,
+                "shlCredit": bool(shl_credit_recorded or (also_bill_matter and mode == "Expense")),
+            }
+            ev_code = "TXN_AMEND" if is_amend else "TXN_POST_NEW"
+            ev_desc = f"{'Amended' if is_amend else 'Posted'} {mode}: {payee} (${gross_amount:,.2f}) [{stream_id}]"
+            self.session_tracker.record_event(uid, ev_code, ev_desc, item_data=item_record)
+        except Exception as sess_exc:
+            logger.debug("Session event record warning: %s", sess_exc)
+
         return {
             "ok": True,
             "transactionId": txn_id,
@@ -1124,6 +1176,11 @@ class QuickExpenseService:
 
         try:
             res = self.finance_repo.delete_transaction(transaction_id)
+            if res.get("ok"):
+                try:
+                    self.session_tracker.record_event(uid, "TXN_DELETE", f"Deleted transaction {transaction_id}")
+                except Exception:
+                    pass
             return res
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
@@ -1520,6 +1577,16 @@ class QuickExpenseService:
             },
             "entries": entries,
         }
+        try:
+            self.session_tracker.record_event(
+                uid,
+                "REPORT_VIEW",
+                f"Viewed report: Period={period}, Stream={stream_id}",
+                item_data={"period": period, "streamId": stream_id, "dateFrom": date_from, "dateTo": date_to},
+            )
+        except Exception:
+            pass
+        return res
 
     # ------------------------------------------------------------------
     # 7. Docketing (Cory-Only) — Matters Lookup & Dual CSPM + Legacy Dockets Sync
@@ -2023,6 +2090,11 @@ class QuickExpenseService:
                 b_stat["avgHoursPerMonth"] = round(float(b_stat.get("hours") or 0.0) / ytd_months_elapsed, 1)
                 b_stat["avgFeePerMonth"] = round(float(b_stat.get("feePreTax") or 0.0) / ytd_months_elapsed, 2)
 
+        productivity["annualProjection"] = self.compute_annual_earnings_projection(
+            ytd_stat=productivity["ytd"],
+            today_dt=today_dt,
+        )
+
         matters.sort(
             key=lambda m: (
                 str(m.get("clientName") or "").lower(),
@@ -2038,6 +2110,251 @@ class QuickExpenseService:
             "recentMatters": recent_matters[:8],
             "recentDockets": recent_dockets[:max_ret_rows],
             "productivity": productivity,
+        }
+
+    @staticmethod
+    def _estimate_2026_personal_tax_and_cpp(net_business_income: float) -> Dict[str, float]:
+        """Calculate 2026 Canadian Federal + Ontario personal income tax, Ontario Surtax,
+        Ontario Health Premium, and Self-Employed CPP (CPP1 + CPP2) on T2125 net income."""
+        net_inc = max(0.0, float(net_business_income or 0.0))
+        if net_inc <= 0.0:
+            return {
+                "cppTotal": 0.0,
+                "cppDeduction": 0.0,
+                "federalTax": 0.0,
+                "ontarioTax": 0.0,
+                "totalPersonalTaxAndCpp": 0.0,
+            }
+
+        # 1. 2026 Self-Employed CPP1 ($3,500 .. $71,300 @ 11.9%) & CPP2 ($71,300 .. $81,200 @ 8.0%)
+        cpp1_earn = min(max(0.0, net_inc - 3500.0), 71300.0 - 3500.0)
+        cpp1_total = round(cpp1_earn * 0.119, 2)
+        cpp2_earn = min(max(0.0, net_inc - 71300.0), 81200.0 - 71300.0)
+        cpp2_total = round(cpp2_earn * 0.08, 2)
+        cpp_total = round(cpp1_total + cpp2_total, 2)
+        cpp_deduction = round(cpp1_total * 0.5 + cpp2_total, 2)
+        cpp_credit_base = round(cpp1_total * 0.5, 2)
+
+        taxable = max(0.0, net_inc - cpp_deduction)
+
+        # 2. 2026 Federal Progressive Tax Brackets (14.5% lowest rate)
+        fed_brackets = [
+            (57375.0, 0.145),
+            (114750.0, 0.205),
+            (177882.0, 0.26),
+            (253414.0, 0.29),
+            (float("inf"), 0.33),
+        ]
+        fed_gross = 0.0
+        prev = 0.0
+        for cap, rate in fed_brackets:
+            if taxable <= prev:
+                break
+            slice_amt = min(taxable, cap) - prev
+            fed_gross += slice_amt * rate
+            prev = cap
+        # Federal Basic Personal Amount (phased from $16,129 down to $14,538 above $177,882)
+        if taxable <= 177882.0:
+            fed_bpa = 16129.0
+        elif taxable >= 253414.0:
+            fed_bpa = 14538.0
+        else:
+            fed_bpa = 16129.0 - (16129.0 - 14538.0) * ((taxable - 177882.0) / (253414.0 - 177882.0))
+        fed_credits = (fed_bpa + cpp_credit_base) * 0.145
+        fed_tax = round(max(0.0, fed_gross - fed_credits), 2)
+
+        # 3. 2026 Ontario Progressive Brackets + Surtax + Ontario Health Premium
+        on_brackets = [
+            (52886.0, 0.0505),
+            (105775.0, 0.0915),
+            (150000.0, 0.1116),
+            (220000.0, 0.1216),
+            (float("inf"), 0.1316),
+        ]
+        on_gross = 0.0
+        prev_on = 0.0
+        for cap, rate in on_brackets:
+            if taxable <= prev_on:
+                break
+            slice_amt = min(taxable, cap) - prev_on
+            on_gross += slice_amt * rate
+            prev_on = cap
+        on_bpa = 12747.0
+        on_basic = max(0.0, on_gross - (on_bpa + cpp_credit_base) * 0.0505)
+        on_surtax = 0.0
+        if on_basic > 5710.0:
+            on_surtax += (on_basic - 5710.0) * 0.20
+        if on_basic > 7307.0:
+            on_surtax += (on_basic - 7307.0) * 0.36
+        if taxable <= 20000.0:
+            ohp = 0.0
+        elif taxable <= 36000.0:
+            ohp = min(300.0, (taxable - 20000.0) * 0.06)
+        elif taxable <= 48000.0:
+            ohp = min(450.0, 300.0 + (taxable - 36000.0) * 0.06)
+        elif taxable <= 72000.0:
+            ohp = min(600.0, 450.0 + (taxable - 48000.0) * 0.25)
+        elif taxable <= 200000.0:
+            ohp = min(750.0, 600.0 + (taxable - 72000.0) * 0.25)
+        else:
+            ohp = min(900.0, 750.0 + (taxable - 200000.0) * 0.25)
+        on_tax = round(on_basic + on_surtax + ohp, 2)
+
+        total_tax_cpp = round(fed_tax + on_tax + cpp_total, 2)
+        return {
+            "cppTotal": cpp_total,
+            "cppDeduction": cpp_deduction,
+            "federalTax": fed_tax,
+            "ontarioTax": on_tax,
+            "totalPersonalTaxAndCpp": total_tax_cpp,
+        }
+
+    def compute_annual_earnings_projection(
+        self,
+        ytd_stat: Dict[str, Any],
+        today_dt: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """Compute full-year projected gross earnings (with & without HST),
+        CSPM logged vs. estimated annual practice expenses, and estimated net earnings
+        after expenses and taxes (both with Nov 1 PC cutover and 100% personal T2125)."""
+        t_dt = today_dt or date.today()
+        year = t_dt.year
+        is_leap = (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0))
+        days_in_year = 366 if is_leap else 365
+        days_elapsed = max(1, (t_dt - date(year, 1, 1)).days + 1)
+        days_remaining = max(0, days_in_year - days_elapsed)
+        pct_year_elapsed = round((days_elapsed / float(days_in_year)) * 100.0, 1)
+        annual_factor = float(days_in_year) / float(days_elapsed)
+
+        # Nov 1, 2026 Cutover split (Jan 1 - Oct 31 SOLE_PROP vs Nov 1 - Dec 31 PC)
+        cutover_dt = date(year, 11, 1)
+        sole_prop_days = max(0, (cutover_dt - date(year, 1, 1)).days)
+        pc_days = max(0, days_in_year - sole_prop_days)
+        sole_prop_share = round(sole_prop_days / float(days_in_year), 6)
+        pc_share = round(pc_days / float(days_in_year), 6)
+
+        ytd_hours = round(float(ytd_stat.get("hours") or 0.0), 1)
+        ytd_gross_no_hst = round(float(ytd_stat.get("feePreTax") or 0.0), 2)
+        ytd_gross_with_hst = round(float(ytd_stat.get("totalInclHst") or 0.0), 2)
+        if ytd_gross_with_hst <= 0.0 and ytd_gross_no_hst > 0.0:
+            ytd_gross_with_hst = round(ytd_gross_no_hst * 1.13, 2)
+        ytd_hst_collected = round(max(0.0, ytd_gross_with_hst - ytd_gross_no_hst), 2)
+
+        proj_hours = round(ytd_hours * annual_factor, 1)
+        proj_gross_no_hst = round(ytd_gross_no_hst * annual_factor, 2)
+        proj_gross_with_hst = round(ytd_gross_with_hst * annual_factor, 2)
+        proj_hst_collected = round(max(0.0, proj_gross_with_hst - proj_gross_no_hst), 2)
+
+        # Gather CSPM logged YTD practice expenses (CORY_SOLE_PROP + CORY_PC + Oct 17 SHL incorporation outlays)
+        logged_sp_pre = 0.0
+        logged_sp_itc = 0.0
+        logged_pc_pre = 749.95  # Verified Oct 17, 2026 PC startup outlays (GIFI 2781)
+        logged_pc_itc = 45.50
+        try:
+            ytd_entries = self.list_entries(user_id="cory", period="ytd")
+            for e in ytd_entries:
+                if e.get("mode") != "Expense":
+                    continue
+                sid = str(e.get("streamId") or "")
+                amt = float(e.get("amount") or 0.0)
+                hst = float(e.get("taxAmount") or 0.0)
+                pre = round(max(0.0, amt - hst), 2)
+                if sid == "CORY_SOLE_PROP":
+                    logged_sp_pre = round(logged_sp_pre + pre, 2)
+                    logged_sp_itc = round(logged_sp_itc + hst, 2)
+                elif sid == "CORY_PC":
+                    logged_pc_pre = round(logged_pc_pre + pre, 2)
+                    logged_pc_itc = round(logged_pc_itc + hst, 2)
+        except Exception:
+            pass
+
+        logged_ytd_exp_pre = round(logged_sp_pre + logged_pc_pre, 2)
+        logged_ytd_exp_itc = round(logged_sp_itc + logged_pc_itc, 2)
+        logged_ytd_exp_gross = round(logged_ytd_exp_pre + logged_ytd_exp_itc, 2)
+
+        annualized_logged_exp_pre = round(logged_ytd_exp_pre * annual_factor, 2)
+        annualized_logged_exp_itc = round(logged_ytd_exp_itc * annual_factor, 2)
+        annualized_logged_exp_gross = round(annualized_logged_exp_pre + annualized_logged_exp_itc, 2)
+
+        # Default estimated full-year pre-tax practice expenses (while CSPM expense logging is being caught up)
+        default_est_exp_pre = round(max(30000.0, annualized_logged_exp_pre), 2)
+        default_est_exp_itc = round(default_est_exp_pre * 0.065, 2)  # ~50% of practice expenses subject to 13% HST (LSO/LAWPRO/Office vs Insurance/Gov fees)
+
+        def _build_scenario(exp_pre_tax: float, exp_itc: float) -> Dict[str, Any]:
+            net_before_tax = round(max(0.0, proj_gross_no_hst - exp_pre_tax), 2)
+            # 1. Dual Entity (Jan-Oct SOLE_PROP T2125 + Nov-Dec PC @ 12.2% SBD)
+            sp_net = round(net_before_tax * sole_prop_share, 2)
+            pc_net = round(max(0.0, net_before_tax - sp_net), 2)
+            sp_tax_info = self._estimate_2026_personal_tax_and_cpp(sp_net)
+            pc_corp_tax = round(pc_net * 0.122, 2)
+            dual_total_tax_cpp = round(sp_tax_info["totalPersonalTaxAndCpp"] + pc_corp_tax, 2)
+            dual_net_after_tax = round(net_before_tax - dual_total_tax_cpp, 2)
+            dual_eff_tax_rate = round((dual_total_tax_cpp / net_before_tax) * 100.0, 1) if net_before_tax > 0 else 0.0
+
+            # 2. 100% Personal T2125 Equivalent (all 12 months taxed personally)
+            pers_tax_info = self._estimate_2026_personal_tax_and_cpp(net_before_tax)
+            pers_total_tax_cpp = pers_tax_info["totalPersonalTaxAndCpp"]
+            pers_net_after_tax = round(net_before_tax - pers_total_tax_cpp, 2)
+            pers_eff_tax_rate = round((pers_total_tax_cpp / net_before_tax) * 100.0, 1) if net_before_tax > 0 else 0.0
+
+            pc_deferral_savings = round(max(0.0, pers_total_tax_cpp - dual_total_tax_cpp), 2)
+            net_hst_remittance = round(max(0.0, proj_hst_collected - exp_itc), 2)
+
+            return {
+                "expensesPreTax": exp_pre_tax,
+                "expensesHstItc": exp_itc,
+                "expensesWithHst": round(exp_pre_tax + exp_itc, 2),
+                "netBeforeTax": net_before_tax,
+                "netHstRemittance": net_hst_remittance,
+                "dualEntity": {
+                    "solePropNetBeforeTax": sp_net,
+                    "pcNetBeforeTax": pc_net,
+                    "personalTaxAndCpp": sp_tax_info["totalPersonalTaxAndCpp"],
+                    "cppTotal": sp_tax_info["cppTotal"],
+                    "pcCorporateTax12_2Pct": pc_corp_tax,
+                    "totalTaxAndCpp": dual_total_tax_cpp,
+                    "effectiveTaxRatePct": dual_eff_tax_rate,
+                    "netAfterTaxAndExpenses": dual_net_after_tax,
+                    "monthlyNetAfterTax": round(dual_net_after_tax / 12.0, 2),
+                    "pcTaxDeferralSavings": pc_deferral_savings,
+                },
+                "personalOnly": {
+                    "totalTaxAndCpp": pers_total_tax_cpp,
+                    "cppTotal": pers_tax_info["cppTotal"],
+                    "effectiveTaxRatePct": pers_eff_tax_rate,
+                    "netAfterTaxAndExpenses": pers_net_after_tax,
+                    "monthlyNetAfterTax": round(pers_net_after_tax / 12.0, 2),
+                },
+            }
+
+        return {
+            "year": year,
+            "asOfDate": t_dt.isoformat(),
+            "daysInYear": days_in_year,
+            "daysElapsed": days_elapsed,
+            "daysRemaining": days_remaining,
+            "pctYearElapsed": pct_year_elapsed,
+            "annualizationFactor": round(annual_factor, 4),
+            "solePropShareOfYear": sole_prop_share,
+            "pcShareOfYear": pc_share,
+            "ytdHours": ytd_hours,
+            "ytdGrossWithoutHst": ytd_gross_no_hst,
+            "ytdGrossWithHst": ytd_gross_with_hst,
+            "ytdHstCollected": ytd_hst_collected,
+            "projectedHours": proj_hours,
+            "projectedGrossWithoutHst": proj_gross_no_hst,
+            "projectedGrossWithHst": proj_gross_with_hst,
+            "projectedHstCollected": proj_hst_collected,
+            "loggedYtdExpensesPreTax": logged_ytd_exp_pre,
+            "loggedYtdExpensesHstItc": logged_ytd_exp_itc,
+            "loggedYtdExpensesWithHst": logged_ytd_exp_gross,
+            "annualizedLoggedExpensesPreTax": annualized_logged_exp_pre,
+            "annualizedLoggedExpensesHstItc": annualized_logged_exp_itc,
+            "annualizedLoggedExpensesWithHst": annualized_logged_exp_gross,
+            "defaultEstimatedExpensesPreTax": default_est_exp_pre,
+            "defaultEstimatedExpensesHstItc": default_est_exp_itc,
+            "estimatedScenario": _build_scenario(default_est_exp_pre, default_est_exp_itc),
+            "loggedPaceScenario": _build_scenario(annualized_logged_exp_pre, annualized_logged_exp_itc),
         }
 
     def get_wip_and_ar_overview(self, user_id: str = "cory") -> Dict[str, Any]:
@@ -2606,6 +2923,22 @@ class QuickExpenseService:
                     daemon=True,
                 ).start()
 
+                try:
+                    self.session_tracker.record_event(
+                        "cory",
+                        "DOCKET_POST",
+                        f"Logged docket: {client_name} ({matter_number}) - {hours:.2f}h - {description[:40]}",
+                        item_data={
+                            "matter": matter_number,
+                            "hours": hours,
+                            "narrative": description,
+                            "date": date_str,
+                            "rate": rate,
+                        },
+                    )
+                except Exception:
+                    pass
+
                 return {
                     "ok": True,
                     "entryId": entry_id,
@@ -2643,6 +2976,21 @@ class QuickExpenseService:
                             entry_id=entry_id,
                             dry_run=False,
                         )
+                        try:
+                            self.session_tracker.record_event(
+                                "cory",
+                                "DOCKET_POST",
+                                f"Logged docket: {summary.get('client_name')} ({summary.get('matter_number')}) - {hours:.2f}h - {description[:40]}",
+                                item_data={
+                                    "matter": summary.get("matter_number") or matter_ref,
+                                    "hours": hours,
+                                    "narrative": description,
+                                    "date": date_str,
+                                    "rate": rate_override or 475.0,
+                                },
+                            )
+                        except Exception:
+                            pass
                         return {
                             "ok": True,
                             "entryId": summary.get("entry_id"),
@@ -3096,6 +3444,17 @@ class QuickExpenseService:
                         }
                     )
                 self._cached_ar_snapshot = None
+                if res.get("ok"):
+                    try:
+                        uid = "cory" if self._is_cory(user_id) else "deborah"
+                        self.session_tracker.record_event(
+                            uid,
+                            "INVOICE_ACTION",
+                            f"Posted Payment: Inv #{inv_num} (${amt_val:,.2f}) into {deposit_account}",
+                            item_data={"action": "PAYMENT_POSTED", "invoiceNumber": inv_num, "amount": amt_val, "account": deposit_account},
+                        )
+                    except Exception:
+                        pass
                 return res
             except Exception as exc:
                 return {"ok": False, "message": str(exc)}
@@ -3601,6 +3960,24 @@ class QuickExpenseService:
             if parsed.get("amount")
             else "📸 Receipt attached! Fill or confirm details below."
         )
+
+        try:
+            self.session_tracker.record_event(
+                uid,
+                "RECEIPT_OCR_SCAN",
+                f"Scanned receipt: {filename} -> {parsed.get('payee') or 'Store'} (${parsed.get('amount', 0.0):,.2f})",
+                item_data={
+                    "fileName": filename,
+                    "payee": parsed.get("payee"),
+                    "amount": parsed.get("amount"),
+                    "taxAmount": parsed.get("taxAmount"),
+                    "txnDate": parsed.get("date"),
+                    "receiptToken": receipt_token,
+                },
+            )
+        except Exception:
+            pass
+
         return {
             "ok": True,
             "receiptToken": receipt_token,
@@ -4289,6 +4666,17 @@ class QuickExpenseService:
             "categoryCode": parsed_rcpt.get("categoryCode") or "",
             "notes": raw,
         }
+
+        try:
+            self.session_tracker.record_event(
+                uid,
+                "VOICE_COMMAND",
+                f"Voice parsed: '{raw[:50]}' -> {target_mode} (${amount_val:,.2f})",
+                item_data={"transcript": raw, "mode": target_mode, "amount": amount_val, "payee": payee_val},
+            )
+        except Exception:
+            pass
+
         return {
             "ok": True,
             "intent": target_mode.upper().replace(" ", "_"),
@@ -4709,6 +5097,16 @@ class QuickExpenseService:
                 daemon=True,
             ).start()
 
+        try:
+            self.session_tracker.record_event(
+                "cory",
+                "INVOICE_ACTION",
+                f"Finalized Invoice #{inv_num} ({c_name}): ${total:,.2f}",
+                item_data={"action": "FINALIZED", "invoiceNumber": inv_num, "client": c_name, "amount": total},
+            )
+        except Exception:
+            pass
+
         return {
             "ok": True,
             "invoiceNumber": inv_num,
@@ -4800,6 +5198,16 @@ class QuickExpenseService:
                 logger.warning("SQLite reverse invoice warning (%s): %s", db_p, exc)
 
         self._cached_ar_snapshot = None
+        try:
+            self.session_tracker.record_event(
+                "cory",
+                "INVOICE_ACTION",
+                f"Reversed Invoice #{inv_num}",
+                item_data={"action": "REVERSED", "invoiceNumber": inv_num},
+            )
+        except Exception:
+            pass
+
         return {
             "ok": True,
             "invoiceNumber": inv_num,
@@ -5100,13 +5508,18 @@ class QuickExpenseService:
             try:
                 conn = sqlite3.connect(str(db_path))
                 cur = conn.cursor()
+                inv_cols = {c[1] for c in cur.execute("PRAGMA table_info(Invoice)").fetchall()}
+                dt_col = "date" if "date" in inv_cols else "invoice_date"
+                fees_col = "total_fees" if "total_fees" in inv_cols else "fees"
+                disb_col = "total_disbursements" if "total_disbursements" in inv_cols else "disbursements"
+                hst_col = "tax_amount" if "tax_amount" in inv_cols else "hst"
                 cur.execute(
-                    """
+                    f"""
                     SELECT COALESCE(biller_entity, 'SOLE_PROP'),
-                           SUM(COALESCE(fees, 0) + COALESCE(disbursements, 0)),
-                           SUM(COALESCE(hst, 0))
+                           SUM(COALESCE({fees_col}, 0) + COALESCE({disb_col}, 0)),
+                           SUM(COALESCE({hst_col}, 0))
                     FROM Invoice
-                    WHERE substr(COALESCE(invoice_date, ''), 1, 4) = '2026'
+                    WHERE substr(COALESCE({dt_col}, ''), 1, 4) = '2026'
                       AND lower(COALESCE(status, '')) NOT IN ('void', 'voided', 'reversed', 'cancelled')
                     GROUP BY COALESCE(biller_entity, 'SOLE_PROP')
                     """
@@ -5230,4 +5643,34 @@ class QuickExpenseService:
             "streamsYtd": streams_ytd,
             "familyTaxBuckets": family_tax_buckets,
         }
+
+    # ------------------------------------------------------------------
+    # 12. Session Management & Old-School Batch Reporting (v16)
+    # ------------------------------------------------------------------
+    def format_old_school_session_report(self, session_data: Dict[str, Any]) -> Tuple[str, str]:
+        from services.quick_expense_session import format_old_school_session_report as _fmt
+        return _fmt(session_data)
+
+    def complete_session(
+        self,
+        user_id: str,
+        reason: str = "Operator Finished Session",
+        force_send: bool = False,
+        client_meta: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return self.session_tracker.complete_session(
+            user_id=user_id,
+            reason=reason,
+            force_send=force_send,
+            client_meta=client_meta,
+        )
+
+    def check_and_complete_idle_sessions(self, idle_seconds: int = 600) -> List[Dict[str, Any]]:
+        return self.session_tracker.check_and_complete_idle_sessions(idle_seconds=idle_seconds)
+
+    def get_active_session(
+        self, user_id: str, client_meta: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        return self.session_tracker.get_or_create_active_session(user_id=user_id, client_meta=client_meta)
+
 

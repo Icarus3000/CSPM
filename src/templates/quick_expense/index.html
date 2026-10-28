@@ -153,6 +153,28 @@
       border: 1px solid var(--border);
     }
 
+    .finish-session-btn {
+      background: #059669;
+      color: #FFFFFF;
+      border: 1px solid #047857;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 2px 6px rgba(5, 150, 105, 0.25);
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    .finish-session-btn:hover {
+      background: #047857;
+    }
+    .finish-session-btn:active {
+      transform: scale(0.97);
+    }
+
     .switch-user-btn {
       background: transparent;
       border: none;
@@ -884,9 +906,12 @@
 
       <!-- Top Bar -->
       <div class="top-bar">
-        <div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span class="user-pill" id="activeUserPill">👩‍⚕️ Deborah</span>
-          <button type="button" class="switch-user-btn" onclick="logoutUser()">Switch User</button>
+          <button type="button" class="finish-session-btn" id="finishSessionBtn" onclick="finishCurrentSession(true)" title="Complete session and email batch report to Cory">
+            ✅ Finish Session
+          </button>
+          <button type="button" class="switch-user-btn" onclick="logoutUser()">🚪 Logout</button>
           <span id="offlineQueueBadge" style="display:none; font-size:0.8rem; font-weight:800; color:#B45309; background:#FEF3C7; padding:4px 8px; border-radius:999px;"></span>
         </div>
 
@@ -1312,6 +1337,91 @@
                 <div id="prodArSub" style="font-size: 0.72rem; font-weight: 700; color: #065F46;">0 open invoices</div>
               </div>
             </div>
+
+            <!-- Projected Full-Year Gross & Net Earnings Card (With & Without HST + Net of Expenses & Taxes) -->
+            <div id="annualProjectionCard" style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border: 2px solid #38BDF8; border-radius: 12px; padding: 11px 12px; margin-bottom: 10px; color: #FFFFFF;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                <div style="font-size: 0.78rem; font-weight: 900; color: #7DD3FC; text-transform: uppercase; letter-spacing: 0.4px;">
+                  🎯 <span id="projYearTitle">2026</span> Projected Annual Earnings (Gross, Expenses &amp; Net of Tax)
+                </div>
+                <span id="projPaceBadge" style="font-size: 0.72rem; font-weight: 800; background: rgba(56, 189, 248, 0.18); color: #BAE6FD; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(56, 189, 248, 0.4);">
+                  Day --/365 · --h projected
+                </span>
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 9px;">
+                <!-- 1. Projected Gross WITHOUT HST -->
+                <div style="background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 9px; padding: 8px 10px;">
+                  <div style="font-size: 0.68rem; font-weight: 800; color: #93C5FD; text-transform: uppercase;">
+                    📈 Projected Gross (Without HST)
+                  </div>
+                  <div id="projGrossNoHstMain" style="font-size: 1.08rem; font-weight: 900; color: #FFFFFF; margin-top: 2px;">$0.00</div>
+                  <div id="projGrossNoHstSub" style="font-size: 0.7rem; font-weight: 700; color: #CBD5E1; margin-top: 1px;">YTD Actual: $0.00 (0.0h)</div>
+                </div>
+
+                <!-- 2. Projected Gross WITH HST -->
+                <div style="background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 9px; padding: 8px 10px;">
+                  <div style="font-size: 0.68rem; font-weight: 800; color: #FDE68A; text-transform: uppercase;">
+                    🧾 Projected Gross (With 13% HST)
+                  </div>
+                  <div id="projGrossWithHstMain" style="font-size: 1.08rem; font-weight: 900; color: #FEF3C7; margin-top: 2px;">$0.00</div>
+                  <div id="projGrossWithHstSub" style="font-size: 0.7rem; font-weight: 700; color: #CBD5E1; margin-top: 1px;">YTD w/ HST: $0.00 · Net HST Remit: $0</div>
+                </div>
+
+                <!-- 3. Estimated Expenses + Income Taxes & CPP -->
+                <div style="background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(252, 165, 165, 0.35); border-radius: 9px; padding: 8px 10px;">
+                  <div style="font-size: 0.68rem; font-weight: 800; color: #FCA5A5; text-transform: uppercase;">
+                    📉 Est. Expenses &amp; Taxes / CPP
+                  </div>
+                  <div id="projDeductionsMain" style="font-size: 1.02rem; font-weight: 900; color: #FECACA; margin-top: 2px;">-$0.00</div>
+                  <div id="projDeductionsSub" style="font-size: 0.7rem; font-weight: 700; color: #CBD5E1; margin-top: 1px;">Expenses: -$0 · Tax &amp; CPP: -$0</div>
+                </div>
+
+                <!-- 4. Estimated Net Earnings (Net of Taxes & Expenses) -->
+                <div style="background: rgba(16, 185, 129, 0.16); border: 1.5px solid #34D399; border-radius: 9px; padding: 8px 10px;">
+                  <div style="font-size: 0.68rem; font-weight: 900; color: #6EE7B7; text-transform: uppercase;">
+                    💵 Est. Net (After Taxes &amp; Expenses)
+                  </div>
+                  <div id="projNetTakeHomeMain" style="font-size: 1.12rem; font-weight: 900; color: #34D399; margin-top: 2px;">$0.00</div>
+                  <div id="projNetTakeHomeSub" style="font-size: 0.7rem; font-weight: 700; color: #D1FAE5; margin-top: 1px;">Net Pre-Tax: $0 · ~$0/mo after tax</div>
+                </div>
+              </div>
+
+              <!-- Interactive Expense Estimate & Tax Mode Controls (Supports Estimate Now + Live CSPM Actuals Over Time) -->
+              <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 9px; padding: 8px 9px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;">
+                  <span id="projLoggedExpensesNote" style="font-size: 0.71rem; font-weight: 800; color: #94A3B8;">
+                    📌 CSPM Logged YTD Expenses: $0.00 pre-tax ($0/yr pace)
+                  </span>
+                  <button type="button" id="projTaxModeToggleBtn" onclick="toggleProjectionTaxMode()" style="padding: 3px 8px; border-radius: 6px; border: 1px solid #38BDF8; background: rgba(56, 189, 248, 0.15); color: #E0F2FE; font-size: 0.69rem; font-weight: 800; cursor: pointer;">
+                    🏛️ Tax Mode: Nov 1 PC Cutover (12.2% SBD)
+                  </button>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
+                  <span style="font-size: 0.7rem; font-weight: 800; color: #CBD5E1;">Est. Annual Expenses (Pre-Tax):</span>
+                  <button type="button" class="proj-exp-pill" data-exp-mode="logged_pace" onclick="setProjectionExpenseMode('logged_pace')" style="padding: 3px 7px; border-radius: 6px; border: 1px solid #475569; background: #1E293B; color: #E2E8F0; font-size: 0.69rem; font-weight: 800; cursor: pointer;">
+                    📈 CSPM Pace
+                  </button>
+                  <button type="button" class="proj-exp-pill" data-exp-mode="est_25k" onclick="setProjectionExpenseMode('est_25k', 25000)" style="padding: 3px 7px; border-radius: 6px; border: 1px solid #475569; background: #1E293B; color: #E2E8F0; font-size: 0.69rem; font-weight: 800; cursor: pointer;">
+                    $25K Est.
+                  </button>
+                  <button type="button" class="proj-exp-pill" data-exp-mode="est_30k" onclick="setProjectionExpenseMode('est_30k', 30000)" style="padding: 3px 7px; border-radius: 6px; border: 1px solid #475569; background: #1E293B; color: #E2E8F0; font-size: 0.69rem; font-weight: 800; cursor: pointer;">
+                    $30K Est.
+                  </button>
+                  <button type="button" class="proj-exp-pill" data-exp-mode="est_40k" onclick="setProjectionExpenseMode('est_40k', 40000)" style="padding: 3px 7px; border-radius: 6px; border: 1px solid #475569; background: #1E293B; color: #E2E8F0; font-size: 0.69rem; font-weight: 800; cursor: pointer;">
+                    $40K Est.
+                  </button>
+                  <button type="button" class="proj-exp-pill" data-exp-mode="pct_10" onclick="setProjectionExpenseMode('pct_10')" style="padding: 3px 7px; border-radius: 6px; border: 1px solid #475569; background: #1E293B; color: #E2E8F0; font-size: 0.69rem; font-weight: 800; cursor: pointer;">
+                    10% Gross
+                  </button>
+                  <div style="display: inline-flex; align-items: center; gap: 3px; margin-left: auto;">
+                    <span style="font-size: 0.72rem; font-weight: 900; color: #93C5FD;">$</span>
+                    <input type="number" id="projCustomExpenseInput" inputmode="decimal" step="500" min="0" placeholder="30000" oninput="onCustomProjectionExpenseInput(this.value)" style="width: 82px; padding: 3px 6px; border-radius: 6px; border: 1px solid #64748B; background: #0F172A; color: #FFFFFF; font-size: 0.74rem; font-weight: 800;" />
+                  </div>
+                </div>
+              </div>
+            </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
               <button type="button" onclick="openRecentDocketsWithFilter('ALL', 'recent')" style="flex: 1; min-width: 170px; padding: 9px 10px; border-radius: 9px; border: 1.5px solid #2563EB; background: #2563EB; color: #FFFFFF; font-size: 0.82rem; font-weight: 800; cursor: pointer;">
                 🌐 See All Recent Dockets (All Matters)
@@ -1498,7 +1608,7 @@
         <!-- ================= WIP & A/R PIPELINE SECTION (Cory-Only) ================= -->
         <div id="wipArSection" style="display: none;">
           <!-- Combined Realizable Pipeline Banner -->
-          <div style="margin-bottom: 12px; padding: 12px; border-radius: 12px; background: linear-gradient(135deg, #1E3A8A 0%, #0F766E 100%); color: #FFFFFF;">
+          <div style="margin-bottom: 10px; padding: 12px; border-radius: 12px; background: linear-gradient(135deg, #1E3A8A 0%, #0F766E 100%); color: #FFFFFF;">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
               <div>
                 <div style="font-size: 0.74rem; font-weight: 800; text-transform: uppercase; opacity: 0.9; letter-spacing: 0.4px;">
@@ -1514,6 +1624,21 @@
               <button type="button" onclick="loadWipArOverview(true)" style="padding: 7px 12px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.16); color: #FFFFFF; font-size: 0.8rem; font-weight: 800; cursor: pointer;">
                 🔄 Refresh
               </button>
+            </div>
+          </div>
+
+          <!-- Synchronized Projected Annual Earnings Strip in WIP & A/R View -->
+          <div id="wipArAnnualProjectionStrip" onclick="setMode('Docket')" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 11px; background: #0F172A; border: 1.5px solid #38BDF8; color: #FFFFFF; cursor: pointer;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div style="font-size: 0.72rem; font-weight: 900; color: #7DD3FC; text-transform: uppercase;">
+                🎯 2026 Projected Annual Earnings (Tap to Adjust Expense Estimate in Docket Tab)
+              </div>
+              <span id="wipArProjNetBadge" style="font-size: 0.78rem; font-weight: 900; color: #34D399;">
+                Est. Net After Tax &amp; Exp: $0.00
+              </span>
+            </div>
+            <div id="wipArProjDetailsLine" style="font-size: 0.78rem; font-weight: 700; color: #E2E8F0; margin-top: 3px;">
+              Proj. Gross (No HST): $0.00 · With HST: $0.00 · Est. Expenses: -$0 · Est. Tax/CPP: -$0
             </div>
           </div>
 
@@ -1936,9 +2061,9 @@
       return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
     }
 
-    const APP_BUILD_VERSION = "v15";
+    const APP_BUILD_VERSION = "v17";
 
-    // v15 State: Staged Receipt, Budget Charts, Call Timer & Mobile Invoicing
+    // v17 State: Staged Receipt, Budget Charts, Call Timer, Mobile Invoicing & Session Reports
     let currentStagedReceipt = null; // { receiptToken, receiptId, receiptUrl, mimeType, fileName, folderLabel }
     let attachingReceiptToTxnId = "";
     let budgetChartsOpen = false;
@@ -1951,7 +2076,7 @@
 
     window.addEventListener("DOMContentLoaded", async () => {
       if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/sw.js?v=15").then((reg) => {
+        navigator.serviceWorker.register("/sw.js?v=17").then((reg) => {
           reg.update().catch(() => {});
         }).catch(() => {});
       }
@@ -2110,18 +2235,72 @@
       }
     }
 
-    function logoutUser() {
+    async function finishCurrentSession(forceSend = true) {
+      if (!currentUser) return;
+      const btn = document.getElementById("finishSessionBtn");
+      if (btn) btn.disabled = true;
+      showBanner("⏳ Finalizing session & generating batch report...", "info");
+      try {
+        const res = await fetch("/api/session/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUser.userId,
+            reason: "Operator Clicked Finish Session",
+            forceSend: Boolean(forceSend)
+          })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (data.emailed) {
+            showBanner(`✅ Session #${data.batchId || ""} completed! Batch report emailed to cory@coryschneiderlaw.ca`, "success");
+          } else {
+            showBanner(`Session #${data.batchId || ""} completed (no new entries to report).`, "info");
+          }
+          sessionDeck = [];
+          deckIndex = 0;
+          startNewBlankCard();
+          refreshDeckFromServer().catch(() => {});
+        } else {
+          showBanner(`Notice: ${data.message || "Could not complete session."}`, "info");
+        }
+      } catch (err) {
+        console.error("finishCurrentSession error:", err);
+        showBanner("Network error finalizing session.", "error");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function logoutUser() {
+      if (currentUser) {
+        try {
+          fetch("/api/session/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: currentUser.userId,
+              reason: "Operator Logged Out",
+              forceSend: false
+            })
+          }).catch(() => {});
+        } catch (_) {}
+      }
       localStorage.removeItem("cspm_quick_expense_user");
       currentUser = null;
       document.getElementById("loginPinInput").value = "";
       showLoginScreen();
     }
 
+    function userHasDocketAccess(u) {
+      return Boolean(u && (u.hasDocketAccess || u.isCory || u.userId === "cory"));
+    }
+
     async function enterApp() {
       document.getElementById("loginView").style.display = "none";
       document.getElementById("appView").style.display = "block";
       document.getElementById("activeUserPill").textContent = `${currentUser.icon} ${currentUser.displayName}`;
-      const isCoryUser = Boolean(currentUser && (currentUser.isCory || currentUser.userId === "cory"));
+      const isCoryUser = userHasDocketAccess(currentUser);
       document.getElementById("docketModeTab").style.display = isCoryUser ? "flex" : "none";
       const wipArTab = document.getElementById("wipArModeTab");
       if (wipArTab) wipArTab.style.display = isCoryUser ? "flex" : "none";
@@ -3531,7 +3710,272 @@
         if (sEl) sEl.textContent = `${ar.count || 0} open invoices · Cur: ${fmtShort(ar.b0_30)} · 90+d: ${fmtShort(ar.b90_plus)}`;
       }
 
+      // 9. Projected Full-Year Gross & Net Earnings Card (for any user with Docket access)
+      renderAnnualEarningsProjectionCard(prod);
+
       updateTodayBadge();
+    }
+
+    let projExpenseMode = safeGetStorage("cspm_qe_proj_exp_mode") || "est_30k";
+    let projCustomExpensePreTax = parseFloat(safeGetStorage("cspm_qe_proj_exp_custom") || "30000") || 30000;
+    let projTaxMode = safeGetStorage("cspm_qe_proj_tax_mode") || "dual"; // "dual" (Nov 1 PC Cutover) | "personal" (100% T2125)
+
+    function compute2026PersonalTaxAndCppJs(netBusinessIncome) {
+      const netInc = Math.max(0, Number(netBusinessIncome || 0));
+      if (netInc <= 0) {
+        return { cppTotal: 0, federalTax: 0, ontarioTax: 0, totalPersonalTaxAndCpp: 0 };
+      }
+      const cpp1Earn = Math.min(Math.max(0, netInc - 3500), 71300 - 3500);
+      const cpp1Total = Math.round(cpp1Earn * 0.119 * 100) / 100;
+      const cpp2Earn = Math.min(Math.max(0, netInc - 71300), 81200 - 71300);
+      const cpp2Total = Math.round(cpp2Earn * 0.08 * 100) / 100;
+      const cppTotal = Math.round((cpp1Total + cpp2Total) * 100) / 100;
+      const cppDeduction = Math.round((cpp1Total * 0.5 + cpp2Total) * 100) / 100;
+      const cppCreditBase = Math.round(cpp1Total * 0.5 * 100) / 100;
+      const taxable = Math.max(0, netInc - cppDeduction);
+
+      const fedBrackets = [
+        [57375, 0.145],
+        [114750, 0.205],
+        [177882, 0.26],
+        [253414, 0.29],
+        [Infinity, 0.33],
+      ];
+      let fedGross = 0;
+      let prev = 0;
+      for (const [cap, rate] of fedBrackets) {
+        if (taxable <= prev) break;
+        fedGross += (Math.min(taxable, cap) - prev) * rate;
+        prev = cap;
+      }
+      let fedBpa = 16129;
+      if (taxable >= 253414) {
+        fedBpa = 14538;
+      } else if (taxable > 177882) {
+        fedBpa = 16129 - (16129 - 14538) * ((taxable - 177882) / (253414 - 177882));
+      }
+      const fedTax = Math.max(0, Math.round((fedGross - (fedBpa + cppCreditBase) * 0.145) * 100) / 100);
+
+      const onBrackets = [
+        [52886, 0.0505],
+        [105775, 0.0915],
+        [150000, 0.1116],
+        [220000, 0.1216],
+        [Infinity, 0.1316],
+      ];
+      let onGross = 0;
+      let prevOn = 0;
+      for (const [cap, rate] of onBrackets) {
+        if (taxable <= prevOn) break;
+        onGross += (Math.min(taxable, cap) - prevOn) * rate;
+        prevOn = cap;
+      }
+      const onBasic = Math.max(0, onGross - (12747 + cppCreditBase) * 0.0505);
+      let onSurtax = 0;
+      if (onBasic > 5710) onSurtax += (onBasic - 5710) * 0.20;
+      if (onBasic > 7307) onSurtax += (onBasic - 7307) * 0.36;
+      let ohp = 0;
+      if (taxable > 200000) ohp = Math.min(900, 750 + (taxable - 200000) * 0.25);
+      else if (taxable > 72000) ohp = Math.min(750, 600 + (taxable - 72000) * 0.25);
+      else if (taxable > 48000) ohp = Math.min(600, 450 + (taxable - 48000) * 0.25);
+      else if (taxable > 36000) ohp = Math.min(450, 300 + (taxable - 36000) * 0.06);
+      else if (taxable > 20000) ohp = Math.min(300, (taxable - 20000) * 0.06);
+      const onTax = Math.round((onBasic + onSurtax + ohp) * 100) / 100;
+      const totalPersonalTaxAndCpp = Math.round((fedTax + onTax + cppTotal) * 100) / 100;
+      return { cppTotal, federalTax: fedTax, ontarioTax: onTax, totalPersonalTaxAndCpp };
+    }
+
+    function setProjectionExpenseMode(mode, presetVal) {
+      projExpenseMode = mode;
+      safeSetStorage("cspm_qe_proj_exp_mode", mode);
+      if (typeof presetVal === "number" && presetVal >= 0) {
+        projCustomExpensePreTax = presetVal;
+        safeSetStorage("cspm_qe_proj_exp_custom", String(presetVal));
+      }
+      renderAnnualEarningsProjectionCard(docketProductivity);
+    }
+
+    function onCustomProjectionExpenseInput(rawVal) {
+      const parsed = parseFloat(rawVal);
+      if (!isNaN(parsed) && parsed >= 0) {
+        projExpenseMode = "custom";
+        projCustomExpensePreTax = parsed;
+        safeSetStorage("cspm_qe_proj_exp_mode", "custom");
+        safeSetStorage("cspm_qe_proj_exp_custom", String(parsed));
+        renderAnnualEarningsProjectionCard(docketProductivity);
+      }
+    }
+
+    function toggleProjectionTaxMode() {
+      projTaxMode = projTaxMode === "dual" ? "personal" : "dual";
+      safeSetStorage("cspm_qe_proj_tax_mode", projTaxMode);
+      renderAnnualEarningsProjectionCard(docketProductivity);
+    }
+
+    function renderAnnualEarningsProjectionCard(prod) {
+      if (!prod) return;
+      const fmtMoney = (v) =>
+        "$" +
+        Number(v || 0).toLocaleString("en-CA", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+      const fmtShort = (v) =>
+        "$" + Math.round(Number(v || 0)).toLocaleString("en-CA");
+
+      const ap = prod.annualProjection || {};
+      const ytd = prod.ytd || {};
+      const now = new Date();
+      const yr = Number(ap.year || now.getFullYear());
+      const isLeap = (yr % 4 === 0 && (yr % 100 !== 0 || yr % 400 === 0));
+      const daysInYear = Number(ap.daysInYear || (isLeap ? 366 : 365));
+      const startOfYear = new Date(yr, 0, 1);
+      const fallbackDaysElapsed = Math.max(1, Math.floor((now - startOfYear) / 86400000) + 1);
+      const daysElapsed = Number(ap.daysElapsed || ytd.daysSpan || fallbackDaysElapsed);
+      const daysRemaining = Math.max(0, daysInYear - daysElapsed);
+      const pctElapsed = ((daysElapsed / daysInYear) * 100).toFixed(1);
+      const annualFactor = daysInYear / Math.max(1, daysElapsed);
+
+      const ytdHours = Number(ap.ytdHours !== undefined ? ap.ytdHours : ytd.hours || 0);
+      const ytdGrossNoHst = Number(ap.ytdGrossWithoutHst !== undefined ? ap.ytdGrossWithoutHst : ytd.feePreTax || 0);
+      const ytdGrossWithHst = Number(
+        ap.ytdGrossWithHst !== undefined
+          ? ap.ytdGrossWithHst
+          : ytd.totalInclHst || ytdGrossNoHst * 1.13
+      );
+      const projHours = Number(ap.projectedHours !== undefined ? ap.projectedHours : ytdHours * annualFactor);
+      const projGrossNoHst = Number(
+        ap.projectedGrossWithoutHst !== undefined ? ap.projectedGrossWithoutHst : ytdGrossNoHst * annualFactor
+      );
+      const projGrossWithHst = Number(
+        ap.projectedGrossWithHst !== undefined ? ap.projectedGrossWithHst : ytdGrossWithHst * annualFactor
+      );
+      const projHstCollected = Math.max(0, projGrossWithHst - projGrossNoHst);
+
+      const loggedYtdExpPre = Number(ap.loggedYtdExpensesPreTax !== undefined ? ap.loggedYtdExpensesPreTax : 17607.09);
+      const loggedYtdExpItc = Number(ap.loggedYtdExpensesHstItc !== undefined ? ap.loggedYtdExpensesHstItc : 731.18);
+      const annualizedLoggedExpPre = Number(
+        ap.annualizedLoggedExpensesPreTax !== undefined
+          ? ap.annualizedLoggedExpensesPreTax
+          : loggedYtdExpPre * annualFactor
+      );
+      const annualizedLoggedExpItc = Number(
+        ap.annualizedLoggedExpensesHstItc !== undefined
+          ? ap.annualizedLoggedExpensesHstItc
+          : loggedYtdExpItc * annualFactor
+      );
+
+      // Resolve selected annual pre-tax expense estimate
+      let selectedExpPre = projCustomExpensePreTax;
+      let selectedExpItc = 0;
+      if (projExpenseMode === "logged_pace") {
+        selectedExpPre = annualizedLoggedExpPre;
+        selectedExpItc = annualizedLoggedExpItc;
+      } else if (projExpenseMode === "est_25k") {
+        selectedExpPre = 25000;
+        selectedExpItc = Math.round(25000 * 0.065 * 100) / 100;
+      } else if (projExpenseMode === "est_30k") {
+        selectedExpPre = 30000;
+        selectedExpItc = Math.round(30000 * 0.065 * 100) / 100;
+      } else if (projExpenseMode === "est_40k") {
+        selectedExpPre = 40000;
+        selectedExpItc = Math.round(40000 * 0.065 * 100) / 100;
+      } else if (projExpenseMode === "pct_10") {
+        selectedExpPre = Math.round(projGrossNoHst * 0.10 * 100) / 100;
+        selectedExpItc = Math.round(selectedExpPre * 0.065 * 100) / 100;
+      } else {
+        selectedExpPre = Math.max(0, Number(projCustomExpensePreTax || 0));
+        selectedExpItc = Math.round(selectedExpPre * 0.065 * 100) / 100;
+      }
+
+      const customInp = document.getElementById("projCustomExpenseInput");
+      if (customInp && document.activeElement !== customInp) {
+        customInp.value = Math.round(selectedExpPre);
+      }
+
+      document.querySelectorAll(".proj-exp-pill").forEach((btn) => {
+        const isAct = btn.getAttribute("data-exp-mode") === projExpenseMode;
+        btn.style.background = isAct ? "#0284C7" : "#1E293B";
+        btn.style.borderColor = isAct ? "#7DD3FC" : "#475569";
+        btn.style.color = isAct ? "#FFFFFF" : "#E2E8F0";
+      });
+
+      const netBeforeTax = Math.max(0, projGrossNoHst - selectedExpPre);
+      const solePropShare = Number(ap.solePropShareOfYear || 304 / 365);
+      const spNet = netBeforeTax * solePropShare;
+      const pcNet = Math.max(0, netBeforeTax - spNet);
+
+      const spTaxObj = compute2026PersonalTaxAndCppJs(spNet);
+      const pcCorpTax = Math.round(pcNet * 0.122 * 100) / 100;
+      const dualTaxAndCpp = Math.round((spTaxObj.totalPersonalTaxAndCpp + pcCorpTax) * 100) / 100;
+
+      const persTaxObj = compute2026PersonalTaxAndCppJs(netBeforeTax);
+      const persTaxAndCpp = persTaxObj.totalPersonalTaxAndCpp;
+      const pcSavings = Math.max(0, Math.round((persTaxAndCpp - dualTaxAndCpp) * 100) / 100);
+
+      const activeTaxAndCpp = projTaxMode === "dual" ? dualTaxAndCpp : persTaxAndCpp;
+      const effTaxRate = netBeforeTax > 0 ? ((activeTaxAndCpp / netBeforeTax) * 100).toFixed(1) : "0.0";
+      const netAfterTaxAndExp = Math.max(0, netBeforeTax - activeTaxAndCpp);
+      const monthlyNetAfterTax = netAfterTaxAndExp / 12.0;
+      const netHstToRemit = Math.max(0, projHstCollected - selectedExpItc);
+
+      const yrEl = document.getElementById("projYearTitle");
+      if (yrEl) yrEl.textContent = String(yr);
+      const paceEl = document.getElementById("projPaceBadge");
+      if (paceEl) {
+        paceEl.textContent = `Day ${daysElapsed}/${daysInYear} (${pctElapsed}%) · ${projHours.toFixed(1)}h proj. (${daysRemaining}d left)`;
+      }
+
+      const gNoHstMain = document.getElementById("projGrossNoHstMain");
+      const gNoHstSub = document.getElementById("projGrossNoHstSub");
+      if (gNoHstMain) gNoHstMain.textContent = fmtMoney(projGrossNoHst);
+      if (gNoHstSub) {
+        gNoHstSub.textContent = `YTD Actual: ${fmtMoney(ytdGrossNoHst)} (${ytdHours.toFixed(1)}h) · +${fmtShort(Math.max(0, projGrossNoHst - ytdGrossNoHst))} rem.`;
+      }
+
+      const gWithHstMain = document.getElementById("projGrossWithHstMain");
+      const gWithHstSub = document.getElementById("projGrossWithHstSub");
+      if (gWithHstMain) gWithHstMain.textContent = fmtMoney(projGrossWithHst);
+      if (gWithHstSub) {
+        gWithHstSub.textContent = `YTD w/ HST: ${fmtMoney(ytdGrossWithHst)} · Est. Net HST to CRA: ${fmtShort(netHstToRemit)}`;
+      }
+
+      const dedMain = document.getElementById("projDeductionsMain");
+      const dedSub = document.getElementById("projDeductionsSub");
+      if (dedMain) dedMain.textContent = `-${fmtMoney(selectedExpPre + activeTaxAndCpp)}`;
+      if (dedSub) {
+        dedSub.textContent = `Exp: -${fmtShort(selectedExpPre)} · Tax & CPP: -${fmtShort(activeTaxAndCpp)} (${effTaxRate}% eff.)`;
+      }
+
+      const netMain = document.getElementById("projNetTakeHomeMain");
+      const netSub = document.getElementById("projNetTakeHomeSub");
+      if (netMain) netMain.textContent = fmtMoney(netAfterTaxAndExp);
+      if (netSub) {
+        netSub.textContent = `Net Pre-Tax: ${fmtShort(netBeforeTax)} · ~${fmtShort(monthlyNetAfterTax)}/mo after tax`;
+      }
+
+      const logNote = document.getElementById("projLoggedExpensesNote");
+      if (logNote) {
+        logNote.textContent = `📌 CSPM Actual Logged YTD: ${fmtMoney(loggedYtdExpPre)} pre-tax (${fmtShort(annualizedLoggedExpPre)}/yr pace)`;
+      }
+
+      const taxModeBtn = document.getElementById("projTaxModeToggleBtn");
+      if (taxModeBtn) {
+        taxModeBtn.textContent =
+          projTaxMode === "dual"
+            ? `🏛️ Nov 1 PC Cutover (Saves ~${fmtShort(pcSavings)} tax)`
+            : `👤 100% Personal T2125 (Tap for Nov 1 PC)`;
+      }
+
+      // Also update the synchronized strip in the WIP & A/R section
+      const wipArNetBadge = document.getElementById("wipArProjNetBadge");
+      const wipArDetails = document.getElementById("wipArProjDetailsLine");
+      if (wipArNetBadge) {
+        wipArNetBadge.textContent = `Est. Net (After Tax & Exp): ${fmtMoney(netAfterTaxAndExp)}`;
+      }
+      if (wipArDetails) {
+        wipArDetails.textContent = `Proj. Gross (No HST): ${fmtMoney(projGrossNoHst)} · With HST: ${fmtMoney(projGrossWithHst)} · Exp: -${fmtShort(selectedExpPre)} · Tax/CPP: -${fmtShort(activeTaxAndCpp)}`;
+      }
     }
 
     function showDocketConfirmationPopup(opts) {

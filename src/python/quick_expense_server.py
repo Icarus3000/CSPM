@@ -70,6 +70,17 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         logger.debug("QuickExpenseHTTP: " + format, *args)
 
+    def _get_client_meta(self) -> Dict[str, Any]:
+        from services.quick_expense_session import parse_client_device
+        ua = self.headers.get("User-Agent", "")
+        device = parse_client_device(ua)
+        client_ip = (
+            self.headers.get("X-Forwarded-For")
+            or self.headers.get("X-Real-IP")
+            or (self.client_address[0] if hasattr(self, "client_address") else "127.0.0.1")
+        ).split(",")[0].strip()
+        return {"device": device, "client_ip": client_ip, "userAgent": ua}
+
     def _send_json(self, payload: Dict[str, Any], status: int = 200) -> None:
         self.close_connection = True
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -137,7 +148,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "service": "cspm-quick-expense",
-                    "appVersion": "v15",
+                    "appVersion": "v17",
                     "lanIp": get_lan_ip(),
                     "port": self.server.server_port,
                 }
@@ -145,6 +156,11 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             return
 
         user_id = (qs.get("userId") or ["deborah"])[0]
+
+        if path == "/api/session/active":
+            s = self.service.get_active_session(user_id=user_id, client_meta=self._get_client_meta())
+            self._send_json({"ok": True, "session": s})
+            return
 
         if path == "/api/bootstrap":
             res = self.service.get_bootstrap_data(user_id=user_id)
@@ -259,6 +275,19 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             res = self.service.authenticate(
                 username=str(body.get("username") or ""),
                 pin=str(body.get("pin") or ""),
+            )
+            self._send_json(res)
+            return
+
+        if path == "/api/session/complete":
+            user_id = str(body.get("userId") or "deborah")
+            reason = str(body.get("reason") or "Operator Clicked Finish Session")
+            force_send = bool(body.get("forceSend", False))
+            res = self.service.complete_session(
+                user_id=user_id,
+                reason=reason,
+                force_send=force_send,
+                client_meta=self._get_client_meta(),
             )
             self._send_json(res)
             return
@@ -411,6 +440,20 @@ class QuickExpenseServerDaemon:
         self.on_data_changed = on_data_changed
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._idle_thread: Optional[threading.Thread] = None
+
+    def _run_idle_session_checker(self) -> None:
+        """Background thread checking every 30s: if an active session has entries
+        and has been idle for >= 10 minutes (600s), automatically complete & email report."""
+        while not self._stop_event.is_set():
+            try:
+                time.sleep(30.0)
+                if self._stop_event.is_set():
+                    break
+                self.service.check_and_complete_idle_sessions(idle_seconds=600)
+            except Exception as exc:
+                logger.debug("Idle session check note: %s", exc)
 
     def ensure_running(self) -> Dict[str, Any]:
         if is_port_listening(self.port):
@@ -438,6 +481,15 @@ class QuickExpenseServerDaemon:
             daemon=True,
         )
         self._thread.start()
+
+        if self._idle_thread is None or not self._idle_thread.is_alive():
+            self._idle_thread = threading.Thread(
+                target=self._run_idle_session_checker,
+                name="CSPMQuickExpenseIdleSessionWatcher",
+                daemon=True,
+            )
+            self._idle_thread.start()
+
         lan_ip = get_lan_ip()
         return {
             "ok": True,
@@ -447,6 +499,7 @@ class QuickExpenseServerDaemon:
         }
 
     def stop(self) -> None:
+        self._stop_event.set()
         if self._httpd is not None:
             try:
                 self._httpd.shutdown()
