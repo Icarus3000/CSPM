@@ -536,3 +536,197 @@ def test_v12_receipts_voice_charts_and_tax_snapshot(tmp_path: Path):
     assert "PC" in tax_snap["hst"]
 
 
+def test_v16_session_completion_reports_and_formatting(tmp_path: Path, monkeypatch) -> None:
+    """Test v16 session tracking, audit persistence, 92-column layout, and Rule 9 zero em-dash compliance."""
+    import time
+    from services.quick_expense_session import (
+        format_old_school_session_report,
+        parse_client_device,
+        SessionTracker,
+    )
+
+    # 1. User Agent parsing
+    assert parse_client_device("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1") == "iPhone (iOS) / Safari PWA"
+    assert "Edge App" in parse_client_device("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/120.0.0.0")
+    assert "Android" in parse_client_device("Mozilla/5.0 (Linux; Android 14) Chrome/120.0.0.0 Mobile Safari/537.36")
+
+    # 2. Setup mock paths and service
+    local_data = tmp_path / "local_data"
+    master_data = tmp_path / "master_data"
+    local_data.mkdir()
+    master_data.mkdir()
+
+    class MockPaths:
+        def data_dir(self):
+            return local_data
+        def master_data_dir(self):
+            return master_data
+        def _is_isolated_test_root(self):
+            return True
+
+    tracker = SessionTracker(MockPaths())
+
+    # Initial session creation
+    sess_deb = tracker.get_or_create_active_session("deborah", {"device": "iPhone (iOS) / Safari PWA", "client_ip": "100.82.14.91"})
+    assert sess_deb["batch_id"].startswith("QE-")
+    assert sess_deb["user_name"] == "DEBORAH"
+    assert sess_deb["operator_role"] == "Family, OT & Legal Entry"
+    assert tracker.has_meaningful_activity(sess_deb) is False
+
+    # Closing empty session without forceSend should NOT email
+    close_res = tracker.complete_session("deborah", reason="Operator Logged Out", force_send=False)
+    assert close_res["ok"] is True
+    assert close_res["emailed"] is False
+
+    # Start new session for Deborah with transaction and receipt
+    tracker.record_event(
+        "deborah",
+        "AUTH_LOGIN",
+        "Operator authenticated via PIN",
+        client_meta={"device": "iPhone (iOS) / Safari PWA", "client_ip": "100.82.14.91"},
+    )
+    tracker.record_event(
+        "deborah",
+        "TXN_POST_NEW",
+        "Posted Expense: Costco Wholesale ($1,376.59)",
+        item_data={
+            "transactionId": "TXN-TEST-001",
+            "txnDate": "2026-10-27",
+            "mode": "Expense",
+            "type": "Expense",
+            "streamId": "DEBORAH_OT_PRIVATE",
+            "streamLabel": "Deborah - OT Private",
+            "fromAccount": "SIMPLII_VISA",
+            "fromAccountLabel": "Simplii Visa (Deborah)",
+            "toAccount": "",
+            "toAccountLabel": "",
+            "payee": "Costco Wholesale",
+            "categoryCode": "EXP_OFFICE_SUPPLIES",
+            "categoryLabel": "Office Supplies",
+            "amount": 1376.59,
+            "taxAmount": 142.03,
+            "netAmount": 1234.56,
+            "notes": "Therapy forms & supplies",
+            "receiptPath": "Receipts/2026/Costco.pdf",
+            "shlCredit": True,
+        },
+    )
+
+    active_deb = tracker.get_or_create_active_session("deborah")
+    assert tracker.has_meaningful_activity(active_deb) is True
+    assert len(active_deb["transactions_new"]) == 1
+
+    # Format report and test 92-column layout and zero em-dashes
+    plain_text, html_body = format_old_school_session_report(active_deb)
+    assert "—" not in plain_text, "Rule 9 violation: em-dash found in plain_text!"
+    assert "—" not in html_body, "Rule 9 violation: em-dash found in html_body!"
+
+    for line in plain_text.splitlines():
+        # Verify no lines exceed 92 columns
+        assert len(line) <= 92, f"Line exceeds 92 chars ({len(line)}): {line}"
+
+    assert "CORY SCHNEIDER LAW PC" in plain_text
+    assert "SECTION 1 -- EXECUTIVE BATCH CONTROL TOTALS" in plain_text
+    assert "SECTION 2 -- ITEMIZED TRANSACTION POSTING JOURNAL" in plain_text
+    assert "Costco Wholesale" in plain_text
+    assert "1,376.59" in plain_text
+    assert "SECTION 4 -- SUB-LEDGER BREAKDOWN BY ENTITY / STREAM" in plain_text
+    assert "SECTION 5 -- BANK & CREDIT ACCOUNT MOVEMENT SUMMARY" in plain_text
+    assert "SECTION 6 -- CHRONOLOGICAL OPERATOR AUDIT TRAIL" in plain_text
+
+    # Complete session with mock email dispatch
+    monkeypatch.setattr(tracker, "_dispatch_email", lambda subj, txt, htm: True)
+    done_res = tracker.complete_session("deborah", reason="Operator Clicked Finish Session", force_send=True)
+    assert done_res["ok"] is True
+    assert done_res["emailed"] is True
+    assert done_res["itemCount"] == 1
+    assert done_res["totalGross"] == 1376.59
+
+    # Verify report was archived to disk
+    reports_dir = master_data / "QuickExpense_Sync" / "Session_Reports"
+    assert reports_dir.is_dir()
+    archived_txt = list(reports_dir.glob("*.txt"))
+    archived_html = list(reports_dir.glob("*.html"))
+    assert len(archived_txt) >= 1
+    assert len(archived_html) >= 1
+
+    # Test idle session auto-completion (with elapsed time simulated)
+    tracker.record_event("cory", "AUTH_LOGIN", "Operator authenticated via PIN")
+    tracker.record_event(
+        "cory",
+        "DOCKET_POST",
+        "Logged docket: Matter 26-0042 (0.8h)",
+        item_data={"matter": "26-0042", "hours": 0.8, "narrative": "review and revise agreements", "date": "2026-10-27"},
+    )
+    active_cory = tracker.get_or_create_active_session("cory")
+    assert tracker.has_meaningful_activity(active_cory) is True
+
+    # Simulate 650 seconds of idle time
+    active_cory["last_activity_epoch"] = time.time() - 650
+    idle_completed = tracker.check_and_complete_idle_sessions(idle_seconds=600)
+    assert len(idle_completed) == 1
+    assert idle_completed[0]["ok"] is True
+    assert idle_completed[0]["emailed"] is True
+
+
+def test_quick_expense_server_session_routes(tmp_path: Path, monkeypatch) -> None:
+    """Verify QuickExpenseServerDaemon starts with v16 and responds to /api/session/complete."""
+    from quick_expense_server import QuickExpenseServerDaemon
+    from services.quick_expense_service import QuickExpenseService
+    from repositories.excel_repo import ExcelRepo
+    from services.paths import AppPaths
+
+    class IsolatedPaths(AppPaths):
+        def __init__(self):
+            super().__init__(root=tmp_path)
+            self._tmp_data = tmp_path / "data"
+            self._tmp_data.mkdir(parents=True, exist_ok=True)
+        def data_dir(self):
+            return self._tmp_data
+        def master_data_dir(self):
+            return self._tmp_data
+        def _is_isolated_test_root(self):
+            return True
+
+    paths = IsolatedPaths()
+    repo = ExcelRepo(paths)
+    svc = QuickExpenseService(paths=paths, repo=repo)
+    daemon = QuickExpenseServerDaemon(service=svc, port=24835)
+
+    info = daemon.ensure_running()
+    assert info["ok"] is True
+    import urllib.request
+    import json
+
+    try:
+        # Check health endpoint
+        with urllib.request.urlopen("http://127.0.0.1:24835/api/health", timeout=3.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            assert data["ok"] is True
+            assert data["appVersion"] == "v16"
+
+        # Check session active endpoint
+        with urllib.request.urlopen("http://127.0.0.1:24835/api/session/active?userId=deborah", timeout=3.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            assert data["ok"] is True
+            assert data["session"]["batch_id"].startswith("QE-")
+
+        # Check session complete endpoint via POST
+        req = urllib.request.Request(
+            "http://127.0.0.1:24835/api/session/complete",
+            data=json.dumps({"userId": "deborah", "reason": "Operator Clicked Finish Session", "forceSend": True}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1"},
+            method="POST",
+        )
+        monkeypatch.setattr(svc.session_tracker, "_dispatch_email", lambda s, t, h: True)
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            assert data["ok"] is True
+            assert data["emailed"] is True
+            assert data["batchId"].startswith("QE-")
+    finally:
+        daemon.stop()
+
+
+
+

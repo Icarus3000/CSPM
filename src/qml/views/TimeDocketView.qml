@@ -435,7 +435,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
     }
 
     function currentDirtyState() {
-        if (activeSubwindowId === "B04") return false; // DOCKET REPORT IS NEVER DIRTY
+        if (activeSubwindowId === "B04" || activeSubwindowId === "B09") return false; // REPORT / XERO RECONCILIATION NEVER DIRTY
         if (root.activeIsFeeDocket()) return !!(feeDocketEntryPanel && feeDocketEntryPanel.dirty);
         if (root.activeIsDisbursementDocket()) return !!(disbursementDocketEntryPanel && disbursementDocketEntryPanel.dirty);
         if (root.activeIsTrademarkEntry()) return !!root.trademarkFormDirty;
@@ -690,6 +690,7 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
             { "id": "B02", "title": "Fee Docket Entry" },
             { "id": "B05", "title": "Move Dockets Between Matters" },
             { "id": "B04", "title": "Docket Activity Report" },
+            { "id": "B09", "title": "Xero Reconciliation (LIH)" },
             { "id": "B16", "title": "Trademark Filing" },
             { "id": "B07", "title": "Deadline Master Calendar" },
             { "id": "B08", "title": "Deadline Entry Editor" }
@@ -748,6 +749,10 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
 
     function activeIsBulkDocketMove() {
         return String(activeSubwindowId || "") === "B05"
+    }
+
+    function activeIsXeroReconciliation() {
+        return String(activeSubwindowId || "") === "B09"
     }
 
     function activeIsDeadlineCalendar() {
@@ -2001,6 +2006,9 @@ function sidebarHoverBorder(active, hovered, activeAlpha, hoverAlpha, idleAlpha)
         }
         if (activeIsBulkDocketMove()) {
             return "Review and move selected unbilled time and fee dockets to another matter"
+        }
+        if (activeIsXeroReconciliation()) {
+            return "4-way Lawyers In-House (LIH) reconciliation and 1-click sync with Xero Projects (!6x!pP)"
         }
         if (activeIsTimerConsole()) {
             return "Central timer controls, checkpoint saves, and lock handoff management"
@@ -5415,6 +5423,26 @@ Behavior on border.color {
                     isDark: !root.lightTheme
                 }
 
+                XeroReconciliationPanel {
+                    id: xeroReconciliationPanel
+                    visible: root.activeIsXeroReconciliation()
+                    enabled: visible
+                    Layout.fillWidth: true
+                    Layout.fillHeight: visible
+                    Layout.maximumHeight: visible ? 16777215 : 0
+                    t: root.t
+                    appRef: root.appRef
+                    backend: (typeof docketApp !== "undefined") ? docketApp : ((root.appRef && root.appRef.docketing) ? root.appRef.docketing : null)
+                    surfaceColor: root.isProMode ? root.proSurface : root._panel
+                    canvasColor: root.isProMode ? root.proCanvas : root._bg
+                    inputColor: root.isProMode ? root.proControl : root._panelBase
+                    textColor: root.isProMode ? root.proInk : root._text
+                    mutedColor: root.isProMode ? root.proMutedInk : root._mutedText
+                    borderColor: root.isProMode ? root.proBorder : SemanticTheme.borderSubtle(root.t, root.appStyle)
+                    accentColor: root.isProMode ? root.proActiveFill : root._accent
+                    isDark: !root.lightTheme
+                }
+
                 Component {
                     id: docketActivityReportPanelComponent
                     DocketActivityReportPanel {
@@ -5978,7 +6006,7 @@ Behavior on border.color {
                     Layout.fillWidth: true
                     Layout.fillHeight: visible
                     Layout.maximumHeight: visible ? 16777215 : 0
-                    visible: !root.activeIsLiveDocket() && !root.activeIsFeeDocket() && !root.activeIsDisbursementDocket() && !root.activeIsBulkDocketMove() && !root.activeIsTimerConsole() && !root.activeIsDocketReport() && !root.activeIsTrademark()
+                    visible: !root.activeIsLiveDocket() && !root.activeIsFeeDocket() && !root.activeIsDisbursementDocket() && !root.activeIsBulkDocketMove() && !root.activeIsXeroReconciliation() && !root.activeIsTimerConsole() && !root.activeIsDocketReport() && !root.activeIsTrademark()
                     enabled: visible
                     radius: root.activeIsDeadlineEditor() ? 0 : root.sectionRadiusPx
                     color: root.activeIsDeadlineEditor()

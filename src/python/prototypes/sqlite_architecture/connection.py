@@ -112,6 +112,11 @@ def _ensure_column_migrations(conn: sqlite3.Connection) -> None:
         ("legacy_dockets_sync_status", "TEXT NOT NULL DEFAULT 'PENDING_SYNC'"),
         ("legacy_dockets_synced_at", "TEXT"),
         ("legacy_dockets_row_signature", "TEXT"),
+        ("xero_time_entry_id", "TEXT DEFAULT ''"),
+        ("xero_project_id", "TEXT DEFAULT ''"),
+        ("xero_task_id", "TEXT DEFAULT ''"),
+        ("xero_sync_status", "TEXT DEFAULT ''"),
+        ("xero_synced_at", "TEXT DEFAULT ''"),
     ]
     table_additions = {
         "Client": [
@@ -223,6 +228,8 @@ def _ensure_column_migrations(conn: sqlite3.Connection) -> None:
             ("joint_engagement_document", "TEXT DEFAULT ''"),
             ("default_biller_entity", "TEXT DEFAULT 'SOLE_PROP'"),
             ("kyc_completed", "INTEGER DEFAULT 0"),
+            ("xero_project_id", "TEXT DEFAULT ''"),
+            ("xero_task_id", "TEXT DEFAULT ''"),
         ],
         "TimeEntry": time_entry_cols,
         "time_entries": time_entry_cols,

@@ -503,6 +503,8 @@ def main():
         "--hidden-import=holidays.countries.canada",
         "--hidden-import=holidays.countries.united_states",
         "--hidden-import=services.tax_compliance_service",
+        "--hidden-import=services.xero_sync_service",
+        "--hidden-import=requests",
         "--collect-data=holidays",
         "--collect-data=tzdata",
         "--collect-submodules=tzdata",

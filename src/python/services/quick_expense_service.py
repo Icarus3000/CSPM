@@ -2819,6 +2819,13 @@ class QuickExpenseService:
                         try:
                             conn = sqlite3.connect(str(db_p))
                             cur = conn.cursor()
+                            _prev_xid, _prev_xpid, _prev_xtid = "", "", ""
+                            try:
+                                _xr = cur.execute("SELECT xero_time_entry_id, xero_project_id, xero_task_id FROM TimeEntry WHERE time_id = ?", (entry_id,)).fetchone()
+                                if _xr:
+                                    _prev_xid, _prev_xpid, _prev_xtid = str(_xr[0] or ""), str(_xr[1] or ""), str(_xr[2] or "")
+                            except Exception:
+                                pass
                             cur.execute("DELETE FROM TimeEntry WHERE time_id = ?", (entry_id,))
                             try:
                                 cur.execute("DELETE FROM time_entries WHERE entry_id = ? OR time_id = ?", (entry_id, entry_id))
@@ -2887,6 +2894,12 @@ class QuickExpenseService:
                                 )
                             except Exception:
                                 pass
+                            if _prev_xid:
+                                try:
+                                    cur.execute("UPDATE TimeEntry SET xero_time_entry_id = ?, xero_project_id = ?, xero_task_id = ? WHERE time_id = ?", (_prev_xid, _prev_xpid, _prev_xtid, entry_id))
+                                    cur.execute("UPDATE time_entries SET xero_time_entry_id = ?, xero_project_id = ?, xero_task_id = ? WHERE entry_id = ?", (_prev_xid, _prev_xpid, _prev_xtid, entry_id))
+                                except Exception:
+                                    pass
                             conn.commit()
                             conn.close()
                         except Exception as exc:
@@ -2944,6 +2957,8 @@ class QuickExpenseService:
                                         entry_id=entry_id,
                                         dry_run=False,
                                     )
+                            from services.xero_sync_service import trigger_async_xero_sync_entry
+                            trigger_async_xero_sync_entry(entry_id, self.paths)
                         except Exception as bg_exc:
                             logger.warning("Background docket workbook sync warning: %s", bg_exc)
 
@@ -3142,6 +3157,13 @@ class QuickExpenseService:
                         fb_payload.setdefault("hours", float(row[4] or 0.0))
                         fb_payload.setdefault("rawSeconds", int(row[5] or 0))
                         fb_payload.setdefault("description", str(row[6] or ""))
+                    try:
+                        _xr_del = cur.execute("SELECT xero_time_entry_id, xero_project_id FROM TimeEntry WHERE time_id = ?", (entry_id,)).fetchone()
+                        if _xr_del:
+                            fb_payload.setdefault("xeroTimeEntryId", str(_xr_del[0] or ""))
+                            fb_payload.setdefault("xeroProjectId", str(_xr_del[1] or ""))
+                    except Exception:
+                        pass
                     cur.execute("DELETE FROM TimeEntry WHERE time_id = ?", (entry_id,))
                     if cur.rowcount > 0:
                         deleted_sqlite_raw = True
@@ -3165,6 +3187,14 @@ class QuickExpenseService:
                                 remove_from_legacy_dockets=True,
                                 fallback_payload=fb_payload,
                             )
+                            if fb_payload.get("xeroTimeEntryId") and fb_payload.get("xeroProjectId"):
+                                from services.xero_sync_service import trigger_async_xero_delete_entry
+                                trigger_async_xero_delete_entry(
+                                    entry_id,
+                                    xero_time_entry_id=str(fb_payload.get("xeroTimeEntryId")),
+                                    xero_project_id=str(fb_payload.get("xeroProjectId")),
+                                    app_paths=self.paths,
+                                )
                             master_dir = self.paths.master_data_dir()
                             master_xlsm = (master_dir / "CSPM.xlsm") if master_dir else None
                             if master_xlsm and master_xlsm.is_file():

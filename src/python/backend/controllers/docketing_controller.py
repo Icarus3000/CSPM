@@ -18,6 +18,7 @@ class DocketingController(QObject):
     timeDocketAggregateFinished = Signal(dict)
     bulkDocketMovePreviewFinished = Signal(dict)
     bulkDocketMoveFinished = Signal(dict)
+    xeroReconciliationFinished = Signal(dict)
     invoiceLogEntryUpdated = Signal(dict)
     error = Signal(str)
     toast = Signal(str)
@@ -676,6 +677,93 @@ class DocketingController(QObject):
             return {"ok": False, "message": "Docket delete unavailable"}
         except Exception as exc:
             return {"ok": False, "message": str(exc)}
+
+    @Slot("QVariantMap")
+    def runXeroReconciliation(self, payload):
+        """Run 4-way LIH Xero Projects reconciliation (and optional sync/report export) in a background worker."""
+        req = dict(payload or {})
+        worker = Worker(
+            self._execute_xero_reconciliation,
+            req,
+            name="runXeroReconciliation",
+        )
+        worker.signals.result.connect(partial(self._on_xero_reconciliation_finished, worker))
+        worker.signals.error.connect(partial(self._on_xero_reconciliation_error, worker))
+        self._start_worker(worker)
+
+    def _execute_xero_reconciliation(self, req: dict) -> dict:
+        import datetime as _dt
+        import pathlib as _pl
+        from services.xero_sync_service import get_reconciliation_data, resolve_xero_runtime_paths
+
+        today = _dt.date.today()
+        start_date = str(req.get("startDate") or today.strftime("%Y-%m-01")).strip()
+        end_date = str(req.get("endDate") or today.strftime("%Y-%m-%d")).strip()
+        period_label = str(req.get("periodLabel") or f"{start_date} to {end_date}").strip()
+        do_sync = bool(req.get("doSync", False))
+        update_mismatches = bool(req.get("updateMismatches", False))
+        export_report = bool(req.get("exportReport", False))
+        app_paths = getattr(self._excel_repo, "paths", None)
+        report_out = None
+        if export_report:
+            rt_paths = resolve_xero_runtime_paths(app_paths)
+            shared_dir = _pl.Path(rt_paths["shared_dir"])
+            report_out = shared_dir / f"LIH_Xero_Reconciliation_{start_date}_to_{end_date}.md"
+        return get_reconciliation_data(
+            start_date=start_date,
+            end_date=end_date,
+            period_label=period_label,
+            do_sync=do_sync,
+            update_mismatches=update_mismatches,
+            report_out=report_out,
+            app_paths=app_paths,
+        )
+
+    def _on_xero_reconciliation_finished(self, worker, result):
+        try:
+            res_dict = dict(result or {})
+            if res_dict.get("saved_report_path"):
+                self.toast.emit(f"Exported Xero reconciliation report: {res_dict['saved_report_path']}")
+            elif res_dict.get("synced_count") or res_dict.get("updated_count"):
+                self.toast.emit(
+                    f"Xero Sync Complete: {res_dict.get('synced_count', 0)} created, {res_dict.get('updated_count', 0)} updated."
+                )
+            self.xeroReconciliationFinished.emit(res_dict)
+        finally:
+            self._release_worker(worker)
+
+    def _on_xero_reconciliation_error(self, worker, err_tuple):
+        try:
+            exctype, value, tb_str = err_tuple
+            msg = str(value)
+            self.error.emit(f"Xero reconciliation failed: {msg}")
+            self.xeroReconciliationFinished.emit({"ok": False, "message": msg})
+        finally:
+            self._release_worker(worker)
+
+    @Slot()
+    def openXeroLoginWindow(self):
+        """Launch interactive Edge CDP login window if the 30-day Xero cookie ever expires."""
+        def _run_login():
+            import importlib.util
+            import pathlib as _pl
+            from services.xero_sync_service import resolve_xero_runtime_paths
+            rt_paths = resolve_xero_runtime_paths(getattr(self._excel_repo, "paths", None))
+            shared_state = _pl.Path(rt_paths["shared_state_dir"])
+            skill_script = shared_state.parent / "skills" / "xero-sync" / "scripts" / "xero_sync.py"
+            if skill_script.is_file():
+                spec = importlib.util.spec_from_file_location("xero_sync_login", str(skill_script))
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    mod.interactive_cdp_login(shared_state)
+                    return {"ok": True}
+            return {"ok": False, "message": "xero_sync.py not found"}
+
+        worker = Worker(_run_login, name="openXeroLoginWindow")
+        worker.signals.result.connect(lambda _res: self._release_worker(worker))
+        worker.signals.error.connect(lambda _err: self._release_worker(worker))
+        self._start_worker(worker)
 
     @Slot(str, result="QVariantMap")
     def resetDocketTimer(self, tab_or_entry_id: str) -> dict:

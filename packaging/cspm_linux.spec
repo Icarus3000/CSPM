@@ -10,7 +10,7 @@ for package in ("backend", "bootstrap", "domain", "repositories", "services", "t
     hiddenimports.extend(collect_submodules(package))
 hiddenimports += ["pypdf", "PIL.Image", "PIL.ImageOps", "PIL.ImageSequence"]
 hiddenimports += ["PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets"]
-hiddenimports += ["msal", "secretstorage", "cryptography.fernet",
+hiddenimports += ["msal", "secretstorage", "cryptography.fernet", "requests",
                   "holidays.countries.canada", "holidays.countries.united_states"]
 
 datas = [(str(project_root / source), target) for source, target in (

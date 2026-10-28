@@ -176,7 +176,8 @@ var MODULE_CONFIGS = [
                     { "id": "B02", "label": "Fee Docket Entry", "route": "/docketing/fee-entry", "live": true, "singleInstanceKey": "docketing:fee-entry", "saveCommand": "fee-docket" },
                     { "id": "B06", "label": "Disbursement Entry", "route": "/docketing/disbursement-entry", "live": true, "singleInstanceKey": "docketing:disbursement-entry", "saveCommand": "disbursement-docket" },
                     { "id": "B05", "label": "Move Dockets Between Matters", "route": "/docketing/bulk-move", "live": true, "singleInstanceKey": "docketing:bulk-move" },
-                    { "id": "B04", "label": "Docket Activity Report", "route": "/docketing/activity-report", "tabType": "report" }
+                    { "id": "B04", "label": "Docket Activity Report", "route": "/docketing/activity-report", "tabType": "report" },
+                    { "id": "B09", "label": "Xero Reconciliation (LIH)", "route": "/docketing/xero-reconciliation", "live": true, "singleInstanceKey": "docketing:xero-reconciliation" }
                 ]
             },
             {

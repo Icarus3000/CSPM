@@ -1,7 +1,7 @@
 AccountCode,AccountName,AccountKind,Owner,Active,AliasList
 SIMPLII_CHEQUING,Simplii Chequing,chequing,Joint,1,
 CIBC_CHEQUING,CIBC Personal Chequing,chequing,Joint,1,"CIBC Chequing,CIBC Personal"
-CIBC_SAVINGS,CIBC Personal Savings,savings,Joint,1,"CIBC Savings"
+CIBC_SAVINGS,CIBC PC Savings,savings,PC,1,"CIBC Savings,PC Savings,CIBC Personal Savings"
 CIBC_PC_GENERAL,CIBC PC General,chequing,PC,1,"PC General,Cory PC General"
 CIBC_PC_TRUST,CIBC PC Trust,trust,PC,1,"PC Trust,Cory PC Trust,Trust Account"
 CIBC_LOC,CIBC Line of Credit,loc,Cory,1,"CIBC LOC"

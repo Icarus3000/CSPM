@@ -7807,6 +7807,12 @@ class ExcelRepo:
                         "SKIPPED",
                         entry_status=entry_status_override or "SAVED",
                     )
+            if entry_id and (entry_status_override or "SAVED").upper() == "SAVED" and not is_fee_entry:
+                try:
+                    from services.xero_sync_service import trigger_async_xero_sync_entry
+                    trigger_async_xero_sync_entry(entry_id, self.paths)
+                except Exception as x_exc:
+                    logger.debug("[excel_repo] Non-fatal Xero sync trigger warning: %s", x_exc)
             return result
         except Exception as exc:
             logger.warning("[excel_repo] Non-fatal legacy Dockets.xlsm sync error: %s", exc)
@@ -8299,13 +8305,42 @@ class ExcelRepo:
             deleted_excel = bool(self._delete_row_by_key_hard(TBL_TIME, sc.COL_TIME_ENTRY_ID, clean_id))
 
         deleted_sqlite = False
+        prior_xero_id = ""
+        prior_xero_pid = ""
         if sq is not None:
             try:
+                if hasattr(sq, "db_path") and sq.db_path:
+                    import sqlite3 as _sq3
+                    _c = _sq3.connect(str(sq.db_path), timeout=3)
+                    try:
+                        _r = _c.execute(
+                            "SELECT xero_time_entry_id, xero_project_id FROM TimeEntry WHERE time_id = ?",
+                            (clean_id,),
+                        ).fetchone()
+                        if _r:
+                            prior_xero_id = str(_r[0] or "")
+                            prior_xero_pid = str(_r[1] or "")
+                    except Exception:
+                        pass
+                    finally:
+                        _c.close()
                 deleted_sqlite = bool(sq.delete_time_entry(clean_id))
                 if raw_target != clean_id:
                     deleted_sqlite = bool(sq.delete_time_entry(raw_target)) or deleted_sqlite
             except Exception as exc:
                 logger.debug("[excel_repo] SQLite delete_time_entry error: %s", exc)
+
+        if remove_from_legacy_dockets and not clean_id.lower().startswith("draft:"):
+            try:
+                from services.xero_sync_service import trigger_async_xero_delete_entry
+                trigger_async_xero_delete_entry(
+                    clean_id,
+                    xero_time_entry_id=prior_xero_id,
+                    xero_project_id=prior_xero_pid,
+                    app_paths=self.paths,
+                )
+            except Exception:
+                pass
 
         removed_recovery = self._remove_from_timer_recovery(
             raw_target,
