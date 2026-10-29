@@ -1,4 +1,4 @@
-const CACHE_NAME = "cspm-quick-expense-v17";
+const CACHE_NAME = "cspm-quick-expense-__LPN_APP_VERSION__";
 const ASSETS = ["/", "/index.html", "/manifest.json", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -16,6 +16,10 @@ self.addEventListener("activate", (event) => {
       await self.clients.claim();
     })()
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -52,6 +53,33 @@ def is_port_listening(port: int = DEFAULT_PORT, host: str = "127.0.0.1") -> bool
         return sock.connect_ex((host, port)) == 0
 
 
+
+_QE_VER_CACHE: Dict[str, Any] = {"sig": None, "ver": "qe-init"}
+
+
+def _compute_live_qe_version(template_dir: Path) -> str:
+    try:
+        tracked = [
+            template_dir / "index.html",
+            template_dir / "sw.js",
+            Path(__file__).resolve(),
+            Path(__file__).resolve().parent / "services" / "quick_expense_service.py",
+        ]
+        sig = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in tracked if p.exists())
+        if _QE_VER_CACHE.get("sig") == sig:
+            return str(_QE_VER_CACHE["ver"])
+        h = hashlib.sha256()
+        for p in tracked:
+            if p.exists():
+                h.update(p.read_bytes())
+        ver = "qe-" + h.hexdigest()[:10]
+        _QE_VER_CACHE["sig"] = sig
+        _QE_VER_CACHE["ver"] = ver
+        return ver
+    except Exception:
+        return "qe-fallback"
+
+
 def get_lan_ip() -> str:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -87,7 +115,10 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        ver = _compute_live_qe_version(self.template_dir)
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("X-App-Version", ver)
+        self.send_header("Access-Control-Expose-Headers", "X-App-Version")
         self.send_header("Connection", "close")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
@@ -95,16 +126,22 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, file_path: Path, content_type: str) -> None:
+    def _send_file(self, file_path: Path, content_type: str, inject_version: bool = False) -> None:
         self.close_connection = True
         if not file_path.exists():
             self.send_error(404, "File not found")
             return
-        data = file_path.read_bytes()
+        ver = _compute_live_qe_version(self.template_dir)
+        if inject_version:
+            txt = file_path.read_text(encoding="utf-8").replace("__LPN_APP_VERSION__", ver)
+            data = txt.encode("utf-8")
+        else:
+            data = file_path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0" if inject_version else "no-cache")
+        self.send_header("X-App-Version", ver)
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(data)
@@ -131,24 +168,31 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
 
         if path in ("/", "/index.html"):
-            self._send_file(self.template_dir / "index.html", "text/html; charset=utf-8")
+            self._send_file(self.template_dir / "index.html", "text/html; charset=utf-8", inject_version=True)
             return
         if path == "/manifest.json":
             self._send_file(self.template_dir / "manifest.json", "application/manifest+json; charset=utf-8")
             return
         if path in ("/sw.js",):
-            self._send_file(self.template_dir / "sw.js", "application/javascript; charset=utf-8")
+            self._send_file(self.template_dir / "sw.js", "application/javascript; charset=utf-8", inject_version=True)
             return
         if path == "/icon.svg":
             self._send_file(self.template_dir / "icon.svg", "image/svg+xml; charset=utf-8")
             return
 
+        if path == "/api/version":
+            ver = _compute_live_qe_version(self.template_dir)
+            self._send_json({"ok": True, "app": "Quick Expense", "version": ver, "appVersion": ver})
+            return
+
         if path == "/api/health":
+            ver = _compute_live_qe_version(self.template_dir)
             self._send_json(
                 {
                     "ok": True,
                     "service": "cspm-quick-expense",
-                    "appVersion": "v17",
+                    "version": ver,
+                    "appVersion": ver,
                     "lanIp": get_lan_ip(),
                     "port": self.server.server_port,
                 }
