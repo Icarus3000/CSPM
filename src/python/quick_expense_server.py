@@ -83,6 +83,7 @@ def _compute_live_qe_version(template_dir: Path) -> str:
             template_dir / "sw.js",
             Path(__file__).resolve(),
             Path(__file__).resolve().parent / "services" / "quick_expense_service.py",
+            Path(__file__).resolve().parent / "services" / "quick_expense_display.py",
         ]
         sig = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in tracked if p.exists())
         if _QE_VER_CACHE.get("sig") == sig:
@@ -98,6 +99,44 @@ def _compute_live_qe_version(template_dir: Path) -> str:
     except Exception:
         return "qe-fallback"
 
+
+
+def _postprocess_federated_json(req_path: str, raw_bytes: bytes) -> bytes:
+    """Normalize federated /api/bootstrap, /api/entries, and /api/report responses
+    so A/P double-entry pairs and Today's expense summary are crystal clear immediately."""
+    try:
+        from urllib.parse import parse_qs, urlparse
+        from services.quick_expense_display import build_clear_today_summary, normalize_api_payload_for_display
+        parsed = urlparse(req_path)
+        p = parsed.path
+        if p not in ("/api/bootstrap", "/api/entries", "/api/report"):
+            return raw_bytes
+        payload = json.loads(raw_bytes.decode("utf-8"))
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            return raw_bytes
+        if p in ("/api/entries", "/api/report"):
+            norm = normalize_api_payload_for_display(p, payload)
+            return json.dumps(norm, ensure_ascii=False).encode("utf-8")
+        if p == "/api/bootstrap":
+            ts = payload.get("todaySummary") or {}
+            # If remote primary hasn't pulled build_clear_today_summary yet (missing summaryLabel),
+            # fetch today's entries once from primary and compute exact build_clear_today_summary!
+            if "summaryLabel" not in ts:
+                import urllib.request
+                qs = parse_qs(parsed.query)
+                uid = (qs.get("userId") or [payload.get("userId") or "deborah"])[0]
+                ent_req = urllib.request.Request(
+                    f"{PRIMARY_QE_ORIGIN}/api/entries?userId={uid}&period=today",
+                    headers={"X-CSPM-No-Proxy": "1", "Accept": "application/json"},
+                )
+                with urllib.request.urlopen(ent_req, timeout=3.5) as er:
+                    ed = json.loads(er.read().decode("utf-8"))
+                    if ed.get("ok") and isinstance(ed.get("entries"), list):
+                        payload["todaySummary"] = build_clear_today_summary(ed["entries"])
+                        return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        return raw_bytes
+    except Exception:
+        return raw_bytes
 
 def get_lan_ip() -> str:
     try:
@@ -222,6 +261,8 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                 status = resp.status
                 ctype = resp.headers.get("Content-Type") or "application/json; charset=utf-8"
                 data = resp.read()
+                if method == "GET" and status == 200 and "application/json" in ctype.lower():
+                    data = _postprocess_federated_json(self.path, data)
                 if method == "GET" and status == 200 and data:
                     try:
                         cache_file.write_bytes(data)

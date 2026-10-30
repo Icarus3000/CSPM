@@ -741,8 +741,9 @@ class QuickExpenseService:
                     "streamId": str(t.get("streamId") or ""),
                 }
 
+        from services.quick_expense_display import build_clear_today_summary
         today_entries = [t for t in visible_txns if t.get("txnDate") == date.today().isoformat()]
-        today_total = round(sum(float(t.get("amount") or 0.0) for t in today_entries), 2)
+        clear_today = build_clear_today_summary(today_entries)
 
         return {
             "ok": True,
@@ -753,11 +754,7 @@ class QuickExpenseService:
             "accounts": accounts,
             "categories": categories,
             "payeeMemory": list(payee_memory.values())[:150],
-            "todaySummary": {
-                "count": len(today_entries),
-                "totalAmount": today_total,
-                "totalFormatted": f"${today_total:,.2f}",
-            },
+            "todaySummary": clear_today,
         }
 
     # ------------------------------------------------------------------
@@ -1358,7 +1355,9 @@ class QuickExpenseService:
                 raw_rows.append(qitem)
                 seen_ids.add(qid)
 
-        out: List[Dict[str, Any]] = []
+        from services.quick_expense_display import consolidate_ap_entries_for_display
+
+        visible_enriched: List[Dict[str, Any]] = []
         target_stream = str(stream_id or "").strip().upper()
         target_mode = str(mode_filter or "").strip().lower()
         q = str(search_query or "").strip().lower()
@@ -1366,7 +1365,11 @@ class QuickExpenseService:
         for r in raw_rows:
             if not self._is_transaction_visible_to_user(r, uid):
                 continue
-            item = self._enrich_row(r)
+            visible_enriched.append(self._enrich_row(r))
+
+        consolidated_visible = consolidate_ap_entries_for_display(visible_enriched)
+        out: List[Dict[str, Any]] = []
+        for item in consolidated_visible:
             if target_stream and target_stream != "ALL" and item["streamId"] != target_stream:
                 continue
             if target_mode and target_mode != "all" and item["mode"].lower() != target_mode:
@@ -1563,6 +1566,9 @@ class QuickExpenseService:
             "dateFrom": d_from,
             "dateTo": d_to,
             "entryCount": len(entries),
+            "expenseCount": sum(1 for x in entries if x.get("mode") == "Expense"),
+            "incomeCount": sum(1 for x in entries if x.get("mode") == "Income"),
+            "transferCount": sum(1 for x in entries if x.get("mode") not in ("Expense", "Income")),
             "receiptsCount": receipts_count,
             "expensePreTaxTotal": round(max(0.0, expense_total - expense_hst), 2),
             "expensePreTaxFormatted": f"${max(0.0, expense_total - expense_hst):,.2f}",

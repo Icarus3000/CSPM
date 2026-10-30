@@ -1848,11 +1848,11 @@
       <!-- Summary Cards -->
       <div class="summary-strip">
         <div class="sum-box">
-          <div class="sum-label">Entries &amp; Receipts</div>
+          <div class="sum-label">Transactions</div>
           <div class="sum-val" id="repSumCount">0</div>
         </div>
         <div class="sum-box">
-          <div class="sum-label">Expenses (Incl. HST)</div>
+          <div class="sum-label">Total Spent (Expenses)</div>
           <div class="sum-val" id="repSumExpense">$0.00</div>
         </div>
         <div class="sum-box">
@@ -1860,7 +1860,7 @@
           <div class="sum-val" id="repSumHst">$0.00</div>
         </div>
         <div class="sum-box">
-          <div class="sum-label">Income / Net Cash</div>
+          <div class="sum-label">Income Received</div>
           <div class="sum-val" id="repSumIncome">$0.00</div>
         </div>
       </div>
@@ -2378,7 +2378,15 @@
       }
       if (topLbl) topLbl.textContent = "📋 Check What I Added";
       const s = bootstrapData.todaySummary || { count: 0, totalFormatted: "$0.00" };
-      if (badge) badge.textContent = `(Today: ${s.count} · ${s.totalFormatted})`;
+      if (badge) {
+        if (s.summaryLabel) {
+          badge.textContent = `(${s.summaryLabel})`;
+        } else {
+          const cnt = Number(s.expenseCount !== undefined ? s.expenseCount : (s.count || 0));
+          const noun = cnt === 1 ? "expense" : "expenses";
+          badge.textContent = cnt > 0 ? `(Today: ${cnt} ${noun} · ${s.totalFormatted || "$0.00"})` : `(Today: $0.00 spent)`;
+        }
+      }
     }
 
     function onTopReportButtonClick() {
@@ -3179,8 +3187,25 @@
         if (!data.ok) return;
 
         document.getElementById("reportSubtitle").textContent = `Showing: ${data.periodLabel}`;
-        const recCnt = (data.charts && data.charts.receiptsCount) || 0;
-        document.getElementById("repSumCount").textContent = recCnt > 0 ? `${data.entryCount || 0} (${recCnt} 🧾)` : String(data.entryCount || 0);
+        const recCnt = data.receiptsCount || (data.charts && data.charts.receiptsCount) || 0;
+        const entriesForCount = data.entries || [];
+        const expCnt = (data.expenseCount !== undefined)
+          ? Number(data.expenseCount)
+          : entriesForCount.filter((x) => String(x.mode || "").toLowerCase() === "expense").length;
+        const incCnt = (data.incomeCount !== undefined)
+          ? Number(data.incomeCount)
+          : entriesForCount.filter((x) => String(x.mode || "").toLowerCase() === "income").length;
+        const xferCnt = (data.transferCount !== undefined)
+          ? Number(data.transferCount)
+          : Math.max(0, entriesForCount.length - expCnt - incCnt);
+        const countParts = [];
+        if (expCnt > 0 || entriesForCount.length === 0) {
+          countParts.push(`${expCnt} ${expCnt === 1 ? "expense" : "expenses"}`);
+        }
+        if (incCnt > 0) countParts.push(`${incCnt} income`);
+        if (xferCnt > 0) countParts.push(`${xferCnt} ${xferCnt === 1 ? "transfer" : "transfers"}`);
+        if (recCnt > 0) countParts.push(`${recCnt} 🧾`);
+        document.getElementById("repSumCount").textContent = countParts.join(" · ");
         document.getElementById("repSumExpense").textContent = data.expenseGrandFormatted || "$0.00";
         document.getElementById("repSumHst").textContent = data.expenseHstFormatted || "$0.00";
         document.getElementById("repSumIncome").textContent = data.incomeFormatted || "$0.00";
@@ -3212,16 +3237,22 @@
             ? `<button type="button" class="row-action-btn" style="background:#ECFDF5; border:1px solid #10B981; color:#047857;" onclick='openReceiptViewerModal(${JSON.stringify(e.receiptUrl || "")}, ${JSON.stringify(e.payee || e.categoryName || "Receipt")}, ${JSON.stringify(e.receiptFolder || e.receiptFileName || "")}, ${JSON.stringify(e.receiptMimeType || "")})'>🧾 Receipt</button>`
             : `<button type="button" class="row-action-btn" style="background:#F8FAFC; border:1px dashed #94A3B8; color:#475569;" onclick="triggerAttachReceiptToExisting('${e.transactionId}')">📸 + Receipt</button>`;
 
+          const titleLabel = e.payee || e.expenseDetails || e.categoryName;
+          const detailLine = (e.expenseDetails && e.expenseDetails !== titleLabel && e.expenseDetails !== e.notes)
+            ? `<br/>📄 ${e.expenseDetails}`
+            : "";
           card.innerHTML = `
             <div class="entry-row-left">
               <div class="entry-row-title">
-                <span>${e.categoryIcon} ${e.payee || e.categoryName}</span>
+                <span>${e.categoryIcon || "🧾"} ${titleLabel}</span>
                 <span class="entry-badge">${e.streamIcon} ${e.streamShortLabel}</span>
                 <span class="entry-badge">${e.mode}</span>
+                ${e.paidViaAp ? `<span class="entry-badge" style="background:#EEF2FF; color:#4338CA;">📒 Paid via A/P</span>` : ""}
                 ${e.hasReceipt ? `<span class="entry-badge" style="background:#DCFCE7; color:#047857;">🧾 Receipt Saved</span>` : ""}
               </div>
               <div class="entry-row-sub">
                 📅 ${e.txnDate} &nbsp;·&nbsp; 🏷️ ${e.categoryName} &nbsp;·&nbsp; ${acctText}
+                ${detailLine}
                 ${e.notes ? `<br/>📝 ${e.notes}` : ""}
                 ${e.hasReceipt && e.receiptFolder ? `<br/>📁 <span style="color:#047857;">${e.receiptFolder}</span>` : ""}
               </div>

@@ -27,6 +27,7 @@ WATCHED_BACKEND_FILES = [
     Path(__file__).resolve(),
     SRC_PYTHON / "quick_expense_server.py",
     SRC_PYTHON / "services" / "quick_expense_service.py",
+    SRC_PYTHON / "services" / "quick_expense_display.py",
 ]
 
 
@@ -68,7 +69,6 @@ def _auto_git_pull_if_updated() -> bool:
             timeout=5,
         ).strip()
         if head and remote and head != remote:
-            # Check if remote has commits not in HEAD
             anc = subprocess.run(
                 ["git", "-C", str(REPO_ROOT), "merge-base", "--is-ancestor", remote, head],
                 stdout=subprocess.DEVNULL,
@@ -94,8 +94,8 @@ def _auto_git_pull_if_updated() -> bool:
 def _configure_tailscale_if_ready(configured_flag: list[bool]) -> None:
     if os.name != "nt" or not TAILSCALE_EXE.exists():
         return
-    # Only enable public Tailscale Funnel on primary OFFICENEW unless explicitly opted in
     import socket
+
     if socket.gethostname().strip().lower() != "officenew" and os.environ.get("CSPM_ENABLE_FUNNEL") != "1":
         return
     try:
@@ -113,7 +113,11 @@ def _configure_tailscale_if_ready(configured_flag: list[bool]) -> None:
             if not configured_flag[0]:
                 subprocess.run([str(TAILSCALE_EXE), "set", "--unattended"], creationflags=CREATE_NO_WINDOW, timeout=5)
                 subprocess.run([str(TAILSCALE_EXE), "funnel", "--bg", "24820"], creationflags=CREATE_NO_WINDOW, timeout=8)
-                subprocess.run([str(TAILSCALE_EXE), "serve", "--bg", "--tcp", "80", "tcp://127.0.0.1:24820"], creationflags=CREATE_NO_WINDOW, timeout=8)
+                subprocess.run(
+                    [str(TAILSCALE_EXE), "serve", "--bg", "--tcp", "80", "tcp://127.0.0.1:24820"],
+                    creationflags=CREATE_NO_WINDOW,
+                    timeout=8,
+                )
                 configured_flag[0] = True
             TAILSCALE_INFO_FILE.write_text(
                 json.dumps(
@@ -182,10 +186,8 @@ def main() -> None:
             time.sleep(4)
     except BaseException:
         with open(CRASH_LOG, "a", encoding="utf-8") as fh:
-            fh.write("=== SUPERVISOR CRASH ===
-")
-            fh.write(traceback.format_exc() + "
-")
+            fh.write("=== SUPERVISOR CRASH ===\n")
+            fh.write(traceback.format_exc() + "\n")
 
 
 if __name__ == "__main__":
