@@ -455,6 +455,28 @@ class QuickExpenseService:
         self._cached_raw_categories: Optional[List[Dict[str, Any]]] = None
         self._cached_ar_snapshot: Optional[List[Dict[str, Any]]] = None
 
+    def _refresh_from_shared_master_if_newer(self) -> None:
+        if self._is_isolated_test():
+            return
+        try:
+            m_dir = getattr(self.paths, 'override_master_dir', None) or self.paths.master_data_dir()
+            l_dir = self.paths.data_dir()
+            if not m_dir or not l_dir or not m_dir.is_dir() or not l_dir.is_dir():
+                return
+            if str(m_dir.resolve()).lower() == str(l_dir.resolve()).lower():
+                return
+            import shutil
+            for fname in ('cspm.db', 'CSPM.xlsm'):
+                m_file = m_dir / fname
+                l_file = l_dir / fname
+                try:
+                    if m_file.is_file() and (not l_file.is_file() or m_file.stat().st_mtime > l_file.stat().st_mtime + 2.0):
+                        shutil.copy2(str(m_file), str(l_file))
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
     def _is_isolated_test(self) -> bool:
         if os.environ.get("PYTEST_CURRENT_TEST", "").strip():
             return True
@@ -1341,6 +1363,7 @@ class QuickExpenseService:
         with self._lock:
             if self._is_isolated_test():
                 self.flush_pending_inbox()
+            self._refresh_from_shared_master_if_newer()
             raw_rows = list(self.finance_repo.list_transactions(filters))
             queued_rows = self._read_queued_entries()
         seen_ids = {str(r.get("transactionId") or "") for r in raw_rows}

@@ -305,10 +305,18 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             logger.debug("Primary peer %s unreachable (%s); checking peer cache / local failover", target_url, exc)
 
-        # If GET and we have a recent cached snapshot from primary, serve it cleanly while offline
+        # If GET and we have a recent cached snapshot from primary (newer than local DB), serve it while offline
         if method == "GET" and cache_file.exists() and meta_file.exists():
             try:
                 meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                cache_ts = float(meta.get("ts") or 0.0)
+                try:
+                    self.service._refresh_from_shared_master_if_newer()
+                    wb_p = self.service.paths.data_dir() / "CSPM.xlsm"
+                    if wb_p.is_file() and wb_p.stat().st_mtime > cache_ts:
+                        return False
+                except Exception:
+                    pass
                 data = cache_file.read_bytes()
                 ver = _compute_live_qe_version(self.template_dir)
                 self.close_connection = True
