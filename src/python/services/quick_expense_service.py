@@ -431,6 +431,17 @@ class QuickExpenseService:
                     if default_paths.override_data_dir is None and default_paths.override_master_dir is not None:
                         if (default_paths.override_master_dir / "CSPM.xlsm").is_file():
                             default_paths.override_data_dir = default_paths.override_master_dir
+                    if default_paths.override_data_dir is not None and default_paths.override_master_dir is not None:
+                        if default_paths.override_data_dir != default_paths.override_master_dir:
+                            import shutil
+                            for fname in ("cspm.db", "CSPM.xlsm"):
+                                m_file = default_paths.override_master_dir / fname
+                                l_file = default_paths.override_data_dir / fname
+                                try:
+                                    if m_file.is_file() and (not l_file.is_file() or m_file.stat().st_mtime > l_file.stat().st_mtime + 5.0):
+                                        shutil.copy2(str(m_file), str(l_file))
+                                except OSError:
+                                    pass
                 except Exception:
                     pass
             self.paths = default_paths

@@ -29,6 +29,25 @@ logger = logging.getLogger("cspm.quick_expense")
 
 DEFAULT_PORT = int(os.environ.get("CSPM_QUICK_EXPENSE_PORT", "24820"))
 
+PRIMARY_QE_ORIGIN = os.environ.get("CSPM_QE_PRIMARY_URL", "https://officenew.tail38e9b9.ts.net").rstrip("/")
+
+
+def _is_primary_qe_host() -> bool:
+    if os.environ.get("CSPM_QE_FORCE_LOCAL", "").strip() in ("1", "true", "True"):
+        return True
+    if os.environ.get("PYTEST_CURRENT_TEST", "").strip():
+        return True
+    return socket.gethostname().strip().lower() == "officenew"
+
+
+def _peer_cache_dir() -> Path:
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "CSPM" / "working" / "data" / "QuickExpense_Sync" / "peer_cache"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return base
+
 
 def _resolve_template_dir() -> Path:
     paths = AppPaths(root=AppPaths.project_root())
@@ -162,6 +181,112 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
 
+
+    def _try_federate_to_primary(self, method: str, raw_body: bytes = b"") -> bool:
+        """On secondary workstations (e.g. Omnibook / iMacFedora), transparently federate
+        live /api/* data calls to canonical OFFICENEW (https://officenew.tail38e9b9.ts.net)
+        so mobile, OFFICENEW, and Omnibook always share 100% real-time unified data, while
+        caching GET responses locally for seamless offline failover."""
+        if _is_primary_qe_host():
+            return False
+        if self.headers.get("X-CSPM-No-Proxy") == "1":
+            return False
+        if not PRIMARY_QE_ORIGIN:
+            return False
+
+        import urllib.request
+        import urllib.error
+
+        target_url = f"{PRIMARY_QE_ORIGIN}{self.path}"
+        cache_key = hashlib.sha256(f"{method}:{self.path}".encode("utf-8")).hexdigest()[:24]
+        cache_file = _peer_cache_dir() / f"{cache_key}.bin"
+        meta_file = _peer_cache_dir() / f"{cache_key}.json"
+
+        headers = {
+            "X-CSPM-No-Proxy": "1",
+            "User-Agent": self.headers.get("User-Agent") or "CSPM-QuickExpense-Peer/1.0",
+            "Accept": self.headers.get("Accept") or "application/json",
+        }
+        if method == "POST":
+            headers["Content-Type"] = self.headers.get("Content-Type") or "application/json; charset=utf-8"
+
+        req = urllib.request.Request(
+            target_url,
+            data=raw_body if method == "POST" else None,
+            headers=headers,
+            method=method,
+        )
+        try:
+            timeout_sec = 4.5 if method == "GET" else 8.0
+            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+                status = resp.status
+                ctype = resp.headers.get("Content-Type") or "application/json; charset=utf-8"
+                data = resp.read()
+                if method == "GET" and status == 200 and data:
+                    try:
+                        cache_file.write_bytes(data)
+                        meta_file.write_text(json.dumps({"contentType": ctype, "path": self.path, "ts": time.time()}), encoding="utf-8")
+                    except Exception:
+                        pass
+                ver = _compute_live_qe_version(self.template_dir)
+                self.close_connection = True
+                self.send_response(status)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+                self.send_header("X-App-Version", ver)
+                self.send_header("X-CSPM-Data-Source", "officenew-live")
+                self.send_header("Access-Control-Expose-Headers", "X-App-Version, X-CSPM-Data-Source")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(data)
+                return True
+        except urllib.error.HTTPError as http_err:
+            # Propagate genuine 4xx responses (e.g. wrong PIN or 404 PDF) directly from primary
+            if 400 <= http_err.code < 500:
+                try:
+                    err_body = http_err.read()
+                    ctype = http_err.headers.get("Content-Type") or "application/json; charset=utf-8"
+                    ver = _compute_live_qe_version(self.template_dir)
+                    self.close_connection = True
+                    self.send_response(http_err.code)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", str(len(err_body)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-App-Version", ver)
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(err_body)
+                    return True
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug("Primary peer %s unreachable (%s); checking peer cache / local failover", target_url, exc)
+
+        # If GET and we have a recent cached snapshot from primary, serve it cleanly while offline
+        if method == "GET" and cache_file.exists() and meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                data = cache_file.read_bytes()
+                ver = _compute_live_qe_version(self.template_dir)
+                self.close_connection = True
+                self.send_response(200)
+                self.send_header("Content-Type", meta.get("contentType") or "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-App-Version", ver)
+                self.send_header("X-CSPM-Data-Source", "peer-cache-offline")
+                self.send_header("Access-Control-Expose-Headers", "X-App-Version, X-CSPM-Data-Source")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(data)
+                return True
+            except Exception:
+                pass
+        return False
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path
@@ -203,6 +328,9 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
                     "port": self.server.server_port,
                 }
             )
+            return
+
+        if path.startswith("/api/") and self._try_federate_to_primary("GET"):
             return
 
         user_id = (qs.get("userId") or ["deborah"])[0]
@@ -314,7 +442,10 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         length = int(self.headers.get("Content-Length") or "0")
-        raw_body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        raw_bytes = self.rfile.read(length) if length > 0 else b"{}"
+        if path.startswith("/api/") and self._try_federate_to_primary("POST", raw_bytes):
+            return
+        raw_body = raw_bytes.decode("utf-8")
         try:
             body = json.loads(raw_body or "{}")
         except Exception:

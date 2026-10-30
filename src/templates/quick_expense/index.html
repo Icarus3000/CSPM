@@ -6346,6 +6346,29 @@
         navigator.setAppBadge(1).catch(function() {});
       }
     } catch (e) {}
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        if (swRegRef && typeof swRegRef.showNotification === "function") {
+          swRegRef.showNotification("Update Available - Quick Expense", {
+            body: "A new Quick Expense update was just pushed. Click to update now.",
+            icon: "/icon-192.png",
+            badge: "/icon-192.png",
+            tag: "lpn-qe-update-available",
+            renotify: true
+          }).catch(function() {});
+        } else {
+          const n = new Notification("Update Available - Quick Expense", {
+            body: "A new Quick Expense update was just pushed. Click to update now.",
+            icon: "/icon-192.png",
+            tag: "lpn-qe-update-available"
+          });
+          n.onclick = function() {
+            window.focus();
+            if (window.__lpnApplyPwaUpdate) window.__lpnApplyPwaUpdate();
+          };
+        }
+      }
+    } catch (e) {}
   }
 
   window.__lpnMinimizePwaUpdate = function() {
@@ -6474,11 +6497,32 @@
   });
   window.addEventListener("focus", checkServerVersion);
   window.addEventListener("online", checkServerVersion);
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", function(ev) {
+      if (ev.data && ev.data.type === "LPN_APPLY_UPDATE_NOW" && window.__lpnApplyPwaUpdate) {
+        window.__lpnApplyPwaUpdate();
+      }
+    });
+  }
+  // Request notification permission gently once on first click when running as installed standalone app
+  document.addEventListener("click", function _reqUpdNotifOnce() {
+    document.removeEventListener("click", _reqUpdNotifOnce);
+    try {
+      const isStandalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+      if (isStandalone && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(function() {});
+      }
+    } catch (e) {}
+  });
+  let bgTick = 0;
   setInterval(function() {
     if (document.visibilityState === "visible") {
       checkServerVersion();
+    } else {
+      bgTick = (bgTick + 1) % 3;
+      if (bgTick === 0) checkServerVersion();
     }
-  }, 25000);
+  }, 15000);
 })();
 </script>
 <!-- /LPN Universal Live PWA Update Push Banner -->
