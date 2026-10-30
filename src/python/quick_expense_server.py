@@ -179,6 +179,12 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         if path == "/icon.svg":
             self._send_file(self.template_dir / "icon.svg", "image/svg+xml; charset=utf-8")
             return
+        if path in ("/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png"):
+            self._send_file(self.template_dir / path.lstrip("/"), "image/png")
+            return
+        if path == "/favicon.ico":
+            self._send_file(self.template_dir / "favicon.ico", "image/x-icon")
+            return
 
         if path == "/api/version":
             ver = _compute_live_qe_version(self.template_dir)

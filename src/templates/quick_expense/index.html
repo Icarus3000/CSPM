@@ -8,8 +8,10 @@
   <meta name="apple-mobile-web-app-title" content="Quick Expense" />
   <meta name="theme-color" content="#1E40AF" />
   <link rel="manifest" href="/manifest.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <title>CSPM Quick Expense</title>
   <style>
     :root {
@@ -861,6 +863,25 @@
 
   <div class="app-shell">
 
+    <!-- ================= 0. PWA INSTALLABLE WEB APP BANNER ================= -->
+    <div id="pwaInstallBanner" style="display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: linear-gradient(135deg, #1E3A8A 0%, #0F766E 100%); color: #FFFFFF; padding: 11px 14px; border-radius: 14px; margin-bottom: 12px; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.16);">
+      <div style="display: flex; align-items: center; gap: 10px; min-width: 200px; flex: 1;">
+        <img src="/icon-192.png" alt="Quick Expense" width="34" height="34" style="border-radius: 8px; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.25);" />
+        <div style="line-height: 1.25;">
+          <div style="font-weight: 800; font-size: 0.94rem;">Install Quick Expense Web App</div>
+          <div id="pwaInstallSubtext" style="font-size: 0.78rem; opacity: 0.92;">Add to Windows Start Menu &amp; Taskbar as a standalone app</div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button type="button" id="pwaInstallActionBtn" onclick="window.__cspmTriggerPwaInstall()" style="background: #FFFFFF; color: #0F172A; border: none; border-radius: 999px; padding: 8px 15px; font-weight: 800; font-size: 0.85rem; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.18);">
+          ?? Install App
+        </button>
+        <button type="button" onclick="window.__cspmDismissPwaInstall()" title="Hide install bar" style="background: rgba(255,255,255,0.16); color: #FFFFFF; border: none; border-radius: 999px; width: 28px; height: 28px; font-weight: 800; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+          ?
+        </button>
+      </div>
+    </div>
+
     <!-- ================= 1. LOGIN VIEW ================= -->
     <div id="loginView" class="login-card" style="display: none;">
       <div class="login-title">👋 Welcome to Quick Expense</div>
@@ -889,7 +910,7 @@
         <div style="margin-bottom: 18px;">
           <label style="font-weight: 700; font-size: 0.92rem; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;">
             <input type="checkbox" id="rememberUserChk" checked style="width: 18px; height: 18px;" />
-            Remember me on this phone / Chromebook
+            Remember me on this device
           </label>
         </div>
 

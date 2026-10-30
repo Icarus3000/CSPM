@@ -1,5 +1,5 @@
 const CACHE_NAME = "cspm-quick-expense-__LPN_APP_VERSION__";
-const ASSETS = ["/", "/index.html", "/manifest.json", "/icon.svg"];
+const ASSETS = ["/", "/index.html", "/manifest.json", "/icon.svg", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png", "/favicon.ico"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
