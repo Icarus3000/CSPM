@@ -6567,6 +6567,22 @@ Behavior on border.color {
                     }
 
                     PillButton {
+                        visible: root.activeIsNewClientWizard()
+                            || root.activeIsNewMatterWizard()
+                            || root.activeIsClientProfile360()
+                            || root.activeIsMatterProfile360()
+                        t: root.t
+                        metrics: root.responsiveMetrics
+                        sfxBus: root.sfxBus
+                        text: "Push to LEAP"
+                        primary: false
+                        accentColor: "#1d4ed8"
+                        Layout.preferredWidth: root.ratioPxW(0.128, 128)
+                        Layout.preferredHeight: root.fieldHeightPx
+                        onClicked: root.openPushToLeapDialog()
+                    }
+
+                    PillButton {
                         visible: root.activeIsDocketActivityReport()
                         t: root.t
                         metrics: root.responsiveMetrics
@@ -7269,6 +7285,391 @@ Behavior on border.color {
                     onClicked: {
                         deleteMatterConfirmPopup.close()
                     }
+                }
+            }
+        }
+    }
+
+    function openPushToLeapDialog() {
+        var pre = {}
+        var mKey = ""
+        var cKey = ""
+        if (root.activeIsMatterProfile360()) {
+            mKey = (root.selectedMatterProfile && root.selectedMatterProfile.matterId)
+                ? String(root.selectedMatterProfile.matterId)
+                : String(root.selectedMatterId || "")
+        } else if (root.activeIsNewMatterWizard() && root.matterEditMode) {
+            mKey = String(root.selectedMatterId || "")
+        }
+        if (root.activeIsClientProfile360()) {
+            cKey = (root.selectedClientProfile && root.selectedClientProfile.clientId)
+                ? String(root.selectedClientProfile.clientId)
+                : String(root.selectedClientId || "")
+        } else if (root.activeIsNewClientWizard() && root.clientEditMode) {
+            cKey = String(root.selectedClientId || "")
+        }
+
+        if ((mKey.length > 0 || cKey.length > 0) && root.appRef && root.appRef.getLeapCspmPrefillJson) {
+            try {
+                var rawPre = root.appRef.getLeapCspmPrefillJson(mKey, cKey)
+                var parsedPre = JSON.parse(String(rawPre || "{}"))
+                if (parsedPre && parsedPre.ok && parsedPre.prefill) {
+                    pre = parsedPre.prefill
+                }
+            } catch (e) {}
+        }
+
+        if (!pre.clientName) {
+            if (root.activeIsNewMatterWizard()) {
+                var mp = root.buildMatterProfilePayload()
+                pre.sourceMode = "CSPM_EXISTING"
+                pre.clientName = String(mp.clientName || "")
+                pre.cardType = (pre.clientName.indexOf(",") >= 0) ? "People" : "Company"
+                pre.email = String(mp.billingEmail || "")
+                pre.createMatter = true
+                pre.matterTypeName = String(mp.matterType || mp.practiceArea || "General Advice - Business")
+                pre.matterDescription = String(mp.matterName || mp.description || "General Advice - Business")
+                pre.rate = Number(mp.defaultRate || 475)
+                var rl = String(mp.responsibleLawyer || "CS").toUpperCase()
+                var stInit = (rl.indexOf("JAMES") >= 0 || rl === "JH") ? "JH" : "CS"
+                pre.creditStaff = stInit
+                pre.responsibleStaff = stInit
+                pre.actingStaff = stInit
+                pre.assistingStaff = "AT"
+                pre.linkLeapSync = true
+            } else if (root.activeIsNewClientWizard()) {
+                var cp = root.buildClientProfilePayload()
+                var entLow = String(cp.entityType || "").toLowerCase()
+                var cType = "Company"
+                if (entLow.indexOf("indiv") >= 0) cType = "People"
+                else if (entLow.indexOf("partner") >= 0) cType = "Business"
+                else if (entLow.indexOf("trust") >= 0) cType = "Trust"
+                pre.sourceMode = "CSPM_EXISTING"
+                pre.cardType = cType
+                pre.clientName = String(cp.legalName || cp.clientName || (String(cp.firstName || "") + " " + String(cp.lastName || "")).trim())
+                pre.firstName = String(cp.firstName || "")
+                pre.lastName = String(cp.lastName || "")
+                pre.email = String(cp.billingEmail || cp.primaryEmail || "")
+                pre.phone = String(cp.primaryPhone || "")
+                pre.addressLine1 = String(cp.addressLine1 || "")
+                pre.city = String(cp.city || "Toronto")
+                pre.stateProvince = String(cp.stateProvince || "ON")
+                pre.postalCode = String(cp.postalCode || "")
+                pre.createMatter = false
+                pre.matterTypeName = "General Advice - Business"
+                pre.matterDescription = ""
+                pre.creditStaff = "CS"
+                pre.responsibleStaff = "CS"
+                pre.actingStaff = "CS"
+                pre.assistingStaff = "AT"
+                pre.linkLeapSync = false
+            }
+        }
+
+        pushToLeapPopup.sourceMode = String(pre.sourceMode || "CSPM_EXISTING")
+        pushToLeapPopup.cspmMatterId = String(pre.cspmMatterId || mKey || "")
+        pushToLeapPopup.cspmClientId = String(pre.cspmClientId || cKey || "")
+        pushToLeapPopup.cardType = String(pre.cardType || "Company")
+        pushToLeapPopup.clientNameVal = String(pre.clientName || "")
+        pushToLeapPopup.firstNameVal = String(pre.firstName || "")
+        pushToLeapPopup.lastNameVal = String(pre.lastName || "")
+        pushToLeapPopup.emailVal = String(pre.email || "")
+        pushToLeapPopup.phoneVal = String(pre.phone || "")
+        pushToLeapPopup.cityVal = String(pre.city || "Toronto")
+        pushToLeapPopup.createMatterFlag = Boolean(pre.createMatter !== undefined ? pre.createMatter : true)
+        pushToLeapPopup.matterTypeVal = String(pre.matterTypeName || "General Advice - Business")
+        pushToLeapPopup.matterDescVal = String(pre.matterDescription || "")
+        pushToLeapPopup.staffCreditVal = String(pre.creditStaff || "CS")
+        pushToLeapPopup.linkLeapSyncFlag = Boolean(pre.linkLeapSync !== undefined ? pre.linkLeapSync : true)
+        pushToLeapPopup.oneDriveFolderVal = String(pre.oneDriveFolder || "")
+        if (pre.existingLeapCard && pre.existingLeapCard.fullName) {
+            pushToLeapPopup.statusMessage = "Matched existing LEAP Card: " + String(pre.existingLeapCard.fullName) + " (will reuse Card cleanly)."
+        } else {
+            pushToLeapPopup.statusMessage = "Ready to create LEAP Card" + (pushToLeapPopup.createMatterFlag ? " + LEAP Matter." : ".")
+        }
+        pushToLeapPopup.statusIsError = false
+        pushToLeapPopup.open()
+    }
+
+    function executePushToLeap(isDryRun) {
+        if (!root.appRef || !root.appRef.submitLeapIntakeJson) {
+            pushToLeapPopup.statusMessage = "LEAP Intake backend slot is unavailable in this session."
+            pushToLeapPopup.statusIsError = true
+            return
+        }
+        var payloadObj = {
+            "sourceMode": pushToLeapPopup.sourceMode || "CSPM_EXISTING",
+            "cspmMatterId": pushToLeapPopup.cspmMatterId,
+            "cspmClientId": pushToLeapPopup.cspmClientId,
+            "cardType": pushToLeapPopup.cardType,
+            "clientName": leapClientNameField.text,
+            "firstName": pushToLeapPopup.firstNameVal,
+            "lastName": pushToLeapPopup.lastNameVal,
+            "email": leapEmailField.text,
+            "phone": pushToLeapPopup.phoneVal,
+            "city": pushToLeapPopup.cityVal || "Toronto",
+            "stateProvince": "ON",
+            "country": "Canada",
+            "createMatter": pushToLeapPopup.createMatterFlag,
+            "matterType": leapMatterTypeField.text || "General Advice - Business",
+            "matterDescription": leapMatterDescField.text,
+            "creditStaff": leapStaffField.text || "CS",
+            "responsibleStaff": leapStaffField.text || "CS",
+            "actingStaff": leapStaffField.text || "CS",
+            "assistingStaff": "AT",
+            "oneDriveFolder": leapFolderField.text,
+            "linkLeapSync": pushToLeapPopup.linkLeapSyncFlag,
+            "pushToLeap": true,
+            "dryRun": Boolean(isDryRun)
+        }
+        pushToLeapPopup.busy = true
+        pushToLeapPopup.statusMessage = isDryRun ? "Validating LEAP XMLs (Dry-Run)..." : "Pushing Card & Matter to LEAP Cloud..."
+        pushToLeapPopup.statusIsError = false
+        try {
+            var rawRes = root.appRef.submitLeapIntakeJson(JSON.stringify(payloadObj), Boolean(isDryRun))
+            var res = JSON.parse(String(rawRes || "{}"))
+            if (res && res.ok) {
+                var cardAct = (res.cardAction === "reuse_existing") ? "Reused existing Card" : "New Card + Person"
+                var fno = res.leapFileNumber ? (" | LEAP Matter #" + String(res.leapFileNumber)) : ""
+                var syncTxt = res.leapSyncStatus ? (" | LeapSync: " + String(res.leapSyncStatus)) : ""
+                pushToLeapPopup.statusMessage = (isDryRun ? "[DRY-RUN OK] " : "[SYNCED TO LEAP] ") + cardAct + fno + syncTxt
+                pushToLeapPopup.statusIsError = false
+            } else {
+                pushToLeapPopup.statusMessage = "LEAP Error: " + String((res && res.message) ? res.message : "Unknown failure")
+                pushToLeapPopup.statusIsError = true
+            }
+        } catch (err) {
+            pushToLeapPopup.statusMessage = "LEAP Exception: " + String(err)
+            pushToLeapPopup.statusIsError = true
+        }
+        pushToLeapPopup.busy = false
+    }
+
+    Popup {
+        id: pushToLeapPopup
+        property string sourceMode: "CSPM_EXISTING"
+        property string cspmMatterId: ""
+        property string cspmClientId: ""
+        property string cardType: "Company"
+        property string clientNameVal: ""
+        property string firstNameVal: ""
+        property string lastNameVal: ""
+        property string emailVal: ""
+        property string phoneVal: ""
+        property string cityVal: "Toronto"
+        property bool createMatterFlag: true
+        property string matterTypeVal: "General Advice - Business"
+        property string matterDescVal: ""
+        property string staffCreditVal: "CS"
+        property bool linkLeapSyncFlag: true
+        property string oneDriveFolderVal: ""
+        property string statusMessage: ""
+        property bool statusIsError: false
+        property bool busy: false
+
+        modal: true
+        focus: true
+        dim: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.max(root.ratioPxW(0.52, 460), 620)
+        padding: root.ratioPx(0.012, 14)
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.round((parent.height - height) / 2) : 0
+
+        background: Rectangle {
+            radius: root.isProMode ? 4 : root.ratioPx(0.012, 10)
+            color: Qt.rgba(root._panel.r, root._panel.g, root._panel.b, 0.98)
+            border.width: 1
+            border.color: "#1d4ed8"
+        }
+
+        contentItem: ColumnLayout {
+            spacing: root.ratioPx(0.008, 8)
+
+            Text {
+                id: cspmFontOwnerLeapTitle
+                Layout.fillWidth: true
+                text: "Push Client (Card) & Matter to LEAP Cloud / Desktop"
+                color: root._text
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.016, root.metricFloor("fontFloorTitlePx", 13))
+                    active: !root.layoutRepairEnabled || cspmFontOwnerLeapTitle.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
+                font.weight: Font.DemiBold
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Company"
+                    primary: pushToLeapPopup.cardType === "Company"
+                    Layout.preferredWidth: 102
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: pushToLeapPopup.cardType = "Company"
+                }
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Individual"
+                    primary: pushToLeapPopup.cardType === "People"
+                    Layout.preferredWidth: 102
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: pushToLeapPopup.cardType = "People"
+                }
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Partnership"
+                    primary: pushToLeapPopup.cardType === "Business"
+                    Layout.preferredWidth: 108
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: pushToLeapPopup.cardType = "Business"
+                }
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Trust"
+                    primary: pushToLeapPopup.cardType === "Trust"
+                    Layout.preferredWidth: 88
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: pushToLeapPopup.cardType = "Trust"
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            TextField {
+                id: leapClientNameField
+                Layout.fillWidth: true
+                text: pushToLeapPopup.clientNameVal
+                placeholderText: "Client / LEAP Card Name (e.g. Acme Holdings Inc. or John Smith)"
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                TextField {
+                    id: leapEmailField
+                    Layout.fillWidth: true
+                    text: pushToLeapPopup.emailVal
+                    placeholderText: "Primary / Billing Email"
+                }
+
+                TextField {
+                    id: leapStaffField
+                    Layout.preferredWidth: 110
+                    text: pushToLeapPopup.staffCreditVal
+                    placeholderText: "Lawyer (CS/JH)"
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+
+                CheckBox {
+                    checked: pushToLeapPopup.createMatterFlag
+                    text: "Create LEAP Matter"
+                    onToggled: pushToLeapPopup.createMatterFlag = checked
+                }
+
+                CheckBox {
+                    checked: pushToLeapPopup.linkLeapSyncFlag
+                    text: "Create OneDrive Folder & Link LeapSync (Sync ON)"
+                    onToggled: pushToLeapPopup.linkLeapSyncFlag = checked
+                }
+            }
+
+            TextField {
+                id: leapMatterTypeField
+                visible: pushToLeapPopup.createMatterFlag
+                Layout.fillWidth: true
+                text: pushToLeapPopup.matterTypeVal
+                placeholderText: "Ontario LEAP Matter Type (e.g. General Advice - Business, Tax, Wills)"
+            }
+
+            TextField {
+                id: leapMatterDescField
+                visible: pushToLeapPopup.createMatterFlag
+                Layout.fillWidth: true
+                text: pushToLeapPopup.matterDescVal
+                placeholderText: "LEAP Matter Description"
+            }
+
+            TextField {
+                id: leapFolderField
+                visible: pushToLeapPopup.linkLeapSyncFlag
+                Layout.fillWidth: true
+                text: pushToLeapPopup.oneDriveFolderVal
+                placeholderText: "OneDrive Client Folder Path (auto-suggested if blank)"
+            }
+
+            Text {
+                id: cspmFontOwnerLeapStatus
+                Layout.fillWidth: true
+                visible: pushToLeapPopup.statusMessage.length > 0
+                text: pushToLeapPopup.statusMessage
+                color: pushToLeapPopup.statusIsError ? "#d32f2f" : "#15803d"
+                wrapMode: Text.WordWrap
+                property HiddenFontGate cspmFontGate: HiddenFontGate {
+                    inputPixelSize: root.ratioPx(0.011, root.metricFloor("fontFloorLabelPx", 10))
+                    active: !root.layoutRepairEnabled || cspmFontOwnerLeapStatus.visible
+                }
+                font.pixelSize: cspmFontGate.pixelSize
+                font.weight: Font.DemiBold
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.minimumHeight: root.fieldHeightPx
+                Layout.preferredHeight: root.fieldHeightPx
+                spacing: 8
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Dry-Run Preview"
+                    primary: false
+                    enabled: !pushToLeapPopup.busy
+                    Layout.preferredWidth: 146
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: root.executePushToLeap(true)
+                }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: pushToLeapPopup.busy ? "Syncing..." : "Create in LEAP"
+                    primary: true
+                    accentColor: "#1d4ed8"
+                    enabled: !pushToLeapPopup.busy
+                    Layout.preferredWidth: 156
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: root.executePushToLeap(false)
+                }
+
+                Item { Layout.fillWidth: true }
+
+                PillButton {
+                    t: root.t
+                    metrics: root.responsiveMetrics
+                    sfxBus: root.sfxBus
+                    text: "Close"
+                    primary: false
+                    Layout.preferredWidth: 104
+                    Layout.preferredHeight: root.fieldHeightPx
+                    onClicked: pushToLeapPopup.close()
                 }
             }
         }

@@ -1004,6 +1004,9 @@
           <button type="button" class="mode-tab" id="wipArModeTab" data-mode="WIP_AR" style="display: none;" onclick="setMode('WIP_AR')">
             📈 WIP &amp; A/R
           </button>
+          <button type="button" class="mode-tab" id="leapIntakeModeTab" data-mode="LEAP_INTAKE" style="display: none;" onclick="setMode('LEAP_INTAKE')">
+            ⚡ LEAP Intake
+          </button>
         </div>
 
         <div id="standardEntryBody">
@@ -1784,6 +1787,210 @@
           </div>
         </div>
 
+        <!-- ================= LEAP CLIENT (CARD) & MATTER INTAKE SECTION (Cory-Only) ================= -->
+        <div id="leapIntakeSection" style="display: none;">
+          <div style="margin-bottom: 12px; padding: 12px 14px; border-radius: 12px; background: linear-gradient(135deg, #1E3A8A 0%, #1D4ED8 55%, #0F766E 100%); color: #FFFFFF;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div>
+                <div style="font-size: 0.74rem; font-weight: 800; text-transform: uppercase; opacity: 0.92; letter-spacing: 0.4px;">
+                  ⚡ Unified CSPM &lt;-&gt; LEAP Cloud / Desktop Client (Card) &amp; Matter Intake
+                </div>
+                <div id="leapHeaderHeadline" style="font-size: 1.15rem; font-weight: 900; margin-top: 3px;">
+                  Next LEAP Matter #: Loading...
+                </div>
+                <div id="leapHeaderSubline" style="font-size: 0.78rem; font-weight: 700; opacity: 0.92; margin-top: 2px;">
+                  Creates LEAP Person + Card + Matter, updates CSPM, scaffolds OneDrive Client folder &amp; links LeapSync (🟢 Sync ON)
+                </div>
+              </div>
+              <button type="button" onclick="loadLeapIntakeBootstrap(true)" style="padding: 7px 12px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.16); color: #FFFFFF; font-size: 0.8rem; font-weight: 800; cursor: pointer;">
+                🔄 Refresh LEAP
+              </button>
+            </div>
+          </div>
+
+          <!-- Source Mode Switcher: Brand-New Intake vs Pull Existing from CSPM -->
+          <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+            <button type="button" id="leapModeNewBtn" onclick="setLeapSourceMode('NEW_INTAKE')" style="flex: 1; min-width: 190px; padding: 11px 12px; border-radius: 10px; border: 2px solid #1D4ED8; background: #DBEAFE; color: #1E3A8A; font-size: 0.85rem; font-weight: 900; cursor: pointer;">
+              🆕 New Client &amp; Matter (CSPM + LEAP)
+            </button>
+            <button type="button" id="leapModeCspmBtn" onclick="setLeapSourceMode('CSPM_EXISTING')" style="flex: 1; min-width: 190px; padding: 11px 12px; border-radius: 10px; border: 2px solid #CBD5E1; background: #F8FAFC; color: var(--ink); font-size: 0.85rem; font-weight: 900; cursor: pointer;">
+              🔄 Pull Existing from CSPM -&gt; Push to LEAP
+            </button>
+          </div>
+
+          <!-- Pull Existing from CSPM Drawer -->
+          <div id="leapPullCspmBox" style="display: none; margin-bottom: 12px; padding: 12px; border-radius: 12px; background: #EFF6FF; border: 1.5px solid #93C5FD;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+              <span style="font-size: 0.82rem; font-weight: 900; color: #1E3A8A; text-transform: uppercase;">
+                1. Choose Existing CSPM Matter or Client to Pre-Fill LEAP
+              </span>
+              <label style="font-size: 0.78rem; font-weight: 800; color: #1D4ED8; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                <input type="checkbox" id="leapOnlyUnlinkedChk" checked onchange="renderLeapCspmDropdowns()" style="width: 16px; height: 16px;" />
+                Show Not-Yet-in-LEAP First / Only
+              </label>
+            </div>
+            <div class="form-row two-col" style="margin-bottom: 8px;">
+              <div>
+                <label class="field-label" for="leapCspmSearchInput">🔍 Filter CSPM Matters / Clients</label>
+                <input type="text" id="leapCspmSearchInput" class="big-input" placeholder="Search client, matter name, or matter #..." oninput="renderLeapCspmDropdowns()" />
+              </div>
+              <div>
+                <label class="field-label" for="leapCspmMatterSelect">⚖️ Select CSPM Matter</label>
+                <select id="leapCspmMatterSelect" class="big-select" onchange="onLeapCspmMatterSelected()"></select>
+              </div>
+            </div>
+            <div id="leapCspmMatchNotice" style="display: none; padding: 8px 10px; border-radius: 8px; background: #FFFFFF; border: 1px solid #60A5FA; font-size: 0.82rem; font-weight: 800; color: #1E3A8A;"></div>
+          </div>
+
+          <!-- Card & Person Details -->
+          <div class="step-section">
+            <div class="step-label">Card ("Client") &amp; Contact Details</div>
+
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+              <button type="button" class="pill-btn active" data-leapcard="Company" onclick="setLeapCardType('Company')">🏢 Company / Corp</button>
+              <button type="button" class="pill-btn" data-leapcard="People" onclick="setLeapCardType('People')">👤 Individual (Person)</button>
+              <button type="button" class="pill-btn" data-leapcard="Business" onclick="setLeapCardType('Business')">🤝 Partnership / LP</button>
+              <button type="button" class="pill-btn" data-leapcard="Trust" onclick="setLeapCardType('Trust')">🛡️ Trust / Estate</button>
+            </div>
+
+            <div id="leapEntityNameRow" style="margin-bottom: 10px;">
+              <label class="field-label" id="leapClientNameLabel" for="leapClientNameInput">🏢 Corporation / Entity Full Legal Name</label>
+              <input type="text" id="leapClientNameInput" class="big-input" placeholder="e.g. Acme Holdings Inc." oninput="onLeapClientNameInput()" />
+            </div>
+
+            <div id="leapPersonFieldsRow" class="form-row two-col" style="display: none; margin-bottom: 10px;">
+              <div>
+                <label class="field-label" for="leapFirstNameInput">👤 Individual First Name</label>
+                <input type="text" id="leapFirstNameInput" class="big-input" placeholder="First name" oninput="syncLeapPersonFullName()" />
+              </div>
+              <div>
+                <label class="field-label" for="leapLastNameInput">👤 Individual Last Name</label>
+                <input type="text" id="leapLastNameInput" class="big-input" placeholder="Last name" oninput="syncLeapPersonFullName()" />
+              </div>
+            </div>
+
+            <div id="leapCompanyContactRow" class="form-row two-col" style="margin-bottom: 10px;">
+              <div>
+                <label class="field-label" for="leapContactFirstInput">👤 Primary Contact First Name (Optional)</label>
+                <input type="text" id="leapContactFirstInput" class="big-input" placeholder="Optional contact first name" />
+              </div>
+              <div>
+                <label class="field-label" for="leapContactLastInput">👤 Primary Contact Last Name (Optional)</label>
+                <input type="text" id="leapContactLastInput" class="big-input" placeholder="Optional contact last name" />
+              </div>
+            </div>
+
+            <div class="form-row two-col" style="margin-bottom: 10px;">
+              <div>
+                <label class="field-label" for="leapEmailInput">✉️ Primary / Billing Email</label>
+                <input type="email" id="leapEmailInput" class="big-input" placeholder="client@example.com" />
+              </div>
+              <div>
+                <label class="field-label" for="leapPhoneInput">📞 Primary Phone (Optional)</label>
+                <input type="text" id="leapPhoneInput" class="big-input" placeholder="416-555-0100" />
+              </div>
+            </div>
+
+            <div class="form-row two-col">
+              <div>
+                <label class="field-label" for="leapAddressInput">📍 Street Address (Optional)</label>
+                <input type="text" id="leapAddressInput" class="big-input" placeholder="Street address" />
+              </div>
+              <div style="display: grid; grid-template-columns: 1.4fr 0.7fr 1fr; gap: 6px;">
+                <div>
+                  <label class="field-label" for="leapCityInput">City</label>
+                  <input type="text" id="leapCityInput" class="big-input" value="Toronto" />
+                </div>
+                <div>
+                  <label class="field-label" for="leapProvInput">Prov</label>
+                  <input type="text" id="leapProvInput" class="big-input" value="ON" />
+                </div>
+                <div>
+                  <label class="field-label" for="leapPostalInput">Postal</label>
+                  <input type="text" id="leapPostalInput" class="big-input" placeholder="M5S 2B7" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Matter & LeapSync Options -->
+          <div class="step-section">
+            <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px;">
+              <label style="font-size: 0.88rem; font-weight: 800; color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 7px;">
+                <input type="checkbox" id="leapCreateMatterChk" checked onchange="toggleLeapMatterFields()" style="width: 18px; height: 18px;" />
+                ⚖️ Create LEAP Matter
+              </label>
+              <label style="font-size: 0.88rem; font-weight: 800; color: #047857; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;">
+                <input type="checkbox" id="leapLinkSyncChk" checked onchange="toggleLeapMatterFields()" style="width: 18px; height: 18px;" />
+                📁 Create OneDrive Folder &amp; Link LeapSync (🟢 Sync ON)
+              </label>
+              <label style="font-size: 0.82rem; font-weight: 700; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                <input type="checkbox" id="leapForceNewCardChk" style="width: 16px; height: 16px;" />
+                Force brand-new Card (do not reuse existing LEAP Card match)
+              </label>
+            </div>
+
+            <div id="leapMatterFieldsWrap">
+              <div class="form-row two-col" style="margin-bottom: 10px;">
+                <div>
+                  <label class="field-label" for="leapMatterTypeSearch">🔍 Filter Ontario LEAP Matter Types</label>
+                  <input type="text" id="leapMatterTypeSearch" class="big-input" placeholder="Filter e.g. Tax, Corporate, Wills, Real Estate..." oninput="renderLeapMatterTypesDropdown()" />
+                </div>
+                <div>
+                  <label class="field-label" for="leapMatterTypeSelect">⚖️ Ontario LEAP Matter Type</label>
+                  <select id="leapMatterTypeSelect" class="big-select"></select>
+                </div>
+              </div>
+
+              <div class="form-row two-col" style="margin-bottom: 10px;">
+                <div>
+                  <label class="field-label" for="leapMatterDescInput">📝 Matter Title / Description</label>
+                  <input type="text" id="leapMatterDescInput" class="big-input" placeholder="e.g. Tax Reorganization / Corporate General" />
+                </div>
+                <div>
+                  <label class="field-label" for="leapRateInput">💵 CSPM Hourly Rate ($/hr)</label>
+                  <input type="number" id="leapRateInput" class="big-input" step="5" min="0" value="475" />
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px;">
+                <div>
+                  <label class="field-label" for="leapCreditStaffSelect">Credit</label>
+                  <select id="leapCreditStaffSelect" class="big-select"></select>
+                </div>
+                <div>
+                  <label class="field-label" for="leapRespStaffSelect">Responsible</label>
+                  <select id="leapRespStaffSelect" class="big-select"></select>
+                </div>
+                <div>
+                  <label class="field-label" for="leapActingStaffSelect">Acting</label>
+                  <select id="leapActingStaffSelect" class="big-select"></select>
+                </div>
+                <div>
+                  <label class="field-label" for="leapAssistStaffSelect">Assisting</label>
+                  <select id="leapAssistStaffSelect" class="big-select"></select>
+                </div>
+              </div>
+            </div>
+
+            <div id="leapFolderWrap">
+              <label class="field-label" for="leapFolderInput">📂 OneDrive - LPN Client Folder Path (Auto-Suggested)</label>
+              <input type="text" id="leapFolderInput" class="big-input" placeholder="OneDrive - LPN\LPN\Clients (LPN)\Client Name" />
+            </div>
+          </div>
+
+          <div class="bottom-bar" style="gap: 10px;">
+            <button type="button" class="secondary-btn" id="leapDryRunBtn" onclick="submitLeapIntakeForm(true)" style="min-width: 155px; font-weight: 800;">
+              🔍 Dry-Run Preview
+            </button>
+            <button type="button" class="save-next-btn" id="leapSubmitBtn" onclick="submitLeapIntakeForm(false)">
+              ⚡ Create &amp; Sync to LEAP ▶
+            </button>
+          </div>
+
+          <div id="leapIntakeResultBox" style="display: none; margin-top: 12px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid #10B981; background: #ECFDF5; font-size: 0.86rem; font-weight: 700; color: #064E3B;"></div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -2323,7 +2530,9 @@
       document.getElementById("docketModeTab").style.display = isCoryUser ? "flex" : "none";
       const wipArTab = document.getElementById("wipArModeTab");
       if (wipArTab) wipArTab.style.display = isCoryUser ? "flex" : "none";
-      if (!isCoryUser && (currentMode === "Docket" || currentMode === "WIP_AR")) {
+      const leapTab = document.getElementById("leapIntakeModeTab");
+      if (leapTab) leapTab.style.display = isCoryUser ? "flex" : "none";
+      if (!isCoryUser && (currentMode === "Docket" || currentMode === "WIP_AR" || currentMode === "LEAP_INTAKE")) {
         currentMode = "Expense";
       }
 
@@ -2476,6 +2685,8 @@
       const paySec = document.getElementById("paymentSection");
       const dockSec = document.getElementById("docketSection");
       const wipArSec = document.getElementById("wipArSection");
+      const leapSec = document.getElementById("leapIntakeSection");
+      if (leapSec && currentMode !== "LEAP_INTAKE") leapSec.style.display = "none";
       const topNav = document.getElementById("topNavStrip");
       const whoSec = document.getElementById("whoSection");
       const payeeCatSec = document.getElementById("payeeCategorySection");
@@ -2514,6 +2725,17 @@
         if (wipArSec) wipArSec.style.display = "block";
         updateTodayBadge();
         loadWipArOverview(false);
+        return;
+      }
+      if (currentMode === "LEAP_INTAKE") {
+        if (topNav) topNav.style.display = "none";
+        stdBody.style.display = "none";
+        paySec.style.display = "none";
+        dockSec.style.display = "none";
+        if (wipArSec) wipArSec.style.display = "none";
+        if (leapSec) leapSec.style.display = "block";
+        updateTodayBadge();
+        loadLeapIntakeBootstrap(false);
         return;
       }
 
@@ -4276,45 +4498,73 @@
       const sel = document.getElementById("docketMatterSelect");
       const matterRef = recentDocketsScope === "MATTER" && sel ? sel.value : "ALL";
       const wrap = document.getElementById("recentDocketsList");
+      const sumBar = document.getElementById("recentDocketsSummaryBar");
       if (recentDocketsScope === "MATTER" && !sel.value) {
+        if (sumBar) {
+          sumBar.textContent = "Select an Active Matter above or switch to All Matters.";
+        }
         if (wrap) {
           wrap.innerHTML = `<div style="padding:10px; color:var(--muted); font-size:0.84rem; font-weight:600;">Select an Active Matter above or switch to "🌐 All Matters".</div>`;
         }
         return;
       }
+      if (sumBar) {
+        sumBar.textContent = "Loading dockets...";
+      }
       if (wrap) {
         wrap.innerHTML = `<div style="padding:10px; color:var(--muted); font-size:0.84rem; font-weight:600;">Loading dockets...</div>`;
       }
-      try {
-        const url = `/api/docket/matters?userId=cory&matterId=${encodeURIComponent(matterRef)}&period=${encodeURIComponent(recentDocketsPeriod)}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data && data.ok) {
-          if (data.productivity) {
-            docketProductivity = data.productivity;
-            renderDocketProductivity(data.productivity);
-            const fStat = data.productivity.filtered || {};
-            const sumBar = document.getElementById("recentDocketsSummaryBar");
-            if (sumBar) {
-              const cnt = Number(fStat.count || 0);
-              const hrs = Number(fStat.hours || 0).toFixed(1);
-              const fee = Number(fStat.feePreTax || 0).toLocaleString("en-CA", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              });
-              const tot = Number(fStat.totalInclHst || 0).toLocaleString("en-CA", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              });
-              sumBar.textContent = `Showing ${cnt} docket${cnt === 1 ? "" : "s"} · ${hrs}h · $${fee} fee · $${tot} w/ HST`;
+      const url = `/api/docket/matters?userId=cory&matterId=${encodeURIComponent(matterRef)}&period=${encodeURIComponent(recentDocketsPeriod)}`;
+      let lastErr = "";
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) {
+            if (attempt === 0 && (res.status === 502 || res.status === 503 || res.status === 504)) {
+              await new Promise((r) => setTimeout(r, 650));
+              continue;
             }
+            throw new Error(`HTTP ${res.status}`);
           }
-          renderRecentDocketsList(data.recentDockets || []);
+          const data = await res.json();
+          if (data && data.ok) {
+            if (data.productivity) {
+              docketProductivity = data.productivity;
+              renderDocketProductivity(data.productivity);
+              const fStat = data.productivity.filtered || {};
+              if (sumBar) {
+                const cnt = Number(fStat.count || 0);
+                const hrs = Number(fStat.hours || 0).toFixed(1);
+                const fee = Number(fStat.feePreTax || 0).toLocaleString("en-CA", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                });
+                const tot = Number(fStat.totalInclHst || 0).toLocaleString("en-CA", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                });
+                sumBar.textContent = `Showing ${cnt} docket${cnt === 1 ? "" : "s"} · ${hrs}h · $${fee} fee · $${tot} w/ HST`;
+              }
+            }
+            renderRecentDocketsList(data.recentDockets || []);
+            return;
+          }
+          lastErr = (data && data.message) ? String(data.message) : "Unexpected response";
+          break;
+        } catch (e) {
+          lastErr = (e && e.message) ? String(e.message) : "Connection failed";
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, 650));
+            continue;
+          }
         }
-      } catch (e) {
-        if (wrap) {
-          wrap.innerHTML = `<div style="padding:10px; color:#B91C1C; font-size:0.84rem; font-weight:700;">Could not load recent dockets.</div>`;
-        }
+      }
+      const safeErr = String(lastErr || "Offline").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      if (sumBar) {
+        sumBar.textContent = "Could not load dockets right now · Tap Retry or Refresh.";
+      }
+      if (wrap) {
+        wrap.innerHTML = `<div style="padding:10px; color:#B91C1C; font-size:0.84rem; font-weight:700; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;"><span>Could not load recent dockets (${safeErr}).</span><button type="button" class="pill-btn" onclick="loadRecentDockets()" style="padding:5px 12px; font-size:0.8rem;">🔄 Retry</button></div>`;
       }
     }
 
@@ -6156,6 +6406,387 @@
           </div>
         `;
       } catch (e) {}
+    }
+
+    // =========================================================================
+    // Unified CSPM <-> LEAP Cloud/Desktop Client (Card) & Matter Intake
+    // =========================================================================
+    let leapBootstrapCache = null;
+    let leapSourceMode = "NEW_INTAKE";
+    let leapCardType = "Company";
+    let leapSelectedCspmMatterId = "";
+    let leapSelectedCspmClientId = "";
+    let leapFolderManuallyEdited = false;
+
+    async function loadLeapIntakeBootstrap(forceRefresh) {
+      if (leapBootstrapCache && !forceRefresh) {
+        renderLeapBootstrapUI();
+        return;
+      }
+      const uid = currentUser ? currentUser.userId : "cory";
+      try {
+        const res = await fetch(`/api/leap/bootstrap?userId=${encodeURIComponent(uid)}`);
+        const data = await res.json();
+        if (data && data.ok) {
+          leapBootstrapCache = data;
+          renderLeapBootstrapUI();
+        } else {
+          showBanner((data && data.message) || "Could not load LEAP Intake metadata.", "error");
+        }
+      } catch (err) {
+        showBanner("Network error loading LEAP Intake metadata.", "error");
+      }
+    }
+
+    function renderLeapBootstrapUI() {
+      if (!leapBootstrapCache) return;
+      const d = leapBootstrapCache;
+      const headEl = document.getElementById("leapHeaderHeadline");
+      const subEl = document.getElementById("leapHeaderSubline");
+      const unlinkedCnt = (d.cspmMatters || []).filter((m) => !m.inLeap).length;
+      if (headEl) {
+        headEl.textContent = `Next LEAP Matter #: ${d.nextLeapFileNumber || "Auto"} · ${d.leapCardsCount || 0} LEAP Cards · ${d.leapMattersCount || 0} LEAP Matters`;
+      }
+      if (subEl) {
+        subEl.textContent = `${unlinkedCnt} CSPM matter(s) ready to pull into LEAP · Root: ${d.clientsLpnRoot || "OneDrive - LPN\\LPN\\Clients (LPN)"}`;
+      }
+
+      const staffList = Array.isArray(d.staff) && d.staff.length > 0
+        ? d.staff
+        : [
+            { initials: "CS", fullName: "Cory Schneider" },
+            { initials: "JH", fullName: "James Hutchinson" },
+            { initials: "AT", fullName: "Analyn" },
+            { initials: "KT", fullName: "Kayley" }
+          ];
+      const staffDefaults = d.defaultStaff || { credit: "CS", responsible: "CS", acting: "CS", assisting: "AT" };
+      const mapSelects = [
+        ["leapCreditStaffSelect", staffDefaults.credit || "CS"],
+        ["leapRespStaffSelect", staffDefaults.responsible || "CS"],
+        ["leapActingStaffSelect", staffDefaults.acting || "CS"],
+        ["leapAssistStaffSelect", staffDefaults.assisting || "AT"]
+      ];
+      mapSelects.forEach(([selId, defVal]) => {
+        const sel = document.getElementById(selId);
+        if (!sel) return;
+        const prev = sel.value;
+        sel.innerHTML = "";
+        staffList.forEach((st) => {
+          const opt = document.createElement("option");
+          opt.value = st.initials;
+          opt.textContent = `${st.initials} (${st.fullName || st.initials})`;
+          sel.appendChild(opt);
+        });
+        sel.value = prev || defVal;
+      });
+
+      renderLeapMatterTypesDropdown();
+      renderLeapCspmDropdowns();
+      const fIn = document.getElementById("leapFolderInput");
+      if (fIn && !fIn.dataset.listenerBound) {
+        fIn.dataset.listenerBound = "1";
+        fIn.addEventListener("input", () => { leapFolderManuallyEdited = true; });
+      }
+    }
+
+    function renderLeapMatterTypesDropdown(preferredNameOrId) {
+      const sel = document.getElementById("leapMatterTypeSelect");
+      if (!sel || !leapBootstrapCache) return;
+      const q = ((document.getElementById("leapMatterTypeSearch") || {}).value || "").trim().toLowerCase();
+      const prev = preferredNameOrId || sel.value || "General Advice - Business";
+      const allTypes = leapBootstrapCache.matterTypes || [];
+      const filtered = allTypes.filter((m) => {
+        if (!q) return true;
+        return `${m.name} ${m.description || ""}`.toLowerCase().includes(q);
+      });
+      const favs = filtered.filter((m) => m.isFavorite);
+      const rest = filtered.filter((m) => !m.isFavorite);
+
+      sel.innerHTML = "";
+      if (favs.length > 0) {
+        const ogFav = document.createElement("optgroup");
+        ogFav.label = "★ LPN Frequent Matter Types";
+        favs.forEach((m) => {
+          const o = document.createElement("option");
+          o.value = m.name;
+          o.textContent = `★ ${m.name}`;
+          ogFav.appendChild(o);
+        });
+        sel.appendChild(ogFav);
+      }
+      if (rest.length > 0) {
+        const ogAll = document.createElement("optgroup");
+        ogAll.label = "Ontario LEAP Matter Types";
+        rest.forEach((m) => {
+          const o = document.createElement("option");
+          o.value = m.name;
+          o.textContent = m.name;
+          ogAll.appendChild(o);
+        });
+        sel.appendChild(ogAll);
+      }
+      const matchOpt = Array.from(sel.options).find(
+        (o) => o.value.toLowerCase() === String(prev).toLowerCase()
+      );
+      if (matchOpt) sel.value = matchOpt.value;
+    }
+
+    function setLeapSourceMode(mode) {
+      leapSourceMode = mode === "CSPM_EXISTING" ? "CSPM_EXISTING" : "NEW_INTAKE";
+      const btnNew = document.getElementById("leapModeNewBtn");
+      const btnCspm = document.getElementById("leapModeCspmBtn");
+      const box = document.getElementById("leapPullCspmBox");
+      if (btnNew) {
+        const act = leapSourceMode === "NEW_INTAKE";
+        btnNew.style.borderColor = act ? "#1D4ED8" : "#CBD5E1";
+        btnNew.style.background = act ? "#DBEAFE" : "#F8FAFC";
+        btnNew.style.color = act ? "#1E3A8A" : "var(--ink)";
+      }
+      if (btnCspm) {
+        const act = leapSourceMode === "CSPM_EXISTING";
+        btnCspm.style.borderColor = act ? "#1D4ED8" : "#CBD5E1";
+        btnCspm.style.background = act ? "#DBEAFE" : "#F8FAFC";
+        btnCspm.style.color = act ? "#1E3A8A" : "var(--ink)";
+      }
+      if (box) box.style.display = leapSourceMode === "CSPM_EXISTING" ? "block" : "none";
+      if (leapSourceMode === "NEW_INTAKE") {
+        leapSelectedCspmMatterId = "";
+        leapSelectedCspmClientId = "";
+      } else {
+        renderLeapCspmDropdowns();
+      }
+    }
+
+    function renderLeapCspmDropdowns() {
+      const sel = document.getElementById("leapCspmMatterSelect");
+      if (!sel || !leapBootstrapCache) return;
+      const onlyUnlinked = Boolean((document.getElementById("leapOnlyUnlinkedChk") || {}).checked);
+      const q = ((document.getElementById("leapCspmSearchInput") || {}).value || "").trim().toLowerCase();
+      const matters = (leapBootstrapCache.cspmMatters || []).filter((m) => {
+        if (onlyUnlinked && m.inLeap) return false;
+        if (!q) return true;
+        return `${m.clientName || ""} ${m.matterName || ""} ${m.matterNumber || ""}`.toLowerCase().includes(q);
+      });
+      sel.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = `-- Tap to select from ${matters.length} CSPM matter(s) --`;
+      sel.appendChild(placeholder);
+      matters.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m.matterId || m.matterNumber;
+        const badge = m.inLeap ? `[In LEAP #${m.leapFileNumber || "Linked"}]` : "[Not in LEAP]";
+        opt.textContent = `${badge} ${m.clientName} - ${m.matterName} (${m.matterNumber})`;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function onLeapCspmMatterSelected() {
+      const sel = document.getElementById("leapCspmMatterSelect");
+      const mKey = sel ? sel.value : "";
+      if (!mKey) return;
+      const uid = currentUser ? currentUser.userId : "cory";
+      const notice = document.getElementById("leapCspmMatchNotice");
+      if (notice) {
+        notice.style.display = "block";
+        notice.textContent = "Loading full Client & Matter profile from CSPM...";
+      }
+      try {
+        const res = await fetch(`/api/leap/prefill-cspm?userId=${encodeURIComponent(uid)}&matterId=${encodeURIComponent(mKey)}`);
+        const data = await res.json();
+        if (!data || !data.ok || !data.prefill) {
+          if (notice) notice.textContent = (data && data.message) || "Could not pre-fill from CSPM.";
+          return;
+        }
+        const p = data.prefill;
+        leapSelectedCspmMatterId = p.cspmMatterId || mKey;
+        leapSelectedCspmClientId = p.cspmClientId || "";
+        setLeapCardType(p.cardType || "Company");
+        document.getElementById("leapClientNameInput").value = p.clientName || "";
+        document.getElementById("leapFirstNameInput").value = p.firstName || "";
+        document.getElementById("leapLastNameInput").value = p.lastName || "";
+        document.getElementById("leapContactFirstInput").value = p.contactFirstName || "";
+        document.getElementById("leapContactLastInput").value = p.contactLastName || "";
+        document.getElementById("leapEmailInput").value = p.email || "";
+        document.getElementById("leapPhoneInput").value = p.phone || "";
+        document.getElementById("leapAddressInput").value = p.addressLine1 || "";
+        document.getElementById("leapCityInput").value = p.city || "Toronto";
+        document.getElementById("leapProvInput").value = p.stateProvince || "ON";
+        document.getElementById("leapPostalInput").value = p.postalCode || "";
+        document.getElementById("leapCreateMatterChk").checked = Boolean(p.createMatter !== false);
+        document.getElementById("leapLinkSyncChk").checked = Boolean(p.linkLeapSync !== false);
+        renderLeapMatterTypesDropdown(p.matterTypeName || "General Advice - Business");
+        document.getElementById("leapMatterDescInput").value = p.matterDescription || "";
+        document.getElementById("leapRateInput").value = Number(p.rate || 475);
+        document.getElementById("leapCreditStaffSelect").value = p.creditStaff || "CS";
+        document.getElementById("leapRespStaffSelect").value = p.responsibleStaff || "CS";
+        document.getElementById("leapActingStaffSelect").value = p.actingStaff || "CS";
+        document.getElementById("leapAssistStaffSelect").value = p.assistingStaff || "AT";
+        document.getElementById("leapFolderInput").value = p.oneDriveFolder || "";
+        leapFolderManuallyEdited = false;
+        toggleLeapMatterFields();
+
+        if (notice) {
+          if (p.existingLeapCard && p.existingLeapCard.fullName) {
+            notice.textContent = `♻️ Matched existing LEAP Card "${p.existingLeapCard.fullName}" (GUID ${(p.existingLeapCard.cardGuid || "").slice(0, 8)}...). Will reuse Card and add the new LEAP Matter.`;
+          } else {
+            notice.textContent = `✨ No existing LEAP Card found for "${p.clientName}". Will create a brand-new LEAP Card + Person and add the LEAP Matter.`;
+          }
+        }
+      } catch (err) {
+        if (notice) notice.textContent = "Network error pre-filling from CSPM.";
+      }
+    }
+
+    function setLeapCardType(ct) {
+      leapCardType = ["Company", "People", "Business", "Trust"].includes(ct) ? ct : "Company";
+      document.querySelectorAll("[data-leapcard]").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-leapcard") === leapCardType);
+      });
+      const isPerson = leapCardType === "People";
+      document.getElementById("leapPersonFieldsRow").style.display = isPerson ? "grid" : "none";
+      document.getElementById("leapCompanyContactRow").style.display = isPerson ? "none" : "grid";
+      const lbl = document.getElementById("leapClientNameLabel");
+      if (lbl) {
+        if (leapCardType === "People") lbl.textContent = "👤 Individual Full Display Name";
+        else if (leapCardType === "Business") lbl.textContent = "🤝 Partnership / LP / Business Name";
+        else if (leapCardType === "Trust") lbl.textContent = "🛡️ Trust / Estate Full Name";
+        else lbl.textContent = "🏢 Corporation / Entity Full Legal Name";
+      }
+    }
+
+    function syncLeapPersonFullName() {
+      const f = (document.getElementById("leapFirstNameInput").value || "").trim();
+      const l = (document.getElementById("leapLastNameInput").value || "").trim();
+      const full = `${f} ${l}`.trim();
+      if (full) {
+        document.getElementById("leapClientNameInput").value = full;
+        onLeapClientNameInput();
+      }
+    }
+
+    function onLeapClientNameInput() {
+      if (leapFolderManuallyEdited) return;
+      const raw = (document.getElementById("leapClientNameInput").value || "").trim();
+      const rootDir = (leapBootstrapCache && leapBootstrapCache.clientsLpnRoot)
+        ? leapBootstrapCache.clientsLpnRoot
+        : "OneDrive - LPN\\LPN\\Clients (LPN)";
+      const clean = raw.replace(/[<>:"/\\|?*]+/g, " ").replace(/\s+/g, " ").trim();
+      document.getElementById("leapFolderInput").value = clean ? `${rootDir}\\${clean}` : "";
+    }
+
+    function toggleLeapMatterFields() {
+      const cm = document.getElementById("leapCreateMatterChk").checked;
+      const lf = document.getElementById("leapLinkSyncChk").checked;
+      document.getElementById("leapMatterFieldsWrap").style.display = cm ? "block" : "none";
+      document.getElementById("leapFolderWrap").style.display = lf ? "block" : "none";
+    }
+
+    async function submitLeapIntakeForm(isDryRun) {
+      const clientName = (document.getElementById("leapClientNameInput").value || "").trim();
+      const firstName = (document.getElementById("leapFirstNameInput").value || "").trim();
+      const lastName = (document.getElementById("leapLastNameInput").value || "").trim();
+      if (!clientName && !(firstName || lastName)) {
+        showBanner("Please enter a Client / Card name first.", "error");
+        return;
+      }
+      const dryBtn = document.getElementById("leapDryRunBtn");
+      const subBtn = document.getElementById("leapSubmitBtn");
+      const resBox = document.getElementById("leapIntakeResultBox");
+      if (dryBtn) dryBtn.disabled = true;
+      if (subBtn) subBtn.disabled = true;
+
+      const payload = {
+        sourceMode: leapSourceMode,
+        cspmMatterId: leapSelectedCspmMatterId,
+        cspmClientId: leapSelectedCspmClientId,
+        cardType: leapCardType,
+        clientName: clientName || `${firstName} ${lastName}`.trim(),
+        firstName: firstName,
+        lastName: lastName,
+        contactFirstName: (document.getElementById("leapContactFirstInput").value || "").trim(),
+        contactLastName: (document.getElementById("leapContactLastInput").value || "").trim(),
+        email: (document.getElementById("leapEmailInput").value || "").trim(),
+        phone: (document.getElementById("leapPhoneInput").value || "").trim(),
+        addressLine1: (document.getElementById("leapAddressInput").value || "").trim(),
+        city: (document.getElementById("leapCityInput").value || "Toronto").trim(),
+        stateProvince: (document.getElementById("leapProvInput").value || "ON").trim(),
+        postalCode: (document.getElementById("leapPostalInput").value || "").trim(),
+        country: "Canada",
+        createMatter: document.getElementById("leapCreateMatterChk").checked,
+        matterType: document.getElementById("leapMatterTypeSelect").value || "General Advice - Business",
+        matterDescription: (document.getElementById("leapMatterDescInput").value || "").trim(),
+        rate: parseFloat(document.getElementById("leapRateInput").value || "475") || 475,
+        creditStaff: document.getElementById("leapCreditStaffSelect").value || "CS",
+        responsibleStaff: document.getElementById("leapRespStaffSelect").value || "CS",
+        actingStaff: document.getElementById("leapActingStaffSelect").value || "CS",
+        assistingStaff: document.getElementById("leapAssistStaffSelect").value || "AT",
+        oneDriveFolder: (document.getElementById("leapFolderInput").value || "").trim(),
+        linkLeapSync: document.getElementById("leapLinkSyncChk").checked,
+        forceNewCard: document.getElementById("leapForceNewCardChk").checked,
+        pushToLeap: true,
+        dryRun: Boolean(isDryRun)
+      };
+
+      try {
+        const res = await fetch("/api/leap/intake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: currentUser ? currentUser.userId : "cory",
+            payload: payload
+          })
+        });
+        const data = await res.json();
+        if (resBox) resBox.style.display = "block";
+        if (data && data.ok) {
+          const cardLabel = data.cardAction === "reuse_existing"
+            ? "♻️ Reused Existing LEAP Card"
+            : "✨ Created New LEAP Card (+ Person)";
+          const matterLine = data.leapFileNumber
+            ? `<div>⚖️ <strong>LEAP Matter #:</strong> ${escapeHtml(String(data.leapFileNumber))} (${escapeHtml(String(data.matterTypeName || payload.matterType))})</div>`
+            : "";
+          const cspmLine = (data.cspm && data.cspm.cspmMatterNumber)
+            ? `<div>🗂️ <strong>CSPM Matter #:</strong> ${escapeHtml(String(data.cspm.cspmMatterNumber))}</div>`
+            : "";
+          const syncLine = data.oneDriveFolder
+            ? `<div>📁 <strong>OneDrive &amp; LeapSync:</strong> ${escapeHtml(String(data.oneDriveFolder))} (${escapeHtml(String(data.leapSyncStatus || "Ready"))})</div>`
+            : "";
+          if (resBox) {
+            resBox.style.borderColor = isDryRun ? "#3B82F6" : "#10B981";
+            resBox.style.background = isDryRun ? "#EFF6FF" : "#ECFDF5";
+            resBox.style.color = isDryRun ? "#1E3A8A" : "#064E3B";
+            resBox.innerHTML = `
+              <div style="font-size: 0.96rem; font-weight: 900; margin-bottom: 6px;">
+                ${isDryRun ? "🔍 DRY-RUN XML VALIDATION PASSED (Nothing written to live LEAP)" : "✅ SYNCED TO LEAP CLOUD &amp; CSPM"}
+              </div>
+              <div>🪪 <strong>Card Action:</strong> ${cardLabel} (${escapeHtml(String(data.clientFullName || payload.clientName))})</div>
+              ${matterLine}
+              ${cspmLine}
+              ${syncLine}
+            `;
+          }
+          showBanner(isDryRun ? "Dry-run XML preview validated cleanly!" : (data.message || "Synced to LEAP!"), "success");
+          if (!isDryRun) {
+            loadLeapIntakeBootstrap(true).catch(() => {});
+            initDocketSection(false).catch(() => {});
+          }
+        } else {
+          const msg = (data && data.message) || "LEAP Intake failed.";
+          if (resBox) {
+            resBox.style.borderColor = "#EF4444";
+            resBox.style.background = "#FEF2F2";
+            resBox.style.color = "#991B1B";
+            resBox.textContent = `Error: ${msg}`;
+          }
+          showBanner(msg, "error");
+        }
+      } catch (err) {
+        showBanner("Network error submitting LEAP Intake.", "error");
+      } finally {
+        if (dryBtn) dryBtn.disabled = false;
+        if (subBtn) subBtn.disabled = false;
+      }
     }
 
     // Keyboard shortcuts for desktop/Chromebook

@@ -28,7 +28,25 @@ WATCHED_BACKEND_FILES = [
     SRC_PYTHON / "quick_expense_server.py",
     SRC_PYTHON / "services" / "quick_expense_service.py",
     SRC_PYTHON / "services" / "quick_expense_display.py",
+    SRC_PYTHON / "services" / "leap_intake_service.py",
 ]
+
+
+def _verify_backend_compiles() -> bool:
+    import py_compile
+    for p in WATCHED_BACKEND_FILES:
+        if not p.exists():
+            continue
+        try:
+            txt = p.read_text(encoding="utf-8", errors="replace")
+            if any(line.startswith(("<<<<<<< ", ">>>>>>> ")) for line in txt.splitlines()):
+                print(f"[HotReloadGuard] Merge conflict marker detected in {p.name}; keeping current server alive.")
+                return False
+            py_compile.compile(str(p), doraise=True)
+        except Exception as exc:
+            print(f"[HotReloadGuard] Syntax check failed on {p.name} ({exc}); keeping current server alive.")
+            return False
+    return True
 
 
 def _backend_sig() -> tuple:
@@ -77,13 +95,31 @@ def _auto_git_pull_if_updated() -> bool:
                 timeout=5,
             )
             if anc.returncode != 0:
+                dirty = subprocess.check_output(
+                    ["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=no"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=CREATE_NO_WINDOW,
+                    timeout=5,
+                ).strip()
+                if dirty:
+                    print(f"[AutoUpdate] Skipping background pull while tracked edits are uncommitted.")
+                    return False
                 r_pull = subprocess.run(
-                    ["git", "-C", str(REPO_ROOT), "pull", "--rebase", "--autostash", "origin", "main"],
+                    ["git", "-C", str(REPO_ROOT), "pull", "--rebase", "origin", "main"],
                     capture_output=True,
                     text=True,
                     creationflags=CREATE_NO_WINDOW,
                     timeout=30,
                 )
+                if r_pull.returncode != 0:
+                    subprocess.run(
+                        ["git", "-C", str(REPO_ROOT), "rebase", "--abort"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=CREATE_NO_WINDOW,
+                        timeout=10,
+                    )
                 print(f"[AutoUpdate] Pulled origin/main ({head[:7]} -> {remote[:7]}): rc={r_pull.returncode}")
                 return r_pull.returncode == 0
     except Exception as exc:
@@ -170,9 +206,13 @@ def main() -> None:
                 last_git_check = now
                 _auto_git_pull_if_updated()
 
-            # Hot-reload supervisor if any Python backend file changed on disk
+            # Hot-reload supervisor if any Python backend file changed on disk (ONLY if py_compile passes!)
             if _backend_sig() != boot_sig:
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Backend Python update detected; hot-restarting Quick Expense server...")
+                if not _verify_backend_compiles():
+                    boot_sig = _backend_sig()
+                    time.sleep(4)
+                    continue
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Backend Python update verified; hot-restarting Quick Expense server...")
                 daemon.stop()
                 time.sleep(0.35)
                 subprocess.Popen(

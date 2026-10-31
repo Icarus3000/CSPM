@@ -84,6 +84,7 @@ def _compute_live_qe_version(template_dir: Path) -> str:
             Path(__file__).resolve(),
             Path(__file__).resolve().parent / "services" / "quick_expense_service.py",
             Path(__file__).resolve().parent / "services" / "quick_expense_display.py",
+            Path(__file__).resolve().parent / "services" / "leap_intake_service.py",
         ]
         sig = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in tracked if p.exists())
         if _QE_VER_CACHE.get("sig") == sig:
@@ -182,7 +183,10 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            pass
 
     def _send_file(self, file_path: Path, content_type: str, inject_version: bool = False) -> None:
         self.close_connection = True
@@ -202,7 +206,10 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-App-Version", ver)
         self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            pass
 
     def do_OPTIONS(self) -> None:
         self.close_connection = True
@@ -485,6 +492,22 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             self._send_json(res)
             return
 
+        if path == "/api/leap/bootstrap":
+            res = self.service.get_leap_bootstrap(user_id=user_id)
+            self._send_json(res)
+            return
+
+        if path == "/api/leap/prefill-cspm":
+            matter_id = (qs.get("matterId") or qs.get("matter") or [""])[0]
+            client_id = (qs.get("clientId") or qs.get("client") or [""])[0]
+            res = self.service.get_leap_cspm_prefill(
+                user_id=user_id,
+                matter_id=matter_id,
+                client_id=client_id,
+            )
+            self._send_json(res)
+            return
+
         self.send_error(404, "Endpoint not found")
 
     def do_POST(self) -> None:
@@ -650,6 +673,23 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             user_id = str(body.get("userId") or "cory")
             payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
             res = self.service.create_quick_matter(user_id=user_id, payload=payload)
+            if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
+                try:
+                    self.on_data_changed()
+                except Exception:
+                    pass
+            self._send_json(res)
+            return
+
+        if path == "/api/leap/intake":
+            user_id = str(body.get("userId") or "cory")
+            payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
+            res = self.service.submit_leap_intake(user_id=user_id, payload=payload)
+            if res.get("ok") and not res.get("dryRun") and callable(getattr(self, "on_data_changed", None)):
+                try:
+                    self.on_data_changed()
+                except Exception:
+                    pass
             self._send_json(res)
             return
 

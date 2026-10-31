@@ -1760,10 +1760,13 @@ class QuickExpenseService:
             "filtered": _empty_stat("Displayed Dockets", period_from, period_to, 1.0),
         }
 
+        if hasattr(self, "_refresh_from_shared_master_if_newer"):
+            self._refresh_from_shared_master_if_newer()
         db_path = self._resolve_sqlite_db_path()
         matters: List[Dict[str, Any]] = []
         recent_matters: List[Dict[str, Any]] = []
         recent_dockets: List[Dict[str, Any]] = []
+        sqlite_time_loaded = False
         by_ref: Dict[str, Dict[str, Any]] = {}
         seen_matter_keys: set[str] = set()
 
@@ -1782,10 +1785,10 @@ class QuickExpenseService:
             matched_matter: Optional[Dict[str, Any]],
         ) -> Dict[str, Any]:
             hrs_f = round(float(hrs_val or 0.0), 2)
-            rate_f = float(rate_val or 475.0)
-            share_f = float(share_val or 100.0)
+            rate_f = float(rate_val) if rate_val not in (None, "") else float((matched_matter or {}).get("rate") if (matched_matter or {}).get("rate") not in (None, "") else 475.0)
+            share_f = float(share_val) if share_val not in (None, "") else 100.0
             fee_f = round(hrs_f * rate_f * (share_f / 100.0), 2)
-            tot_f = round(float(total_val or 0.0), 2) or round(fee_f * 1.13, 2)
+            tot_f = 0.0 if rate_f == 0.0 else (round(float(total_val or 0.0), 2) or round(fee_f * 1.13, 2))
             return {
                 "entryId": str(entry_id_val or ""),
                 "date": str(date_val or "")[:10],
@@ -1873,10 +1876,10 @@ class QuickExpenseService:
                 for p_row in cur.fetchall():
                     d_iso = str(p_row[0] or "")[:10]
                     h_val = float(p_row[1] or 0.0)
-                    r_val = float(p_row[2] or 475.0)
-                    s_val = float(p_row[3] or 100.0)
+                    r_val = float(p_row[2]) if p_row[2] not in (None, "") else 475.0
+                    s_val = float(p_row[3]) if p_row[3] not in (None, "") else 100.0
                     fee_val = round(h_val * r_val * (s_val / 100.0), 2)
-                    tot_val = round(float(p_row[4] or 0.0), 2) or round(fee_val * 1.13, 2)
+                    tot_val = 0.0 if r_val == 0.0 else (round(float(p_row[4] or 0.0), 2) or round(fee_val * 1.13, 2))
                     is_billed_row = bool(p_row[5]) or str(p_row[6] or "").strip().lower() == "billed"
                     if not is_billed_row:
                         _accum_stat(productivity["unbilledWip"], h_val, fee_val, tot_val)
@@ -1995,6 +1998,11 @@ class QuickExpenseService:
                         tr[5], tr[6], tr[7], tr[8], tr[9], is_billed_flag, matched_matter
                     )
                     recent_dockets.append(d_item)
+                sqlite_time_loaded = (
+                    productivity["ytd"]["count"] > 0
+                    or productivity["lastMonth"]["count"] > 0
+                    or productivity["unbilledWip"]["count"] > 0
+                )
                 conn.close()
             except Exception as exc:
                 logger.warning("SQLite matter lookup fallback: %s", exc)
@@ -2037,8 +2045,8 @@ class QuickExpenseService:
                 except Exception:
                     pass
 
-        # Fallback / supplement recent_dockets & productivity from ExcelRepo TBL_TIME when SQLite TimeEntry had no rows
-        if not recent_dockets:
+        # Fallback / supplement recent_dockets & productivity from ExcelRepo TBL_TIME ONLY when SQLite TimeEntry itself had no rows
+        if not recent_dockets and not sqlite_time_loaded:
             with self._lock:
                 try:
                     import domain.schema_constants as sc
@@ -2515,10 +2523,10 @@ class QuickExpenseService:
                     m_name_raw = str(tr[3] or "").strip()
                     c_name_raw = str(tr[4] or "").strip()
                     hrs = round(float(tr[5] or 0.0), 2)
-                    rate = float(tr[6] or 475.0)
-                    share = float(tr[7] or 100.0)
+                    rate = float(tr[6]) if tr[6] not in (None, "") else 475.0
+                    share = float(tr[7]) if tr[7] not in (None, "") else 100.0
                     fee = round(hrs * rate * (share / 100.0), 2)
-                    tot_hst = round(float(tr[8] or 0.0), 2) or round(fee * 1.13, 2)
+                    tot_hst = 0.0 if rate == 0.0 else (round(float(tr[8] or 0.0), 2) or round(fee * 1.13, 2))
                     desc = str(tr[9] or "").strip()
                     biller = str(tr[10] or "SOLE_PROP").strip().upper()
 
@@ -2825,8 +2833,8 @@ class QuickExpenseService:
                 client_id = str(matched_m.get("client_id") or "")
                 client_name = str(matched_m.get("client_name") or matter_number)
                 parent_id = str(matched_m.get("parent_id") or "")
-                rate = float(rate_override if rate_override is not None else (matched_m.get("rate") or 475.0))
-                share_pct = float(share_override if share_override is not None else (matched_m.get("share_pct") or 100.0))
+                rate = float(rate_override if rate_override is not None else (matched_m.get("rate") if matched_m.get("rate") not in (None, "") else 475.0))
+                share_pct = float(share_override if share_override is not None else (matched_m.get("share_pct") if matched_m.get("share_pct") not in (None, "") else 100.0))
                 if 0 < share_pct <= 1.0:
                     share_pct = share_pct * 100.0
                 biller_entity = str(matched_m.get("biller") or "SOLE_PROP")
@@ -3071,7 +3079,7 @@ class QuickExpenseService:
                                     "hours": hours,
                                     "narrative": description,
                                     "date": date_str,
-                                    "rate": rate_override or 475.0,
+                                    "rate": rate_override if rate_override is not None else 475.0,
                                 },
                             )
                         except Exception:
@@ -3137,8 +3145,8 @@ class QuickExpenseService:
                     "useExactHours": True,
                     "rawSeconds": int(round(hours * 3600)),
                     "rawSecondsMode": "replace",
-                    "clientRate": rate_override or 475.0,
-                    "sharePct": share_override or 100.0,
+                    "clientRate": rate_override if rate_override is not None else 475.0,
+                    "sharePct": share_override if share_override is not None else 100.0,
                     "description": description,
                     "forceDuplicate": True,
                 }
@@ -5431,6 +5439,30 @@ class QuickExpenseService:
             except Exception as exc:
                 logger.warning("create_quick_matter SQLite warning (%s): %s", db_p, exc)
 
+        msg_text = f"➕ Created Matter {matter_number} ({client_name} — {matter_name})!"
+        leap_res: Optional[Dict[str, Any]] = None
+        if bool(data.get("pushToLeap", False)):
+            try:
+                leap_res = self._leap_intake_service().push_to_leap(
+                    {
+                        "cspmClientId": client_id,
+                        "cspmMatterId": matter_id,
+                        "cspmMatterNumber": matter_number,
+                        "cardType": str(data.get("cardType") or ("People" if "," in client_name else "Company")),
+                        "clientName": client_name,
+                        "matterType": matter_type,
+                        "matterDescription": matter_name,
+                        "linkLeapSync": bool(data.get("linkLeapSync", True)),
+                    },
+                    dry_run=bool(data.get("dryRun", False)),
+                )
+                if leap_res.get("ok"):
+                    fno = leap_res.get("leapFileNumber") or leap_res.get("allocatedFileNumber") or ""
+                    msg_text = f"➕ Created CSPM {matter_number} + LEAP #{fno} ({client_name})!"
+            except Exception as exc:
+                logger.warning("create_quick_matter pushToLeap warning: %s", exc)
+                leap_res = {"ok": False, "message": str(exc)}
+
         return {
             "ok": True,
             "matter": {
@@ -5443,7 +5475,8 @@ class QuickExpenseService:
                 "defaultBillerEntity": biller_entity,
                 "displayLabel": f"{client_name} — {matter_name} ({matter_number})",
             },
-            "message": f"➕ Created Matter {matter_number} ({client_name} — {matter_name})!",
+            "leap": leap_res,
+            "message": msg_text,
         }
 
     def get_tax_and_shl_snapshot(self, user_id: str = "cory") -> Dict[str, Any]:
@@ -5772,5 +5805,35 @@ class QuickExpenseService:
         self, user_id: str, client_meta: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         return self.session_tracker.get_or_create_active_session(user_id=user_id, client_meta=client_meta)
+
+    # ------------------------------------------------------------------
+    # 13. LEAP Cloud / Desktop Client ("Card") & Matter Intake (Cory-Only)
+    # ------------------------------------------------------------------
+    def _leap_intake_service(self):
+        from services.leap_intake_service import LeapIntakeService
+
+        return LeapIntakeService(paths=self.paths, repo=self.repo)
+
+    def get_leap_bootstrap(self, user_id: str = "cory") -> Dict[str, Any]:
+        if not self._is_cory(user_id):
+            return {"ok": False, "message": "LEAP intake is restricted to Cory."}
+        return self._leap_intake_service().get_leap_intake_bootstrap()
+
+    def get_leap_cspm_prefill(
+        self, user_id: str = "cory", matter_id: str = "", client_id: str = ""
+    ) -> Dict[str, Any]:
+        if not self._is_cory(user_id):
+            return {"ok": False, "message": "LEAP intake is restricted to Cory."}
+        return self._leap_intake_service().build_cspm_to_leap_prefill(
+            matter_key=matter_id, client_key=client_id
+        )
+
+    def submit_leap_intake(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._is_cory(user_id):
+            return {"ok": False, "message": "LEAP intake is restricted to Cory."}
+        data = dict(payload or {})
+        dry_run = bool(data.get("dryRun", False))
+        return self._leap_intake_service().submit_unified_intake(data, dry_run=dry_run)
+
 
 

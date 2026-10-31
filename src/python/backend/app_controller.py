@@ -5160,6 +5160,45 @@ class AppController(QObject):
 
         return VaultService(self._paths)
 
+    def _leap_intake_service(self):
+        from services.leap_intake_service import LeapIntakeService
+
+        return LeapIntakeService(paths=self._paths, repo=self._excel_repo)
+
+    @Slot(result=str)
+    def getLeapIntakeBootstrapJson(self) -> str:
+        try:
+            res = self._leap_intake_service().get_leap_intake_bootstrap()
+            return json.dumps(res, ensure_ascii=False)
+        except Exception as exc:
+            self._report_failure("Could not load LEAP Intake bootstrap", context="leap.intake.bootstrap", exc=exc)
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def getLeapCspmPrefillJson(self, matter_key: str, client_key: str) -> str:
+        try:
+            res = self._leap_intake_service().build_cspm_to_leap_prefill(
+                matter_key=str(matter_key or "").strip(),
+                client_key=str(client_key or "").strip(),
+            )
+            return json.dumps(res, ensure_ascii=False)
+        except Exception as exc:
+            self._report_failure("Could not prefill LEAP Intake from CSPM", context="leap.intake.prefill", exc=exc)
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
+
+    @Slot(str, bool, result=str)
+    def submitLeapIntakeJson(self, payload_json: str, dry_run: bool = False) -> str:
+        try:
+            payload = json.loads(str(payload_json or "{}"))
+            res = self._leap_intake_service().submit_unified_intake(payload, dry_run=bool(dry_run))
+            if res.get("ok") and not bool(dry_run or payload.get("dryRun", False)):
+                self.toast.emit(str(res.get("message") or "Synced to LEAP!"))
+                self.clientDataChanged.emit()
+            return json.dumps(res, ensure_ascii=False)
+        except Exception as exc:
+            self._report_failure("Could not push Client/Matter to LEAP", context="leap.intake.submit", exc=exc)
+            return json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False)
+
     @Slot(str, result=bool)
     def openMatterDocument(self, saved_path):
         try:
