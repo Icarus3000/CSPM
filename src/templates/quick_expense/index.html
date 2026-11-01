@@ -891,7 +891,7 @@
         <button type="button" class="user-pick-btn" id="pickDeborahBtn" onclick="onAvatarCardClick('deborah')">
           <span class="user-pick-icon">👩‍⚕️</span>
           <span class="user-pick-name">Deborah</span>
-          <span class="user-pick-desc">Family, OT &amp; Legal</span>
+          <span class="user-pick-desc">Family &amp; OT Expenses</span>
         </button>
 
         <button type="button" class="user-pick-btn" id="pickCoryBtn" onclick="onAvatarCardClick('cory')">
@@ -932,6 +932,7 @@
           <button type="button" class="finish-session-btn" id="finishSessionBtn" onclick="finishCurrentSession(true)" title="Complete session and email batch report to Cory">
             ✅ Finish Session
           </button>
+          <button type="button" class="switch-user-btn" id="pushNotificationBtn" onclick="togglePushNotifications()" title="Push Notifications" style="padding: 6px 10px; font-size: 0.82rem;">🔔 Enable Push</button>
           <button type="button" class="switch-user-btn" onclick="logoutUser()">🚪 Logout</button>
           <span id="offlineQueueBadge" style="display:none; font-size:0.8rem; font-weight:800; color:#B45309; background:#FEF3C7; padding:4px 8px; border-radius:999px;"></span>
         </div>
@@ -939,6 +940,12 @@
         <button type="button" class="check-report-btn" id="topCheckReportBtn" onclick="onTopReportButtonClick()">
           <span id="topCheckReportBtnLabel">📋 Check What I Added</span> <span id="todaySummaryBadge">(Today: 0)</span>
         </button>
+      </div>
+
+      <!-- iOS Safari Non-Standalone Install Hint -->
+      <div id="iosInstallHintBanner" style="display: none; margin-bottom: 10px; padding: 10px 14px; border-radius: 12px; background: #EFF6FF; border: 1.5px solid #60A5FA; font-size: 0.86rem; font-weight: 700; color: #1E40AF; align-items: center; justify-content: space-between; gap: 8px;">
+        <span>📲 <strong>Install on iPhone:</strong> Tap Share ⬆️ → <em>Add to Home Screen</em> for full-screen app</span>
+        <button type="button" onclick="dismissIosInstallHint()" style="background: none; border: none; font-size: 1.1rem; color: #1E40AF; cursor: pointer; padding: 2px 6px;">✕</button>
       </div>
 
       <!-- Status / Toast Banner -->
@@ -981,6 +988,12 @@
       <!-- Main Form Card -->
       <div class="main-card">
 
+        <!-- Deborah Calm Expense-Only Header Banner -->
+        <div id="deborahModeBanner" style="display: none; margin-bottom: 14px; padding: 12px 16px; border-radius: 12px; font-weight: 800; font-size: 1.05rem; background: #ECFDF5; border: 1.5px solid #10B981; color: #065F46; align-items: center; justify-content: space-between; gap: 8px;">
+          <span id="deborahModeBannerText">🧾 Add a New Expense</span>
+          <button type="button" id="deborahCancelEditBtn" style="display: none; padding: 6px 12px; border-radius: 8px; border: 1.5px solid #D97706; background: #FEF3C7; color: #92400E; font-size: 0.84rem; font-weight: 800; cursor: pointer;" onclick="startNewBlankCard()">✕ Cancel Edit</button>
+        </div>
+
         <!-- Friendly Mode Tabs -->
         <div class="mode-grid">
           <button type="button" class="mode-tab active" data-mode="Expense" onclick="setMode('Expense')">
@@ -1017,7 +1030,7 @@
               <div style="font-size: 0.88rem; font-weight: 900; color: #1E3A8A;">
                 📸 Snap Receipt Photo (Auto-Reads Store, Date, Total &amp; HST)
               </div>
-              <div style="font-size: 0.76rem; font-weight: 700; color: var(--muted);">
+              <div id="receiptSectionSub" style="font-size: 0.76rem; font-weight: 700; color: var(--muted);">
                 Works for Family, Medical/Dental, Childcare, Donations, Deborah OT &amp; Cory Legal
               </div>
             </div>
@@ -1119,7 +1132,7 @@
               <datalist id="payeeDatalist"></datalist>
             </div>
 
-            <div>
+            <div id="categorySearchCol">
               <label class="field-label" for="categorySearchInput">🔍 Quick Search Category (Optional)</label>
               <input type="text" id="categorySearchInput" class="big-input" placeholder="Type e.g. mortgage, groceries, dental..." oninput="renderCategoriesDropdown()" />
             </div>
@@ -1134,7 +1147,7 @@
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
               <label class="field-label" for="categorySelect" style="margin-bottom:0;">🏷️ Category</label>
-              <label style="font-size:0.82rem; font-weight:700; color:var(--primary); cursor:pointer;">
+              <label id="showAllCategoriesWrap" style="font-size:0.82rem; font-weight:700; color:var(--primary); cursor:pointer;">
                 <input type="checkbox" id="showAllCategoriesChk" onchange="renderCategoriesDropdown()" />
                 Show all categories
               </label>
@@ -1151,19 +1164,29 @@
             <div>
               <label class="field-label" id="amountFieldLabel" for="amountInput">💰 Total Paid (Including Tax) ($)</label>
               <input type="number" id="amountInput" class="big-input amount-input" inputmode="decimal" step="0.01" min="0" placeholder="0.00" oninput="onAmountInput()" />
+              <div id="deborahAmountNote" style="display: none; margin-top: 4px; font-size: 0.8rem; font-weight: 700; color: var(--muted);">
+                Enter the final total on the receipt (including tax).
+              </div>
               <div id="preTaxPreview" style="margin-top: 6px; font-size: 0.86rem; font-weight: 700; color: var(--muted);">
                 Pre-Tax Subtotal: $0.00
               </div>
             </div>
 
-            <div class="hst-box" id="hstBoxWrap">
-              <label class="field-label" style="margin-bottom: 6px;">🧾 HST Included ($)</label>
-              <div class="hst-mode-btns">
-                <button type="button" class="hst-mode-btn active" id="hstModeAutoBtn" onclick="setHstMode('auto')">13% Auto</button>
-                <button type="button" class="hst-mode-btn" id="hstModeZeroBtn" onclick="setHstMode('zero')">No HST ($0)</button>
-                <button type="button" class="hst-mode-btn" id="hstModeCustomBtn" onclick="setHstMode('custom')">Type HST $</button>
+            <div>
+              <div id="deborahHstToggleWrap" style="display: none; margin-bottom: 8px; font-size: 0.82rem; font-weight: 700; color: var(--muted); align-items: center; gap: 4px;">
+                <span>receipt tax / HST handled automatically · </span>
+                <button type="button" style="background: none; border: none; color: var(--primary); font-weight: 800; cursor: pointer; text-decoration: underline; padding: 0;" onclick="toggleDeborahHst()">[ Adjust HST ]</button>
               </div>
-              <input type="number" id="taxAmountInput" class="big-input" inputmode="decimal" step="0.01" min="0" placeholder="0.00" oninput="onManualTaxInput()" />
+
+              <div class="hst-box" id="hstBoxWrap">
+                <label class="field-label" style="margin-bottom: 6px;">🧾 HST Included ($)</label>
+                <div class="hst-mode-btns">
+                  <button type="button" class="hst-mode-btn active" id="hstModeAutoBtn" onclick="setHstMode('auto')">13% Auto</button>
+                  <button type="button" class="hst-mode-btn" id="hstModeZeroBtn" onclick="setHstMode('zero')">No HST ($0)</button>
+                  <button type="button" class="hst-mode-btn" id="hstModeCustomBtn" onclick="setHstMode('custom')">Type HST $</button>
+                </div>
+                <input type="number" id="taxAmountInput" class="big-input" inputmode="decimal" step="0.01" min="0" placeholder="0.00" oninput="onManualTaxInput()" />
+              </div>
             </div>
           </div>
         </div>
@@ -1185,10 +1208,18 @@
           </div>
         </div>
 
+        <!-- Live Plain-English Summary Preview for Deborah -->
+        <div id="deborahLiveSummaryBar" style="display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; background: #F8FAFC; border: 1.5px solid #CBD5E1; font-size: 0.86rem; font-weight: 800; color: #1E293B;">
+          🧾 Live Preview
+        </div>
+
         <!-- Bottom Action Bar (Sticky on iPhone / Android) -->
         <div class="bottom-bar">
           <button type="button" class="secondary-btn" onclick="stepCard(-1)" id="bottomPrevBtn">
             ◀ Prev
+          </button>
+          <button type="button" class="secondary-btn" id="cancelEditBottomBtn" style="display: none;" onclick="startNewBlankCard()">
+            ✕ Cancel
           </button>
           <button type="button" class="delete-card-btn" id="deleteCurrentCardBtn" style="display:none;" onclick="deleteCurrentCard()">
             🗑️ Delete
@@ -2518,6 +2549,165 @@
       showLoginScreen();
     }
 
+    function isDeborahUser() {
+      return Boolean(currentUser && String(currentUser.userId || "").toLowerCase() === "deborah");
+    }
+
+    let deborahHstCustomExpanded = false;
+    function toggleDeborahHst() {
+      deborahHstCustomExpanded = true;
+      applyModeUI();
+    }
+
+    function updateDeborahLiveSummary() {
+      if (!isDeborahUser()) return;
+      const bar = document.getElementById("deborahLiveSummaryBar");
+      if (!bar) return;
+      const stream = (bootstrapData.streams || []).find((s) => s.streamId === currentStreamId);
+      const streamName = stream ? `${stream.icon} ${stream.label}` : "Personal";
+      const payee = (document.getElementById("payeeInput").value || "").trim() || "Store / Payee";
+      const gross = parseFloat(document.getElementById("amountInput").value) || 0;
+      const grossStr = "$" + gross.toFixed(2);
+      const fromSel = document.getElementById("fromAccountSelect");
+      const acctName = fromSel.selectedOptions && fromSel.selectedOptions[0] ? fromSel.selectedOptions[0].textContent.trim() : "Account";
+      const dateVal = document.getElementById("txnDateInput").value || bootstrapData.todayIso || "";
+      bar.textContent = `${streamName} · ${payee} · ${grossStr} on ${acctName} · ${dateVal}`;
+    }
+
+    function checkIosInstallHint() {
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const isStandalone = Boolean(window.navigator.standalone || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
+      const dismissed = localStorage.getItem("cspm_qe_ios_install_dismissed") === "1";
+      const banner = document.getElementById("iosInstallHintBanner");
+      if (banner) {
+        banner.style.display = (isIos && !isStandalone && !dismissed) ? "flex" : "none";
+      }
+    }
+
+    function dismissIosInstallHint() {
+      localStorage.setItem("cspm_qe_ios_install_dismissed", "1");
+      const banner = document.getElementById("iosInstallHintBanner");
+      if (banner) banner.style.display = "none";
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    let isPushSubscribed = false;
+
+    async function checkPushSubscriptionStatus() {
+      const btn = document.getElementById("pushNotificationBtn");
+      if (!btn) return;
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        btn.style.display = "none";
+        return;
+      }
+      btn.style.display = "inline-flex";
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        isPushSubscribed = Boolean(sub);
+        if (isPushSubscribed) {
+          btn.textContent = "🔔";
+          btn.title = "Push Notifications Active (Tap for options)";
+          btn.style.background = "#DCFCE7";
+          btn.style.borderColor = "#10B981";
+          btn.style.color = "#047857";
+        } else {
+          btn.textContent = isDeborahUser() ? "🔔" : "🔔 Enable Push";
+          btn.title = "Enable Push Notifications";
+          btn.style.background = "#F1F5F9";
+          btn.style.borderColor = "var(--border)";
+          btn.style.color = "var(--ink)";
+        }
+      } catch (_) {}
+    }
+
+    async function togglePushNotifications() {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        alert("Push notifications are not supported on this browser/device.");
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        const choice = window.confirm("Push notifications are currently ACTIVE on this device.\n\nTap OK to send a Test Notification, or Cancel to unsubscribe.");
+        if (choice) {
+          try {
+            const uid = (currentUser && currentUser.userId) || "cory";
+            const res = await fetch("/api/push/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ username: uid })
+            });
+            const data = await res.json();
+            if (data.ok) showBanner("success", "🔔 Test notification dispatched!");
+          } catch (e) {
+            showBanner("error", "Failed to send test push.");
+          }
+        } else {
+          try {
+            await sub.unsubscribe();
+            await fetch("/api/push/unsubscribe", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endpoint: sub.endpoint })
+            });
+            showBanner("info", "Unsubscribed from push notifications.");
+            await checkPushSubscriptionStatus();
+          } catch (e) {
+            showBanner("error", "Error unsubscribing.");
+          }
+        }
+        return;
+      }
+
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          showBanner("warning", "Notification permission was not granted.");
+          return;
+        }
+        const keyRes = await fetch("/api/push/vapid-public-key");
+        const keyData = await keyRes.json();
+        if (!keyData.ok || !keyData.publicKey) {
+          showBanner("error", "Could not retrieve VAPID public key.");
+          return;
+        }
+        const appServerKey = urlBase64ToUint8Array(keyData.publicKey);
+        const newSub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: appServerKey
+        });
+        const uid = (currentUser && currentUser.userId) || "cory";
+        const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const platform = isIos ? "iOS" : (/Android/.test(navigator.userAgent) ? "Android" : "Desktop");
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subscription: newSub,
+            username: uid,
+            platform: platform,
+            userAgent: navigator.userAgent
+          })
+        });
+        showBanner("success", "🔔 Notifications enabled successfully!");
+        await checkPushSubscriptionStatus();
+      } catch (err) {
+        console.error("Push subscribe error:", err);
+        showBanner("error", "Push subscription error: " + (err.message || err));
+      }
+    }
+
     function userHasDocketAccess(u) {
       return Boolean(u && (u.hasDocketAccess || u.isCory || u.userId === "cory"));
     }
@@ -2526,6 +2716,9 @@
       document.getElementById("loginView").style.display = "none";
       document.getElementById("appView").style.display = "block";
       document.getElementById("activeUserPill").textContent = `${currentUser.icon} ${currentUser.displayName}`;
+      if (isDeborahUser()) {
+        currentMode = "Expense";
+      }
       const isCoryUser = userHasDocketAccess(currentUser);
       document.getElementById("docketModeTab").style.display = isCoryUser ? "flex" : "none";
       const wipArTab = document.getElementById("wipArModeTab");
@@ -2535,6 +2728,9 @@
       if (!isCoryUser && (currentMode === "Docket" || currentMode === "WIP_AR" || currentMode === "LEAP_INTAKE")) {
         currentMode = "Expense";
       }
+
+      checkIosInstallHint();
+      checkPushSubscriptionStatus();
 
       // 1. Populate UI IMMEDIATELY from preloaded/cached data (0ms delay!)
       applyPreloadedBootstrap(currentUser.userId);
@@ -2625,7 +2821,15 @@
     function renderStreams() {
       const grid = document.getElementById("streamGrid");
       grid.innerHTML = "";
-      (bootstrapData.streams || []).forEach((s) => {
+      const isDeb = isDeborahUser();
+      const rawStreams = bootstrapData.streams || [];
+      const streams = rawStreams.filter((s) => {
+        if (!isDeb) return true;
+        if (s.streamId === "FAMILY" || s.streamId === "DEBORAH_OT_PRIVATE" || s.streamId === "DEBORAH_OT_VHA") return true;
+        if (deckIndex < sessionDeck.length && sessionDeck[deckIndex].streamId === s.streamId) return true;
+        return false;
+      });
+      streams.forEach((s) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "stream-btn" + (s.streamId === currentStreamId ? " active" : "");
@@ -2640,6 +2844,7 @@
           renderMembers();
           renderAccountsDropdowns();
           renderCategoriesDropdown();
+          if (isDeborahUser()) updateDeborahLiveSummary();
         };
         grid.appendChild(btn);
       });
@@ -2673,6 +2878,9 @@
     }
 
     function setMode(mode) {
+      if (isDeborahUser() && mode !== "Expense") {
+        return;
+      }
       currentMode = mode;
       document.querySelectorAll(".mode-tab").forEach((b) => {
         b.classList.toggle("active", b.getAttribute("data-mode") === mode);
@@ -2794,6 +3002,67 @@
         amtLbl.textContent = "🔄 Amount Transferred ($)";
       }
 
+      const isDeb = isDeborahUser();
+      const debBanner = document.getElementById("deborahModeBanner");
+      const debBannerText = document.getElementById("deborahModeBannerText");
+      const debCancelBtn = document.getElementById("deborahCancelEditBtn");
+      const modeGrid = document.querySelector(".mode-grid");
+      const voiceBar = document.getElementById("voiceCommandBar");
+      const bottomPrev = document.getElementById("bottomPrevBtn");
+      const cancelEditBottom = document.getElementById("cancelEditBottomBtn");
+      const catSearchCol = document.getElementById("categorySearchCol");
+      const showAllWrap = document.getElementById("showAllCategoriesWrap");
+      const debAmtNote = document.getElementById("deborahAmountNote");
+      const debHstToggleWrap = document.getElementById("deborahHstToggleWrap");
+      const liveSummaryBar = document.getElementById("deborahLiveSummaryBar");
+      const receiptSub = document.getElementById("receiptSectionSub");
+
+      if (isDeb) {
+        if (modeGrid) modeGrid.style.display = "none";
+        if (voiceBar) voiceBar.style.display = "none";
+        if (topNav) topNav.style.display = "none";
+        if (bottomPrev) bottomPrev.style.display = "none";
+        if (catSearchCol) catSearchCol.style.display = "none";
+        if (showAllWrap) showAllWrap.style.display = "none";
+        if (debAmtNote) debAmtNote.style.display = "block";
+        if (receiptSub) receiptSub.textContent = "Optional: snap a photo of your receipt to auto-fill store, date & total.";
+
+        const isEditing = deckIndex < sessionDeck.length;
+        if (debBanner) {
+          debBanner.style.display = "flex";
+          debBanner.style.background = isEditing ? "#FEF3C7" : "#ECFDF5";
+          debBanner.style.borderColor = isEditing ? "#F59E0B" : "#10B981";
+          debBanner.style.color = isEditing ? "#92400E" : "#065F46";
+          if (debBannerText) debBannerText.textContent = isEditing ? "✏️ Editing Saved Expense" : "🧾 Add a New Expense";
+          if (debCancelBtn) debCancelBtn.style.display = isEditing ? "inline-flex" : "none";
+        }
+        if (cancelEditBottom) cancelEditBottom.style.display = isEditing ? "inline-flex" : "none";
+
+        if (!deborahHstCustomExpanded && hstMode !== "custom") {
+          if (debHstToggleWrap) debHstToggleWrap.style.display = "flex";
+          if (hstWrap) hstWrap.style.display = "none";
+        } else {
+          if (debHstToggleWrap) debHstToggleWrap.style.display = "none";
+          if (hstWrap) hstWrap.style.display = "block";
+        }
+
+        if (liveSummaryBar) {
+          liveSummaryBar.style.display = "block";
+          updateDeborahLiveSummary();
+        }
+      } else {
+        if (modeGrid) modeGrid.style.display = "grid";
+        if (debBanner) debBanner.style.display = "none";
+        if (cancelEditBottom) cancelEditBottom.style.display = "none";
+        if (voiceBar) voiceBar.style.display = "flex";
+        if (catSearchCol) catSearchCol.style.display = "block";
+        if (showAllWrap) showAllWrap.style.display = "inline-flex";
+        if (debAmtNote) debAmtNote.style.display = "none";
+        if (debHstToggleWrap) debHstToggleWrap.style.display = "none";
+        if (liveSummaryBar) liveSummaryBar.style.display = "none";
+        if (receiptSub) receiptSub.textContent = "Works for Family, Medical/Dental, Childcare, Donations, Deborah OT & Cory Legal";
+      }
+
       renderAccountsDropdowns();
       renderCategoriesDropdown();
       recalcTaxAndPreTax();
@@ -2818,7 +3087,17 @@
       });
 
       // Filter "From" accounts based on mode & CIBC PC Trust Guardrail
+      const isDeb = isDeborahUser();
+      const deborahExcluded = new Set(["CIBC_PC_GENERAL", "CIBC_PC_TRUST", "CIBC_SAVINGS", "CASH_CORY", "CIBC_MORTGAGE", "HOME_TRUST_MORTGAGE"]);
+      const isEditing = deckIndex < sessionDeck.length;
+      const existingFrom = isEditing ? (sessionDeck[deckIndex].fromAccount || "") : "";
+
       const fromAccounts = allAccounts.filter((a) => {
+        if (isDeb && currentMode === "Expense") {
+          if (deborahExcluded.has(a.accountCode) && a.accountCode !== existingFrom) {
+            return false;
+          }
+        }
         if (currentMode === "Expense") {
           // Never allow CIBC PC Trust or Mortgage accounts as Expense payment method
           if (a.accountCode === "CIBC_PC_TRUST" || a.isDebt) return false;
@@ -2909,7 +3188,7 @@
       const sel = document.getElementById("categorySelect");
       const prevVal = sel.value;
       const q = (document.getElementById("categorySearchInput").value || "").trim().toLowerCase();
-      const showAll = document.getElementById("showAllCategoriesChk").checked;
+      const showAll = isDeborahUser() || document.getElementById("showAllCategoriesChk").checked;
       const isFamily = currentStreamId === "FAMILY";
 
       const allCats = bootstrapData.categories || [];
@@ -3004,6 +3283,7 @@
 
     function onPayeeInput() {
       const val = (document.getElementById("payeeInput").value || "").trim().toLowerCase();
+      updateDeborahLiveSummary();
       if (!val || deckIndex !== sessionDeck.length) return;
       const match = (bootstrapData.payeeMemory || []).find((m) => (m.payee || "").toLowerCase() === val);
       if (match && match.categoryCode) {
@@ -3027,10 +3307,12 @@
       const cur = inp.value ? new Date(inp.value + "T12:00:00") : new Date();
       cur.setDate(cur.getDate() + deltaDays);
       inp.value = cur.toISOString().slice(0, 10);
+      updateDeborahLiveSummary();
     }
 
     function setTodayDate() {
       document.getElementById("txnDateInput").value = bootstrapData.todayIso || new Date().toISOString().slice(0, 10);
+      updateDeborahLiveSummary();
     }
 
     function setHstMode(mode) {
@@ -3046,6 +3328,7 @@
 
     function onAmountInput() {
       recalcTaxAndPreTax();
+      updateDeborahLiveSummary();
     }
 
     function onManualTaxInput() {
@@ -3091,7 +3374,33 @@
       const newBtn = document.getElementById("newCardBtn");
       const delBtn = document.getElementById("deleteCurrentCardBtn");
       const saveBtn = document.getElementById("saveNextBtn");
+      const cancelEditBottom = document.getElementById("cancelEditBottomBtn");
 
+      if (isDeborahUser()) {
+        const topNav = document.getElementById("topNavStrip");
+        if (topNav) topNav.style.display = "none";
+        bottomPrevBtn.style.display = "none";
+        if (cancelEditBottom) cancelEditBottom.style.display = isNewCard ? "none" : "inline-flex";
+        saveBtn.textContent = isNewCard ? "✓ Save Expense" : "✓ Save Changes";
+        delBtn.style.display = isNewCard ? "none" : "inline-flex";
+
+        const debBanner = document.getElementById("deborahModeBanner");
+        const debBannerText = document.getElementById("deborahModeBannerText");
+        const debCancelBtn = document.getElementById("deborahCancelEditBtn");
+        if (debBanner) {
+          debBanner.style.display = "flex";
+          debBanner.style.background = isNewCard ? "#ECFDF5" : "#FEF3C7";
+          debBanner.style.borderColor = isNewCard ? "#10B981" : "#F59E0B";
+          debBanner.style.color = isNewCard ? "#065F46" : "#92400E";
+          if (debBannerText) debBannerText.textContent = isNewCard ? "🧾 Add a New Expense" : "✏️ Editing Saved Expense";
+          if (debCancelBtn) debCancelBtn.style.display = isNewCard ? "none" : "inline-flex";
+        }
+        updateDeborahLiveSummary();
+        return;
+      }
+
+      if (cancelEditBottom) cancelEditBottom.style.display = "none";
+      bottomPrevBtn.style.display = "inline-flex";
       prevBtn.disabled = deckIndex <= 0;
       bottomPrevBtn.disabled = deckIndex <= 0;
       nextBtn.disabled = isNewCard;
@@ -3124,6 +3433,7 @@
 
     function startNewBlankCard(keepSticky = true) {
       deckIndex = sessionDeck.length;
+      deborahHstCustomExpanded = false;
       document.getElementById("isRefundChk").checked = false;
       document.getElementById("payeeInput").value = "";
       document.getElementById("amountInput").value = "";
@@ -3253,6 +3563,24 @@
         alsoBillToMatter: Boolean(document.getElementById("alsoBillMatterChk")?.checked),
         matterNumber: document.getElementById("alsoBillMatterSelect")?.value || ""
       };
+
+      if (isDeborahUser() && !isEditingExisting) {
+        if (payload.amount >= 2500) {
+          if (!window.confirm("Just checking: is this expense really $" + payload.amount.toFixed(2) + " (and not $" + (payload.amount / 100).toFixed(2) + ")?")) {
+            return;
+          }
+        }
+        const duplicateEntry = sessionDeck.find((item) =>
+          String(item.txnDate || "") === payload.txnDate &&
+          String(item.payee || "").trim().toLowerCase() === payload.payee.toLowerCase() &&
+          Math.abs(Number(item.amount || 0) - payload.amount) < 0.001
+        );
+        if (duplicateEntry) {
+          if (!window.confirm("You already saved $" + payload.amount.toFixed(2) + " at " + payload.payee + " for " + payload.txnDate + ". Save another identical expense anyway?")) {
+            return;
+          }
+        }
+      }
 
       try {
         const res = await fetch("/api/save", {

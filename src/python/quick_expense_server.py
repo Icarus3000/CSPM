@@ -102,6 +102,7 @@ def _compute_live_qe_version(template_dir: Path) -> str:
             Path(__file__).resolve().parent / "services" / "quick_expense_service.py",
             Path(__file__).resolve().parent / "services" / "quick_expense_display.py",
             Path(__file__).resolve().parent / "services" / "leap_intake_service.py",
+            Path(__file__).resolve().parent / "services" / "quick_expense_push.py",
         ]
         sig = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in tracked if p.exists())
         if _QE_VER_CACHE.get("sig") == sig:
@@ -205,7 +206,7 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
             pass
 
-    def _send_file(self, file_path: Path, content_type: str, inject_version: bool = False) -> None:
+    def _send_file(self, file_path: Path, content_type: str, inject_version: bool = False, is_head: bool = False) -> None:
         self.close_connection = True
         if not file_path.exists():
             self.send_error(404, "File not found")
@@ -223,10 +224,11 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-App-Version", ver)
         self.send_header("Connection", "close")
         self.end_headers()
-        try:
-            self.wfile.write(data)
-        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
-            pass
+        if not is_head:
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                pass
 
     def do_OPTIONS(self) -> None:
         self.close_connection = True
@@ -238,6 +240,38 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_HEAD(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path in ("/", "/index.html"):
+            self._send_file(self.template_dir / "index.html", "text/html; charset=utf-8", inject_version=True, is_head=True)
+            return
+        if path == "/manifest.json":
+            self._send_file(self.template_dir / "manifest.json", "application/manifest+json; charset=utf-8", is_head=True)
+            return
+        if path in ("/sw.js",):
+            self._send_file(self.template_dir / "sw.js", "application/javascript; charset=utf-8", inject_version=True, is_head=True)
+            return
+        if path == "/icon.svg":
+            self._send_file(self.template_dir / "icon.svg", "image/svg+xml; charset=utf-8", is_head=True)
+            return
+        if path in ("/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/apple-touch-icon.png"):
+            self._send_file(self.template_dir / path.lstrip("/"), "image/png", is_head=True)
+            return
+        if path == "/favicon.ico":
+            self._send_file(self.template_dir / "favicon.ico", "image/x-icon", is_head=True)
+            return
+        if path == "/api/version":
+            ver = _compute_live_qe_version(self.template_dir)
+            body = json.dumps({"ok": True, "app": "Quick Expense", "version": ver, "appVersion": ver}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("X-App-Version", ver)
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return
+
         self.close_connection = True
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -404,6 +438,14 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api/") and self._try_federate_to_primary("GET"):
+            return
+
+        if path == "/api/push/vapid-public-key":
+            try:
+                from services.quick_expense_push import get_vapid_public_key
+                self._send_json({"ok": True, "publicKey": get_vapid_public_key()})
+            except Exception as e:
+                self._send_json({"ok": False, "message": str(e)}, status=500)
             return
 
         user_id = (qs.get("userId") or ["deborah"])[0]
@@ -596,13 +638,58 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
             self._send_json(res)
             return
 
+        if path == "/api/push/subscribe":
+            try:
+                from services.quick_expense_push import subscribe
+                sub_data = body.get("subscription") or body
+                username = str(body.get("username") or "cory")
+                platform = str(body.get("platform") or "")
+                user_agent = str(self.headers.get("User-Agent") or body.get("userAgent") or "")
+                res = subscribe(sub_data, username=username, platform=platform, user_agent=user_agent)
+                self._send_json(res)
+            except Exception as e:
+                self._send_json({"ok": False, "message": str(e)}, status=500)
+            return
+
+        if path == "/api/push/unsubscribe":
+            try:
+                from services.quick_expense_push import unsubscribe
+                endpoint = str(body.get("endpoint") or "")
+                res = unsubscribe(endpoint)
+                self._send_json(res)
+            except Exception as e:
+                self._send_json({"ok": False, "message": str(e)}, status=500)
+            return
+
+        if path == "/api/push/test":
+            try:
+                from services.quick_expense_push import send_test_push
+                username = str(body.get("username") or "cory")
+                sent = send_test_push(username)
+                self._send_json({"ok": True, "sent": sent})
+            except Exception as e:
+                self._send_json({"ok": False, "message": str(e)}, status=500)
+            return
+
         if path == "/api/save":
             user_id = str(body.get("userId") or "deborah")
             payload = body.get("payload") if isinstance(body.get("payload"), dict) else body
             res = self.service.save_entry(user_id=user_id, payload=payload)
-            if res.get("ok") and callable(getattr(self, "on_data_changed", None)):
+            if res.get("ok"):
+                if callable(getattr(self, "on_data_changed", None)):
+                    try:
+                        self.on_data_changed()
+                    except Exception:
+                        pass
                 try:
-                    self.on_data_changed()
+                    from services.quick_expense_push import notify_expense_saved
+                    saved_entry = res.get("entry") or payload
+                    threading.Thread(
+                        target=notify_expense_saved,
+                        args=(saved_entry, user_id),
+                        name="QuickExpensePushNotify",
+                        daemon=True,
+                    ).start()
                 except Exception:
                     pass
             self._send_json(res)
@@ -810,6 +897,18 @@ class QuickExpenseServerDaemon:
                 daemon=True,
             )
             self._idle_thread.start()
+
+        try:
+            from services.quick_expense_push import check_version_and_notify
+            ver = _compute_live_qe_version(_resolve_template_dir())
+            threading.Thread(
+                target=check_version_and_notify,
+                args=(ver,),
+                name="QuickExpensePushVersionWatcher",
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
 
         lan_ip = get_lan_ip()
         return {

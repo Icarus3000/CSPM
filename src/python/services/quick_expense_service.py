@@ -829,10 +829,16 @@ class QuickExpenseService:
         from_account = str(data.get("fromAccount") or "").strip().upper()
         to_account = str(data.get("toAccount") or "").strip().upper()
 
-        # 1. Enforce Deborah Account Privacy Firewall
+        # 1. Enforce Deborah Account Privacy Firewall & Guardrails
         if uid != "cory":
             if from_account in DEBORAH_RESTRICTED_ACCOUNT_CODES or to_account in DEBORAH_RESTRICTED_ACCOUNT_CODES:
                 return {"ok": False, "message": "Selected account is not available for this user profile."}
+            if mode == "Expense" and not data.get("transactionId"):
+                deborah_blocked_accounts = {"CIBC_PC_GENERAL", "CIBC_PC_TRUST", "CIBC_SAVINGS", "CASH_CORY", "CIBC_MORTGAGE", "HOME_TRUST_MORTGAGE"}
+                if from_account in deborah_blocked_accounts:
+                    return {"ok": False, "message": "Selected payment account is restricted to Cory's profile."}
+                if stream_id in {"CORY_SOLE_PROP", "CORY_PC"}:
+                    return {"ok": False, "message": "Selected stream is restricted to Cory's profile."}
 
         # 2. Enforce CIBC PC Trust Account Guardrail (Both Deborah & Cory)
         if from_account == "CIBC_PC_TRUST" or to_account == "CIBC_PC_TRUST":

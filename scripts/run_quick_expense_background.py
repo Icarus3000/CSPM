@@ -29,6 +29,7 @@ WATCHED_BACKEND_FILES = [
     SRC_PYTHON / "services" / "quick_expense_service.py",
     SRC_PYTHON / "services" / "quick_expense_display.py",
     SRC_PYTHON / "services" / "leap_intake_service.py",
+    SRC_PYTHON / "services" / "quick_expense_push.py",
 ]
 
 
