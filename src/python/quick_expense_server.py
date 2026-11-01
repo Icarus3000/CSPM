@@ -49,6 +49,23 @@ def _peer_cache_dir() -> Path:
     return base
 
 
+def _clear_peer_cache() -> int:
+    removed = 0
+    try:
+        pdir = _peer_cache_dir()
+        if pdir.is_dir():
+            for fp in pdir.iterdir():
+                if fp.is_file() and fp.suffix in (".bin", ".json"):
+                    try:
+                        fp.unlink()
+                        removed += 1
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return removed
+
+
 def _resolve_template_dir() -> Path:
     paths = AppPaths(root=AppPaths.project_root())
     candidates = [
@@ -515,6 +532,40 @@ class QuickExpenseRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         length = int(self.headers.get("Content-Length") or "0")
         raw_bytes = self.rfile.read(length) if length > 0 else b"{}"
+        if path == "/api/docket/mirror-sqlite":
+            raw_body = raw_bytes.decode("utf-8", errors="replace")
+            try:
+                body = json.loads(raw_body or "{}")
+            except Exception:
+                self._send_json({"ok": False, "message": "Invalid JSON body."}, status=400)
+                return
+            entries = body.get("entries") if isinstance(body.get("entries"), list) else []
+            source_host = str(body.get("sourceHost") or "")
+            source_platform = str(body.get("sourcePlatform") or "")
+            local_res = self.service.mirror_docket_rows_sqlite(
+                entries=entries,
+                source_host=source_host,
+                source_platform=source_platform,
+            )
+            _clear_peer_cache()
+            primary_res = None
+            if (not _is_primary_qe_host()) and self.headers.get("X-CSPM-No-Proxy") != "1" and PRIMARY_QE_ORIGIN:
+                try:
+                    import urllib.request
+                    preq = urllib.request.Request(
+                        f"{PRIMARY_QE_ORIGIN}/api/docket/mirror-sqlite",
+                        data=raw_bytes,
+                        headers={"Content-Type": "application/json; charset=utf-8", "X-CSPM-No-Proxy": "1"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(preq, timeout=5.0) as presp:
+                        primary_res = json.loads(presp.read().decode("utf-8"))
+                except Exception as pexc:
+                    primary_res = {"ok": False, "error": str(pexc)}
+            if primary_res is not None:
+                local_res["primaryMirror"] = primary_res
+            self._send_json(local_res)
+            return
         if path.startswith("/api/") and self._try_federate_to_primary("POST", raw_bytes):
             return
         raw_body = raw_bytes.decode("utf-8")

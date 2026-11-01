@@ -6067,11 +6067,27 @@
       }
     }
 
+    let _lastForegroundDocketSyncMs = 0;
+    function refreshDocketsOnForeground() {
+      try {
+        if (!currentUser || String(currentUser.userId || "").toLowerCase() !== "cory") return;
+        const now = Date.now();
+        if (now - _lastForegroundDocketSyncMs < 3000) return;
+        _lastForegroundDocketSyncMs = now;
+        initDocketSection(true).catch(() => {});
+        if (currentMode === "WIP_AR" || wipArData) {
+          loadWipArOverview(true).catch(() => {});
+        }
+      } catch (_) {}
+    }
+
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         updateCallTimerDisplay();
+        refreshDocketsOnForeground();
       }
     });
+    window.addEventListener("focus", refreshDocketsOnForeground);
 
     function persistCallTimerState() {
       safeSetStorage("cspm_qe_call_timer", JSON.stringify(callTimerState));

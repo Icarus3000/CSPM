@@ -1635,6 +1635,10 @@ class QuickExpenseService:
         if self._is_isolated_test():
             cand = self.paths.data_dir() / "cspm.db"
             return [cand] if cand.is_file() else []
+        try:
+            self._refresh_from_shared_master_if_newer()
+        except Exception:
+            pass
         out: List[Path] = []
         seen: set[str] = set()
         for d in (self.paths.master_data_dir(), self.paths.data_dir()):
@@ -1653,11 +1657,207 @@ class QuickExpenseService:
                         out.append(cand)
         except Exception:
             pass
+        out.sort(key=lambda p: (p.stat().st_mtime if p.is_file() else 0.0), reverse=True)
         return out
 
     def _resolve_sqlite_db_path(self) -> Optional[Path]:
         dbs = self._all_sqlite_db_paths()
         return dbs[0] if dbs else None
+
+    def mirror_docket_rows_sqlite(
+        self,
+        entries: List[Dict[str, Any]],
+        source_host: str = "",
+        source_platform: str = "",
+    ) -> Dict[str, Any]:
+        """Conflict-free instant SQLite row mirror for Antigravity docket submissions across workstations.
+        Updates local non-OneDrive working replica DB immediately on every receiving host (and shared master
+        only when invoked on the originating host or from a non-OneDrive Linux host), preventing OneDrive
+        file conflicts while making new dockets live in Quick Expenses in <200ms."""
+        import socket
+        import sqlite3
+
+        local_host = socket.gethostname().strip()
+        same_host = bool(source_host) and (source_host.strip().lower() == local_host.lower())
+        from_linux = source_platform.strip().lower().startswith("linux")
+
+        target_dbs: List[Path] = []
+        seen_k: set[str] = set()
+        local_db = self.paths.data_dir() / "cspm.db"
+        if not local_db.is_file():
+            self._refresh_from_shared_master_if_newer()
+        candidates = [local_db]
+        if same_host or from_linux:
+            m_dir = self.paths.master_data_dir()
+            if m_dir and (m_dir / "cspm.db").is_file():
+                candidates.append(m_dir / "cspm.db")
+        for db_p in candidates:
+            if db_p and db_p.is_file():
+                k = str(db_p.resolve()).casefold()
+                if k not in seen_k:
+                    seen_k.add(k)
+                    target_dbs.append(db_p)
+
+        mirrored_ids: List[str] = []
+        with self._lock:
+            for db_p in target_dbs:
+                conn = sqlite3.connect(str(db_p), timeout=15.0)
+                try:
+                    cur = conn.cursor()
+                    existing_cols = {r[1] for r in cur.execute("PRAGMA table_info(TimeEntry)").fetchall()}
+                    for item in (entries or []):
+                        if not isinstance(item, dict):
+                            continue
+                        eid = str(item.get("entry_id") or "").strip()
+                        if not eid:
+                            continue
+                        replaced_ids = set(item.get("replaced_entry_ids") or [])
+                        replaced_ids.add(eid)
+
+                        prev_xid = str(item.get("xero_time_entry_id") or "").strip()
+                        prev_xpid = str(item.get("xero_project_id") or "").strip()
+                        prev_xtid = str(item.get("xero_task_id") or "").strip()
+                        prev_xstat = str(item.get("xero_sync_status") or "").strip()
+                        if not prev_xid and "xero_time_entry_id" in existing_cols:
+                            xr = cur.execute(
+                                "SELECT xero_time_entry_id, xero_project_id, xero_task_id FROM TimeEntry WHERE time_id = ?",
+                                (eid,),
+                            ).fetchone()
+                            if xr:
+                                prev_xid = str(xr[0] or "")
+                                prev_xpid = str(xr[1] or "")
+                                prev_xtid = str(xr[2] or "")
+
+                        for old_id in replaced_ids:
+                            cur.execute("DELETE FROM TimeEntry WHERE time_id = ?", (old_id,))
+                            try:
+                                cur.execute("DELETE FROM time_entries WHERE entry_id = ? OR time_id = ?", (old_id, old_id))
+                            except Exception:
+                                pass
+
+                        date_str = str(item.get("date") or item.get("date_str") or "")[:10]
+                        matter_id = str(item.get("matter_id") or item.get("matter_number") or "")
+                        matter_number = str(item.get("matter_number") or matter_id)
+                        client_id = str(item.get("client_id") or "")
+                        client_name = str(item.get("client_name") or matter_number)
+                        parent_id = str(item.get("parent_id") or "")
+                        hours = float(item.get("hours") or 0.0)
+                        raw_seconds = int(item.get("raw_seconds") or round(hours * 3600))
+                        rate = float(item.get("rate") if item.get("rate") is not None else 475.0)
+                        rate_cents = int(round(rate * 100))
+                        share_pct = float(item.get("share_pct") if item.get("share_pct") is not None else 100.0)
+                        amount = float(item.get("amount") if item.get("amount") is not None else round(hours * rate, 2))
+                        amount_cents = int(round(amount * 100))
+                        amount_to_you = float(item.get("amount_to_you") if item.get("amount_to_you") is not None else round(amount * (share_pct / 100.0), 2))
+                        amount_to_you_cents = int(round(amount_to_you * 100))
+                        hst = float(item.get("hst") if item.get("hst") is not None else round(amount_to_you * 0.13, 2))
+                        hst_cents = int(round(hst * 100))
+                        total_incl_hst = float(item.get("total_incl_hst") if item.get("total_incl_hst") is not None else round(amount_to_you + hst, 2))
+                        total_incl_hst_cents = int(round(total_incl_hst * 100))
+                        description = str(item.get("description") or "").strip()
+                        biller_entity = str(item.get("biller_entity") or "SOLE_PROP")
+                        now_utc = str(item.get("now_utc") or datetime.now().isoformat())
+                        created_ts = str(item.get("created_at") or now_utc)
+                        row_sig = json.dumps(
+                            {
+                                "date": date_str,
+                                "description": description,
+                                "matter_id": matter_number,
+                                "raw_seconds": raw_seconds,
+                                "time_hrs": hours,
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                        cur.execute(
+                            """
+                            INSERT INTO TimeEntry (
+                                time_id, matter_id, matter_name, client_id, client_name, parent_id,
+                                date, hours, raw_seconds, rate, rate_cents, share_pct,
+                                amount, amount_cents, amount_to_you, amount_to_you_cents,
+                                hst, hst_cents, total_incl_hst, total_incl_hst_cents,
+                                description, status, entry_status, started_at_utc, last_heartbeat_utc,
+                                legacy_dockets_sync_status, legacy_dockets_synced_at, legacy_dockets_row_signature,
+                                is_billed, billed_invoice_id, biller_entity, created_at, updated_at
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?,
+                                ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?,
+                                ?, ?, ?, ?, ?
+                            )
+                            """,
+                            (
+                                eid, matter_id, matter_number, client_id, client_name, parent_id,
+                                date_str, hours, raw_seconds, rate, rate_cents, share_pct,
+                                amount, amount_cents, amount_to_you, amount_to_you_cents,
+                                hst, hst_cents, total_incl_hst, total_incl_hst_cents,
+                                description, "Draft", "SAVED", None, now_utc,
+                                "SYNCED", now_utc, row_sig,
+                                0, "", biller_entity, created_ts, now_utc,
+                            ),
+                        )
+                        try:
+                            cur.execute(
+                                """
+                                INSERT INTO time_entries (
+                                    entry_id, time_id, matter_id, matter_name, client_id, client_name, parent_id,
+                                    date, hours, raw_seconds, rate, rate_cents, share_pct,
+                                    amount, amount_cents, amount_to_you, amount_to_you_cents,
+                                    hst, hst_cents, total_incl_hst, total_incl_hst_cents,
+                                    description, status, entry_status, started_at_utc, last_heartbeat_utc,
+                                    legacy_dockets_sync_status, legacy_dockets_synced_at, legacy_dockets_row_signature,
+                                    is_billed, billed_invoice_id, biller_entity, created_at, updated_at
+                                ) VALUES (
+                                    ?, ?, ?, ?, ?, ?, ?,
+                                    ?, ?, ?, ?, ?, ?,
+                                    ?, ?, ?, ?,
+                                    ?, ?, ?, ?,
+                                    ?, ?, ?, ?, ?,
+                                    ?, ?, ?,
+                                    ?, ?, ?, ?, ?
+                                )
+                                """,
+                                (
+                                    eid, eid, matter_id, matter_number, client_id, client_name, parent_id,
+                                    date_str, hours, raw_seconds, rate, rate_cents, share_pct,
+                                    amount, amount_cents, amount_to_you, amount_to_you_cents,
+                                    hst, hst_cents, total_incl_hst, total_incl_hst_cents,
+                                    description, "Draft", "SAVED", None, now_utc,
+                                    "SYNCED", now_utc, row_sig,
+                                    0, "", biller_entity, created_ts, now_utc,
+                                ),
+                            )
+                        except Exception:
+                            pass
+                        if "xero_time_entry_id" in existing_cols and (prev_xid or prev_xstat):
+                            cur.execute(
+                                "UPDATE TimeEntry SET xero_time_entry_id = ?, xero_project_id = ?, xero_task_id = ? WHERE time_id = ?",
+                                (prev_xid, prev_xpid, prev_xtid, eid),
+                            )
+                            try:
+                                cur.execute(
+                                    "UPDATE time_entries SET xero_time_entry_id = ?, xero_project_id = ?, xero_task_id = ? WHERE entry_id = ?",
+                                    (prev_xid, prev_xpid, prev_xtid, eid),
+                                )
+                            except Exception:
+                                pass
+                        if eid not in mirrored_ids:
+                            mirrored_ids.append(eid)
+                    conn.commit()
+                finally:
+                    conn.close()
+            self._cached_ar_snapshot = None
+
+        return {
+            "ok": True,
+            "host": local_host,
+            "mirroredCount": len(mirrored_ids),
+            "entryIds": mirrored_ids,
+            "dbTargets": [str(p) for p in target_dbs],
+        }
 
     def list_docket_matters(
         self,
