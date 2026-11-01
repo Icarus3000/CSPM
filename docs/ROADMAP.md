@@ -25,7 +25,7 @@ The detailed long-term compliance direction is canonical in
 `docs/CSPM_REGULATORY_TAX_AND_TRUST_ROADMAP.md`. The current release gate is
 canonical in `docs/CSPM_10_10_EXECUTION_ROADMAP.md`.
 
-## Current Execution — 10/10 Gate
+## Current Execution  -  10/10 Gate
 
 The current priority is not a storage migration or new regulated module. It is
 to prove that CSPM's existing legal-office workflows are financially correct,
@@ -175,3 +175,18 @@ After the financial-data, security, and API boundaries are proven:
 - `docs/PRODUCTION_BACKUP_CHAIN.md`
 - `docs/CSPM_Option_3_Interface_Rebuild_Brief.md`
 - `docs/spec/professional_client_contracts.yaml`
+
+<!-- BEGIN_AUTO_CAPTURED_ROADMAP -->
+## Captured Feature Ideas & Flow-of-Consciousness Roadmap
+
+*Auto-synced across workstations, Leviathan Command, and Bridget Edge (`Last Updated: 2026-11-01 18:02 Eastern Standard Time`).*
+
+### Planned
+- **Direct LEAP Cloud Accounting Docket / Fee Sync in cspm-docket** *(Captured: 2026-11-01 via Antigravity Chat)*
+  - Investigative audit & read-only smoke test confirmed 100% headless feasibility via https://api-offexaccounting.leapaws.ca (POST /api/cloud/fee, PUT /api/cloud/fee/{feeId}) using pure-Python OAuth silent refresh + HMAC-SHA256 TOTP headers, auto-syncing LPN dockets in add_docket.py alongside existing LIH Xero Projects sync.
+
+### Shipped
+- **Quick Expense Cross-OS QR Install Modal, Chromebook PWA Install, and iOS/ChromeOS Web Push Notifications** *(Captured: 2026-11-01 via Antigravity Chat | Shipped: 2026-11-01)*
+  - Added RFC 8291/8292 VAPID Web Push service (iOS 16.4+ APNs and ChromeOS FCM), Chromebook beforeinstallprompt support, auto-update push notifications, and universal Settings -> Reveal QR Code popup modal with OK button.
+
+<!-- END_AUTO_CAPTURED_ROADMAP -->

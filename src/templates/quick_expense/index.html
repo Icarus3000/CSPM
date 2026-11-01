@@ -874,16 +874,40 @@
       </div>
       <div style="display: flex; align-items: center; gap: 6px;">
         <button type="button" id="pwaInstallActionBtn" onclick="window.__cspmTriggerPwaInstall()" style="background: #FFFFFF; color: #0F172A; border: none; border-radius: 999px; padding: 8px 15px; font-weight: 800; font-size: 0.85rem; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.18);">
-          ?? Install App
+          📲 Install App
         </button>
-        <button type="button" onclick="window.__cspmDismissPwaInstall()" title="Hide install bar" style="background: rgba(255,255,255,0.16); color: #FFFFFF; border: none; border-radius: 999px; width: 28px; height: 28px; font-weight: 800; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+        <button type="button" onclick="window.__cspmDismissPwaInstall()" title="Hide install bar" style="background: rgba(255,255,255,0.16); color: #FFFFFF; border: none; border-radius: 999px; width: 28px; height: 28px; font-weight: 800; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">✕</button>
           ?
         </button>
       </div>
     </div>
 
+    <!-- Platform Install Instructions Drawer & Standalone Push Opt-In Bar -->
+    <div id="iosInstallGuideBox" style="display: none; background: #EFF6FF; border: 1.5px solid #93C5FD; color: #1E3A8A; padding: 12px 14px; border-radius: 12px; margin-bottom: 12px; font-size: 0.86rem; line-height: 1.45;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <strong id="installGuideTitle" style="font-size:0.92rem;">📲 How to Install Quick Expense</strong>
+        <button type="button" onclick="document.getElementById('iosInstallGuideBox').style.display='none'" style="background:transparent; border:none; font-weight:800; color:#1E3A8A; cursor:pointer;">✕</button>
+      </div>
+      <div id="installGuideSteps"></div>
+    </div>
+
+    <div id="standalonePushPrompt" style="display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: #ECFDF5; border: 1.5px solid #6EE7B7; color: #064E3B; padding: 10px 14px; border-radius: 12px; margin-bottom: 12px;">
+      <div style="font-size: 0.86rem; font-weight: 700;">
+        🔔 Enable Push Notifications for automatic updates &amp; session alerts
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button type="button" onclick="window.__cspmEnableOrManagePush && window.__cspmEnableOrManagePush()" style="background: #059669; color: #FFFFFF; border: none; border-radius: 999px; padding: 7px 14px; font-weight: 800; font-size: 0.82rem; cursor: pointer;">
+          🔔 Enable Alerts
+        </button>
+        <button type="button" onclick="sessionStorage.setItem('cspm_hide_push_bar','1'); document.getElementById('standalonePushPrompt').style.display='none';" style="background: transparent; color: #065F46; border: none; font-weight: 800; cursor: pointer;">✕</button>
+      </div>
+    </div>
+
     <!-- ================= 1. LOGIN VIEW ================= -->
     <div id="loginView" class="login-card" style="display: none;">
+      <div style="display:flex; justify-content:flex-end; margin-bottom:4px;">
+        <button type="button" onclick="window.__lpnToggleSettingsMenu && window.__lpnToggleSettingsMenu(event, this)" style="background:#F8FAFC; color:#334155; border:1.5px solid #CBD5E1; border-radius:999px; padding:6px 12px; font-weight:800; font-size:0.82rem; cursor:pointer;">⚙️ Settings</button>
+      </div>
       <div class="login-title">👋 Welcome to Quick Expense</div>
       <p class="login-sub">Tap your name below to start entering or checking expenses</p>
 
@@ -934,6 +958,8 @@
           </button>
           <button type="button" class="switch-user-btn" id="pushNotificationBtn" onclick="togglePushNotifications()" title="Push Notifications" style="padding: 6px 10px; font-size: 0.82rem;">🔔 Enable Push</button>
           <button type="button" class="switch-user-btn" onclick="logoutUser()">🚪 Logout</button>
+          <button type="button" id="pushNotifBtn" onclick="window.__cspmEnableOrManagePush && window.__cspmEnableOrManagePush()" style="background:#EFF6FF; color:#1D4ED8; border:1.5px solid #93C5FD; border-radius:999px; padding:7px 12px; font-weight:800; font-size:0.82rem; cursor:pointer;" title="Enable or test push notifications">🔔 Enable Alerts</button>
+          <button type="button" id="qeSettingsMenuBtn" onclick="window.__lpnToggleSettingsMenu && window.__lpnToggleSettingsMenu(event, this)" style="background:#F8FAFC; color:#0F172A; border:1.5px solid #CBD5E1; border-radius:999px; padding:7px 12px; font-weight:800; font-size:0.82rem; cursor:pointer;" title="Settings & Install QR Code">⚙️ Settings</button>
           <span id="offlineQueueBadge" style="display:none; font-size:0.8rem; font-weight:800; color:#B45309; background:#FEF3C7; padding:4px 8px; border-radius:999px;"></span>
         </div>
 
@@ -7346,6 +7372,13 @@
     const banner = document.getElementById("lpnPwaUpdateBanner");
     const mini = document.getElementById("lpnPwaUpdateMiniPill");
     if (banner && !minimized) banner.classList.add("lpn-visible");
+    try {
+      const lv = document.getElementById("loginView");
+      const pinEl = document.getElementById("loginPinInput");
+      if (lv && lv.style.display !== "none" && (!pinEl || !pinEl.value)) {
+        setTimeout(function() { if (window.__lpnApplyPwaUpdate) window.__lpnApplyPwaUpdate(); }, 500);
+      }
+    } catch (e) {}
     if (mini && minimized) mini.classList.add("lpn-visible");
     try {
       if ("setAppBadge" in navigator) {
@@ -7505,6 +7538,10 @@
   window.addEventListener("online", checkServerVersion);
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", function(ev) {
+      if (ev.data && ev.data.type === "LPN_REMOTE_VERSION_PUSH") {
+        if (ev.data.version) evaluateRemoteVersion(String(ev.data.version));
+        checkServerVersion();
+      }
       if (ev.data && ev.data.type === "LPN_APPLY_UPDATE_NOW" && window.__lpnApplyPwaUpdate) {
         window.__lpnApplyPwaUpdate();
       }
@@ -7515,7 +7552,7 @@
     document.removeEventListener("click", _reqUpdNotifOnce);
     try {
       const isStandalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
-      if (isStandalone && "Notification" in window && Notification.permission === "default") {
+      if (false && isStandalone) {
         Notification.requestPermission().catch(function() {});
       }
     } catch (e) {}
@@ -7532,6 +7569,506 @@
 })();
 </script>
 <!-- /LPN Universal Live PWA Update Push Banner -->
+<script>
+(function() {
+  // 1. Clean stray corrupted close-button glyph if present & wire iPhone + Chromebook PWA Install Banner
+  const isStandalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+  const ua = navigator.userAgent || "";
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isChromebook = /\bCrOS\b/i.test(ua);
+  let deferredInstallPrompt = null;
+
+  function configureInstallBanner() {
+    const banner = document.getElementById("pwaInstallBanner");
+    const sub = document.getElementById("pwaInstallSubtext");
+    const btn = document.getElementById("pwaInstallActionBtn");
+    if (!banner) return;
+    // Remove any leftover stray text node inside banner action cluster
+    Array.from(banner.querySelectorAll("div")).forEach(function(d) {
+      Array.from(d.childNodes).forEach(function(n) {
+        if (n.nodeType === 3 && n.textContent.trim() === "?") n.textContent = "";
+      });
+    });
+    if (isStandalone || sessionStorage.getItem("cspm_hide_install_banner") === "1") {
+      banner.style.display = "none";
+      return;
+    }
+    if (isIOS) {
+      if (sub) sub.textContent = "Tap Share [↑] in Safari, then 'Add to Home Screen' for full-screen app & Push Alerts";
+      if (btn) btn.textContent = "📲 How to Install";
+      banner.style.display = "flex";
+    } else if (isChromebook) {
+      if (sub) sub.textContent = "Add Quick Expense to your Chromebook Shelf & App Launcher";
+      if (btn) btn.textContent = "💻 Install on Chromebook";
+      banner.style.display = "flex";
+    } else if (deferredInstallPrompt) {
+      if (sub) sub.textContent = "Install Quick Expense as a standalone desktop or mobile app";
+      if (btn) btn.textContent = "📲 Install App";
+      banner.style.display = "flex";
+    }
+  }
+
+  window.addEventListener("beforeinstallprompt", function(e) {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    configureInstallBanner();
+  });
+
+  window.addEventListener("appinstalled", function() {
+    deferredInstallPrompt = null;
+    const banner = document.getElementById("pwaInstallBanner");
+    const guide = document.getElementById("iosInstallGuideBox");
+    if (banner) banner.style.display = "none";
+    if (guide) guide.style.display = "none";
+  });
+
+  window.__cspmDismissPwaInstall = function() {
+    sessionStorage.setItem("cspm_hide_install_banner", "1");
+    const banner = document.getElementById("pwaInstallBanner");
+    const guide = document.getElementById("iosInstallGuideBox");
+    if (banner) banner.style.display = "none";
+    if (guide) guide.style.display = "none";
+  };
+
+  window.__cspmTriggerPwaInstall = async function() {
+    if (deferredInstallPrompt) {
+      try {
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+      } catch (e) {}
+      deferredInstallPrompt = null;
+      return;
+    }
+    const guide = document.getElementById("iosInstallGuideBox");
+    const title = document.getElementById("installGuideTitle");
+    const steps = document.getElementById("installGuideSteps");
+    if (!guide || !steps) return;
+    if (isIOS) {
+      if (title) title.textContent = "📲 Install Quick Expense on iPhone / iPad";
+      steps.innerHTML = "1. Tap Safari's <b>Share [↑]</b> icon at the bottom of the screen.<br>2. Scroll down and tap <b>Add to Home Screen</b>, then tap <b>Add</b>.<br>3. Open <b>Quick Expense</b> from your Home Screen and tap <b>🔔 Enable Alerts</b>.";
+    } else if (isChromebook) {
+      if (title) title.textContent = "💻 Install Quick Expense on Chromebook";
+      steps.innerHTML = "1. Click the <b>Install App (⊕)</b> icon on the right side of Chrome's address bar.<br>2. Or open Chrome Menu <b>(⋮) → Cast, save, and share → Install page as app</b>.<br>3. Once open, click <b>🔔 Enable Alerts</b> for automatic push updates.";
+    } else {
+      if (title) title.textContent = "📲 Install Quick Expense Web App";
+      steps.innerHTML = "Click the <b>Install (⊕)</b> icon in your browser's address bar, or open the browser menu and select <b>Install Quick Expense</b>.";
+    }
+    guide.style.display = "block";
+  };
+
+  // 2. VAPID Web Push Notifications (iOS 16.4+ Apple APNs & ChromeOS / Desktop FCM)
+  let activePushSub = null;
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const out = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) out[i] = rawData.charCodeAt(i);
+    return out;
+  }
+
+  function getActiveUserId() {
+    try {
+      if (typeof currentUser !== "undefined" && currentUser && currentUser.userId) return currentUser.userId;
+      const raw = localStorage.getItem("cspm_quick_expense_user");
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (u && u.userId) return u.userId;
+      }
+    } catch (e) {}
+    return "cory";
+  }
+
+  function updatePushUiState(isSubscribed) {
+    const btn = document.getElementById("pushNotifBtn");
+    const bar = document.getElementById("standalonePushPrompt");
+    if (btn) {
+      if (isSubscribed) {
+        btn.textContent = "🔔 Alerts On";
+        btn.style.background = "#ECFDF5";
+        btn.style.color = "#047857";
+        btn.style.borderColor = "#6EE7B7";
+      } else {
+        btn.textContent = "🔔 Enable Alerts";
+        btn.style.background = "#EFF6FF";
+        btn.style.color = "#1D4ED8";
+        btn.style.borderColor = "#93C5FD";
+      }
+    }
+    if (bar) {
+      if (!isSubscribed && isStandalone && sessionStorage.getItem("cspm_hide_push_bar") !== "1" && "Notification" in window && Notification.permission !== "denied") {
+        bar.style.display = "flex";
+      } else {
+        bar.style.display = "none";
+      }
+    }
+  }
+
+  async function registerPushSubscriptionWithBackend(sub) {
+    activePushSub = sub;
+    await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: getActiveUserId(), subscription: sub.toJSON() })
+    });
+    updatePushUiState(true);
+  }
+
+  async function syncExistingPushSubscription() {
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        updatePushUiState(false);
+        return;
+      }
+      if (Notification.permission !== "granted") {
+        updatePushUiState(false);
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        const kr = await fetch("/api/push/vapid-public-key", { cache: "no-store" });
+        const kd = await kr.json();
+        if (kd && kd.publicKey) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(kd.publicKey)
+          });
+        }
+      }
+      if (sub) await registerPushSubscriptionWithBackend(sub);
+    } catch (e) {
+      updatePushUiState(false);
+    }
+  }
+
+  window.__cspmEnableOrManagePush = async function() {
+    if (isIOS && !isStandalone) {
+      window.__cspmTriggerPwaInstall();
+      return;
+    }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      alert("Push notifications require installing Quick Expense to your Home Screen (iOS 16.4+) or opening over HTTPS in Chrome/Edge/Safari.");
+      return;
+    }
+    if (activePushSub && Notification.permission === "granted") {
+      if (confirm("Push notifications are active on this device. Send a test push notification now?")) {
+        try {
+          const r = await fetch("/api/push/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: getActiveUserId(), endpoint: activePushSub.endpoint })
+          });
+          const d = await r.json();
+          if (typeof showBanner === "function") {
+            showBanner(d.sent > 0 ? "✅ Test push notification sent!" : "⚠️ Test push dispatched (check notification settings).", "success");
+          }
+        } catch (e) {}
+      }
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        alert("Notification permission was not granted. Enable notifications for Quick Expense in device Settings.");
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const kr = await fetch("/api/push/vapid-public-key", { cache: "no-store" });
+      const kd = await kr.json();
+      if (!kd || !kd.publicKey) throw new Error("Missing VAPID public key");
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(kd.publicKey)
+      });
+      await registerPushSubscriptionWithBackend(sub);
+      await fetch("/api/push/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: getActiveUserId(), endpoint: sub.endpoint })
+      }).catch(function() {});
+      if (typeof showBanner === "function") {
+        showBanner("🔔 Push notifications enabled! Auto-updates & alerts are live.", "success");
+      }
+    } catch (err) {
+      alert("Could not enable push notifications: " + (err && err.message ? err.message : err));
+    }
+  };
+
+  let lastKnownUid = getActiveUserId();
+  setInterval(function() {
+    const cur = getActiveUserId();
+    if (cur !== lastKnownUid) {
+      lastKnownUid = cur;
+      syncExistingPushSubscription();
+    }
+  }, 4000);
+
+  setTimeout(function() {
+    configureInstallBanner();
+    syncExistingPushSubscription();
+  }, 900);
+})();
+
+// 3. LPN Universal Settings Menu & Cross-OS QR Code Install Modal
+(function initLpnUniversalQrSettings(cfg) {
+  function generateQrSvg(text, sizePx) {
+    const bytes = Array.from(new TextEncoder().encode(String(text)));
+    const V_M = [
+      null,
+      [16, 10, 1, 16, 0, 0, []],
+      [28, 16, 1, 28, 0, 0, [6, 18]],
+      [44, 26, 1, 44, 0, 0, [6, 22]],
+      [64, 18, 2, 32, 0, 0, [6, 26]],
+      [86, 24, 2, 43, 0, 0, [6, 30]],
+      [108, 16, 4, 27, 0, 0, [6, 34]],
+      [124, 18, 4, 31, 0, 0, [6, 22, 38]],
+      [154, 22, 2, 38, 2, 39, [6, 24, 42]],
+      [182, 22, 3, 36, 2, 37, [6, 26, 46]],
+      [216, 26, 4, 43, 1, 44, [6, 28, 50]]
+    ];
+    let ver = 1;
+    while (ver <= 10) {
+      const lenBits = ver <= 9 ? 8 : 16;
+      if (bytes.length <= Math.floor((V_M[ver][0] * 8 - 4 - lenBits) / 8)) break;
+      ver++;
+    }
+    if (ver > 10) ver = 10;
+    const [totalDataCw, ecCw, g1Blocks, g1DataCw, g2Blocks, g2DataCw, align] = V_M[ver];
+    const bits = [];
+    const pushBits = function(val, n) { for (let i = n - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+    pushBits(4, 4);
+    pushBits(bytes.length, ver <= 9 ? 8 : 16);
+    for (const b of bytes) pushBits(b, 8);
+    pushBits(0, Math.min(4, totalDataCw * 8 - bits.length));
+    while (bits.length % 8 !== 0) bits.push(0);
+    const dataCw = [];
+    for (let i = 0; i < bits.length; i += 8) {
+      let v = 0;
+      for (let j = 0; j < 8; j++) v = (v << 1) | bits[i + j];
+      dataCw.push(v);
+    }
+    const pads = [0xec, 0x11];
+    let pi = 0;
+    while (dataCw.length < totalDataCw) dataCw.push(pads[pi++ & 1]);
+    const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
+    let x = 1;
+    for (let i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
+    for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+    const gfMul = function(a, b) { return (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]; };
+    let gen = [1];
+    for (let i = 0; i < ecCw; i++) {
+      const next = new Array(gen.length + 1).fill(0);
+      for (let j = 0; j < gen.length; j++) { next[j] ^= gen[j]; next[j + 1] ^= gfMul(gen[j], EXP[i]); }
+      gen = next;
+    }
+    const rsEncode = function(block) {
+      const rem = new Array(ecCw).fill(0);
+      for (const b of block) {
+        const f = b ^ rem.shift();
+        rem.push(0);
+        for (let j = 0; j < ecCw; j++) rem[j] ^= gfMul(gen[j + 1], f);
+      }
+      return rem;
+    };
+    const dataBlocks = [], ecBlocks = [];
+    let off = 0;
+    for (let i = 0; i < g1Blocks; i++) { const blk = dataCw.slice(off, off + g1DataCw); off += g1DataCw; dataBlocks.push(blk); ecBlocks.push(rsEncode(blk)); }
+    for (let i = 0; i < g2Blocks; i++) { const blk = dataCw.slice(off, off + g2DataCw); off += g2DataCw; dataBlocks.push(blk); ecBlocks.push(rsEncode(blk)); }
+    const finalCw = [];
+    const maxDL = Math.max(g1DataCw, g2DataCw);
+    for (let col = 0; col < maxDL; col++) for (const blk of dataBlocks) if (col < blk.length) finalCw.push(blk[col]);
+    for (let col = 0; col < ecCw; col++) for (const blk of ecBlocks) finalCw.push(blk[col]);
+    const size = ver * 4 + 17;
+    const grid = Array.from({ length: size }, function() { return new Uint8Array(size); });
+    const isFunc = Array.from({ length: size }, function() { return new Uint8Array(size); });
+    const setFunc = function(r, c, dark) { if (r >= 0 && r < size && c >= 0 && c < size) { grid[r][c] = dark ? 1 : 0; isFunc[r][c] = 1; } };
+    const drawFinder = function(r0, c0) {
+      for (let dr = -1; dr <= 7; dr++) for (let dc = -1; dc <= 7; dc++) {
+        const dark = (dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6) && (dr === 0 || dr === 6 || dc === 0 || dc === 6 || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4));
+        setFunc(r0 + dr, c0 + dc, dark);
+      }
+    };
+    drawFinder(0, 0); drawFinder(0, size - 7); drawFinder(size - 7, 0);
+    for (let i = 8; i < size - 8; i++) { setFunc(6, i, i % 2 === 0); setFunc(i, 6, i % 2 === 0); }
+    for (const ar of align) for (const ac of align) {
+      if ((ar <= 8 && ac <= 8) || (ar <= 8 && ac >= size - 9) || (ar >= size - 9 && ac <= 8)) continue;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) setFunc(ar + dr, ac + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
+    }
+    for (let i = 0; i <= 8; i++) {
+      if (i !== 6) { if (!isFunc[8][i]) setFunc(8, i, false); if (!isFunc[i][8]) setFunc(i, 8, false); }
+      if (i < 8) { if (!isFunc[8][size - 1 - i]) setFunc(8, size - 1 - i, false); if (!isFunc[size - 1 - i][8]) setFunc(size - 1 - i, 8, false); }
+    }
+    setFunc(size - 8, 8, true);
+    if (ver >= 7) {
+      let rem = ver;
+      for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1f25);
+      const vBits = (ver << 12) | rem;
+      for (let i = 0; i < 18; i++) { const b = ((vBits >>> i) & 1) === 1, a = size - 11 + (i % 3), k = Math.floor(i / 3); setFunc(k, a, b); setFunc(a, k, b); }
+    }
+    const allBits = [];
+    for (const cw of finalCw) for (let i = 7; i >= 0; i--) allBits.push((cw >>> i) & 1);
+    let bi = 0;
+    for (let right = size - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      const up = (((size - 1 - right) / 2) & 1) === 0;
+      for (let v = 0; v < size; v++) {
+        const r = up ? (size - 1 - v) : v;
+        for (let j = 0; j < 2; j++) { const c = right - j; if (!isFunc[r][c]) grid[r][c] = bi < allBits.length ? allBits[bi++] : 0; }
+      }
+    }
+    const writeFormat = function(target, mask) {
+      let rem = mask;
+      for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+      const bits15 = ((mask << 10) | rem) ^ 0x5412;
+      const bit = function(i) { return (bits15 >>> i) & 1; };
+      for (let i = 0; i <= 5; i++) target[8][i] = bit(14 - i);
+      target[8][7] = bit(8); target[8][8] = bit(7); target[7][8] = bit(6);
+      for (let i = 0; i < 6; i++) target[5 - i][8] = bit(5 - i);
+      for (let i = 0; i < 7; i++) target[size - 1 - i][8] = bit(14 - i);
+      for (let i = 0; i < 8; i++) target[8][size - 8 + i] = bit(7 - i);
+      target[size - 8][8] = 1;
+    };
+    const maskFn = [
+      function(r, c) { return (r + c) % 2 === 0; },
+      function(r) { return r % 2 === 0; },
+      function(_, c) { return c % 3 === 0; },
+      function(r, c) { return (r + c) % 3 === 0; },
+      function(r, c) { return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0; },
+      function(r, c) { return ((r * c) % 2) + ((r * c) % 3) === 0; },
+      function(r, c) { return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0; },
+      function(r, c) { return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0; }
+    ];
+    let bestGrid = null, bestScore = Infinity;
+    for (let m = 0; m < 8; m++) {
+      const cand = grid.map(function(row) { return Uint8Array.from(row); });
+      for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (!isFunc[r][c] && maskFn[m](r, c)) cand[r][c] ^= 1;
+      writeFormat(cand, m);
+      let sc = 0;
+      for (let r = 0; r < size; r++) {
+        let rc = 1, rr = 1;
+        for (let c = 1; c < size; c++) {
+          if (cand[r][c] === cand[r][c - 1]) { rc++; if (rc === 5) sc += 3; else if (rc > 5) sc++; } else rc = 1;
+          if (cand[c][r] === cand[c - 1][r]) { rr++; if (rr === 5) sc += 3; else if (rr > 5) sc++; } else rr = 1;
+        }
+      }
+      if (sc < bestScore) { bestScore = sc; bestGrid = cand; }
+    }
+    const quiet = 4, total = size + quiet * 2;
+    let d = "";
+    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (bestGrid[r][c]) d += "M" + (c + quiet) + "," + (r + quiet) + "h1v1h-1z";
+    const px = sizePx || 208;
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + total + ' ' + total + '" width="' + px + '" height="' + px + '" shape-rendering="crispEdges" style="display:block;border-radius:10px;"><rect width="' + total + '" height="' + total + '" fill="#FFFFFF"/><path d="' + d + '" fill="#0F172A"/></svg>';
+  }
+
+  function mountUi() {
+    if (document.getElementById("lpnQrInstallModal")) return;
+    const style = document.createElement("style");
+    style.textContent = [
+      "#lpnSettingsDropdown{position:fixed;z-index:2147483646;display:none;min-width:225px;background:#0f172a;color:#f8fafc;border:1.5px solid #334155;border-radius:12px;padding:6px;box-shadow:0 14px 34px rgba(0,0,0,0.45);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}",
+      "#lpnSettingsDropdown.open{display:flex;flex-direction:column;gap:4px;}",
+      ".lpn-set-item{appearance:none;border:none;background:transparent;color:#f8fafc;text-align:left;padding:9px 11px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;}",
+      ".lpn-set-item:hover{background:rgba(56,189,248,0.16);color:#38bdf8;}",
+      "#lpnQrInstallModal{position:fixed;inset:0;z-index:2147483647;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(2,6,23,0.74);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}",
+      "#lpnQrInstallModal.open{display:flex;}",
+      ".lpn-qr-card{background:#0f172a;color:#f8fafc;border:1.5px solid #334155;border-radius:18px;max-width:390px;width:100%;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,0.6);display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;}",
+      ".lpn-qr-pad{background:#ffffff;padding:10px;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,0.25);}",
+      ".lpn-qr-steps{width:100%;text-align:left;background:rgba(30,41,59,0.75);border:1px solid #334155;border-radius:11px;padding:10px 12px;font-size:12px;line-height:1.45;color:#cbd5e1;display:flex;flex-direction:column;gap:5px;}",
+      "#lpnQrModalOkBtn{appearance:none;border:none;width:100%;min-height:44px;border-radius:11px;background:linear-gradient(135deg,#10b981,#059669);color:#ffffff;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(16,185,129,0.35);}"
+    ].join("");
+    document.head.appendChild(style);
+
+    const menu = document.createElement("div");
+    menu.id = "lpnSettingsDropdown";
+    menu.innerHTML = [
+      '<button type="button" class="lpn-set-item" onclick="window.__lpnOpenQrInstallModal()"><span>📱</span><span>Reveal QR Code</span></button>',
+      '<button type="button" class="lpn-set-item" onclick="window.__lpnCloseSettingsMenu(); window.__cspmEnableOrManagePush && window.__cspmEnableOrManagePush()"><span>🔔</span><span>Push Notifications</span></button>',
+      '<button type="button" class="lpn-set-item" onclick="window.__lpnCloseSettingsMenu(); window.location.reload()"><span>🔄</span><span>Refresh / Check Update</span></button>'
+    ].join("");
+    document.body.appendChild(menu);
+
+    const modal = document.createElement("div");
+    modal.id = "lpnQrInstallModal";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.innerHTML = [
+      '<div class="lpn-qr-card" onclick="event.stopPropagation()">',
+      '  <div>',
+      '    <div style="font-size:17px;font-weight:800;color:#ffffff;">📱 Install ' + cfg.appName + '</div>',
+      '    <div style="font-size:12.5px;color:#94a3b8;margin-top:2px;">Scan from any phone, tablet, or Chromebook</div>',
+      '  </div>',
+      '  <div class="lpn-qr-pad" id="lpnQrSvgMount"></div>',
+      '  <div style="display:flex;align-items:center;gap:6px;max-width:100%;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:5px 9px;">',
+      '    <span id="lpnQrUrlLabel" style="font-family:monospace;font-size:11.5px;color:#38bdf8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>',
+      '    <button type="button" id="lpnQrCopyBtn" onclick="window.__lpnCopyQrUrl()" style="background:#334155;color:#f8fafc;border:none;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">Copy</button>',
+      '  </div>',
+      '  <div class="lpn-qr-steps">',
+      '    <div><strong style="color:#f8fafc;">iPhone / iPad:</strong> Camera scan → Safari <b>Share [↑]</b> → <b>Add to Home Screen</b></div>',
+      '    <div><strong style="color:#f8fafc;">Android:</strong> Camera scan → Chrome <b>Menu (⋮)</b> → <b>Install app</b></div>',
+      '    <div><strong style="color:#f8fafc;">Chromebook / PC / Mac:</strong> Open URL (or Camera scan) → click <b>⊕ Install</b> in address bar</div>',
+      '  </div>',
+      '  <button type="button" id="lpnQrModalOkBtn" onclick="window.__lpnCloseQrInstallModal()">OK</button>',
+      '</div>'
+    ].join("");
+    modal.addEventListener("click", function() { window.__lpnCloseQrInstallModal(); });
+    document.body.appendChild(modal);
+  }
+
+  window.__lpnCloseSettingsMenu = function() {
+    const m = document.getElementById("lpnSettingsDropdown");
+    if (m) m.classList.remove("open");
+  };
+
+  window.__lpnToggleSettingsMenu = function(ev, anchorEl) {
+    if (ev) ev.stopPropagation();
+    mountUi();
+    const m = document.getElementById("lpnSettingsDropdown");
+    if (!m) return;
+    if (m.classList.contains("open")) { m.classList.remove("open"); return; }
+    const rect = anchorEl ? anchorEl.getBoundingClientRect() : { bottom: 54, right: window.innerWidth - 16, left: 16 };
+    m.classList.add("open");
+    const mw = m.offsetWidth || 230;
+    const left = Math.max(10, Math.min(window.innerWidth - mw - 10, rect.right - mw));
+    m.style.top = Math.min(window.innerHeight - 160, rect.bottom + 6) + "px";
+    m.style.left = left + "px";
+  };
+
+  window.__lpnOpenQrInstallModal = function() {
+    mountUi();
+    window.__lpnCloseSettingsMenu();
+    const url = typeof cfg.getUrl === "function" ? cfg.getUrl() : cfg.installUrl;
+    const mount = document.getElementById("lpnQrSvgMount");
+    const lbl = document.getElementById("lpnQrUrlLabel");
+    if (mount) mount.innerHTML = generateQrSvg(url, 206);
+    if (lbl) lbl.textContent = url;
+    const modal = document.getElementById("lpnQrInstallModal");
+    if (modal) modal.classList.add("open");
+    const okBtn = document.getElementById("lpnQrModalOkBtn");
+    if (okBtn) setTimeout(function() { okBtn.focus(); }, 40);
+  };
+
+  window.__lpnCloseQrInstallModal = function() {
+    const modal = document.getElementById("lpnQrInstallModal");
+    if (modal) modal.classList.remove("open");
+  };
+
+  window.__lpnCopyQrUrl = function() {
+    const url = typeof cfg.getUrl === "function" ? cfg.getUrl() : cfg.installUrl;
+    const btn = document.getElementById("lpnQrCopyBtn");
+    const done = function() { if (btn) { btn.textContent = "Copied!"; setTimeout(function() { btn.textContent = "Copy"; }, 1800); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done).catch(done);
+    else done();
+  };
+
+  document.addEventListener("click", function() { window.__lpnCloseSettingsMenu(); });
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") { window.__lpnCloseQrInstallModal(); window.__lpnCloseSettingsMenu(); }
+  });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountUi);
+  else mountUi();
+})({ appName: "Quick Expense", installUrl: "https://officenew.tail38e9b9.ts.net" });
+</script>
 
 </body>
 </html>
